@@ -13,7 +13,7 @@
 *****************************************************************************
 }
 {
-@author(AI Assistant - implementing TLazVirtualStringTree instead of DBGrid)
+@author(Vladimir Bobrov)
 }
 unit dispatcherconnectionmanager;
 
@@ -32,7 +32,11 @@ type
   PNodeData = ^TNodeData;
   TNodeData = record
     ID: Integer;
-    T1, T2, T3, T4: string;
+    DeviceName: string;
+    DeviceType: string;
+    Connection: string;
+    Status: string;
+    Description: string;
   end;
 
   { TDispatcherConnectionForm }
@@ -40,7 +44,7 @@ type
     connDB: TSQLite3Connection;
     qryA: TSQLQuery;
     transDB: TSQLTransaction;
-    VST: TLazVirtualStringTree;
+    vstDev: TLazVirtualStringTree;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
 
@@ -104,28 +108,29 @@ begin
   transDB.DataBase := connDB;
   transDB.StartTransaction;
 
-  VST.NodeDataSize := SizeOf(TNodeData);
-  VST.TreeOptions.MiscOptions := VST.TreeOptions.MiscOptions + [toEditable, toEditOnDblClick];
+  vstDev.NodeDataSize := SizeOf(TNodeData);
+  vstDev.TreeOptions.MiscOptions := vstDev.TreeOptions.MiscOptions + [toEditable, toEditOnDblClick];
 
-  VST.Header.Options := VST.Header.Options + [hoVisible];
-  VST.Header.Columns.Clear;
+  vstDev.Header.Options := vstDev.Header.Options + [hoVisible];
+  vstDev.Header.Columns.Clear;
 
-  with VST.Header.Columns.Add do begin Text := 'Показать'; Width := 80; end;
-  with VST.Header.Columns.Add do Text := 'ID';
-  with VST.Header.Columns.Add do Text := 'T1';
-  with VST.Header.Columns.Add do Text := 'T2';
-  with VST.Header.Columns.Add do Text := 'T3';
-  with VST.Header.Columns.Add do Text := 'T4';
-  with VST.Header.Columns.Add do begin Text := 'Ред.'; Width := 70; end;
+  with vstDev.Header.Columns.Add do begin Text := 'Показать'; Width := 80; end;
+  with vstDev.Header.Columns.Add do Text := 'ID';
+  with vstDev.Header.Columns.Add do Text := 'Имя устройства';
+  with vstDev.Header.Columns.Add do Text := 'Тип устройства';
+  with vstDev.Header.Columns.Add do Text := 'Подключение';
+  with vstDev.Header.Columns.Add do Text := 'Статус';
+  with vstDev.Header.Columns.Add do Text := 'Описание';
+  with vstDev.Header.Columns.Add do begin Text := 'Ред.'; Width := 70; end;
 
-  VST.OnGetText := @VSTGetText;
-  VST.OnNewText := @VSTNewText;
-  VST.OnAfterCellPaint := @VSTAfterCellPaint;
-  VST.OnEditing := @VSTEditing;
-  VST.OnMouseDown := @VSTMouseDown;
+  vstDev.OnGetText := @VSTGetText;
+  vstDev.OnNewText := @VSTNewText;
+  vstDev.OnAfterCellPaint := @VSTAfterCellPaint;
+  vstDev.OnEditing := @VSTEditing;
+  vstDev.OnMouseDown := @VSTMouseDown;
 
   LoadData;
-  VST.Invalidate;
+  vstDev.Invalidate;
 end;
 
 procedure TDispatcherConnectionForm.VSTAfterCellPaint(Sender: TBaseVirtualTree; TargetCanvas: TCanvas;
@@ -135,11 +140,11 @@ var
   W, H, X, Y: Integer;
   R: TRect;
 begin
-  if not (Column in [0, 6]) then Exit;
+  if not (Column in [0, 7]) then Exit;
 
   case Column of
     0: Txt := 'Показать';
-    6: Txt := 'Ред.';
+    7: Txt := 'Ред.';
   else
     Txt := '';
   end;
@@ -170,11 +175,11 @@ var
   Node: PVirtualNode;
   Data: PNodeData;
 begin
-  VST.GetHitTestInfoAt(X, Y, True, HitInfo);
+  vstDev.GetHitTestInfoAt(X, Y, True, HitInfo);
   Node := HitInfo.HitNode;
   if not Assigned(Node) then Exit;
 
-  Data := VST.GetNodeData(Node);
+  Data := vstDev.GetNodeData(Node);
   if not Assigned(Data) then Exit;
 
   if HitInfo.HitColumn = 0 then
@@ -182,17 +187,17 @@ begin
     ShowMessage('Показать ID = ' + IntToStr(Data^.ID));
     Exit;
   end
-  else if HitInfo.HitColumn = 6 then
+  else if HitInfo.HitColumn = 7 then
   begin
-    ShowMessage('Редактировать: ' + Data^.T2);
+    ShowMessage('Редактировать: ' + Data^.DeviceName);
     Exit;
   end;
 
-  if (Button = mbLeft) and (HitInfo.HitColumn in [2,3,4,5]) then
+  if (Button = mbLeft) and (HitInfo.HitColumn in [2,3,4,5,6]) then
   begin
-    VST.FocusedNode := Node;
-    VST.FocusedColumn := HitInfo.HitColumn;
-    VST.EditNode(Node, HitInfo.HitColumn);
+    vstDev.FocusedNode := Node;
+    vstDev.FocusedColumn := HitInfo.HitColumn;
+    vstDev.EditNode(Node, HitInfo.HitColumn);
   end;
 end;
 
@@ -208,21 +213,22 @@ var
   Node: PVirtualNode;
   Data: PNodeData;
 begin
-  VST.Clear;
-  qryA.SQL.Text := 'SELECT ID, T1, T2, T3, T4 FROM A';
+  vstDev.Clear;
+  qryA.SQL.Text := 'SELECT ID, DeviceName, DeviceType, Connection, Status, Description FROM Devices';
   qryA.Open;
 
   while not qryA.EOF do
   begin
-    Node := VST.AddChild(nil);
-    Data := VST.GetNodeData(Node);
+    Node := vstDev.AddChild(nil);
+    Data := vstDev.GetNodeData(Node);
     if Assigned(Data) then
     begin
       Data^.ID := qryA.FieldByName('ID').AsInteger;
-      Data^.T1 := qryA.FieldByName('T1').AsString;
-      Data^.T2 := qryA.FieldByName('T2').AsString;
-      Data^.T3 := qryA.FieldByName('T3').AsString;
-      Data^.T4 := qryA.FieldByName('T4').AsString;
+      Data^.DeviceName := qryA.FieldByName('DeviceName').AsString;
+      Data^.DeviceType := qryA.FieldByName('DeviceType').AsString;
+      Data^.Connection := qryA.FieldByName('Connection').AsString;
+      Data^.Status := qryA.FieldByName('Status').AsString;
+      Data^.Description := qryA.FieldByName('Description').AsString;
     end;
     qryA.Next;
   end;
@@ -240,11 +246,12 @@ begin
   case Column of
     0: CellText := 'Показать';
     1: CellText := IntToStr(Data^.ID);
-    2: CellText := Data^.T1;
-    3: CellText := Data^.T2;
-    4: CellText := Data^.T3;
-    5: CellText := Data^.T4;
-    6: CellText := 'Ред.';
+    2: CellText := Data^.DeviceName;
+    3: CellText := Data^.DeviceType;
+    4: CellText := Data^.Connection;
+    5: CellText := Data^.Status;
+    6: CellText := Data^.Description;
+    7: CellText := 'Ред.';
   else
     CellText := '';
   end;
@@ -253,7 +260,7 @@ end;
 procedure TDispatcherConnectionForm.VSTEditing(Sender: TBaseVirtualTree; Node: PVirtualNode;
   Column: TColumnIndex; var Allowed: Boolean);
 begin
-  Allowed := Column in [2,3,4,5];
+  Allowed := Column in [2,3,4,5,6];
 end;
 
 procedure TDispatcherConnectionForm.VSTNewText(Sender: TBaseVirtualTree; Node: PVirtualNode;
@@ -265,10 +272,11 @@ begin
   if not Assigned(Data) then Exit;
 
   case Column of
-    2: Data^.T1 := NewText;
-    3: Data^.T2 := NewText;
-    4: Data^.T3 := NewText;
-    5: Data^.T4 := NewText;
+    2: Data^.DeviceName := NewText;
+    3: Data^.DeviceType := NewText;
+    4: Data^.Connection := NewText;
+    5: Data^.Status := NewText;
+    6: Data^.Description := NewText;
   end;
 
   SaveData(Node);
@@ -279,14 +287,16 @@ procedure TDispatcherConnectionForm.SaveData(Node: PVirtualNode);
 var
   Data: PNodeData;
 begin
-  Data := VST.GetNodeData(Node);
+  Data := vstDev.GetNodeData(Node);
   if not Assigned(Data) then Exit;
 
-  qryA.SQL.Text := 'UPDATE A SET T1 = :T1, T2 = :T2, T3 = :T3, T4 = :T4 WHERE ID = :ID';
-  qryA.Params.ParamByName('T1').AsString := Data^.T1;
-  qryA.Params.ParamByName('T2').AsString := Data^.T2;
-  qryA.Params.ParamByName('T3').AsString := Data^.T3;
-  qryA.Params.ParamByName('T4').AsString := Data^.T4;
+  qryA.SQL.Text := 'UPDATE Devices SET DeviceName = :DeviceName, DeviceType = :DeviceType, ' +
+                   'Connection = :Connection, Status = :Status, Description = :Description WHERE ID = :ID';
+  qryA.Params.ParamByName('DeviceName').AsString := Data^.DeviceName;
+  qryA.Params.ParamByName('DeviceType').AsString := Data^.DeviceType;
+  qryA.Params.ParamByName('Connection').AsString := Data^.Connection;
+  qryA.Params.ParamByName('Status').AsString := Data^.Status;
+  qryA.Params.ParamByName('Description').AsString := Data^.Description;
   qryA.Params.ParamByName('ID').AsInteger := Data^.ID;
   qryA.ExecSQL;
   transDB.CommitRetaining;

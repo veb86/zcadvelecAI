@@ -10,7 +10,7 @@ object DispatcherConnectionForm: TDispatcherConnectionForm
   OnDestroy = FormDestroy
   Position = poScreenCenter
   LCLVersion = '2.2.4.0'
-  object VST: TLazVirtualStringTree
+  object vstDev: TLazVirtualStringTree
     Left = 0
     Height = 600
     Top = 0
