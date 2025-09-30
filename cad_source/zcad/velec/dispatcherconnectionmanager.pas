@@ -24,7 +24,7 @@ interface
 
 uses
   Classes, SysUtils, sqlite3conn, sqldb, Forms, Controls, Graphics, Dialogs,
-  StdCtrls, laz.VirtualTrees, DB,
+  StdCtrls, laz.VirtualTrees, DB, ExtCtrls, ComCtrls, DBGrids,
   uzclog, uzcinterface, uzbtypes, uzeconsts, uzcutils;
 
 type
@@ -41,10 +41,17 @@ type
 
   { TDispatcherConnectionForm }
   TDispatcherConnectionForm = class(TForm)
-    connDB: TSQLite3Connection;
-    qryA: TSQLQuery;
-    transDB: TSQLTransaction;
+    PanelData: TPanel;
+    PanelNav: TPanel;
+    PanelButton: TPanel;
+    panelSplitter: TSplitter;
+    SQLite3Connection: TSQLite3Connection;
+    SQLQuery: TSQLQuery;
+    SQLTransaction: TSQLTransaction;
+    FDeviceTree: TLazVirtualStringTree;
+    ToolBar1: TToolBar;
     vstDev: TLazVirtualStringTree;
+
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
 
@@ -99,14 +106,14 @@ begin
   if not LoadSQLiteLibrary then
     raise Exception.Create('SQLite3.dll not found!');
 
-  connDB.DatabaseName := 'SampleDEV.db3';
-  connDB.Connected := True;
-  connDB.CharSet := 'UTF8';
+  SQLite3Connection.DatabaseName := 'SampleDEV.db3';
+  SQLite3Connection.Connected := True;
+  SQLite3Connection.CharSet := 'UTF8';
 
-  qryA.DataBase := connDB;
-  qryA.Transaction := transDB;
-  transDB.DataBase := connDB;
-  transDB.StartTransaction;
+  SQLQuery.DataBase := SQLite3Connection;
+  SQLQuery.Transaction := SQLTransaction;
+  SQLTransaction.DataBase := SQLite3Connection;
+  SQLTransaction.StartTransaction;
 
   vstDev.NodeDataSize := SizeOf(TNodeData);
   vstDev.TreeOptions.MiscOptions := vstDev.TreeOptions.MiscOptions + [toEditable, toEditOnDblClick];
@@ -204,7 +211,7 @@ end;
 procedure TDispatcherConnectionForm.FormDestroy(Sender: TObject);
 begin
   try
-    if connDB.Connected then connDB.Close;
+    if SQLite3Connection.Connected then SQLite3Connection.Close;
   except end;
 end;
 
@@ -214,25 +221,25 @@ var
   Data: PNodeData;
 begin
   vstDev.Clear;
-  qryA.SQL.Text := 'SELECT ID, DeviceName, DeviceType, Connection, Status, Description FROM Devices';
-  qryA.Open;
+  SQLQuery.SQL.Text := 'SELECT ID, DeviceName, DeviceType, Connection, Status, Description FROM Devices';
+  SQLQuery.Open;
 
-  while not qryA.EOF do
+  while not SQLQuery.EOF do
   begin
     Node := vstDev.AddChild(nil);
     Data := vstDev.GetNodeData(Node);
     if Assigned(Data) then
     begin
-      Data^.ID := qryA.FieldByName('ID').AsInteger;
-      Data^.DeviceName := qryA.FieldByName('DeviceName').AsString;
-      Data^.DeviceType := qryA.FieldByName('DeviceType').AsString;
-      Data^.Connection := qryA.FieldByName('Connection').AsString;
-      Data^.Status := qryA.FieldByName('Status').AsString;
-      Data^.Description := qryA.FieldByName('Description').AsString;
+      Data^.ID := SQLQuery.FieldByName('ID').AsInteger;
+      Data^.DeviceName := SQLQuery.FieldByName('DeviceName').AsString;
+      Data^.DeviceType := SQLQuery.FieldByName('DeviceType').AsString;
+      Data^.Connection := SQLQuery.FieldByName('Connection').AsString;
+      Data^.Status := SQLQuery.FieldByName('Status').AsString;
+      Data^.Description := SQLQuery.FieldByName('Description').AsString;
     end;
-    qryA.Next;
+    SQLQuery.Next;
   end;
-  qryA.Close;
+  SQLQuery.Close;
 end;
 
 procedure TDispatcherConnectionForm.VSTGetText(Sender: TBaseVirtualTree; Node: PVirtualNode;
@@ -290,16 +297,16 @@ begin
   Data := vstDev.GetNodeData(Node);
   if not Assigned(Data) then Exit;
 
-  qryA.SQL.Text := 'UPDATE Devices SET DeviceName = :DeviceName, DeviceType = :DeviceType, ' +
+  SQLQuery.SQL.Text := 'UPDATE Devices SET DeviceName = :DeviceName, DeviceType = :DeviceType, ' +
                    'Connection = :Connection, Status = :Status, Description = :Description WHERE ID = :ID';
-  qryA.Params.ParamByName('DeviceName').AsString := Data^.DeviceName;
-  qryA.Params.ParamByName('DeviceType').AsString := Data^.DeviceType;
-  qryA.Params.ParamByName('Connection').AsString := Data^.Connection;
-  qryA.Params.ParamByName('Status').AsString := Data^.Status;
-  qryA.Params.ParamByName('Description').AsString := Data^.Description;
-  qryA.Params.ParamByName('ID').AsInteger := Data^.ID;
-  qryA.ExecSQL;
-  transDB.CommitRetaining;
+  SQLQuery.Params.ParamByName('DeviceName').AsString := Data^.DeviceName;
+  SQLQuery.Params.ParamByName('DeviceType').AsString := Data^.DeviceType;
+  SQLQuery.Params.ParamByName('Connection').AsString := Data^.Connection;
+  SQLQuery.Params.ParamByName('Status').AsString := Data^.Status;
+  SQLQuery.Params.ParamByName('Description').AsString := Data^.Description;
+  SQLQuery.Params.ParamByName('ID').AsInteger := Data^.ID;
+  SQLQuery.ExecSQL;
+  SQLTransaction.CommitRetaining;
 end;
 
 end.

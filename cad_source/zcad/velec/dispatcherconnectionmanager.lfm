@@ -2,50 +2,108 @@ object DispatcherConnectionForm: TDispatcherConnectionForm
   Left = 350
   Height = 600
   Top = 150
-  Width = 800
+  Width = 900
   Caption = 'Dispatcher Connection Manager'
   ClientHeight = 600
-  ClientWidth = 800
+  ClientWidth = 900
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   Position = poScreenCenter
   LCLVersion = '2.2.4.0'
-  object vstDev: TLazVirtualStringTree
+  object PanelNav: TPanel
     Left = 0
     Height = 600
     Top = 0
-    Width = 800
-    Align = alClient
-    DefaultText = 'Node'
-    Header.AutoSizeIndex = 0
-    Header.DefaultHeight = 17
-    Header.Height = 23
-    Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
+    Width = 200
+    Align = alLeft
+    Caption = ''
     TabOrder = 0
-    TreeOptions.MiscOptions = [toAcceptOLEDrop, toFullRepaintOnResize, toGridExtensions, toInitOnSave, toToggleOnDblClick, toWheelPanning, toEditOnClick]
-    TreeOptions.SelectionOptions = [toFullRowSelect]
-    Columns = <>
+    object FDeviceTree: TLazVirtualStringTree
+      Left = 1
+      Height = 598
+      Top = 1
+      Width = 198
+      Align = alClient
+      DefaultText = 'Node'
+      Header.AutoSizeIndex = 0
+      Header.DefaultHeight = 17
+      Header.Height = 23
+      Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs]
+      TabOrder = 0
+      TreeOptions.MiscOptions = [toAcceptOLEDrop, toFullRepaintOnResize, toGridExtensions, toInitOnSave, toToggleOnDblClick, toWheelPanning]
+      TreeOptions.SelectionOptions = [toFullRowSelect]
+      Columns = <>
+    end
   end
-  object connDB: TSQLite3Connection
+  object panelSplitter: TSplitter
+    Left = 200
+    Height = 600
+    Top = 0
+    Width = 5
+  end
+  object PanelData: TPanel
+    Left = 205
+    Height = 550
+    Top = 0
+    Width = 695
+    Align = alClient
+    Caption = ''
+    TabOrder = 2
+    object ToolBar1: TToolBar
+      Left = 1
+      Height = 26
+      Top = 1
+      Width = 693
+      Caption = 'ToolBar1'
+      EdgeBorders = [ebBottom]
+      TabOrder = 0
+    end
+    object vstDev: TLazVirtualStringTree
+      Left = 1
+      Height = 522
+      Top = 27
+      Width = 693
+      Align = alClient
+      DefaultText = 'Node'
+      Header.AutoSizeIndex = 0
+      Header.DefaultHeight = 17
+      Header.Height = 23
+      Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
+      TabOrder = 1
+      TreeOptions.MiscOptions = [toAcceptOLEDrop, toFullRepaintOnResize, toGridExtensions, toInitOnSave, toToggleOnDblClick, toWheelPanning, toEditOnClick]
+      TreeOptions.SelectionOptions = [toFullRowSelect]
+      Columns = <>
+    end
+  end
+  object PanelButton: TPanel
+    Left = 0
+    Height = 50
+    Top = 550
+    Width = 900
+    Align = alBottom
+    Caption = ''
+    TabOrder = 3
+  end
+  object SQLite3Connection: TSQLite3Connection
     Connected = False
     LoginPrompt = False
     DatabaseName = 'SampleDEV.db3'
     KeepConnection = False
-    Transaction = transDB
+    Transaction = SQLTransaction
     AlwaysUseBigint = False
     Left = 40
     Top = 40
   end
-  object transDB: TSQLTransaction
+  object SQLTransaction: TSQLTransaction
     Active = False
-    Database = connDB
+    Database = SQLite3Connection
     Left = 120
     Top = 40
   end
-  object qryA: TSQLQuery
+  object SQLQuery: TSQLQuery
     FieldDefs = <>
-    Database = connDB
-    Transaction = transDB
+    Database = SQLite3Connection
+    Transaction = SQLTransaction
     Params = <>
     Left = 200
     Top = 40
