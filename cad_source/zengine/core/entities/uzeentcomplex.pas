@@ -77,10 +77,32 @@ end;
 function GDBObjComplex.CalcActualVisible(const Actuality:TVisActuality):boolean;
 var
   q:boolean;
+  oldValue:TActuality;
+  pobj:PGDBObjEntity;
+  ir:itrec;
+  hasVisiblePrimitives:boolean;
 begin
-  Result:=inherited;
+  oldValue:=Visible;
+
   q:=ConstObjArray.CalcActualVisible(Actuality);
-  Result:=Result or q;
+
+  hasVisiblePrimitives:=False;
+  pobj:=ConstObjArray.beginiterate(ir);
+  if pobj<>nil then
+    repeat
+      if pobj^.Visible<>0 then begin
+        hasVisiblePrimitives:=True;
+        break;
+      end;
+      pobj:=ConstObjArray.iterate(ir);
+    until pobj=nil;
+
+  if hasVisiblePrimitives then
+    Visible:=Actuality.visibleactualy
+  else
+    Visible:=0;
+
+  Result:=(oldValue<>Visible) or q;
 end;
 
 procedure GDBObjComplex.BuildGeometry;
