@@ -48,7 +48,7 @@ type
 var
   StretchComMode:TStretchComMode;
 
-function HasSelectedControlPoints:Boolean;
+function HasControlPoints:Boolean;
 var
   tdesc:PSelectedObjDesc;
   ir:itrec;
@@ -58,7 +58,7 @@ begin
     tdesc:=drawings.GetCurrentDWG.GetSelObjArray.beginiterate(ir);
     if tdesc<>nil then
       repeat
-        if (tdesc^.pcontrolpoint<>nil)and(tdesc^.pcontrolpoint^.SelectedCount>0) then begin
+        if tdesc^.pcontrolpoint<>nil then begin
           Result:=True;
           exit;
         end;
@@ -69,8 +69,9 @@ end;
 
 procedure Stretch_com_CommandStart(const Context:TZCADCommandContext;Operands:pansichar);
 begin
-  if (drawings.GetCurrentDWG.wa.param.seldesc.Selectedobjcount>0)and HasSelectedControlPoints then begin
+  if (drawings.GetCurrentDWG.wa.param.seldesc.Selectedobjcount>0)and HasControlPoints then begin
     StretchComMode:=SM_FirstPoint;
+    selectpoints;
     drawings.GetCurrentDWG.wa.SetMouseMode(MGet3DPoint or MMoveCamera or MRotateCamera);
     zcUI.Do_GUIaction(nil,zcMsgUIActionRedrawContent);
   end else begin
