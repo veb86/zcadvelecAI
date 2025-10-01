@@ -36,6 +36,8 @@ uses
   uzclog,
   uzegeometrytypes,
   uzegeometry,
+  gzctnrVectorTypes,
+  UGDBSelectedObjArray,
   uzccommand_selectframe,uzccommand_ondrawinged;
 
 implementation
@@ -46,10 +48,35 @@ type
 var
   StretchComMode:TStretchComMode;
 
+function HasSelectedControlPoints:Boolean;
+var
+  tdesc:PSelectedObjDesc;
+  ir:itrec;
+begin
+  Result:=False;
+  if drawings.GetCurrentDWG.GetSelObjArray.Count>0 then begin
+    tdesc:=drawings.GetCurrentDWG.GetSelObjArray.beginiterate(ir);
+    if tdesc<>nil then
+      repeat
+        if (tdesc^.pcontrolpoint<>nil)and(tdesc^.pcontrolpoint^.SelectedCount>0) then begin
+          Result:=True;
+          exit;
+        end;
+        tdesc:=drawings.GetCurrentDWG.GetSelObjArray.iterate(ir);
+      until tdesc=nil;
+  end;
+end;
+
 procedure Stretch_com_CommandStart(const Context:TZCADCommandContext;Operands:pansichar);
 begin
-  StretchComMode:=SM_GetEnts;
-  FrameEdit_com_CommandStart(Context,Operands);
+  if (drawings.GetCurrentDWG.wa.param.seldesc.Selectedobjcount>0)and HasSelectedControlPoints then begin
+    StretchComMode:=SM_FirstPoint;
+    drawings.GetCurrentDWG.wa.SetMouseMode(MGet3DPoint or MMoveCamera or MRotateCamera);
+    zcUI.Do_GUIaction(nil,zcMsgUIActionRedrawContent);
+  end else begin
+    StretchComMode:=SM_GetEnts;
+    FrameEdit_com_CommandStart(Context,Operands);
+  end;
 end;
 
 function Stretch_com_BeforeClick(const Context:TZCADCommandContext;wc:GDBvertex;
