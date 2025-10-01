@@ -21,7 +21,7 @@ unit UGDBControlPointArray;
 {$INCLUDE zengineconfig.inc}
 interface
 uses uzepalette,uzgldrawcontext,gzctnrVector,sysutils,uzbtypes,uzegeometry,
-     uzegeometrytypes,uzglviewareadata;
+     uzegeometrytypes,uzglviewareadata,uzesnap;
 type
 {Export+}
 PGDBControlPointArray=^GDBControlPointArray;
@@ -44,6 +44,8 @@ end;
 procedure GDBControlPointArray.draw;
 var point:^controlpointdesc;
     i:Integer;
+    segmentDir,perpDir,p1,p2,p3,p4:GDBVertex;
+    gripSize:Double;
 begin
   if count<>0 then
   begin
@@ -59,8 +61,39 @@ begin
                                                                else
                                                                    dc.drawer.SetColor(UnSelColor)
                                    end;
-            //glvertex2iv(@point^.dispcoord);
-            dc.drawer.DrawPoint3DInModelSpace(point^.worldcoord,dc.DrawingContext.matrixs);
+
+            // Draw oriented rectangle for segment center grips
+            if point^.pointtype=os_midle then begin
+              // Calculate grip size in world coordinates based on screen size
+              // Using a ratio to convert point size to world coordinates
+              gripSize:=dc.DrawingContext.matrixs.pprojectmatrix.mtr[0][0];
+              if gripSize<>0 then
+                gripSize:=1.0/gripSize
+              else
+                gripSize:=1.0;
+
+              // Get segment direction from dcoord
+              segmentDir:=point^.dcoord;
+              segmentDir:=NormalizeVector(segmentDir);
+
+              // Calculate perpendicular direction
+              perpDir:=CrossVertex(segmentDir,CreateVertex(0,0,1));
+              if VertexLength(perpDir)<0.001 then
+                perpDir:=CrossVertex(segmentDir,CreateVertex(0,1,0));
+              perpDir:=NormalizeVector(perpDir);
+
+              // Create rectangle corners (2:1 aspect ratio, long side along segment)
+              p1:=VertexAdd(point^.worldcoord,VertexAdd(VertexMulOnSc(segmentDir,gripSize*3),VertexMulOnSc(perpDir,gripSize*1.5)));
+              p2:=VertexAdd(point^.worldcoord,VertexAdd(VertexMulOnSc(segmentDir,gripSize*3),VertexMulOnSc(perpDir,-gripSize*1.5)));
+              p3:=VertexAdd(point^.worldcoord,VertexAdd(VertexMulOnSc(segmentDir,-gripSize*3),VertexMulOnSc(perpDir,-gripSize*1.5)));
+              p4:=VertexAdd(point^.worldcoord,VertexAdd(VertexMulOnSc(segmentDir,-gripSize*3),VertexMulOnSc(perpDir,gripSize*1.5)));
+
+              // Draw the oriented rectangle
+              dc.drawer.DrawQuad3DInModelSpace(p1,p2,p3,p4,dc.DrawingContext.matrixs);
+            end else begin
+              // Draw normal square grip for vertex points
+              dc.drawer.DrawPoint3DInModelSpace(point^.worldcoord,dc.DrawingContext.matrixs);
+            end;
             inc(point);
        end;
   end;
