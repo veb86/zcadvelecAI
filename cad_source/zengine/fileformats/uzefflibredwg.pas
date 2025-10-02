@@ -44,8 +44,16 @@ implementation
 
 procedure DebugDWG(dwg:PDwg_Data);
 begin
+  // Выводим информацию о версии файла из заголовка
+  // header.version - версия, вычисленная из header magic файла
+  // header.from_version - реальная версия сохранения (может отличаться)
   DebugLn(['{WH}header.version: '+DWG_V2Str(dwg^.header.version)]);
   zDebugLn(['{WH}header.from_version: ',DWG_V2Str(dwg^.header.from_version)]);
+  // Показываем какая версия будет использоваться (максимальная из двух)
+  if (dwg^.header.from_version<>R_INVALID) and (dwg^.header.from_version>dwg^.header.version) then
+    zDebugLn(['{WH}Используется версия from_version: ',DWG_V2Str(dwg^.header.from_version)])
+  else
+    zDebugLn(['{WH}Используется версия version: ',DWG_V2Str(dwg^.header.version)]);
   zDebugLn(['{WH}header.is_maint: ',dwg^.header.is_maint]);
   zDebugLn(['{WH}header.zero_one_or_three: ',dwg^.header.zero_one_or_three]);
   zDebugLn(['{WH}header.numentity_sections: ',dwg^.header.numentity_sections]);
