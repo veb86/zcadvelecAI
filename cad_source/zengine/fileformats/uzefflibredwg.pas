@@ -29,7 +29,7 @@ uses
    uzelongprocesssupport,{uzgldrawcontext,}forms,
    uzcstrconsts,uzeLogIntf,
    LazUTF8,
-   uzeentityfactory, GDBLine, UGDBLayerArray, uzedrawingsimple, uzegeometry;
+   uzeentityfactory, GDBLine, GDBCircle, UGDBLayerArray, uzedrawingsimple, uzegeometry;
 
 type
 
@@ -75,6 +75,24 @@ begin
    layer:=dwg_get_entity_layer(DWGObject.tio.entity);
    if layer<>nil then
      PGDBObjLine(pobj)^.vp.Layer:=ZContext.PDrawing^.LayerTable.GetOrCreateLayer(layer^.tio.object^.tio.LAYER^.name,ZContext.PDrawing^.LayerTable.GetSystemLayer);
+   ZContext.POwner^.AddMi(@pobj);
+   PGDBObjEntity(pobj)^.BuildGeometry(ZContext.PDrawing^);
+   PGDBObjEntity(pobj)^.formatEntity(ZContext.PDrawing^);
+end;
+
+procedure LoadDWGCircle(var ZContext:TZDrawingContext;var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;P:Pointer);
+var
+   pobj:PGDBObjEntity;
+   circle:Dwg_Entity_CIRCLE;
+   layer:PDwg_Object_LAYER;
+begin
+   circle:=DWGObject.tio.entity^.tio.CIRCLE^;
+   pobj := CreateInitObjFree(GDBCircleID,nil);
+   PGDBObjCircle(pobj)^.Radius:=circle.radius;
+   PGDBObjCircle(pobj)^.Local.P_insert:=CreateVertex(circle.center.x,circle.center.y,circle.center.z);
+   layer:=dwg_get_entity_layer(DWGObject.tio.entity);
+   if layer<>nil then
+     PGDBObjCircle(pobj)^.vp.Layer:=ZContext.PDrawing^.LayerTable.GetOrCreateLayer(layer^.tio.object^.tio.LAYER^.name,ZContext.PDrawing^.LayerTable.GetSystemLayer);
    ZContext.POwner^.AddMi(@pobj);
    PGDBObjEntity(pobj)^.BuildGeometry(ZContext.PDrawing^);
    PGDBObjEntity(pobj)^.formatEntity(ZContext.PDrawing^);
@@ -153,6 +171,7 @@ end;
 initialization
    ZCDWGParser:=TZCADDWGParser.create;
    ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_LINE,@LoadDWGLine);
+   ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_CIRCLE,@LoadDWGCircle);
    Ext2LoadProcMap.RegisterExt('dwg','AutoCAD DWG files (*.dwg)',@addfromdwg);
 finalization
    zDebugln('{I}[UnitsFinalization] Unit "'+{$INCLUDE %FILE%}+'" finalization');
