@@ -3082,8 +3082,9 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
           is_xref_ref : BITCODE_B;
           is_xref_resolved : BITCODE_BS;
           is_xref_dep : BITCODE_B;
-          xref : BITCODE_H;
-          frozen : BITCODE_B;
+           xref : BITCODE_H;
+           flag0 : BITCODE_BS;
+           frozen : BITCODE_B;
           on : BITCODE_B;
           frozen_in_new : BITCODE_B;
           locked : BITCODE_B;
@@ -3093,9 +3094,8 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
           plotstyle : BITCODE_H;
           material : BITCODE_H;
           ltype : BITCODE_H;
-          visualstyle : BITCODE_H;
-          unknown_r2 : BITCODE_RC;
-        end;
+           visualstyle : BITCODE_H;
+         end;
       Dwg_Object_LAYER = _dwg_object_LAYER;
       //PDwg_Object_LAYER = ^Dwg_Object_LAYER;
 

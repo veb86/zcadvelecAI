@@ -1,7 +1,7 @@
 /*****************************************************************************/
 /*  LibreDWG - free implementation of the DWG file format                    */
 /*                                                                           */
-/*  Copyright (C) 2009-2010,2018-2024 Free Software Foundation, Inc.         */
+/*  Copyright (C) 2009-2010,2018-2025 Free Software Foundation, Inc.         */
 /*                                                                           */
 /*  This library is free software, licensed under the terms of the GNU       */
 /*  General Public License as published by the Free Software Foundation,     */
@@ -24,12 +24,210 @@
 #ifndef DWG_H
 #define DWG_H
 
+/* keep in sync with release tags */
 #define LIBREDWG_VERSION_MAJOR 0
-#define LIBREDWG_VERSION_MINOR 10
+#define LIBREDWG_VERSION_MINOR 13
 #define LIBREDWG_VERSION       ((LIBREDWG_VERSION_MAJOR * 100) + LIBREDWG_VERSION_MINOR)
-// clang-format off
-#define LIBREDWG_SO_VERSION 0:10:0
-// clang-format on
+
+/* for uint64_t, but not in swig */
+#ifndef SWIGIMPORTED
+#  include <stddef.h>
+#  include <stdint.h>
+#  include <inttypes.h>
+
+/* wchar for R2007+ support
+ * But we need the win32 UTF-16 variant, not UTF-32.
+ * i.e. only on Windows, AIX, Solaris
+ */
+# if defined(HAVE_WCHAR_H) && defined(SIZEOF_WCHAR_T)
+#    if SIZEOF_WCHAR_T == 2
+#      include <wchar.h>
+#      define HAVE_NATIVE_WCHAR2
+#      define DWGCHAR wchar_t
+#      define dwg_wchar_t wchar_t
+#    endif
+#  endif
+#endif
+
+#ifndef EXPORT
+# ifdef SWIG
+#  define EXPORT extern
+# elif defined(_WIN32) && defined(ENABLE_SHARED)
+#  ifdef DLL_EXPORT
+#    define EXPORT  __declspec(dllexport)
+#  else
+#    define EXPORT  __declspec(dllimport)
+#  endif
+# elif defined(__clang__) || defined(__clang) || \
+        (defined( __GNUC__) && ((__GNUC__ * 100) + __GNUC_MINOR__) >= 303)
+#  define EXPORT __attribute__((visibility("default")))
+# else
+#  define EXPORT
+# endif
+#endif
+
+#ifndef __counted_by
+#  if (defined(__clang__) && (__clang_major__ >= 18)) || \
+      (defined( __GNUC__) && ((__GNUC__ * 100) + __GNUC_MINOR__) >= 1500)
+#    define __counted_by(x) __attribute__((__counted_by__(x)))
+#    ifdef __cplusplus
+#      undef __counted_by
+#      define __counted_by(x)
+#    endif
+#  else
+#    define __counted_by(x)
+#  endif
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+# ifndef restrict
+#  define restrict __restrict
+# endif
+#endif
+
+#define BITCODE_DOUBLE double
+
+/* The FORMAT_* are for logging only */
+typedef unsigned char BITCODE_RC;
+#if defined _MSC_VER && !defined __clang__
+# define FORMAT_RC "0x%2x"
+# define SCANF_2X "%2hhX"
+#else
+# define FORMAT_RC "0x%hhx"
+# define SCANF_2X "%2hhX"
+#endif
+#define FORMAT_RCd "%d"
+#define FORMAT_RCu "%u"
+#define FORMAT_RCx "0x%x"
+typedef signed char BITCODE_RCd;
+typedef unsigned char BITCODE_RCu;
+typedef unsigned char BITCODE_RCx;
+typedef unsigned char BITCODE_B;
+#define FORMAT_B "%d"
+typedef unsigned char BITCODE_BB;
+#define FORMAT_BB "%u"
+/* Since R24 */
+typedef unsigned char BITCODE_3B;
+#define FORMAT_3B "%u"
+//#ifdef HAVE_STDINT_H
+//#define BITCODE_BS uint16_t
+//#define BITCODE_RS uint16_t
+//#define BITCODE_BL uint32_t
+//#define BITCODE_RL uint32_t
+//#define BITCODE_BLd int32_t
+//#define BITCODE_RLd int32_t
+typedef uint16_t BITCODE_BS;
+typedef int16_t BITCODE_BSd;
+typedef uint16_t BITCODE_BSx;
+typedef uint16_t BITCODE_RS;
+typedef int16_t BITCODE_RSd;
+typedef uint16_t BITCODE_RSx;
+typedef uint32_t BITCODE_BL;
+typedef uint32_t BITCODE_BLx;
+typedef int32_t BITCODE_BLd;
+typedef uint32_t BITCODE_RL;
+typedef uint32_t BITCODE_RLx;
+typedef int32_t BITCODE_RLd;
+/* e.g. old cygwin 64 vs 32 */
+/*#else
+# if defined(__WORDSIZE) && __WORDSIZE == 64
+  typedef unsigned short int BITCODE_BS;
+  typedef unsigned short int BITCODE_RS;
+  typedef unsigned int BITCODE_BL;
+  typedef unsigned int BITCODE_RL;
+  typedef int BITCODE_BLd;
+  typedef int BITCODE_RLd;
+# else
+  typedef unsigned short int BITCODE_BS;
+  typedef unsigned short int BITCODE_RS;
+  typedef unsigned long BITCODE_BL;
+  typedef unsigned long BITCODE_RL;
+  typedef long BITCODE_BLd;
+  typedef long BITCODE_RLd;
+# endif
+#endif
+*/
+//#ifdef HAVE_INTTYPES_H
+#define FORMAT_BS "%" PRIu16
+#define FORMAT_BSd "%" PRId16
+#define FORMAT_BSx "0x%" PRIx16
+#define FORMAT_RS "%" PRIu16
+#define FORMAT_RSd "%" PRId16
+#define FORMAT_RSx "0x%" PRIx16
+#define FORMAT_BL "%" PRIu32
+#define FORMAT_RL "%" PRIu32
+#define FORMAT_BLd "%" PRId32
+#define FORMAT_RLd "%" PRId32
+#define FORMAT_RLx "0x%" PRIx32
+#define FORMAT_BLX "%" PRIX32
+#define FORMAT_BLx "0x%" PRIx32
+/*#else
+# define FORMAT_BS "%hu"
+# define FORMAT_RS "%hu"
+# define FORMAT_BL "%u"
+# define FORMAT_RL "%u"
+# define FORMAT_BLd "%d"
+# define FORMAT_RLd "%d"
+# define FORMAT_BLX "%X"
+# define FORMAT_BLx "%x"
+#endif
+*/
+typedef BITCODE_DOUBLE BITCODE_RD;
+#define FORMAT_RD "%g"
+/* Since R2004 */
+typedef uint64_t BITCODE_RLL;
+typedef uint64_t BITCODE_RLLx;
+typedef int64_t BITCODE_RLLd;
+typedef uint64_t BITCODE_BLL;
+#define FORMAT_RLLx "%" PRIX64
+#define FORMAT_RLL "0x%" PRIX64
+#define FORMAT_RLLd "%" PRId64
+#define FORMAT_BLL "%" PRIu64
+typedef int32_t BITCODE_MC;
+#define FORMAT_MC "%" PRId32
+typedef uint64_t BITCODE_UMC;
+#define FORMAT_UMC FORMAT_RLL
+#ifndef HAVE_NATIVE_WCHAR2
+  typedef BITCODE_RS dwg_wchar_t;
+# define DWGCHAR dwg_wchar_t
+#endif
+typedef unsigned char* BITCODE_TF;
+#define FORMAT_TF "\"%s\""
+typedef char* BITCODE_TV;
+#define FORMAT_TV "\"%s\""
+#define BITCODE_T16 BITCODE_TV
+#define FORMAT_T16 FORMAT_TV
+#define BITCODE_TU16 BITCODE_TU
+#define FORMAT_TU16 FORMAT_TU
+#define BITCODE_T32 BITCODE_TV
+#define FORMAT_T32 FORMAT_TV
+#define BITCODE_TU32 BITCODE_TV
+#define FORMAT_TU32 FORMAT_TU
+typedef BITCODE_DOUBLE BITCODE_BT;
+#define FORMAT_BT "%g"
+typedef BITCODE_DOUBLE BITCODE_DD;
+#define FORMAT_DD "%g"
+typedef BITCODE_DOUBLE BITCODE_BD;
+#define FORMAT_BD "%g"
+typedef BITCODE_RC BITCODE_4BITS;
+typedef BITCODE_RLLx BITCODE_HV; // handle value (not vector)
+#define FORMAT_HV FORMAT_RLLx
+#define FORMAT_4BITS "%1x"
+/* double stored as string. ARCALIGNEDTEXT */
+typedef BITCODE_TV BITCODE_D2T;
+#define FORMAT_D2T "%s"
+
+/* TODO: implement version dependent string parsing */
+/* encode codepages/utf8 */
+#define BITCODE_T  BITCODE_TV
+#ifdef HAVE_NATIVE_WCHAR2
+  typedef dwg_wchar_t* BITCODE_TU; /* native UCS-2 wchar_t */
+# define FORMAT_TU "\"%ls\""
+#else
+  typedef BITCODE_RS* BITCODE_TU;  /* UCS-2 unicode text */
+# define FORMAT_TU "\"%hn\""       /* will print garbage */
+#endif
 
 /* for uint64_t, but not in swig */
 #ifndef SWIGIMPORTED
