@@ -16,10 +16,10 @@ Features:
 * Fast OpenGL rendering
 * Fast GDI rendering
 * Crossplatform (Windows x86/x64, Linux x86/x64 - gtk/qt)
-* DXF fileformat
+* DXF and DWG file formats
 * SHX, TTF font support
 * true DXF linetypes
-* POINT, LINE, CIRCLE, POLYLINE,  LWPOLYLINE, ARC, ELLIPSE, INSERT, TEXT, MTEXT, 3DFACE, SOLID, SPLINE, HATCH entities support
+* POINT, LINE, CIRCLE, POLYLINE,  LWPOLYLINE, ARC, ELLIPSE, INSERT, TEXT, MTEXT, 3DFACE, SOLID, SPLINE entities support
 * Polar tracking, Object snap
 
 ToDo:

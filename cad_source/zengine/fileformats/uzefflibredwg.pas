@@ -22,13 +22,14 @@ unit uzeffLibreDWG;
 {$ModeSwitch advancedrecords}
 interface
 uses
-  uzbLogIntf, LazLoggerBase,
-  SysUtils,
-  dwg,dwgproc,
-  uzeffmanager,
-  uzelongprocesssupport,{uzgldrawcontext,}forms,
-  uzcstrconsts,uzeLogIntf,
-  LazUTF8;
+   uzbLogIntf, LazLoggerBase,
+   SysUtils,
+   dwg,dwgproc,
+   uzeffmanager,
+   uzelongprocesssupport,{uzgldrawcontext,}forms,
+   uzcstrconsts,uzeLogIntf,
+   LazUTF8,
+   uzeentityfactory, GDBLine, UGDBLayerArray, uzedrawingsimple, uzegeometry;
 
 type
 
@@ -61,23 +62,40 @@ begin
  lps.ProgressLongProcess(TLPSHandle(Data),Counter);
 end;
 
+procedure LoadDWGLine(var ZContext:TZDrawingContext;var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;P:Pointer);
+var
+   pobj:PGDBObjEntity;
+   line:Dwg_Entity_LINE;
+   layer:PDwg_Object_LAYER;
+begin
+   line:=DWGObject.tio.entity^.tio.LINE^;
+   pobj := CreateInitObjFree(GDBLineID,nil);
+   PGDBObjLine(pobj)^.CoordInOCS.lBegin:=CreateVertex(line.start.x,line.start.y,line.start.z);
+   PGDBObjLine(pobj)^.CoordInOCS.lEnd:=CreateVertex(line.&end.x,line.&end.y,line.&end.z);
+   layer:=dwg_get_entity_layer(DWGObject.tio.entity);
+   if layer<>nil then
+     PGDBObjLine(pobj)^.vp.Layer:=ZContext.PDrawing^.LayerTable.GetOrCreateLayer(layer^.tio.object^.tio.LAYER^.name,ZContext.PDrawing^.LayerTable.GetSystemLayer);
+   ZContext.POwner^.AddMi(@pobj);
+   PGDBObjEntity(pobj)^.BuildGeometry(ZContext.PDrawing^);
+   PGDBObjEntity(pobj)^.formatEntity(ZContext.PDrawing^);
+end;
+
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
-  dwg:Dwg_Data;
-  Success:integer;
-  lph:TLPSHandle;
-  //DC:TDrawContext;
+   dwg:Dwg_Data;
+   Success:integer;
+   lph:TLPSHandle;
+   //DC:TDrawContext;
 begin
-  try
-    zDebugLn('{WH}%s',[rsNotYetImplemented]);
-    try
-      LoadLibreDWG;
-    except
-      on E : Exception do begin
-        zDebugLn(['{EHM}LibreDWG: ',E.Message]);
-        exit;
-      end;
-    end;
+   try
+     try
+       LoadLibreDWG;
+     except
+       on E : Exception do begin
+         zDebugLn(['{EHM}LibreDWG: ',E.Message]);
+         exit;
+       end;
+     end;
     //fillchar(dwg,sizeof(dwg),0);
     dwg:=default(Dwg_Data);
     dwg.opts:=0;
@@ -133,7 +151,11 @@ begin
 end;
 
 initialization
- ZCDWGParser:=TZCADDWGParser.Create;
+   ZCDWGParser:=TZCADDWGParser.create;
+   ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_LINE,@LoadDWGLine);
+   Ext2LoadProcMap.RegisterExt('dwg','AutoCAD DWG files (*.dwg)',@addfromdwg);
 finalization
- FreeAndNil(ZCDWGParser);
+   zDebugln('{I}[UnitsFinalization] Unit "'+{$INCLUDE %FILE%}+'" finalization');
+   if ZCDWGParser<>nil then
+     ZCDWGParser.Free;
 end.
