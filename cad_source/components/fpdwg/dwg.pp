@@ -10556,9 +10556,9 @@ in declaration at line 7399 *)
           num_classes : BITCODE_BS;
           dwg_class : PDwg_Class;
           num_objects : BITCODE_BL;
-          num_alloced_objects : BITCODE_BL;
-          &object : PDwg_Object;
-          num_entities : BITCODE_BL;
+    num_alloced_objects : BITCODE_BL;
+    object : PDwg_Object;
+    num_entities : BITCODE_BL;
           num_object_refs : BITCODE_BL;
           cur_index : BITCODE_BL;
           object_ref : ^PDwg_Object_Ref;
@@ -10570,9 +10570,10 @@ in declaration at line 7399 *)
           header_union : Dwg_Header_Union;
           mspace_block : PDwg_Object;
           pspace_block : PDwg_Object;
-          block_control : Dwg_Object_BLOCK_CONTROL;
-          auxheader : Dwg_AuxHeader;
-          summaryinfo : Dwg_SummaryInfo;
+    block_control : Dwg_Object_BLOCK_CONTROL;
+    auxheader : Dwg_AuxHeader;
+    secondheader : Dwg_Second_Header;
+    summaryinfo : Dwg_SummaryInfo;
           appinfo : Dwg_AppInfo;
           filedeplist : Dwg_FileDepList;
           security : Dwg_Security;
@@ -10581,13 +10582,13 @@ in declaration at line 7399 *)
           revhistory : Dwg_RevHistory;
           objfreespace : Dwg_ObjFreeSpace;
           Template : Dwg_Template;
-          acds : Dwg_AcDs;
-          second_header : Dwg_Second_Header;
-          layout_type : dword;
+    acds : Dwg_AcDs;
+    layout_type : dword;
           num_acis_sab_hdl : dword;
-          acis_sab_hdl : PBITCODE_H;
-          next_hdl : dword;
-        end;
+    acis_sab_hdl : PBITCODE_H;
+    next_hdl : BITCODE_RLL;
+    prev_entity_index : BITCODE_BL;
+  end;
       Dwg_Data = _dwg_struct;
       //PDwg_Data = ^Dwg_Data;
 
