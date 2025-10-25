@@ -77,55 +77,24 @@ begin
 end;
 
 function GDBObjComplex.IsActualy:boolean;
-var
-  p:PGDBObjEntity;
-  ir:itrec;
 begin
-  // Для сложных объектов (блоков) проверяем, есть ли хотя бы один видимый дочерний примитив
-  // Это позволяет выделять блоки на выключенных слоях, если внутри них есть примитивы на видимых слоях (исправление issue #11)
-  // For complex entities (blocks), check if any child primitive is actually visible
-  // This allows blocks on disabled layers to be selectable if they contain visible primitives (fixes issue #11)
-  Result:=false;
-  p:=ConstObjArray.beginiterate(ir);
-  if p<>nil then
-    repeat
-      if p^.IsActualy then begin
-        Result:=true;
-        break;
-      end;
-      p:=ConstObjArray.iterate(ir);
-    until p=nil;
+  // Для сложных объектов (блоков) проверяем состояние собственного слоя блока (исправление issue #11, вариант A)
+  // Это соответствует логике видимости и выделения
+  // For complex entities (blocks), check the block's own layer state (fixes issue #11, option A)
+  // This matches the visibility and selectability logic
+  if (vp.Layer<>nil) and (vp.Layer^._on) then
+    Result:=true
+  else
+    Result:=false;
 end;
 
 function GDBObjComplex.SelectQuik:boolean;
-var
-  p:PGDBObjEntity;
-  ir:itrec;
-  anyChildSelectable:boolean;
 begin
-  // Для сложных объектов (блоков) возможность выделения определяется дочерними примитивами,
-  // а не состоянием собственного слоя блока (исправление issue #11)
-  // Если хотя бы один дочерний примитив может быть выделен (слой включен и не заблокирован),
-  // то блок тоже может быть выделен
-  // For complex entities (blocks), selectability is determined by child primitives,
-  // not by the block's own layer state (fixes issue #11)
-  // If at least one child primitive is selectable (layer on and not locked),
-  // then the block can be selected too
-  anyChildSelectable:=false;
-  p:=ConstObjArray.beginiterate(ir);
-  if p<>nil then
-    repeat
-      // Проверяем, может ли дочерний примитив быть выделен
-      // Check if child primitive can be selected
-      if p^.vp.Layer<>nil then
-        if (p^.vp.Layer^._on) and (not p^.vp.Layer^._lock) then begin
-          anyChildSelectable:=true;
-          break;
-        end;
-      p:=ConstObjArray.iterate(ir);
-    until p=nil;
-
-  if anyChildSelectable then begin
+  // Для сложных объектов (блоков) возможность выделения определяется состоянием собственного слоя блока (исправление issue #11, вариант A)
+  // Это соответствует логике видимости: если блок видим (собственный слой включен), то он должен быть выделяемым
+  // For complex entities (blocks), selectability is determined by the block's own layer state (fixes issue #11, option A)
+  // This matches the visibility logic: if the block is visible (own layer is ON), it should be selectable
+  if (vp.Layer<>nil) and (vp.Layer^._on) and (not vp.Layer^._lock) then begin
     Result:=true;
     selected:=true;
   end else begin
@@ -136,36 +105,22 @@ end;
 function GDBObjComplex.CalcActualVisible(const Actuality:TVisActuality):boolean;
 var
   oldValue:TActuality;
-  p:PGDBObjEntity;
-  ir:itrec;
-  hasVisibleChild:boolean;
 begin
-  // Для сложных объектов (блоков) видимость определяется только дочерними примитивами,
-  // а не состоянием собственного слоя блока (исправление issue #11)
-  // For complex entities (blocks), visibility is determined solely by child entities
-  // not by the block's own layer state (fixes issue #11)
+  // Для сложных объектов (блоков) видимость определяется состоянием собственного слоя блока (исправление issue #11, вариант A)
+  // Это необходимо для работы с extdrLayerControl: даже если расширение переносит примитивы на невидимые слои,
+  // блок должен оставаться видимым если его собственный слой включен
+  // For complex entities (blocks), visibility is determined by the block's own layer state (fixes issue #11, option A)
+  // This is required for extdrLayerControl: even if the extension moves primitives to invisible layers,
+  // the block should remain visible if its own layer is ON
   oldValue:=Visible;
 
   // Вычисляем видимость для всех дочерних примитивов
   // Calculate visibility for all children
   ConstObjArray.CalcActualVisible(Actuality);
 
-  // Проверяем, есть ли хотя бы один видимый дочерний примитив
-  // Check if any child is visible
-  hasVisibleChild:=false;
-  p:=ConstObjArray.beginiterate(ir);
-  if p<>nil then
-    repeat
-      if p^.Visible=Actuality.visibleactualy then begin
-        hasVisibleChild:=true;
-        break;
-      end;
-      p:=ConstObjArray.iterate(ir);
-    until p=nil;
-
-  // Устанавливаем видимость блока на основе видимости дочерних примитивов
-  // Set block visibility based on children
-  if hasVisibleChild then
+  // Устанавливаем видимость блока на основе состояния собственного слоя
+  // Set block visibility based on its own layer state
+  if (vp.Layer<>nil) and (vp.Layer^._on) then
     Visible:=Actuality.visibleactualy
   else
     Visible:=0;
