@@ -178,7 +178,8 @@ begin
   m:=CreateMatrixFromBasis(ox,oy,Local.basis.oz);
 
   Local.P_insert:=VectorTransform3D(PGDBVertex(@objmatrix.mtr[3])^,m);
-  self.R:=PGDBVertex(@objmatrix.mtr[0])^.x/local.basis.OX.x;
+  // Extract radius from the length of the scaled X-axis vector in objmatrix
+  self.R:=oneVertexlength(PGDBVertex(@objmatrix.mtr[0])^);
 end;
 
 function GDBObjARC.CalcTrueInFrustum;
