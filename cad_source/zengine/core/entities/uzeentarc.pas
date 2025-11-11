@@ -184,9 +184,11 @@ begin
      Format('Нормаль (Local.basis.oz): X=%.6f, Y=%.6f, Z=%.6f',
     [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z])
     ,TMWOHistoryOut);
-  zcUI.TextMessage(
-     Format('Матрица трансформации: det=%.6f',
-    [t_matrix.mtr[0].v[0]*t_matrix.mtr[1].v[1]*t_matrix.mtr[2].v[2]])
+   zcUI.TextMessage(
+      Format('Матрица трансформации: det=%.6f',
+     [MatrixDetInternal(t_matrix.mtr[0].v[0], t_matrix.mtr[0].v[1], t_matrix.mtr[0].v[2],
+                        t_matrix.mtr[1].v[0], t_matrix.mtr[1].v[1], t_matrix.mtr[1].v[2],
+                        t_matrix.mtr[2].v[0], t_matrix.mtr[2].v[1], t_matrix.mtr[2].v[2])])
     ,TMWOHistoryOut);
 
   { Сохранить исходную локальную СК до трансформации }
@@ -195,7 +197,9 @@ begin
   old_basis_oz := Local.basis.oz;
 
   precalc;
-  if t_matrix.mtr[0].v[0]*t_matrix.mtr[1].v[1]*t_matrix.mtr[2].v[2]<eps then begin
+  if MatrixDetInternal(t_matrix.mtr[0].v[0], t_matrix.mtr[0].v[1], t_matrix.mtr[0].v[2],
+                       t_matrix.mtr[1].v[0], t_matrix.mtr[1].v[1], t_matrix.mtr[1].v[2],
+                       t_matrix.mtr[2].v[0], t_matrix.mtr[2].v[1], t_matrix.mtr[2].v[2]) < eps then begin
     sav:=q2;
     eav:=q0;
     //zDebugLn('Определитель < eps: меняем местами начальную и конечную точки');
@@ -210,27 +214,24 @@ begin
       'Определитель >= eps: используем обычный порядок точек'
     ,TMWOHistoryOut);
   end;
-  pins:=P_insert_in_WCS;
-  sav:=VectorTransform3D(sav,t_matrix);
-  eav:=VectorTransform3D(eav,t_matrix);
-  pins:=VectorTransform3D(pins,t_matrix);
-  inherited;
+   sav:=VectorTransform3D(sav,t_matrix);
+   eav:=VectorTransform3D(eav,t_matrix);
+   inherited;
 
-  { Преобразовать трансформированные точки в ИСХОДНУЮ локальную систему координат }
-  { (которая была ДО трансформации) для правильного расчета углов }
-  m:=CreateMatrixFromBasis(old_basis_ox, old_basis_oy, old_basis_oz);
-  MatrixInvert(m);
+   { Преобразовать трансформированные точки в новую локальную систему координат }
+   { для правильного расчета углов }
+   m:=objmatrix;
+   MatrixInvert(m);
 
-  { Вычесть центр и преобразовать в исходную ЛСК }
-  sav_local:=VectorTransform3D(VertexSub(sav,P_insert_in_WCS),m);
-  eav_local:=VectorTransform3D(VertexSub(eav,P_insert_in_WCS),m);
+   { Преобразовать точки в локальную систему координат }
+   sav_local:=VectorTransform3D(sav,m);
+   eav_local:=VectorTransform3D(eav,m);
 
   { Нормализовать векторы }
   sav_local:=NormalizeVertex(sav_local);
   eav_local:=NormalizeVertex(eav_local);
 
-  { Рассчитать углы в исходной локальной системе координат }
-  { (относительно оси X, которая была ДО трансформации) }
+   { Рассчитать углы в новой локальной системе координат }
   StartAngle:=TwoVectorAngle(_X_yzVertex,sav_local);
   if sav_local.y<eps then
     StartAngle:=2*pi-StartAngle;
