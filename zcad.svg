@@ -1,0 +1,25 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Иконка ZCAD в стиле секции здания с сеткой зеленых и красных прямоугольников -->
+  <!-- Первый столбец зеленый, второй столбец красный, с синей рамкой -->
+
+  <!-- Внешняя рамка -->
+  <rect x="0" y="0" width="256" height="256" fill="none" stroke="#20a8ff" stroke-width="2" />
+
+  <!-- Вертикальная разделительная линия -->
+  <line x1="128" y1="0" x2="128" y2="256" stroke="#20a8ff" stroke-width="2" />
+
+  <!-- Горизонтальные разделительные линии -->
+  <line x1="0" y1="85.333" x2="256" y2="85.333" stroke="#20a8ff" stroke-width="2" />
+  <line x1="0" y1="170.667" x2="256" y2="170.667" stroke="#20a8ff" stroke-width="2" />
+
+  <!-- Заливка ячеек с прозрачностью: первый столбец зеленый -->
+  <rect x="0" y="0" width="128" height="85.333" fill="#008c00" fill-opacity="0.7" />
+  <rect x="0" y="85.333" width="128" height="85.333" fill="#008c00" fill-opacity="0.7" />
+  <rect x="0" y="170.667" width="128" height="85.333" fill="#008c00" fill-opacity="0.7" />
+
+  <!-- Заливка ячеек с прозрачностью: второй столбец красный -->
+  <rect x="128" y="0" width="128" height="85.333" fill="#ff0000" fill-opacity="0.7" />
+  <rect x="128" y="85.333" width="128" height="85.333" fill="#ff0000" fill-opacity="0.7" />
+  <rect x="128" y="170.667" width="128" height="85.333" fill="#ff0000" fill-opacity="0.7" />
+</svg></content>
+<parameter name="filePath">zcad.svg

@@ -2,9 +2,9 @@
 <!-- Иконка помещения вкл/выкл: диагональное разделение - верхний правый угол цветной, нижний левый черно-белый -->
 
 <svg
-   width="16"
-   height="16"
-   viewBox="0 0 16 16"
+    width="256"
+    height="256"
+    viewBox="0 0 16 16"
    version="1.1"
    id="svg9"
    sodipodi:docname="space_roomonoff.svg"
