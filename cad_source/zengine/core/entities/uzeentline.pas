@@ -162,10 +162,18 @@ var
   q:boolean;
   w,u,dir:gdbvertex;
   dc:TDrawContext;
+  selfLength, plLength: double;
 begin
   Result:=False;
-  if Vertexlength(CoordInWCS.lbegin,CoordInWCS.lend)<Vertexlength(
-    pl^.CoordInWCS.lbegin,pl^.CoordInWCS.lend) then begin
+
+  // Вычисляем длины обеих линий
+  selfLength := Vertexlength(CoordInWCS.lbegin, CoordInWCS.lend);
+  plLength := Vertexlength(pl^.CoordInWCS.lbegin, pl^.CoordInWCS.lend);
+
+  // Если текущая линия короче, передаём управление более длинной линии
+  // При равных длинах используем сравнение адресов для предотвращения бесконечной рекурсии
+  if (selfLength < plLength) or
+     ((abs(selfLength - plLength) < eps) and (PtrUInt(@self) < PtrUInt(pl))) then begin
     Result:=pl^.jointoline(@self,drawing);
     exit;
   end;
