@@ -602,6 +602,7 @@ procedure GlobalInterpolation(const ADegree: Integer;
   const AParams: array of Double);
 var
   size, n, i, j, spanIndex: Integer;
+  effectiveDegree: Integer;
   uk: TDoubleArray;
   knotVector: TDoubleArray;
   A, right, result: TMatrix;
@@ -617,9 +618,16 @@ begin
 
   size := Length(AThroughPoints);
 
+  // Автоматическая корректировка степени при недостаточном количестве точек
+  // Automatic degree adjustment when insufficient points
   if size <= ADegree then
-    raise Exception.CreateFmt('GlobalInterpolation: ThroughPoints size (%d) must be greater than degree (%d)',
-      [size, ADegree]);
+  begin
+    effectiveDegree := size - 1;
+    ProgramLog.LogOutFormatStr('GlobalInterpolation: Degree adjusted from %d to %d (insufficient points: %d)',
+      [ADegree, effectiveDegree, size], LM_Warning);
+  end
+  else
+    effectiveDegree := ADegree;
 
   n := size - 1;
 
@@ -644,7 +652,7 @@ begin
   // Шаг 2: Генерация вектора узлов
   // Step 2: Generate knot vector
   ProgramLog.LogOutFormatStr('GlobalInterpolation: Generating knot vector', [], LM_Info);
-  AverageKnotVector(ADegree, uk, knotVector);
+  AverageKnotVector(effectiveDegree, uk, knotVector);
 
   // Шаг 3: Построение матрицы интерполяции
   // Step 3: Build interpolation matrix
@@ -656,17 +664,17 @@ begin
     for j := 0 to size - 1 do
       A[i][j] := 0.0;
 
-  SetLength(basis, ADegree + 1);
+  SetLength(basis, effectiveDegree + 1);
 
   // Заполнение внутренних строк матрицы
   // Fill internal matrix rows
   for i := 1 to n - 1 do
   begin
-    spanIndex := GetKnotSpanIndex(ADegree, knotVector, uk[i]);
-    BasisFunctionsArray(spanIndex, ADegree, knotVector, uk[i], basis);
+    spanIndex := GetKnotSpanIndex(effectiveDegree, knotVector, uk[i]);
+    BasisFunctionsArray(spanIndex, effectiveDegree, knotVector, uk[i], basis);
 
-    for j := 0 to ADegree do
-      A[i][spanIndex - ADegree + j] := basis[j];
+    for j := 0 to effectiveDegree do
+      A[i][spanIndex - effectiveDegree + j] := basis[j];
   end;
 
   // Граничные условия: первая и последняя строки
@@ -691,7 +699,7 @@ begin
 
   // Шаг 6: Заполнение выходной структуры
   // Step 6: Fill output structure
-  ACurve.Degree := ADegree;
+  ACurve.Degree := effectiveDegree;
 
   // Инициализация вектора узлов перед использованием
   // Initialize knot vector before use
@@ -724,6 +732,7 @@ procedure GlobalInterpolation(const ADegree: Integer;
   var ACurve: TNurbsCurveData);
 var
   size, n, i, j, spanIndex: Integer;
+  effectiveDegree: Integer;
   unitTangents: array of TzePoint3d;
   knotVector: TDoubleArray;
   uk, uk2: TDoubleArray;
@@ -742,9 +751,20 @@ begin
 
   size := Length(AThroughPoints);
 
+  // Автоматическая корректировка степени при недостаточном количестве точек
+  // Automatic degree adjustment when insufficient points
   if size <= ADegree then
-    raise Exception.CreateFmt('GlobalInterpolation (tangents): ThroughPoints size (%d) must be greater than degree (%d)',
-      [size, ADegree]);
+  begin
+    effectiveDegree := size - 1;
+    // Для интерполяции с касательными минимальная степень 2
+    // For interpolation with tangents minimum degree is 2
+    if effectiveDegree < 2 then
+      effectiveDegree := 2;
+    ProgramLog.LogOutFormatStr('GlobalInterpolation (tangents): Degree adjusted from %d to %d (insufficient points: %d)',
+      [ADegree, effectiveDegree, size], LM_Warning);
+  end
+  else
+    effectiveDegree := ADegree;
 
   if Length(ATangents) <> size then
     raise Exception.CreateFmt('GlobalInterpolation (tangents): Tangents size (%d) must equal ThroughPoints size (%d)',
@@ -773,23 +793,23 @@ begin
 
   // Генерация вектора узлов в зависимости от степени
   // Generate knot vector depending on degree
-  ProgramLog.LogOutFormatStr('GlobalInterpolation (tangents): Generating knot vector for degree %d', [ADegree], LM_Info);
-  SetLength(knotVector, n + ADegree + 1);
+  ProgramLog.LogOutFormatStr('GlobalInterpolation (tangents): Generating knot vector for degree %d', [effectiveDegree], LM_Info);
+  SetLength(knotVector, n + effectiveDegree + 1);
 
-  case ADegree of
+  case effectiveDegree of
     2:
     begin
       // Случай степени 2
       // Degree 2 case
-      for i := 0 to ADegree do
+      for i := 0 to effectiveDegree do
       begin
         knotVector[i] := 0.0;
         knotVector[Length(knotVector) - 1 - i] := 1.0;
       end;
       for i := 0 to size - 2 do
       begin
-        knotVector[2 * i + ADegree] := uk[i];
-        knotVector[2 * i + ADegree + 1] := (uk[i] + uk[i + 1]) / 2.0;
+        knotVector[2 * i + effectiveDegree] := uk[i];
+        knotVector[2 * i + effectiveDegree + 1] := (uk[i] + uk[i + 1]) / 2.0;
       end;
     end;
 
@@ -797,18 +817,18 @@ begin
     begin
       // Случай степени 3 (кубический)
       // Degree 3 case (cubic)
-      for i := 0 to ADegree do
+      for i := 0 to effectiveDegree do
       begin
         knotVector[i] := 0.0;
         knotVector[Length(knotVector) - 1 - i] := 1.0;
       end;
       for i := 1 to size - 2 do
       begin
-        knotVector[ADegree + 2 * i] := (2 * uk[i] + uk[i + 1]) / 3.0;
-        knotVector[ADegree + 2 * i + 1] := (uk[i] + 2 * uk[i + 1]) / 3.0;
+        knotVector[effectiveDegree + 2 * i] := (2 * uk[i] + uk[i + 1]) / 3.0;
+        knotVector[effectiveDegree + 2 * i + 1] := (uk[i] + 2 * uk[i + 1]) / 3.0;
       end;
       knotVector[4] := uk[1] / 2.0;
-      knotVector[Length(knotVector) - ADegree - 2] := (uk[size - 1] + 1.0) / 2.0;
+      knotVector[Length(knotVector) - effectiveDegree - 2] := (uk[size - 1] + 1.0) / 2.0;
     end;
 
     else
@@ -822,7 +842,7 @@ begin
         uk2[2 * i + 1] := (uk[i] + uk[i + 1]) / 2.0;
       end;
       uk2[Length(uk2) - 2] := (uk2[Length(uk2) - 1] + uk2[Length(uk2) - 3]) / 2.0;
-      AverageKnotVector(ADegree, uk2, knotVector);
+      AverageKnotVector(effectiveDegree, uk2, knotVector);
     end;
   end;
 
@@ -836,20 +856,20 @@ begin
     for j := 0 to n - 1 do
       A[i][j] := 0.0;
 
-  SetLength(basis, ADegree + 1);
+  SetLength(basis, effectiveDegree + 1);
 
   // Заполнение внутренних строк (позиции и производные)
   // Fill internal rows (positions and derivatives)
   for i := 1 to size - 2 do
   begin
-    spanIndex := GetKnotSpanIndex(ADegree, knotVector, uk[i]);
-    BasisFunctionsArray(spanIndex, ADegree, knotVector, uk[i], basis);
-    derBasis := BasisFunctionsDerivatives(spanIndex, ADegree, 1, knotVector, uk[i]);
+    spanIndex := GetKnotSpanIndex(effectiveDegree, knotVector, uk[i]);
+    BasisFunctionsArray(spanIndex, effectiveDegree, knotVector, uk[i], basis);
+    derBasis := BasisFunctionsDerivatives(spanIndex, effectiveDegree, 1, knotVector, uk[i]);
 
-    for j := 0 to ADegree do
+    for j := 0 to effectiveDegree do
     begin
-      A[2 * i][spanIndex - ADegree + j] := basis[j];
-      A[2 * i + 1][spanIndex - ADegree + j] := derBasis[1][j];
+      A[2 * i][spanIndex - effectiveDegree + j] := basis[j];
+      A[2 * i + 1][spanIndex - effectiveDegree + j] := derBasis[1][j];
     end;
   end;
 
@@ -878,8 +898,8 @@ begin
 
   // Специальные граничные условия
   // Special boundary conditions
-  d0 := knotVector[ADegree + 1] / ADegree;
-  dn := (1.0 - knotVector[Length(knotVector) - ADegree - 2]) / ADegree;
+  d0 := knotVector[effectiveDegree + 1] / effectiveDegree;
+  dn := (1.0 - knotVector[Length(knotVector) - effectiveDegree - 2]) / effectiveDegree;
 
   right[1][0] := d0 * unitTangents[0].x * d * ATangentFactor;
   right[1][1] := d0 * unitTangents[0].y * d * ATangentFactor;
@@ -900,7 +920,7 @@ begin
 
   // Заполнение выходной структуры
   // Fill output structure
-  ACurve.Degree := ADegree;
+  ACurve.Degree := effectiveDegree;
 
   // Инициализация вектора узлов перед использованием
   // Initialize knot vector before use
