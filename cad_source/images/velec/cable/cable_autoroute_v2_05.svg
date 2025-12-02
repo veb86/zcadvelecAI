@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Иконка автопрокладки кабеля - улучшенный вариант 5 -->
+<!-- Большой штекер, большая буква А, дополнительные разрывы кабеля -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   width="256"
+   height="256"
+   viewBox="0 0 256 256"
+   version="1.1"
+   id="svg_cable_v2_05">
+  <defs id="defs5" />
+  <metadata id="metadata5">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Cable Auto-routing Icon - Improved Version 5</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+
+  <!-- Кабель Уроборос с тремя сегментами и разрывами -->
+  <!-- Левый сегмент (от 150° до 270°) -->
+  <path
+     d="M 50.5,95 A 90,90 0 0 0 38,128 A 90,90 0 0 0 95,205.5"
+     style="fill:none;stroke:#20A8FF;stroke-width:20;stroke-opacity:1;stroke-linecap:round" />
+
+  <!-- Нижний сегмент (от 270° до 30°) -->
+  <path
+     d="M 95,205.5 A 90,90 0 0 0 161,205.5"
+     style="fill:none;stroke:#20A8FF;stroke-width:20;stroke-opacity:1;stroke-linecap:round" />
+
+  <!-- Правый сегмент (от 30° до 150°) -->
+  <path
+     d="M 161,205.5 A 90,90 0 0 0 218,128 A 90,90 0 0 0 205.5,95"
+     style="fill:none;stroke:#20A8FF;stroke-width:20;stroke-opacity:1;stroke-linecap:round" />
+
+  <!-- Внутренний декоративный круг -->
+  <circle
+     cx="128"
+     cy="128"
+     r="68"
+     style="fill:none;stroke:#20A8FF;stroke-width:6;stroke-opacity:0.2" />
+
+  <!-- Электрический штекер (крупный, сбалансированный) -->
+  <g id="plug" transform="translate(128, 24)">
+    <!-- Основание штекера -->
+    <rect
+       x="-30"
+       y="0"
+       width="60"
+       height="45"
+       rx="5.5"
+       style="fill:#008C00;stroke:#006600;stroke-width:3.2" />
+
+    <!-- Контакты штекера (четко разделенные) -->
+    <rect
+       x="-21"
+       y="-19"
+       width="12"
+       height="24"
+       rx="2.2"
+       style="fill:#006600" />
+    <rect
+       x="9"
+       y="-19"
+       width="12"
+       height="24"
+       rx="2.2"
+       style="fill:#006600" />
+
+    <!-- Соединительная часть с кабелем -->
+    <rect
+       x="-16"
+       y="45"
+       width="32"
+       height="19"
+       rx="3.5"
+       style="fill:#008C00;opacity:0.8" />
+
+    <!-- Декоративные линии на штекере -->
+    <rect
+       x="-26"
+       y="15"
+       width="52"
+       height="3"
+       style="fill:#006600;opacity:0.4" />
+    <rect
+       x="-26"
+       y="28"
+       width="52"
+       height="3"
+       style="fill:#006600;opacity:0.4" />
+  </g>
+
+  <!-- Буква А в центре (крупная) -->
+  <text
+     x="128"
+     y="140"
+     style="font-style:normal;font-weight:bold;font-size:100px;font-family:sans-serif;text-align:center;text-anchor:middle;dominant-baseline:central;fill:#BE0000;fill-opacity:1">A</text>
+</svg>

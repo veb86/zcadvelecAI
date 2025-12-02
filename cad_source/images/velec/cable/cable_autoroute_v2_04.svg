@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Иконка автопрокладки кабеля - улучшенный вариант 4 -->
+<!-- Очень крупный штекер, маленькая буква А, узкий разрыв -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   width="256"
+   height="256"
+   viewBox="0 0 256 256"
+   version="1.1"
+   id="svg_cable_v2_04">
+  <defs id="defs4" />
+  <metadata id="metadata4">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Cable Auto-routing Icon - Improved Version 4</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+
+  <!-- Кабель Уроборос с узким разрывом для крупного штекера -->
+  <path
+     d="M 58,78 A 90,90 0 1 1 198,78"
+     style="fill:none;stroke:#20A8FF;stroke-width:19;stroke-opacity:1;stroke-linecap:round" />
+
+  <!-- Внутренний декоративный круг -->
+  <circle
+     cx="128"
+     cy="128"
+     r="71"
+     style="fill:none;stroke:#20A8FF;stroke-width:5;stroke-opacity:0.22" />
+
+  <!-- Электрический штекер (очень крупный) -->
+  <g id="plug" transform="translate(128, 22)">
+    <!-- Основание штекера -->
+    <rect
+       x="-32"
+       y="0"
+       width="64"
+       height="48"
+       rx="6"
+       style="fill:#008C00;stroke:#006600;stroke-width:3.5" />
+
+    <!-- Контакты штекера (максимально увеличено расстояние) -->
+    <rect
+       x="-23"
+       y="-20"
+       width="13"
+       height="25"
+       rx="2.5"
+       style="fill:#006600" />
+    <rect
+       x="10"
+       y="-20"
+       width="13"
+       height="25"
+       rx="2.5"
+       style="fill:#006600" />
+
+    <!-- Соединительная часть с кабелем -->
+    <rect
+       x="-18"
+       y="48"
+       width="36"
+       height="20"
+       rx="4"
+       style="fill:#008C00;opacity:0.8" />
+
+    <!-- Дополнительная деталь штекера для объема -->
+    <rect
+       x="-28"
+       y="10"
+       width="56"
+       height="8"
+       style="fill:#006600;opacity:0.3" />
+  </g>
+
+  <!-- Буква А в центре (маленькая) -->
+  <text
+     x="128"
+     y="138"
+     style="font-style:normal;font-weight:bold;font-size:68px;font-family:sans-serif;text-align:center;text-anchor:middle;dominant-baseline:central;fill:#BE0000;fill-opacity:1">A</text>
+</svg>
