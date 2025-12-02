@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Types, laz.VirtualTrees, uzcdrawing, uzcdrawings, uzcinterface,
   Dialogs, ExtCtrls, ActnList, ComCtrls, Windows, fgl, Menus,
-  uzvelaccessdbcontrol, uzvmcmanager, uzvmcstruct, uzvmcdrawing, gvector, uzccablemanager, uzcentcable, uzeentdevice, gzctnrVectorTypes, uzcvariablesutils, uzccommandsabstract, uzeentity, uzeentblockinsert, varmandef, uzeconsts, uzvvstdevpopulator, uzvmcdevtoexcel, uzvmcphaseoptimizer;
+  uzvelaccessdbcontrol, uzvmcmanager, uzvmcstruct, uzvmcdrawing, gvector, uzccablemanager, uzcentcable, uzeentdevice, gzctnrVectorTypes, uzcvariablesutils, uzccommandsabstract, uzeentity, uzeentblockinsert, varmandef, uzeconsts, uzvvstdevpopulator, uzvmcdevtoexcel, uzvmcphaseoptimizer, uzvdevstatspanel;
 
 type
 
@@ -64,6 +64,7 @@ type
     FPendingClickNode: PVirtualNode; // Нода, ожидающая обработки одинарного щелчка
     FPendingClickColumn: TColumnIndex; // Колонка, ожидающая обработки одинарного щелчка
     FCurrentFilterPath: string; // Текущий путь фильтрации для vstDev (для сохранения состояния после оптимизации)
+    FStatisticsPanel: TDeviceStatisticsPanel; // Панель статистики устройств
     procedure InitializeActionAndButton; // Инициализация действий и кнопок панели инструментов
     procedure InitializePanels;          // Инициализация и настройка панелей интерфейса
     procedure InitializeContainerPopupMenu; // Инициализация popup menu для контейнеров
@@ -87,6 +88,7 @@ type
     procedure AddPathToTree(ParentNode: PVirtualNode; const Path: string); // Рекурсивное добавление пути в дерево
     function FindOrCreateChild(ParentNode: PVirtualNode; const HDWay,NodeName: string): PVirtualNode; // Поиск или создание дочернего узла
     function GetNodePhysicalPath(Node: PVirtualNode): string; // Получение полного пути узла от корня
+    function GetFilteredDevicesList(const filterPath: string): TListVElectrDevStruct; // Получение отфильтрованного списка устройств
 
      procedure CurrentSelActionExecute(Sender: TObject); // Экспорт выбранных устройств в Access
      procedure CurrentSelSQLiteActionExecute(Sender: TObject); // Экспорт выбранных устройств в SQLite
@@ -156,9 +158,15 @@ begin
     FDeviceTree.Align := alClient;
     FDeviceTree.NodeDataSize := SizeOf(Pointer);
 
+    // Создаем и настраиваем панель статистики
+    FStatisticsPanel := TDeviceStatisticsPanel.Create(Self);
+    FStatisticsPanel.Parent := PanelData;
+    FStatisticsPanel.Align := alTop;
+    FStatisticsPanel.Visible := False; // Скрыта по умолчанию
+
     // Настраиваем виртуальную таблицу устройств
     vstDev.Parent := PanelData;
-    vstDev.Align := alTop;
+    vstDev.Align := alClient; // Изменено с alTop на alClient, чтобы занять оставшееся пространство
     vstDev.NodeDataSize := SizeOf(TGridNodeData);
 
 
@@ -1000,6 +1008,10 @@ begin
   if Assigned(FContainerPopupMenu) then
     FContainerPopupMenu.Free;
 
+  // Освобождаем панель статистики
+  if Assigned(FStatisticsPanel) then
+    FStatisticsPanel.Free;
+
   // Освобождаем список устройств
   if Assigned(FDevicesList) then
     FDevicesList.Free;
@@ -1196,13 +1208,45 @@ begin
   end;
 end;
 
+// Получение отфильтрованного списка устройств по пути
+// filterPath - путь иерархии для фильтрации (пустая строка = все устройства)
+// Возвращает новый список устройств, содержащий только устройства с указанным путём
+function TVElectrNav.GetFilteredDevicesList(const filterPath: string): TListVElectrDevStruct;
+var
+  i: Integer;
+  device: TVElectrDevStruct;
+begin
+  Result := TListVElectrDevStruct.Create;
+
+  // Если путь пустой, возвращаем все устройства
+  if Trim(filterPath) = '' then
+  begin
+    for i := 0 to FDevicesList.Size - 1 do
+      Result.PushBack(FDevicesList[i]);
+  end
+  else
+  begin
+    // Фильтруем устройства по pathHD
+    for i := 0 to FDevicesList.Size - 1 do
+    begin
+      device := FDevicesList[i];
+      // Проверяем, что pathHD начинается с filterPath
+      if (Pos(filterPath, device.pathHD) = 1) then
+        Result.PushBack(device);
+    end;
+  end;
+end;
+
 // Обработчик клика по узлу дерева
 // Фильтрует таблицы vstDev и newVST по выбранному пути иерархии
+// Обновляет панель статистики с агрегированной информацией об устройствах
 procedure TVElectrNav.TreeClick(Sender: TObject);
 var
   Node: PVirtualNode;
   Data: PNodeData;
   filterPath: string;
+  filteredDevices: TListVElectrDevStruct;
+  nodeName: string;
 begin
   Node := FDeviceTree.GetFirstSelected;
 
@@ -1213,17 +1257,32 @@ begin
     begin
       // Если выбран корневой узел "Все устройства", показываем все устройства
       if Data^.DeviceName <> 'Все устройства' then
-        filterPath := GetNodePhysicalPath(Node)
+      begin
+        filterPath := GetNodePhysicalPath(Node);
+        nodeName := Data^.DeviceName;
+      end
       else
+      begin
         filterPath := '';
+        nodeName := 'Все устройства';
+      end;
 
-      // Фильтруем обе таблицы
+      // Фильтруем таблицу vstDev
       recordingVstDev(filterPath);
+
+      // Обновляем панель статистики
+      filteredDevices := GetFilteredDevicesList(filterPath);
+      try
+        FStatisticsPanel.UpdateStatistics(filteredDevices, nodeName);
+      finally
+        filteredDevices.Free;
+      end;
     end
     else
     begin
       // Если данных нет, показываем все устройства
       recordingVstDev('');
+      FStatisticsPanel.Hide;
     end;
   end;
 end;
