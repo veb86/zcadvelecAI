@@ -1,0 +1,267 @@
+================================================================================
+ER-ДИАГРАММА БАЗЫ ДАННЫХ УСТРОЙСТВ
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ОБЩАЯ СТРУКТУРА                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              ┌──────────────┐
+                              │ Categories   │
+                              │──────────────│
+                              │ id (PK)      │
+                              │ name         │
+                              │ code         │
+                              │ description  │
+                              └──────┬───────┘
+                                     │ 1
+                                     │
+                                     │ N
+                              ┌──────▼───────┐
+                              │ DeviceTypes  │
+                              │──────────────│
+                              │ id (PK)      │
+                              │ category_id  │
+                              │ name         │
+                              │ code         │
+                              └──────┬───────┘
+                                     │ 1
+                                     │
+                          ┌──────────┴──────────┐
+                          │ N                   │ 1
+                   ┌──────▼───────┐      ┌──────▼──────────────┐
+                   │ Devices      │      │ ParameterDefinitions│
+                   │──────────────│      │─────────────────────│
+                   │ id (PK)      │      │ id (PK)             │
+                   │ device_type  │      │ device_type_id      │
+                   │ manufacturer │      │ name                │
+                   │ model        │      │ code                │
+                   │ rated_voltage│      │ data_type           │
+                   │ rated_current│      │ unit                │
+                   │ ...          │      └──────┬──────────────┘
+                   └──────┬───────┘             │ 1
+                          │ 1                   │
+                          │                     │
+                          │                     │ N
+                          │              ┌──────▼─────────┐
+                          │              │ DeviceParameters│
+                          │              │─────────────────│
+                          │              │ id (PK)        │
+                          └──────────────┤ device_id      │
+                                     N   │ parameter_def  │
+                                         │ value_text     │
+                                         │ value_numeric  │
+                                         │ value_boolean  │
+                                         └────────────────┘
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ВАРИАНТЫ И СОВМЕСТИМОСТЬ                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              ┌──────────────┐
+                              │ Devices      │
+                              │──────────────│
+                              │ id (PK)      │
+                              └──────┬───────┘
+                                     │ 1
+                                     │
+              ┌──────────────────────┼──────────────────────┐
+              │ N                    │ N                    │ N
+       ┌──────▼────────┐      ┌──────▼─────────┐    ┌──────▼──────────┐
+       │DeviceVariants │      │DeviceCompatibility│    │DeviceCompatibility│
+       │───────────────│      │───────────────────│    │───────────────────│
+       │id (PK)        │      │device_id (FK1)   │    │compatible_device_id│
+       │parent_device  │      │compatible_device │    │(FK2)               │
+       │variant_name   │      │compatibility_type │    └────────────────────┘
+       │part_number    │      └───────────────────┘
+       │price_modifier │
+       └───────┬───────┘
+               │ 1
+               │
+               │ N
+       ┌───────▼────────────┐
+       │VariantParameters   │
+       │────────────────────│
+       │id (PK)             │
+       │variant_id          │
+       │parameter_def_id    │
+       │value_*             │
+       └────────────────────┘
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ПРИМЕР ДАННЫХ                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Categories
+├── Электроаппараты (ELAPP)
+│   └── DeviceTypes
+│       ├── Автоматические выключатели (BREAKER)
+│       │   └── Devices
+│       │       ├── ABB S203 C16
+│       │       │   └── Parameters
+│       │       │       ├── trip_current = 16 А
+│       │       │       ├── trip_curve = "C"
+│       │       │       ├── breaking_capacity = 6 кА
+│       │       │       └── poles_count = 3
+│       │       ├── Schneider iC60N C16
+│       │       └── IEK ВА47-29 C16
+│       ├── УЗО (RCD)
+│       └── Контакторы (CONTACTOR)
+│
+└── Кабельная продукция (CABLES)
+    └── DeviceTypes
+        ├── Кабель силовой (CABLE_POWER)
+        │   └── Devices
+        │       └── ВВГнг(А)-LS 3х2.5
+        │           └── Parameters
+        │               ├── core_count = 3
+        │               ├── core_cross_section = 2.5 мм²
+        │               ├── continuous_current = 25 А
+        │               ├── insulation_type = "ПВХ"
+        │               └── core_material = "Медь"
+        └── Кабель контрольный (CABLE_CONTROL)
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ОСНОВНЫЕ ЗАПРОСЫ                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. Получить все устройства категории:
+   ────────────────────────────────────
+   SELECT d.* FROM Devices d
+   JOIN DeviceTypes dt ON d.device_type_id = dt.id
+   JOIN Categories c ON dt.category_id = c.id
+   WHERE c.code = 'ELAPP';
+
+
+2. Найти автоматы на определенный ток:
+   ────────────────────────────────────
+   SELECT * FROM v_DeviceFullInfo
+   WHERE device_type_code = 'BREAKER'
+     AND rated_current = 16;
+
+
+3. Получить все параметры устройства:
+   ────────────────────────────────────
+   SELECT * FROM v_DeviceParametersComplete
+   WHERE device_id = 1;
+
+
+4. Полнотекстовый поиск:
+   ────────────────────────────────────
+   SELECT d.* FROM DeviceSearch ds
+   JOIN Devices d ON ds.device_id = d.id
+   WHERE DeviceSearch MATCH 'ABB AND 16';
+
+
+5. Найти совместимые устройства:
+   ────────────────────────────────────
+   SELECT d2.* FROM DeviceCompatibility dc
+   JOIN Devices d2 ON dc.compatible_device_id = d2.id
+   WHERE dc.device_id = 7
+     AND dc.compatibility_type = 'cable-breaker';
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ИНДЕКСЫ (для производительности)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Devices:
+  - idx_devices_type (device_type_id)
+  - idx_devices_manufacturer (manufacturer)
+  - idx_devices_model (model)
+  - idx_devices_current (rated_current)
+  - idx_devices_voltage (rated_voltage)
+
+DeviceTypes:
+  - idx_device_types_category (category_id)
+
+DeviceParameters:
+  - idx_device_params_device (device_id)
+  - idx_device_params_param (parameter_def_id)
+
+ParameterDefinitions:
+  - idx_param_defs_type (device_type_id)
+  - idx_param_defs_code (code)
+
+DeviceCompatibility:
+  - idx_compat_device (device_id)
+  - idx_compat_compatible (compatible_device_id)
+
+DeviceVariants:
+  - idx_variants_parent (parent_device_id)
+
+DeviceSearch:
+  - FTS5 индекс для полнотекстового поиска
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ТРИГГЕРЫ (автоматизация)                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. Обновление временных меток (updated_at):
+   - update_devices_timestamp
+   - update_categories_timestamp
+   - update_device_types_timestamp
+   - update_device_params_timestamp
+
+2. Синхронизация полнотекстового поиска:
+   - devices_ai (AFTER INSERT)
+   - devices_au (AFTER UPDATE)
+   - devices_ad (AFTER DELETE)
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ПРЕДСТАВЛЕНИЯ (Views)                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. v_DeviceFullInfo
+   - Полная информация об устройстве с категорией и типом
+
+2. v_DeviceParametersComplete
+   - Параметры устройства с определениями и форматированием
+
+3. v_CategoryHierarchy
+   - Иерархия категорий и типов с подсчетом устройств
+
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         РАСШИРЯЕМОСТЬ                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Добавление нового типа устройства (например, "Контроллеры"):
+
+1. Добавить категорию (если нужно):
+   INSERT INTO Categories (name, code) VALUES ('Автоматика', 'AUTO');
+
+2. Добавить тип устройства:
+   INSERT INTO DeviceTypes (category_id, name, code)
+   VALUES (4, 'Контроллеры', 'CONTROLLER');
+
+3. Определить параметры:
+   INSERT INTO ParameterDefinitions (device_type_id, name, code, data_type, unit)
+   VALUES
+   (10, 'Количество входов', 'inputs_count', 'INTEGER', 'шт'),
+   (10, 'Количество выходов', 'outputs_count', 'INTEGER', 'шт'),
+   (10, 'Протокол связи', 'protocol', 'TEXT', '');
+
+4. Добавить устройства:
+   INSERT INTO Devices (device_type_id, manufacturer, model, ...)
+   VALUES (10, 'Siemens', 'LOGO! 8', ...);
+
+5. Заполнить параметры:
+   INSERT INTO DeviceParameters (device_id, parameter_def_id, value_numeric)
+   VALUES (100, 1, 8), (100, 2, 4);
+
+Все! Новый тип устройства готов к использованию.
+
+================================================================================
