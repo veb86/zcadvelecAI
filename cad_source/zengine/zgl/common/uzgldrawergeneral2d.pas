@@ -596,16 +596,18 @@ begin
   inc(mstackindex);
   mstack[mstackindex]:=matr;
   if FromOneMatrix then
-    matr:=OneMatrix;
-  matr:=MatrixMultiply(matr,Transform);
+    matr:=Transform
+  else
+    matr:=MatrixMultiply(matr,Transform);
 end;
 procedure TZGLGeneral2DDrawer.pushMatrixAndSetTransform(const Transform:TzeTypedMatrix4s;FromOneMatrix:Boolean=False);
 begin
   inc(mstackindex);
   mstack[mstackindex]:=matr;
   if FromOneMatrix then
-    matr:=OneMatrix;
-  matr:=MatrixMultiply(matr,Transform);
+    matr:=Transform
+  else
+    matr:=MatrixMultiply(matr,Transform);
 end;
 procedure TZGLGeneral2DDrawer.popMatrix;
 begin
