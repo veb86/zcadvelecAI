@@ -229,6 +229,8 @@ extern "C" {
         double* out_knots,
         int max_count);
 
+    LNLIB_EXPORT void nurbs_curve_destroy(LN_NurbsCurve_C* curve);
+
 #ifdef __cplusplus
 
 }

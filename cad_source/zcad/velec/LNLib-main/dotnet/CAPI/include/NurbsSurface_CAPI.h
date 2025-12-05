@@ -186,6 +186,8 @@ extern "C" {
         int resolution_v,
         int use_delaunay);
 
+    LNLIB_EXPORT void nurbs_surface_destroy(LN_NurbsSurface_C* surface);
+
 #ifdef __cplusplus
 }
 #endif
