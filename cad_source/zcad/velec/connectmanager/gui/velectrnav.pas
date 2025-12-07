@@ -82,6 +82,8 @@ type
       var InitialStates: TVirtualNodeInitStates);
     procedure TreeFreeNode(Sender: TBaseVirtualTree; Node: PVirtualNode);
     procedure TreeClick(Sender: TObject); // Обработчик клика по дереву - фильтрует vstDev по выбранному узлу
+    procedure TreeMouseUp(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer); // Обработчик отпускания кнопки мыши - более надежное определение клика (особенно у границ формы)
     procedure AddAction(AName, ACaption: string; AImageIndex: string;
   AHint, AShortCut: string; AEvent: TNotifyEvent); // Создание действия и добавление в ActionList
     procedure AddPathToTree(ParentNode: PVirtualNode; const Path: string); // Рекурсивное добавление пути в дерево
@@ -335,6 +337,7 @@ begin
     FDeviceTree.OnInitNode := @TreeInitNode;
     FDeviceTree.OnFreeNode := @TreeFreeNode;
     FDeviceTree.OnClick := @TreeClick;
+    FDeviceTree.OnMouseUp := @TreeMouseUp; // Для надежного определения кликов у границ формы
 
     // Шаг 5: Построение дерева на основе pathHD из FDevicesList
     InitializeDeviceTree;
@@ -1225,6 +1228,39 @@ begin
       // Если данных нет, показываем все устройства
       recordingVstDev('');
     end;
+  end;
+end;
+
+// Обработчик отпускания кнопки мыши на дереве устройств
+// Используется для надежного определения кликов, особенно когда узлы находятся
+// у границ формы. OnClick не всегда срабатывает корректно при клике на последнюю
+// ноду рядом с границей, поэтому используем OnMouseUp с явным hit-тестированием.
+// Исправляет issue #352: клик на последнюю ноду у границы не заполнял vstDev
+procedure TVElectrNav.TreeMouseUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+var
+  Node: PVirtualNode;
+  HitInfo: THitInfo;
+begin
+  // Обрабатываем только левую кнопку мыши
+  if Button <> mbLeft then Exit;
+
+  // Получаем узел в позиции клика с помощью hit-тестирования
+  FDeviceTree.GetHitTestInfoAt(X, Y, True, HitInfo);
+
+  // Проверяем, что клик был по узлу
+  if Assigned(HitInfo.HitNode) then
+  begin
+    Node := HitInfo.HitNode;
+
+    // Явно устанавливаем выделение на кликнутый узел
+    // Это важно для корректной работы у границ формы
+    FDeviceTree.ClearSelection;
+    FDeviceTree.Selected[Node] := True;
+    FDeviceTree.FocusedNode := Node;
+
+    // Вызываем общую логику фильтрации (как в TreeClick)
+    TreeClick(Sender);
   end;
 end;
 
