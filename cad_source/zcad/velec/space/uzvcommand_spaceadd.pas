@@ -54,56 +54,6 @@ var
 
 implementation
 
-
-
-{**Процедура добавления переменных к примитиву из структуры операндов
-   @param(APEnt - указатель на примитив)
-   @param(operandsStruct - структура с разобранными операндами)}
-procedure AddVariablesFromStruct(
-  APEnt: PGDBObjEntity;
-  const operandsStruct: TOperandsStruct);
-var
-  VarExt: TVariablesExtender;
-  i: integer;
-  vd: vardesk;
-  paramInfo: TParamInfo;
-begin
-  // Получаем расширение переменных
-  // Get variables extension
-  VarExt := APEnt^.GetExtension<TVariablesExtender>;
-  if VarExt = nil then
-    exit;
-
-  // Добавляем все переменные из структуры
-  // Add all variables from structure
-  if operandsStruct.listParam <> nil then
-  for i := 0 to operandsStruct.listParam.Size - 1 do begin
-    paramInfo := operandsStruct.listParam[i];
-
-    // Проверяем существует ли уже переменная
-    // Check if variable already exists
-    if VarExt.entityunit.FindVariable(paramInfo.varname) = nil then begin
-      // Создаем и добавляем переменную
-      // Create and add the variable
-      VarExt.entityunit.setvardesc(
-        vd,
-        paramInfo.varname,
-        paramInfo.username,
-        paramInfo.typename
-      );
-      VarExt.entityunit.InterfaceVariables.createvariable(vd.Name, vd);
-
-      zcUI.TextMessage(
-        'Добавлена переменная / Variable added: ' +
-        paramInfo.varname +
-        ' (' + paramInfo.username + ') : ' +
-        paramInfo.typename,
-        TMWOHistoryOut
-      );
-    end;
-  end;
-end;
-
 {**Функция добавления расширений к прямоугольнику на разных стадиях настройки
    Использует глобальную структуру gOperandsStruct для получения параметров.
    @param(AStage - стадия настройки примитива)

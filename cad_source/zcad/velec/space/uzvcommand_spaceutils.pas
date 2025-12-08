@@ -33,7 +33,10 @@ uses
   uzcinterface,           // Interface utilities / Утилиты интерфейса
   uzcdrawings,            // Drawings manager / Менеджер чертежей
   uzestyleslayers,        // Layer management / Управление слоями
-  uzbtypes;
+  uzbtypes,
+  uzeentity,              // Entity types / Типы примитивов
+  uzcEnitiesVariablesExtender,  // Variables extender / Расширение переменных
+  varmandef;              // Variable manager definitions / Определения менеджера переменных
 
 type
   {** Структура для хранения одного параметра команды
@@ -92,6 +95,15 @@ function FindLayerByName(const layerName: string): PGDBLayerProp;
 function GetOrCreateLayer(
   const layerName: string;
   colorIndex: Integer): PGDBLayerProp;
+
+{** Процедура добавления переменных к примитиву из структуры операндов
+    Добавляет переменные к примитиву на основе списка параметров из структуры.
+    Проверяет существование переменных перед добавлением.
+    @param(APEnt - указатель на примитив)
+    @param(operandsStruct - структура с разобранными операндами)}
+procedure AddVariablesFromStruct(
+  APEnt: PGDBObjEntity;
+  const operandsStruct: TOperandsStruct);
 
 implementation
 
@@ -271,6 +283,52 @@ begin
       TLOLoad              // load mode / режим загрузки
     );
     zcUI.TextMessage('Создан слой / Layer created: ' + layerName, TMWOHistoryOut);
+  end;
+end;
+
+{** Процедура добавления переменных к примитиву из структуры операндов}
+procedure AddVariablesFromStruct(
+  APEnt: PGDBObjEntity;
+  const operandsStruct: TOperandsStruct);
+var
+  VarExt: TVariablesExtender;
+  i: integer;
+  vd: vardesk;
+  paramInfo: TParamInfo;
+begin
+  // Получаем расширение переменных
+  // Get variables extension
+  VarExt := APEnt^.GetExtension<TVariablesExtender>;
+  if VarExt = nil then
+    exit;
+
+  // Добавляем все переменные из структуры
+  // Add all variables from structure
+  if operandsStruct.listParam <> nil then
+  for i := 0 to operandsStruct.listParam.Size - 1 do begin
+    paramInfo := operandsStruct.listParam[i];
+
+    // Проверяем существует ли уже переменная
+    // Check if variable already exists
+    if VarExt.entityunit.FindVariable(paramInfo.varname) = nil then begin
+      // Создаем и добавляем переменную
+      // Create and add the variable
+      VarExt.entityunit.setvardesc(
+        vd,
+        paramInfo.varname,
+        paramInfo.username,
+        paramInfo.typename
+      );
+      VarExt.entityunit.InterfaceVariables.createvariable(vd.Name, vd);
+
+      zcUI.TextMessage(
+        'Добавлена переменная / Variable added: ' +
+        paramInfo.varname +
+        ' (' + paramInfo.username + ') : ' +
+        paramInfo.typename,
+        TMWOHistoryOut
+      );
+    end;
   end;
 end;
 
