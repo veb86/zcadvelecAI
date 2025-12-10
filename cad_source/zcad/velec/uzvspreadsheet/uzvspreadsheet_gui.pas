@@ -141,6 +141,26 @@ uses
   uzcinterface,
   uzvspreadsheet_cmdundoredo;
 
+{ Вспомогательная функция: преобразует координаты ячейки в строковое представление (A1, B2, и т.д.) }
+function GetCellString(ARow, ACol: Cardinal): string;
+var
+  col: Cardinal;
+  colStr: string;
+begin
+  // Преобразование номера столбца в буквенное обозначение (0 -> A, 1 -> B, ... , 25 -> Z, 26 -> AA, и т.д.)
+  col := ACol;
+  colStr := '';
+  repeat
+    colStr := Chr(Ord('A') + (col mod 26)) + colStr;
+    if col < 26 then
+      break;
+    col := (col div 26) - 1;
+  until False;
+
+  // Формирование полного адреса ячейки (например, A1, B2, AA10)
+  Result := colStr + IntToStr(ARow + 1);  // +1 потому что строки нумеруются с 1, а не с 0
+end;
+
 { TuzvSpreadsheetForm }
 
 procedure TuzvSpreadsheetForm.DoCreate;
