@@ -375,11 +375,14 @@ begin
   row := aRow - FWorksheetGrid.FixedRows;
   col := aCol - FWorksheetGrid.FixedCols;
 
+  // Если начинаем редактировать другую ячейку, сбрасываем флаг
+  if (row <> FEditingRow) or (col <> FEditingCol) then
+    FUndoSavedForCurrentEdit := False;
+
   // Запоминаем координаты редактируемой ячейки
   FEditingCell := True;
   FEditingRow := row;
   FEditingCol := col;
-  FUndoSavedForCurrentEdit := False;
 
   // Сохраняем текущее значение ячейки для последующего сравнения
   FOldCellValue := '';
@@ -433,9 +436,11 @@ begin
     end;
   end;
 
-  // Сбрасываем флаги редактирования
+  // Сбрасываем флаг редактирования
+  // Примечание: FUndoSavedForCurrentEdit НЕ сбрасывается здесь,
+  // чтобы предотвратить создание дубликатов undo при последующих вызовах ApplyCellContent
+  // для той же ячейки. Флаг будет сброшен при начале редактирования другой ячейки.
   FEditingCell := False;
-  FUndoSavedForCurrentEdit := False;
 
   // Обновляем информацию о ячейке в панели редактирования
   UpdateCellInfo;
