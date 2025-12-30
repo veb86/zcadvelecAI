@@ -85,6 +85,14 @@ type
       out AValues: array of Variant
     ): Boolean;
 
+    // Создать копию массива значений
+    function CreateValuesCopy(
+      const AValues: array of Variant
+    ): PVariantArray;
+
+    // Освободить массивы значений из списка пакета
+    procedure FreeBatchData(ABatchData: TList);
+
   public
     constructor Create(
       AConnection: TAccessConnection;
@@ -331,6 +339,37 @@ begin
   end;
 end;
 
+function TExportExecutor.CreateValuesCopy(
+  const AValues: array of Variant
+): PVariantArray;
+var
+  i: Integer;
+begin
+  // Выделяем память для нового массива
+  New(Result);
+  SetLength(Result^, Length(AValues));
+
+  // Копируем значения
+  for i := 0 to High(AValues) do
+  begin
+    Result^[i] := AValues[i];
+  end;
+end;
+
+procedure TExportExecutor.FreeBatchData(ABatchData: TList);
+var
+  i: Integer;
+begin
+  // Освобождаем все выделенные массивы в списке
+  for i := 0 to ABatchData.Count - 1 do
+  begin
+    if ABatchData[i] <> nil then
+    begin
+      Dispose(PVariantArray(ABatchData[i]));
+    end;
+  end;
+end;
+
 function TExportExecutor.ExtractValues(
   AEntity: Pointer;
   AInstructions: TExportInstructions;
@@ -516,8 +555,9 @@ begin
 
               Inc(Result.RowsProcessed);
 
-              // Добавляем в пакет
-              batchData.Add(@values);
+              // Создаём копию массива значений для текущего устройства
+              // чтобы каждое устройство имело свой собственный набор данных
+              batchData.Add(CreateValuesCopy(values));
 
               // Вставляем пакет при достижении размера батча
               if (batchData.Count >= FBatchSize) or (i = entities.Count - 1) then
@@ -529,6 +569,8 @@ begin
                   Inc(Result.RowsInserted, inserted);
                 end;
 
+                // Освобождаем память выделенную для массивов в пакете
+                FreeBatchData(batchData);
                 batchData.Clear;
               end;
 
@@ -541,6 +583,8 @@ begin
                 );
             end;
           finally
+            // Освобождаем оставшиеся массивы, если они есть
+            FreeBatchData(batchData);
             batchData.Free;
           end;
         end;
