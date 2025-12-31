@@ -26,6 +26,10 @@ interface
 uses
   SysUtils, Classes, Variants, gvector;
 
+const
+  // Ключ для перечисления параметров в setcolumn
+  LOOP_NUMBER_KEY = '<lnum>';
+
 type
   // Уровни логирования
   TLogLevel = (

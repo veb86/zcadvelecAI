@@ -24,7 +24,7 @@ unit uzvaccess_executor;
 interface
 
 uses
-  SysUtils, Classes, Variants, DB, SQLDB,
+  SysUtils, Classes, Variants, DB, SQLDB, StrUtils,
   uzvaccess_types, uzclog, uzvaccess_config,
   uzvaccess_connection, uzvaccess_validator,
   uzvaccess_source_provider, uzvaccess_sqlbuilder;
@@ -92,6 +92,32 @@ type
 
     // Освободить массивы значений из списка пакета
     procedure FreeBatchData(ABatchData: TList);
+
+    // Проверить, содержит ли параметр ключ перечисления
+    function HasLoopNumberKey(const AParamName: String): Boolean;
+
+    // Заменить ключ перечисления на номер
+    function ReplaceLoopNumberKey(
+      const AParamName: String;
+      ANumber: Integer
+    ): String;
+
+    // Проверить, есть ли в инструкциях параметры с ключом перечисления
+    function HasLoopParameters(AInstructions: TExportInstructions): Boolean;
+
+    // Создать временную копию инструкций с замененным номером цикла
+    function CreateInstructionsWithLoopNumber(
+      AInstructions: TExportInstructions;
+      ALoopNumber: Integer
+    ): TExportInstructions;
+
+    // Проверить, все ли параметры с ключом цикла вернули не-nil значения
+    function AllLoopParametersValid(
+      AEntity: Pointer;
+      AInstructions: TExportInstructions;
+      ASourceProvider: TEntitySourceProvider;
+      ALoopNumber: Integer
+    ): Boolean;
 
   public
     constructor Create(
@@ -370,6 +396,142 @@ begin
   end;
 end;
 
+function TExportExecutor.HasLoopNumberKey(const AParamName: String): Boolean;
+begin
+  // Проверяем наличие ключа перечисления в имени параметра
+  Result := Pos(LOOP_NUMBER_KEY, AParamName) > 0;
+end;
+
+function TExportExecutor.ReplaceLoopNumberKey(
+  const AParamName: String;
+  ANumber: Integer
+): String;
+begin
+  // Заменяем ключ перечисления на конкретный номер
+  Result := StringReplace(
+    AParamName,
+    LOOP_NUMBER_KEY,
+    IntToStr(ANumber),
+    [rfReplaceAll]
+  );
+end;
+
+function TExportExecutor.HasLoopParameters(
+  AInstructions: TExportInstructions
+): Boolean;
+var
+  i: Integer;
+  mapping: TColumnMapping;
+begin
+  Result := False;
+
+  // Проверяем все маппинги на наличие ключа перечисления
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    mapping := AInstructions.ColumnMappings[i];
+
+    // Пропускаем константные значения
+    if mapping.IsConstant then
+      Continue;
+
+    if HasLoopNumberKey(mapping.SourceParam) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function TExportExecutor.CreateInstructionsWithLoopNumber(
+  AInstructions: TExportInstructions;
+  ALoopNumber: Integer
+): TExportInstructions;
+var
+  i: Integer;
+  origMapping, newMapping: TColumnMapping;
+begin
+  // Создаем новый объект инструкций
+  Result := TExportInstructions.Create;
+  Result.TargetTable := AInstructions.TargetTable;
+  Result.TypeData := AInstructions.TypeData;
+
+  // Копируем ключевые колонки
+  for i := 0 to AInstructions.KeyColumns.Count - 1 do
+    Result.AddKeyColumn(AInstructions.KeyColumns[i]);
+
+  // Копируем маппинги с заменой ключа перечисления
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    origMapping := AInstructions.ColumnMappings[i];
+
+    // Создаем новый маппинг
+    newMapping := TColumnMapping.Create;
+    newMapping.ColumnIndex := origMapping.ColumnIndex;
+    newMapping.ColumnName := origMapping.ColumnName;
+    newMapping.DataType := origMapping.DataType;
+    newMapping.DefaultValue := origMapping.DefaultValue;
+    newMapping.IsConstant := origMapping.IsConstant;
+    newMapping.Expression := origMapping.Expression;
+
+    // Заменяем ключ перечисления в имени параметра источника
+    if (not origMapping.IsConstant) and HasLoopNumberKey(origMapping.SourceParam) then
+    begin
+      newMapping.SourceParam := ReplaceLoopNumberKey(
+        origMapping.SourceParam,
+        ALoopNumber
+      );
+    end
+    else
+    begin
+      newMapping.SourceParam := origMapping.SourceParam;
+    end;
+
+    Result.AddColumnMapping(newMapping);
+  end;
+end;
+
+function TExportExecutor.AllLoopParametersValid(
+  AEntity: Pointer;
+  AInstructions: TExportInstructions;
+  ASourceProvider: TEntitySourceProvider;
+  ALoopNumber: Integer
+): Boolean;
+var
+  i: Integer;
+  mapping: TColumnMapping;
+  paramName: String;
+  value: Variant;
+begin
+  Result := True;
+
+  // Проверяем все параметры с ключом перечисления
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    mapping := AInstructions.ColumnMappings[i];
+
+    // Пропускаем константные значения
+    if mapping.IsConstant then
+      Continue;
+
+    // Проверяем только параметры с ключом перечисления
+    if not HasLoopNumberKey(mapping.SourceParam) then
+      Continue;
+
+    // Заменяем ключ на номер
+    paramName := ReplaceLoopNumberKey(mapping.SourceParam, ALoopNumber);
+
+    // Получаем значение
+    value := ASourceProvider.GetPropertyValue(AEntity, paramName);
+
+    // Если значение nil, возвращаем False
+    if VarIsNull(value) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
 function TExportExecutor.ExtractValues(
   AEntity: Pointer;
   AInstructions: TExportInstructions;
@@ -380,6 +542,7 @@ var
   i: Integer;
   mapping: TColumnMapping;
   rawValue, convertedValue: Variant;
+  paramName: String;
 begin
   Result := True;
 
@@ -395,8 +558,11 @@ begin
       Continue;
     end;
 
+    // Используем имя параметра (может быть уже с заменой <lnum>)
+    paramName := mapping.SourceParam;
+
     // Получаем значение из примитива
-    rawValue := ASourceProvider.GetPropertyValue(AEntity, mapping.SourceParam);
+    rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
 
     // Валидируем и преобразуем тип
     if not FValidator.ValidateAndConvert(
@@ -432,12 +598,14 @@ function TExportExecutor.ExecuteExport(
 ): TExportTableResult;
 var
   entities: TList;
-  i, j: Integer;
+  i, j, loopNum: Integer;
   entity: Pointer;
   values: array of Variant;
   batchData: TList;
   inserted, updated: Integer;
   hasKeys: Boolean;
+  hasLoop: Boolean;
+  loopInstructions: TExportInstructions;
 begin
   // Инициализация результата
   Result.TableName := AExportTableName;
@@ -481,6 +649,16 @@ begin
       // Проверяем наличие ключевых колонок
       hasKeys := AInstructions.KeyColumns.Count > 0;
 
+      // Проверяем наличие параметров с циклом
+      hasLoop := HasLoopParameters(AInstructions);
+
+      if hasLoop then
+        programlog.LogOutFormatStr(
+          'uzvaccess: Обнаружены параметры с ключом перечисления %s',
+          [LOOP_NUMBER_KEY],
+          LM_Info
+        );
+
       // Начинаем транзакцию
       if not FConfig.DryRun then
         FConnection.BeginTransaction;
@@ -499,26 +677,65 @@ begin
           begin
             entity := entities[i];
 
-            // Извлекаем значения
-            if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+            // Если есть параметры с циклом, обрабатываем в цикле
+            if hasLoop then
             begin
-              Inc(Result.ErrorCount);
-              Continue;
-            end;
-
-            Inc(Result.RowsProcessed);
-
-            // Выполняем UPSERT
-            if not FConfig.DryRun then
-            begin
-              if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+              loopNum := 1;
+              while AllLoopParametersValid(entity, AInstructions, ASourceProvider, loopNum) do
               begin
-                // Не различаем вставку и обновление в этом режиме
-                Inc(Result.RowsInserted);
-              end
-              else
+                // Создаем временные инструкции с заменой номера цикла
+                loopInstructions := CreateInstructionsWithLoopNumber(AInstructions, loopNum);
+                try
+                  // Извлекаем значения с замененными параметрами
+                  if not ExtractValues(entity, loopInstructions, ASourceProvider, values) then
+                  begin
+                    Inc(Result.ErrorCount);
+                    Inc(loopNum);
+                    Continue;
+                  end;
+
+                  Inc(Result.RowsProcessed);
+
+                  // Выполняем UPSERT
+                  if not FConfig.DryRun then
+                  begin
+                    if UpsertRecord(AInstructions.TargetTable, loopInstructions, values) then
+                      Inc(Result.RowsInserted)
+                    else
+                      Inc(Result.ErrorCount);
+                  end;
+
+                finally
+                  loopInstructions.Free;
+                end;
+
+                Inc(loopNum);
+              end;
+
+              programlog.LogOutFormatStr(
+                'uzvaccess: Объект %d: обработано %d итераций цикла',
+                [i + 1, loopNum - 1],
+                LM_Info
+              );
+            end
+            else
+            begin
+              // Обычная обработка без цикла
+              if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
               begin
                 Inc(Result.ErrorCount);
+                Continue;
+              end;
+
+              Inc(Result.RowsProcessed);
+
+              // Выполняем UPSERT
+              if not FConfig.DryRun then
+              begin
+                if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+                  Inc(Result.RowsInserted)
+                else
+                  Inc(Result.ErrorCount);
               end;
             end;
 
@@ -546,32 +763,84 @@ begin
             begin
               entity := entities[i];
 
-              // Извлекаем значения
-              if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+              // Если есть параметры с циклом, обрабатываем в цикле
+              if hasLoop then
               begin
-                Inc(Result.ErrorCount);
-                Continue;
-              end;
-
-              Inc(Result.RowsProcessed);
-
-              // Создаём копию массива значений для текущего устройства
-              // чтобы каждое устройство имело свой собственный набор данных
-              batchData.Add(CreateValuesCopy(values));
-
-              // Вставляем пакет при достижении размера батча
-              if (batchData.Count >= FBatchSize) or (i = entities.Count - 1) then
-              begin
-                if not FConfig.DryRun then
+                loopNum := 1;
+                while AllLoopParametersValid(entity, AInstructions, ASourceProvider, loopNum) do
                 begin
-                  inserted := InsertBatch(AInstructions.TargetTable,
-                    AInstructions, batchData);
-                  Inc(Result.RowsInserted, inserted);
+                  // Создаем временные инструкции с заменой номера цикла
+                  loopInstructions := CreateInstructionsWithLoopNumber(AInstructions, loopNum);
+                  try
+                    // Извлекаем значения с замененными параметрами
+                    if not ExtractValues(entity, loopInstructions, ASourceProvider, values) then
+                    begin
+                      Inc(Result.ErrorCount);
+                      Inc(loopNum);
+                      Continue;
+                    end;
+
+                    Inc(Result.RowsProcessed);
+
+                    // Создаём копию массива значений
+                    batchData.Add(CreateValuesCopy(values));
+
+                    // Вставляем пакет при достижении размера батча
+                    if (batchData.Count >= FBatchSize) or ((i = entities.Count - 1) and (not AllLoopParametersValid(entity, AInstructions, ASourceProvider, loopNum + 1))) then
+                    begin
+                      if not FConfig.DryRun then
+                      begin
+                        inserted := InsertBatch(AInstructions.TargetTable,
+                          loopInstructions, batchData);
+                        Inc(Result.RowsInserted, inserted);
+                      end;
+
+                      // Освобождаем память выделенную для массивов в пакете
+                      FreeBatchData(batchData);
+                      batchData.Clear;
+                    end;
+
+                  finally
+                    loopInstructions.Free;
+                  end;
+
+                  Inc(loopNum);
                 end;
 
-                // Освобождаем память выделенную для массивов в пакете
-                FreeBatchData(batchData);
-                batchData.Clear;
+                programlog.LogOutFormatStr(
+                  'uzvaccess: Объект %d: обработано %d итераций цикла',
+                  [i + 1, loopNum - 1],
+                  LM_Info
+                );
+              end
+              else
+              begin
+                // Обычная обработка без цикла
+                if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+                begin
+                  Inc(Result.ErrorCount);
+                  Continue;
+                end;
+
+                Inc(Result.RowsProcessed);
+
+                // Создаём копию массива значений для текущего устройства
+                batchData.Add(CreateValuesCopy(values));
+
+                // Вставляем пакет при достижении размера батча
+                if (batchData.Count >= FBatchSize) or (i = entities.Count - 1) then
+                begin
+                  if not FConfig.DryRun then
+                  begin
+                    inserted := InsertBatch(AInstructions.TargetTable,
+                      AInstructions, batchData);
+                    Inc(Result.RowsInserted, inserted);
+                  end;
+
+                  // Освобождаем память выделенную для массивов в пакете
+                  FreeBatchData(batchData);
+                  batchData.Clear;
+                end;
               end;
 
               // Прогресс
