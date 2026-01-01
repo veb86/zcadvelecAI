@@ -85,6 +85,22 @@ type
       out AValues: array of Variant
     ): Boolean;
 
+    // Извлечь значения с заменой <lnum> на конкретный номер
+    function ExtractValuesWithLnum(
+      AEntity: Pointer;
+      AInstructions: TExportInstructions;
+      ASourceProvider: TEntitySourceProvider;
+      ALnumValue: Integer;
+      out AValues: array of Variant
+    ): Boolean;
+
+    // Получить максимальный номер для <lnum> итерации
+    function GetMaxLnumForEntity(
+      AEntity: Pointer;
+      AInstructions: TExportInstructions;
+      ASourceProvider: TEntitySourceProvider
+    ): Integer;
+
     // Создать копию массива значений
     function CreateValuesCopy(
       const AValues: array of Variant
@@ -370,6 +386,150 @@ begin
   end;
 end;
 
+// Получить максимальный номер для <lnum> итерации по всем параметрам сущности
+function TExportExecutor.GetMaxLnumForEntity(
+  AEntity: Pointer;
+  AInstructions: TExportInstructions;
+  ASourceProvider: TEntitySourceProvider
+): Integer;
+var
+  i, lnumIndex: Integer;
+  mapping: TColumnMapping;
+  paramName: String;
+  foundAny: Boolean;
+begin
+  Result := 0;
+  foundAny := False;
+
+  // Проверяем каждый параметр с <lnum>
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    mapping := AInstructions.ColumnMappings[i];
+
+    // Пропускаем параметры без <lnum>
+    if not mapping.HasLnumPlaceholder then
+      Continue;
+
+    // Ищем максимальный номер для этого параметра
+    lnumIndex := 1;
+    while True do
+    begin
+      paramName := StringReplace(
+        mapping.SourceParam,
+        LNUM_PLACEHOLDER,
+        IntToStr(lnumIndex),
+        [rfReplaceAll]
+      );
+
+      // Проверяем существование параметра
+      if not ASourceProvider.HasProperty(AEntity, paramName) then
+        Break;
+
+      // Проверяем что значение не nil
+      if VarIsNull(ASourceProvider.GetPropertyValue(AEntity, paramName)) then
+        Break;
+
+      foundAny := True;
+      if lnumIndex > Result then
+        Result := lnumIndex;
+
+      Inc(lnumIndex);
+    end;
+  end;
+
+  // Если ни одного параметра не найдено, возвращаем 0
+  if not foundAny then
+    Result := 0;
+end;
+
+// Извлечь значения с заменой <lnum> на конкретный номер
+function TExportExecutor.ExtractValuesWithLnum(
+  AEntity: Pointer;
+  AInstructions: TExportInstructions;
+  ASourceProvider: TEntitySourceProvider;
+  ALnumValue: Integer;
+  out AValues: array of Variant
+): Boolean;
+var
+  i: Integer;
+  mapping: TColumnMapping;
+  rawValue, convertedValue: Variant;
+  paramName: String;
+begin
+  Result := True;
+
+  // Извлекаем значения для каждой колонки
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    mapping := AInstructions.ColumnMappings[i];
+
+    // Обработка константных значений
+    if mapping.IsConstant then
+    begin
+      AValues[i] := mapping.DefaultValue;
+      Continue;
+    end;
+
+    // Определяем имя параметра с учётом <lnum>
+    if mapping.HasLnumPlaceholder then
+    begin
+      // Если <lnum> это само значение колонки (например numconnect)
+      if mapping.SourceParam = LNUM_PLACEHOLDER then
+      begin
+        AValues[i] := ALnumValue;
+        Continue;
+      end;
+
+      // Заменяем <lnum> на конкретный номер
+      paramName := StringReplace(
+        mapping.SourceParam,
+        LNUM_PLACEHOLDER,
+        IntToStr(ALnumValue),
+        [rfReplaceAll]
+      );
+    end
+    else
+    begin
+      paramName := mapping.SourceParam;
+    end;
+
+    // Получаем значение из примитива
+    rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+
+    // Если значение nil и это <lnum> параметр, используем '-'
+    if VarIsNull(rawValue) and mapping.HasLnumPlaceholder then
+    begin
+      AValues[i] := '-';
+      Continue;
+    end;
+
+    // Валидируем и преобразуем тип
+    if not FValidator.ValidateAndConvert(
+      rawValue,
+      mapping.DataType,
+      convertedValue
+    ) then
+    begin
+      programlog.LogOutFormatStr(
+        'uzvaccess: Ошибка валидации значения для колонки "%s"',
+        [mapping.ColumnName],
+        LM_Info
+      );
+
+      if FConfig.ErrorMode = emStop then
+      begin
+        Result := False;
+        Exit;
+      end;
+
+      // В мягком режиме используем значение по умолчанию
+      convertedValue := Null;
+    end;
+
+    AValues[i] := convertedValue;
+  end;
+end;
+
 function TExportExecutor.ExtractValues(
   AEntity: Pointer;
   AInstructions: TExportInstructions;
@@ -432,12 +592,13 @@ function TExportExecutor.ExecuteExport(
 ): TExportTableResult;
 var
   entities: TList;
-  i, j: Integer;
+  i, j, lnumMax, lnumIdx: Integer;
   entity: Pointer;
   values: array of Variant;
   batchData: TList;
   inserted, updated: Integer;
   hasKeys: Boolean;
+  hasLnumColumns: Boolean;
 begin
   // Инициализация результата
   Result.TableName := AExportTableName;
@@ -481,6 +642,16 @@ begin
       // Проверяем наличие ключевых колонок
       hasKeys := AInstructions.KeyColumns.Count > 0;
 
+      // Проверяем наличие колонок с <lnum> итерацией
+      hasLnumColumns := AInstructions.HasLnumColumns;
+
+      if hasLnumColumns then
+        programlog.LogOutFormatStr(
+          'uzvaccess: Обнаружены колонки с %s, включен режим итерации',
+          [LNUM_PLACEHOLDER],
+          LM_Info
+        );
+
       // Начинаем транзакцию
       if not FConfig.DryRun then
         FConnection.BeginTransaction;
@@ -499,26 +670,71 @@ begin
           begin
             entity := entities[i];
 
-            // Извлекаем значения
-            if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+            // Обработка с учётом <lnum> итерации
+            if hasLnumColumns then
             begin
-              Inc(Result.ErrorCount);
-              Continue;
-            end;
+              // Определяем максимальный номер для итерации
+              lnumMax := GetMaxLnumForEntity(entity, AInstructions, ASourceProvider);
 
-            Inc(Result.RowsProcessed);
-
-            // Выполняем UPSERT
-            if not FConfig.DryRun then
-            begin
-              if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+              // Если параметров не найдено, создаём одну запись со значением 0
+              if lnumMax = 0 then
               begin
-                // Не различаем вставку и обновление в этом режиме
-                Inc(Result.RowsInserted);
+                if not ExtractValuesWithLnum(entity, AInstructions, ASourceProvider, 0, values) then
+                begin
+                  Inc(Result.ErrorCount);
+                  Continue;
+                end;
+
+                Inc(Result.RowsProcessed);
+
+                if not FConfig.DryRun then
+                begin
+                  if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+                    Inc(Result.RowsInserted)
+                  else
+                    Inc(Result.ErrorCount);
+                end;
               end
               else
               begin
+                // Создаём по одной записи для каждого найденного номера
+                for lnumIdx := 1 to lnumMax do
+                begin
+                  if not ExtractValuesWithLnum(entity, AInstructions, ASourceProvider, lnumIdx, values) then
+                  begin
+                    Inc(Result.ErrorCount);
+                    Continue;
+                  end;
+
+                  Inc(Result.RowsProcessed);
+
+                  if not FConfig.DryRun then
+                  begin
+                    if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+                      Inc(Result.RowsInserted)
+                    else
+                      Inc(Result.ErrorCount);
+                  end;
+                end;
+              end;
+            end
+            else
+            begin
+              // Обычная обработка без <lnum>
+              if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+              begin
                 Inc(Result.ErrorCount);
+                Continue;
+              end;
+
+              Inc(Result.RowsProcessed);
+
+              if not FConfig.DryRun then
+              begin
+                if UpsertRecord(AInstructions.TargetTable, AInstructions, values) then
+                  Inc(Result.RowsInserted)
+                else
+                  Inc(Result.ErrorCount);
               end;
             end;
 
@@ -546,18 +762,52 @@ begin
             begin
               entity := entities[i];
 
-              // Извлекаем значения
-              if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+              // Обработка с учётом <lnum> итерации
+              if hasLnumColumns then
               begin
-                Inc(Result.ErrorCount);
-                Continue;
+                // Определяем максимальный номер для итерации
+                lnumMax := GetMaxLnumForEntity(entity, AInstructions, ASourceProvider);
+
+                // Если параметров не найдено, создаём одну запись со значением 0
+                if lnumMax = 0 then
+                begin
+                  if not ExtractValuesWithLnum(entity, AInstructions, ASourceProvider, 0, values) then
+                  begin
+                    Inc(Result.ErrorCount);
+                    Continue;
+                  end;
+
+                  Inc(Result.RowsProcessed);
+                  batchData.Add(CreateValuesCopy(values));
+                end
+                else
+                begin
+                  // Создаём по одной записи для каждого найденного номера
+                  for lnumIdx := 1 to lnumMax do
+                  begin
+                    if not ExtractValuesWithLnum(entity, AInstructions, ASourceProvider, lnumIdx, values) then
+                    begin
+                      Inc(Result.ErrorCount);
+                      Continue;
+                    end;
+
+                    Inc(Result.RowsProcessed);
+                    batchData.Add(CreateValuesCopy(values));
+                  end;
+                end;
+              end
+              else
+              begin
+                // Обычная обработка без <lnum>
+                if not ExtractValues(entity, AInstructions, ASourceProvider, values) then
+                begin
+                  Inc(Result.ErrorCount);
+                  Continue;
+                end;
+
+                Inc(Result.RowsProcessed);
+                batchData.Add(CreateValuesCopy(values));
               end;
-
-              Inc(Result.RowsProcessed);
-
-              // Создаём копию массива значений для текущего устройства
-              // чтобы каждое устройство имело свой собственный набор данных
-              batchData.Add(CreateValuesCopy(values));
 
               // Вставляем пакет при достижении размера батча
               if (batchData.Count >= FBatchSize) or (i = entities.Count - 1) then
