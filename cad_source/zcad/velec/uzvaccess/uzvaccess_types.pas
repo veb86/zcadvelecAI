@@ -26,6 +26,12 @@ interface
 uses
   SysUtils, Classes, Variants, gvector;
 
+const
+  // Константа для ключевого имени циклической выгрузки параметров
+  // Используется в setcolumn для указания необходимости итерации
+  // по пронумерованным параметрам (например, SLCABAGEN<lnum>_SLTypeagen)
+  LNUM_PLACEHOLDER = '<lnum>';
+
 type
   // Уровни логирования
   TLogLevel = (
@@ -76,6 +82,7 @@ type
     DefaultValue: Variant;         // Значение по умолчанию
     IsConstant: Boolean;           // Является ли константой
     Expression: String;            // Выражение для вычисления
+    HasLnumPlaceholder: Boolean;   // Содержит ли <lnum> для итерации
 
     constructor Create;
   end;
@@ -98,6 +105,9 @@ type
 
     // Добавить ключевую колонку
     procedure AddKeyColumn(const AColumnName: String);
+
+    // Проверить наличие колонок с <lnum> плейсхолдером
+    function HasLnumColumns: Boolean;
 
     property TargetTable: String read FTargetTable write FTargetTable;
     property TypeData: TSourceDataType read FTypeData write FTypeData;
@@ -182,6 +192,7 @@ begin
   DefaultValue := Null;
   IsConstant := False;
   Expression := '';
+  HasLnumPlaceholder := False;
 end;
 
 { TExportInstructions }
@@ -216,6 +227,22 @@ procedure TExportInstructions.AddKeyColumn(const AColumnName: String);
 begin
   if FKeyColumns.IndexOf(AColumnName) = -1 then
     FKeyColumns.Add(AColumnName);
+end;
+
+// Проверка наличия колонок с <lnum> плейсхолдером
+function TExportInstructions.HasLnumColumns: Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FColumnMappings.Size - 1 do
+  begin
+    if FColumnMappings[i].HasLnumPlaceholder then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
 end;
 
 { TExportResult }

@@ -59,6 +59,17 @@ begin
   mapping.DataType := StringToColumnDataType(ACol3);
   mapping.SourceParam := ACol4;
 
+  // Проверяем наличие <lnum> плейсхолдера в параметре источника
+  if Pos(LNUM_PLACEHOLDER, ACol4) > 0 then
+  begin
+    mapping.HasLnumPlaceholder := True;
+    programlog.LogOutFormatStr(
+      'uzvaccess: setcolumn - обнаружен %s плейсхолдер, включен режим итерации',
+      [LNUM_PLACEHOLDER],
+      LM_Info
+    );
+  end;
+
   AInstruction.AddColumnMapping(mapping);
 
   programlog.LogOutFormatStr(
