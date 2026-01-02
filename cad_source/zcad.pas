@@ -293,6 +293,7 @@ uses
   //uzvelectricalexcelcom,
   uzvgetentity,
   uzvaccess_command,
+  uzvxlsxexport_init,
   //**//
   {$ENDIF}
   //contolelschema_main,
