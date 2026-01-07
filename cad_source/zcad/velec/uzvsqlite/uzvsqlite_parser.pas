@@ -41,7 +41,7 @@ type
   TExportTableParser = class
   private
     // Получить значение колонки из датасета
-    function GetColumnValue(ADataset: TDataSet; AColumnIndex: Integer): String;
+    function GetColumnValue(ADataset: TDataSet; AColumnName: string): String;
 
     // Парсинг инструкции tTable
     procedure ParseTableInstruction(
@@ -81,26 +81,26 @@ end;
 
 function TExportTableParser.GetColumnValue(
   ADataset: TDataSet;
-  AColumnIndex: Integer
+  AColumnName: string
 ): String;
-var
-  fieldName: String;
+//var
+//  fieldName: String;
 begin
   Result := '';
 
   //// Формируем имя колонки (Col1, Col2, ...)
   //fieldName := Format('Col%d', [AColumnIndex]);
   //
-  //// Проверяем наличие поля
-  //if ADataset.FindField(fieldName) = nil then
-  //  Exit;
+  // Проверяем наличие поля
+  if ADataset.FindField(AColumnName) = nil then
+    Exit;
 
   // Получаем значение и обрезаем пробелы
+  Result := Trim(ADataset.FieldByName(AColumnName).AsString);
   //Result := Trim(ADataset.FieldByName(fieldName).AsString);
-  //Result := Trim(ADataset.FieldByName(fieldName).AsString);
-  if (AColumnIndex < 1) or (AColumnIndex > ADataset.FieldCount) then
-    Exit;
-  Result := Trim(ADataset.Fields[AColumnIndex - 1].AsString);
+  //if (AColumnIndex < 1) or (AColumnIndex > ADataset.FieldCount) then
+  //  Exit;
+  //Result := Trim(ADataset.Fields[AColumnIndex - 1].AsString);
 
 end;
 
@@ -200,10 +200,10 @@ begin
       // Col1 - это ID, пропускаем его
       // Col2 - тип инструкции (ранее был Col1)
       // Col3, Col4, Col5 - параметры инструкции
-      col2 := GetColumnValue(ADataset, 2);
-      col3 := GetColumnValue(ADataset, 3);
-      col4 := GetColumnValue(ADataset, 4);
-      col5 := GetColumnValue(ADataset, 5);
+      col2 := GetColumnValue(ADataset, 'com');
+      col3 := GetColumnValue(ADataset, 'nameTF');
+      col4 := GetColumnValue(ADataset, 'typeTF');
+      col5 := GetColumnValue(ADataset, 'param');
 
       // Пропускаем пустые строки (где нет типа инструкции)
       if col2 = '' then

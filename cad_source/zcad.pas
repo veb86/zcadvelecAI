@@ -293,6 +293,8 @@ uses
   //uzvelectricalexcelcom,
   uzvgetentity,
   uzvaccess_command,
+  uzvsqlite_command,
+
   //**//
   {$ENDIF}
   //contolelschema_main,
