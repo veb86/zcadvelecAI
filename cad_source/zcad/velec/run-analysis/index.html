@@ -2,59 +2,90 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Run Analysis</title>
-  <script src="https://raw.githubusercontent.com/veb86/zcadvelecAI/master/cad_source/zcad/velec/run-analysis/grist-plugin-api.js"></script>
+  <title>Run Analysis Widget</title>
+  <!-- Используем локальный файл или raw.githubusercontent -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
   <style>
     body {
       font-family: sans-serif;
       padding: 10px;
+      background: #f8f8f8;
     }
     button {
-      padding: 10px 16px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    #status {
+      padding: 8px 12px;
       margin-top: 10px;
-      font-size: 13px;
+      font-size: 14px;
+    }
+    pre {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      max-height: 300px;
+      overflow-y: auto;
     }
   </style>
 </head>
 <body>
 
-<button id="runBtn">▶ Запустить анализ</button>
-<div id="status"></div>
+<h3>Run Analysis Widget</h3>
+<p>Данные таблицы:</p>
+<pre id="records">Загрузка...</pre>
+
+<button id="runAnalysisBtn">Запустить анализ</button>
 
 <script>
-  const status = document.getElementById("status");
-  const button = document.getElementById("runBtn");
+  // 1) Сообщаем Grist, что виджет готов
+  grist.ready({ requiredAccess: "fullDocument" }).then(() => {
+    console.log("Grist API готов");
 
-  button.addEventListener("click", async () => {
-    status.textContent = "Чтение данных из Grist...";
+    const output = document.getElementById("records");
+    const btn = document.getElementById("runAnalysisBtn");
 
-    // Получаем доступ к таблицам
-    const tableA = await grist.docApi.fetchTable("TableA");
-    const tableB = await grist.docApi.fetchTable("TableB");
+    let currentRecords = [];
 
-    // Простейший анализ (пример)
-    const sumA = tableA.records.reduce((s, r) => s + (r.Amount || 0), 0);
-    const sumB = tableB.records.reduce((s, r) => s + (r.Amount || 0), 0);
+    // 2) Подписка на все записи выбранной таблицы
+    grist.onRecords(function(records) {
+      currentRecords = records;
+      output.innerText = JSON.stringify(records, null, 2);
+    });
 
-    status.textContent = "Запись результата...";
+    // 3) Кнопка анализа
+    btn.addEventListener("click", async () => {
+      if (!currentRecords.length) {
+        alert("Нет данных для анализа");
+        return;
+      }
 
-    // Записываем результат в третью таблицу
-    await grist.docApi.applyUserActions([
-      ["AddRecord", "Result", null, {
-        SumA: sumA,
-        SumB: sumB,
-        Total: sumA + sumB,
-        Created: new Date().toISOString()
-      }]
-    ]);
+      // Пример анализа: считаем количество записей
+      const result = {
+        totalRecords: currentRecords.length,
+        timestamp: new Date().toISOString()
+      };
 
-    status.textContent = "✅ Готово";
+      console.log("Анализ завершен:", result);
+
+      // 4) Запись результата в другую таблицу (укажи правильное имя таблицы)
+      try {
+        // 'AnalysisResults' — таблица, куда записываем
+        const table = grist.docApi.getTable('AnalysisResults');
+
+        // Если таблица есть, добавляем запись
+        if (table) {
+          await table.addRecord(result);
+          alert("Результаты анализа добавлены в таблицу 'AnalysisResults'");
+        } else {
+          alert("Таблица 'AnalysisResults' не найдена");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Ошибка при добавлении записи: " + e.message);
+      }
+    });
+
+  }).catch(err => {
+    console.error("Ошибка инициализации Grist API:", err);
   });
-</script>
 
+</script>
 </body>
 </html>
