@@ -41,6 +41,7 @@ procedure ParseSetColumnInstruction(
 );
 var
   mapping: TColumnMapping;
+  hasTemplateMarkers: Boolean;
 begin
   // Проверка обязательных параметров
   if (ACol2 = '') or (ACol3 = '') or (ACol4 = '') then
@@ -70,11 +71,24 @@ begin
     );
   end;
 
+  // Проверяем наличие маркеров составных шаблонов @@[ или <
+  hasTemplateMarkers := (Pos('@@[', ACol4) > 0) or (Pos('<', ACol4) > 0);
+
+  if hasTemplateMarkers then
+  begin
+    mapping.IsTemplate := True;
+    programlog.LogOutFormatStr(
+      'uzvaccess: setcolumn - обнаружен составной шаблон, включен режим парсинга',
+      [],
+      LM_Info
+    );
+  end;
+
   AInstruction.AddColumnMapping(mapping);
 
   programlog.LogOutFormatStr(
-    'uzvaccess: setcolumn - колонка: %s, тип: %s, источник: %s',
-    [ACol2, ACol3, ACol4],
+    'uzvaccess: setcolumn - колонка: %s, тип: %s, источник: %s, шаблон: %s',
+    [ACol2, ACol3, ACol4, BoolToStr(mapping.IsTemplate, True)],
     LM_Info
   );
 end;

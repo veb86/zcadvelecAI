@@ -26,7 +26,8 @@ interface
 uses
   SysUtils, Classes, Variants,gvector,
   uzeentity, varmandef, uzcvariablesutils,
-  uzvgetentity, uzvaccess_types,uzbtypes, uzclog;
+  uzvgetentity, uzvaccess_types,uzbtypes, uzclog,
+  uzvaccess_template_parser;
 
 type
   {**
@@ -40,6 +41,7 @@ type
     FEntityList: TEntityVector;
     FEntityMode: Integer;
     FEntityModeParam: String;
+    FTemplateParser: TTemplateParser;
 
     // Очистить список примитивов
     procedure ClearEntities;
@@ -71,6 +73,13 @@ type
       AEntity: Pointer;
       const APropName: String
     ): Boolean;
+
+    // Получить значение из составного шаблона
+    function GetTemplateValue(
+      AEntity: Pointer;
+      const ATemplate: String;
+      ALnumValue: Integer = 0
+    ): Variant;
   end;
 
 implementation
@@ -88,11 +97,14 @@ begin
   FEntityMode := AEntityMode;
   FEntityModeParam := AEntityModeParam;
   FEntityList := nil;
+  FTemplateParser := TTemplateParser.Create;
 end;
 
 destructor TEntitySourceProvider.Destroy;
 begin
   ClearEntities;
+  if FTemplateParser <> nil then
+    FTemplateParser.Free;
   inherited Destroy;
 end;
 
@@ -270,6 +282,37 @@ begin
     valueStr := pvd^.Data.ptd^.GetValueAsString(pvd^.Data.Addr.Instance);
     Result := valueStr;
   end;
+end;
+
+function TEntitySourceProvider.GetTemplateValue(
+  AEntity: Pointer;
+  const ATemplate: String;
+  ALnumValue: Integer = 0
+): Variant;
+var
+  resultStr: String;
+begin
+  Result := Null;
+
+  if AEntity = nil then
+  begin
+    programlog.LogOutFormatStr(
+      'uzvaccess: Попытка получить шаблонное значение из nil-объекта',
+      [],
+      LM_Info
+    );
+    Exit;
+  end;
+
+  // Парсим шаблон и получаем результирующую строку
+  resultStr := FTemplateParser.ParseTemplate(ATemplate, AEntity, ALnumValue);
+  Result := resultStr;
+
+  programlog.LogOutFormatStr(
+    'uzvaccess: Шаблон "%s" -> "%s"',
+    [ATemplate, resultStr],
+    LM_Info
+  );
 end;
 
 end.

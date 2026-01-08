@@ -78,11 +78,12 @@ type
     ColumnIndex: Integer;          // Индекс колонки (1..N)
     ColumnName: String;            // Имя колонки в целевой таблице
     DataType: TColumnDataType;     // Тип данных
-    SourceParam: String;           // Имя параметра из источника
+    SourceParam: String;           // Имя параметра из источника или шаблон
     DefaultValue: Variant;         // Значение по умолчанию
     IsConstant: Boolean;           // Является ли константой
     Expression: String;            // Выражение для вычисления
     HasLnumPlaceholder: Boolean;   // Содержит ли <lnum> для итерации
+    IsTemplate: Boolean;           // Является ли составным шаблоном
 
     constructor Create;
   end;
@@ -193,6 +194,7 @@ begin
   IsConstant := False;
   Expression := '';
   HasLnumPlaceholder := False;
+  IsTemplate := False;
 end;
 
 { TExportInstructions }
