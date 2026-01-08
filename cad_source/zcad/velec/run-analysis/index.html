@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Run Analysis</title>
+  <script src="./grist-plugin-api.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 10px;
+    }
+    button {
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<button id="runBtn">▶ Запустить анализ</button>
+<div id="status"></div>
+
+<script>
+  const status = document.getElementById("status");
+  const button = document.getElementById("runBtn");
+
+  button.addEventListener("click", async () => {
+    status.textContent = "Чтение данных из Grist...";
+
+    // Получаем доступ к таблицам
+    const tableA = await grist.docApi.fetchTable("TableA");
+    const tableB = await grist.docApi.fetchTable("TableB");
+
+    // Простейший анализ (пример)
+    const sumA = tableA.records.reduce((s, r) => s + (r.Amount || 0), 0);
+    const sumB = tableB.records.reduce((s, r) => s + (r.Amount || 0), 0);
+
+    status.textContent = "Запись результата...";
+
+    // Записываем результат в третью таблицу
+    await grist.docApi.applyUserActions([
+      ["AddRecord", "Result", null, {
+        SumA: sumA,
+        SumB: sumB,
+        Total: sumA + sumB,
+        Created: new Date().toISOString()
+      }]
+    ]);
+
+    status.textContent = "✅ Готово";
+  });
+</script>
+
+</body>
+</html>
