@@ -26,6 +26,12 @@ interface
 uses
   SysUtils, Classes, Variants, gvector;
 
+const
+  // Плейсхолдер для динамического номера в циклических параметрах
+  // Используется в конфигурации setcolumn для обозначения переменного числового суффикса
+  // Например: SLCABAGEN<lnum>_SLTypeagen развернётся в SLCABAGEN1_SLTypeagen, SLCABAGEN2_SLTypeagen и т.д.
+  LOOP_NUMBER_PLACEHOLDER = '<lnum>';
+
 type
   // Уровни логирования
   TLogLevel = (
@@ -76,6 +82,7 @@ type
     DefaultValue: Variant;         // Значение по умолчанию
     IsConstant: Boolean;           // Является ли константой
     Expression: String;            // Выражение для вычисления
+    HasLoopPlaceholder: Boolean;   // Содержит ли плейсхолдер <lnum>
 
     constructor Create;
   end;
@@ -182,6 +189,7 @@ begin
   DefaultValue := Null;
   IsConstant := False;
   Expression := '';
+  HasLoopPlaceholder := False;
 end;
 
 { TExportInstructions }

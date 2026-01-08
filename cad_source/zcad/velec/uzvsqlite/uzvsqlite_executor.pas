@@ -85,6 +85,29 @@ type
       out AValues: array of Variant
     ): Boolean;
 
+    // Проверить, содержит ли набор инструкций плейсхолдеры цикла
+    function HasLoopPlaceholders(AInstructions: TExportInstructions): Boolean;
+
+    // Заменить плейсхолдер <lnum> на конкретное число в строке
+    function ReplacePlaceholder(const ASource: String; ALoopNum: Integer): String;
+
+    // Извлечь значения для конкретной итерации цикла
+    function ExtractLoopValues(
+      AEntity: Pointer;
+      AInstructions: TExportInstructions;
+      ASourceProvider: TEntitySourceProvider;
+      ALoopNum: Integer;
+      out AValues: array of Variant
+    ): Boolean;
+
+    // Извлечь все итерации цикла для одного примитива
+    function ExtractAllLoopIterations(
+      AEntity: Pointer;
+      AInstructions: TExportInstructions;
+      ASourceProvider: TEntitySourceProvider;
+      out ARowsList: TList
+    ): Integer;
+
   public
     constructor Create(
       AConnection: TSQLiteConnection;
@@ -386,6 +409,200 @@ begin
   end;
 end;
 
+// Проверить, содержит ли набор инструкций плейсхолдеры цикла
+function TExportExecutor.HasLoopPlaceholders(
+  AInstructions: TExportInstructions
+): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+
+  // Проверяем все маппинги на наличие плейсхолдера
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    if AInstructions.ColumnMappings[i].HasLoopPlaceholder then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+// Заменить плейсхолдер <lnum> на конкретное число в строке
+function TExportExecutor.ReplacePlaceholder(
+  const ASource: String;
+  ALoopNum: Integer
+): String;
+begin
+  Result := StringReplace(
+    ASource,
+    LOOP_NUMBER_PLACEHOLDER,
+    IntToStr(ALoopNum),
+    [rfReplaceAll]
+  );
+end;
+
+// Извлечь значения для конкретной итерации цикла
+function TExportExecutor.ExtractLoopValues(
+  AEntity: Pointer;
+  AInstructions: TExportInstructions;
+  ASourceProvider: TEntitySourceProvider;
+  ALoopNum: Integer;
+  out AValues: array of Variant
+): Boolean;
+var
+  i: Integer;
+  mapping: TColumnMapping;
+  rawValue, convertedValue: Variant;
+  paramName: String;
+  hasAnyValue: Boolean;
+begin
+  Result := False;
+  hasAnyValue := False;
+
+  // Извлекаем значения для каждой колонки с заменой плейсхолдера
+  for i := 0 to AInstructions.ColumnMappings.Size - 1 do
+  begin
+    mapping := AInstructions.ColumnMappings[i];
+
+    // Обработка константных значений
+    if mapping.IsConstant then
+    begin
+      // Для константы также заменяем плейсхолдер, если он есть
+      if mapping.HasLoopPlaceholder then
+        AValues[i] := ReplacePlaceholder(VarToStr(mapping.DefaultValue), ALoopNum)
+      else
+        AValues[i] := mapping.DefaultValue;
+      Continue;
+    end;
+
+    // Специальная обработка: если SourceParam - это сам плейсхолдер или экранированный плейсхолдер
+    // (например \<lnum> или <lnum>), то используем номер итерации как значение
+    if (Trim(mapping.SourceParam) = LOOP_NUMBER_PLACEHOLDER) or
+       (Trim(mapping.SourceParam) = '\' + LOOP_NUMBER_PLACEHOLDER) then
+    begin
+      AValues[i] := ALoopNum;
+      hasAnyValue := True;
+      Continue;
+    end;
+
+    // Для параметров с плейсхолдером заменяем номер
+    if mapping.HasLoopPlaceholder then
+      paramName := ReplacePlaceholder(mapping.SourceParam, ALoopNum)
+    else
+      paramName := mapping.SourceParam;
+
+    // Получаем значение из примитива
+    rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+
+    // Если хотя бы один параметр с плейсхолдером вернул nil - прекращаем цикл
+    if mapping.HasLoopPlaceholder and VarIsNull(rawValue) then
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Параметр "%s" не найден, завершение цикла на итерации %d',
+        [paramName, ALoopNum],
+        LM_Info
+      );
+      Exit; // Result = False
+    end;
+
+    // Если параметр с плейсхолдером найден, отмечаем что есть данные
+    if mapping.HasLoopPlaceholder and not VarIsNull(rawValue) then
+      hasAnyValue := True;
+
+    // Валидируем и преобразуем тип
+    if not FValidator.ValidateAndConvert(
+      rawValue,
+      mapping.DataType,
+      convertedValue
+    ) then
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Ошибка валидации значения для колонки "%s" (итерация %d)',
+        [mapping.ColumnName, ALoopNum],
+        LM_Info
+      );
+
+      if FConfig.ErrorMode = emStop then
+        Exit; // Result = False
+
+      // В мягком режиме используем значение по умолчанию
+      convertedValue := Null;
+    end;
+
+    AValues[i] := convertedValue;
+  end;
+
+  // Успех только если хотя бы один параметр с плейсхолдером имел значение
+  Result := hasAnyValue;
+end;
+
+// Извлечь все итерации цикла для одного примитива
+function TExportExecutor.ExtractAllLoopIterations(
+  AEntity: Pointer;
+  AInstructions: TExportInstructions;
+  ASourceProvider: TEntitySourceProvider;
+  out ARowsList: TList
+): Integer;
+var
+  loopNum: Integer;
+  values: TVariantArray;
+  pValues: PVariantArray;
+  success: Boolean;
+begin
+  Result := 0;
+  ARowsList := TList.Create;
+
+  // Начинаем цикл с 1
+  loopNum := 1;
+
+  while True do
+  begin
+    // Подготавливаем массив для значений
+    SetLength(values, AInstructions.ColumnMappings.Size);
+
+    // Пытаемся извлечь значения для текущей итерации
+    success := ExtractLoopValues(
+      AEntity,
+      AInstructions,
+      ASourceProvider,
+      loopNum,
+      values
+    );
+
+    // Если не удалось извлечь - завершаем цикл
+    if not success then
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Цикл завершён на итерации %d (всего итераций: %d)',
+        [loopNum, loopNum - 1],
+        LM_Info
+      );
+      Break;
+    end;
+
+    // Добавляем строку данных в список
+    New(pValues);
+    pValues^ := Copy(values, 0, Length(values));
+    ARowsList.Add(pValues);
+    Inc(Result);
+
+    Inc(loopNum);
+
+    // Защита от бесконечного цикла (максимум 1000 итераций)
+    if loopNum > 1000 then
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Превышен лимит итераций цикла (1000), принудительное завершение',
+        [],
+        LM_Info
+      );
+      Break;
+    end;
+  end;
+end;
+
 function TExportExecutor.ExecuteExport(
   const AExportTableName: String;
   AInstructions: TExportInstructions;
@@ -393,12 +610,16 @@ function TExportExecutor.ExecuteExport(
 ): TExportTableResult;
 var
   entities: TList;
-  i, j: Integer;
+  i, j, k: Integer;
   entity: Pointer;
   values: array of Variant;
   batchData: TList;
   inserted, updated: Integer;
   hasKeys: Boolean;
+  hasLoopMode: Boolean;
+  loopRows: TList;
+  loopRowCount: Integer;
+  pValues: PVariantArray;
 begin
   // Инициализация результата
   Result.TableName := AExportTableName;
@@ -442,12 +663,109 @@ begin
       // Проверяем наличие ключевых колонок
       hasKeys := AInstructions.KeyColumns.Count > 0;
 
+      // Проверяем наличие плейсхолдеров цикла
+      hasLoopMode := HasLoopPlaceholders(AInstructions);
+
+      if hasLoopMode then
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Обнаружен режим цикла (плейсхолдер %s)',
+          [LOOP_NUMBER_PLACEHOLDER],
+          LM_Info
+        );
+
       // Начинаем транзакцию
       if not FConfig.DryRun then
         FConnection.BeginTransaction;
 
       try
-        if hasKeys then
+        // ===== РЕЖИМ С ЦИКЛОМ (плейсхолдеры) =====
+        if hasLoopMode then
+        begin
+          programlog.LogOutFormatStr(
+            'uzvsqlite: Режим цикла - каждый объект может генерировать несколько строк',
+            [],
+            LM_Info
+          );
+
+          batchData := TList.Create;
+          try
+            // Обрабатываем каждый примитив
+            for i := 0 to entities.Count - 1 do
+            begin
+              entity := entities[i];
+
+              // Извлекаем все итерации цикла для данного примитива
+              loopRowCount := ExtractAllLoopIterations(
+                entity,
+                AInstructions,
+                ASourceProvider,
+                loopRows
+              );
+
+              if loopRowCount = 0 then
+              begin
+                programlog.LogOutFormatStr(
+                  'uzvsqlite: Объект %d: нет данных для экспорта',
+                  [i + 1],
+                  LM_Info
+                );
+                Continue;
+              end;
+
+              programlog.LogOutFormatStr(
+                'uzvsqlite: Объект %d: извлечено строк: %d',
+                [i + 1, loopRowCount],
+                LM_Info
+              );
+
+              // Добавляем все строки в пакет
+              try
+                for j := 0 to loopRows.Count - 1 do
+                begin
+                  Inc(Result.RowsProcessed);
+                  batchData.Add(loopRows[j]);
+
+                  // Вставляем пакет при достижении размера батча
+                  if (batchData.Count >= FBatchSize) or
+                     ((i = entities.Count - 1) and (j = loopRows.Count - 1)) then
+                  begin
+                    if not FConfig.DryRun then
+                    begin
+                      inserted := InsertBatch(
+                        AInstructions.TargetTable,
+                        AInstructions,
+                        batchData
+                      );
+                      Inc(Result.RowsInserted, inserted);
+                    end;
+
+                    batchData.Clear;
+                  end;
+                end;
+              finally
+                // Освобождаем память для строк итераций
+                for k := 0 to loopRows.Count - 1 do
+                begin
+                  pValues := loopRows[k];
+                  Dispose(pValues);
+                end;
+                loopRows.Free;
+              end;
+
+              // Прогресс
+              if (i + 1) mod 100 = 0 then
+                programlog.LogOutFormatStr(
+                  'uzvsqlite: Обработано объектов: %d / %d',
+                  [i + 1, entities.Count],
+                  LM_Info
+                );
+            end;
+          finally
+            batchData.Free;
+          end;
+        end
+        // ===== ОБЫЧНЫЙ РЕЖИМ (без плейсхолдеров) =====
+        else if hasKeys then
         begin
           // Режим UPSERT (с ключевыми колонками)
           programlog.LogOutFormatStr(
