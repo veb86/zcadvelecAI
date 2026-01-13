@@ -34,7 +34,6 @@ uses
   uzclog,
   uzcinterface,
   uzcdrawings,
-  uzbtypes,
   uzvsqlite_types,
   uzvsqlite_config,
   uzvsqlite_exporter;

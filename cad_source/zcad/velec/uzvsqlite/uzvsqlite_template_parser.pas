@@ -24,7 +24,7 @@ unit uzvsqlite_template_parser;
 interface
 
 uses
-  SysUtils, uzeentity, varmandef, uzcvariablesutils, uzclog;
+  SysUtils, uzeentity, uzsbvarmandef, uzcvariablesutils, uzclog;
 
 {**
   Парсер шаблонов для выгрузки данных
@@ -52,7 +52,7 @@ function GetSystemAttribute(
 implementation
 
 uses
-  uzeconsts, uzbtypes;
+  uzeconsts;
 
 // Получить значение системного атрибута объекта
 function GetSystemAttribute(
@@ -79,35 +79,35 @@ begin
   lowerAttr := LowerCase(Trim(AAttrName));
 
   // Обработка системных атрибутов
-  if lowerAttr = 'name' then
-  begin
-    // Получаем имя объекта
-    Result := pEntity^.Name;
-  end
-  else if lowerAttr = 'id' then
-  begin
-    // Получаем ID объекта как строку
-    Result := IntToStr(pEntity^.vp.ID);
-  end
-  else if lowerAttr = 'type' then
-  begin
-    // Получаем тип объекта
-    Result := IntToStr(pEntity^.GetObjType);
-  end
-  else if lowerAttr = 'layer' then
-  begin
-    // Получаем имя слоя
-    Result := pEntity^.vp.Layer^.Name;
-  end
-  else
-  begin
-    // Неизвестный атрибут
-    programlog.LogOutFormatStr(
-      'uzvsqlite: Неизвестный системный атрибут: %s',
-      [AAttrName],
-      LM_Info
-    );
-  end;
+  //if lowerAttr = 'name' then
+  //begin
+  //  // Получаем имя объекта
+  //  Result := pEntity^.Name;
+  //end
+  //else if lowerAttr = 'id' then
+  //begin
+  //  // Получаем ID объекта как строку
+  //  Result := IntToStr(pEntity^.vp.ID);
+  //end
+  //else if lowerAttr = 'type' then
+  //begin
+  //  // Получаем тип объекта
+  //  Result := IntToStr(pEntity^.GetObjType);
+  //end
+  //else if lowerAttr = 'layer' then
+  //begin
+  //  // Получаем имя слоя
+  //  Result := pEntity^.vp.Layer^.Name;
+  //end
+  //else
+  //begin
+  //  // Неизвестный атрибут
+  //  programlog.LogOutFormatStr(
+  //    'uzvsqlite: Неизвестный системный атрибут: %s',
+  //    [AAttrName],
+  //    LM_Info
+  //  );
+  //end;
 
   programlog.LogOutFormatStr(
     'uzvsqlite: GetSystemAttribute(%s) = %s',

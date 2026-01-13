@@ -25,8 +25,8 @@ interface
 
 uses
   SysUtils, Classes, Variants,gvector,
-  uzeentity, varmandef, uzcvariablesutils,
-  uzvgetentity, uzvsqlite_types,uzbtypes, uzclog;
+  uzeentity, uzsbvarmandef, uzcvariablesutils, uzetypes,
+  uzvgetentity, uzvsqlite_types, uzclog;
 
 type
   {**

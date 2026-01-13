@@ -25,7 +25,7 @@ interface
 
 uses
   SysUtils, Classes, Variants,
-  uzeentity, varmandef, uzcvariablesutils,
+  uzeentity, uzsbvarmandef, uzcvariablesutils,
   uzvaccess_types, uzclog;
 
 const
@@ -301,35 +301,35 @@ begin
   attrLower := LowerCase(Trim(AAttributeName));
 
   // Обработка известных системных атрибутов
-  if attrLower = 'name' then
-  begin
-    // Получаем имя через GetVariableAsString
-    Result := pEntity^.GetVariableAsString('NMO_Name');
-  end
-  else if attrLower = 'basename' then
-  begin
-    Result := pEntity^.GetVariableAsString('NMO_BaseName');
-  end
-  else if attrLower = 'id' then
-  begin
-    // ID - это адрес объекта в памяти
-    Result := IntToStr(PtrUInt(pEntity));
-  end
-  else if attrLower = 'type' then
-  begin
-    // Тип объекта
-    Result := IntToStr(pEntity^.GetObjType);
-  end
-  else
-  begin
-    // Для неизвестных атрибутов пытаемся получить как обычную переменную
-    programlog.LogOutFormatStr(
-      'uzvaccess_template_parser: Неизвестный системный атрибут "%s", попытка получить как переменную',
-      [AAttributeName],
-      LM_Info
-    );
-    Result := GetDynamicParamValue(AEntity, AAttributeName);
-  end;
+  //if attrLower = 'name' then
+  //begin
+  //  // Получаем имя через GetVariableAsString
+  //  Result := pEntity^.GetVariableAsString('NMO_Name');
+  //end
+  //else if attrLower = 'basename' then
+  //begin
+  //  Result := pEntity^.GetVariableAsString('NMO_BaseName');
+  //end
+  //else if attrLower = 'id' then
+  //begin
+  //  // ID - это адрес объекта в памяти
+  //  Result := IntToStr(PtrUInt(pEntity));
+  //end
+  //else if attrLower = 'type' then
+  //begin
+  //  // Тип объекта
+  //  Result := IntToStr(pEntity^.GetObjType);
+  //end
+  //else
+  //begin
+  //  // Для неизвестных атрибутов пытаемся получить как обычную переменную
+  //  programlog.LogOutFormatStr(
+  //    'uzvaccess_template_parser: Неизвестный системный атрибут "%s", попытка получить как переменную',
+  //    [AAttributeName],
+  //    LM_Info
+  //  );
+  //  Result := GetDynamicParamValue(AEntity, AAttributeName);
+  //end;
 
   programlog.LogOutFormatStr(
     'uzvaccess_template_parser: Системный атрибут "%s" = "%s"',

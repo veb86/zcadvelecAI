@@ -25,7 +25,7 @@ uses
   sysutils, Classes, gvector,
   uzeentdevice, uzeentblockinsert, uzeentity, uzeconsts,
   uzcdrawing, uzcdrawings, uzcvariablesutils,
-  varmandef, gzctnrVectorTypes,Dialogs,
+  uzsbvarmandef, gzctnrVectorTypes,Dialogs,
   uzvmcstruct, uzccablemanager, uzcentcable, uzegeometry,
   uzglviewareadata, uzcsysvars, uzeentityfactory, uzcutils,
   uzeroot, uzcenitiesvariablesextender, uzccomelectrical,

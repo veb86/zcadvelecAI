@@ -30,12 +30,12 @@ uses
   uzcinterface,
   uzcdrawings,
   uzeconsts,
+  uzetypes,
   uzeentity,
-  uzbtypes,
   gzctnrVectorTypes,
   uzcenitiesvariablesextender,
   uzcvariablesutils,
-  varmandef,
+  uzsbvarmandef,
   uzccommandsabstract,
   uzccommandsimpl;
 

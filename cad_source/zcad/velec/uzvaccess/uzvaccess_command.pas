@@ -34,7 +34,7 @@ uses
   uzclog,
   uzcinterface,
   uzcdrawings,
-  uzbtypes,
+
   uzvaccess_types,
   uzvaccess_config,
   uzvaccess_exporter;

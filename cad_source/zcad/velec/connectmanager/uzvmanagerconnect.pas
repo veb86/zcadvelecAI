@@ -33,7 +33,7 @@ interface
 uses
    sysutils, //math,
 
-  URecordDescriptor,TypeDescriptors,
+  URecordDescriptor,uzsbtypedescriptors,
 
   Forms, //uzcfblockinsert,
   //uzcfarrayinsert,
@@ -81,7 +81,6 @@ uses
                       //системные переменные
   //uzgldrawcontext,
   uzcinterface,
-  uzbtypes, //base types
                       //описания базовых типов
   uzeconsts, //base constants
                       //описания базовых констант
@@ -95,7 +94,7 @@ uses
                       //"Менеджер" чертежей
   uzcutils,         //different functions simplify the creation entities, while there are very few
                       //разные функции упрощающие создание примитивов, пока их там очень мало
-  varmandef,
+  uzsbvarmandef,
   Varman,
   {UGDBOpenArrayOfUCommands,}//zcchangeundocommand,
 
