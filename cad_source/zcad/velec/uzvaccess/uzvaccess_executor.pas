@@ -470,31 +470,43 @@ begin
       Continue;
     end;
 
-    // Определяем имя параметра с учётом <lnum>
-    if mapping.HasLnumPlaceholder then
+    // Обработка составных шаблонов
+    if mapping.IsTemplate then
     begin
-      // Если <lnum> это само значение колонки (например numconnect)
-      if mapping.SourceParam = LNUM_PLACEHOLDER then
-      begin
-        AValues[i] := ALnumValue;
-        Continue;
-      end;
-
-      // Заменяем <lnum> на конкретный номер
-      paramName := StringReplace(
+      rawValue := ASourceProvider.GetTemplateValue(
+        AEntity,
         mapping.SourceParam,
-        LNUM_PLACEHOLDER,
-        IntToStr(ALnumValue),
-        [rfReplaceAll]
+        ALnumValue
       );
     end
     else
     begin
-      paramName := mapping.SourceParam;
-    end;
+      // Определяем имя параметра с учётом <lnum>
+      if mapping.HasLnumPlaceholder then
+      begin
+        // Если <lnum> это само значение колонки (например numconnect)
+        if mapping.SourceParam = LNUM_PLACEHOLDER then
+        begin
+          AValues[i] := ALnumValue;
+          Continue;
+        end;
 
-    // Получаем значение из примитива
-    rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+        // Заменяем <lnum> на конкретный номер
+        paramName := StringReplace(
+          mapping.SourceParam,
+          LNUM_PLACEHOLDER,
+          IntToStr(ALnumValue),
+          [rfReplaceAll]
+        );
+      end
+      else
+      begin
+        paramName := mapping.SourceParam;
+      end;
+
+      // Получаем значение из примитива
+      rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+    end;
 
     // Если значение nil и это <lnum> параметр, используем '-'
     if VarIsNull(rawValue) and mapping.HasLnumPlaceholder then
@@ -555,8 +567,20 @@ begin
       Continue;
     end;
 
-    // Получаем значение из примитива
-    rawValue := ASourceProvider.GetPropertyValue(AEntity, mapping.SourceParam);
+    // Обработка составных шаблонов
+    if mapping.IsTemplate then
+    begin
+      rawValue := ASourceProvider.GetTemplateValue(
+        AEntity,
+        mapping.SourceParam,
+        0
+      );
+    end
+    else
+    begin
+      // Получаем значение из примитива
+      rawValue := ASourceProvider.GetPropertyValue(AEntity, mapping.SourceParam);
+    end;
 
     // Валидируем и преобразуем тип
     if not FValidator.ValidateAndConvert(
