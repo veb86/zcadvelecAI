@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Run Analysis Widget</title>
+  <!-- Используем локальный файл или raw.githubusercontent -->
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 10px;
+      background: #f8f8f8;
+    }
+    button {
+      padding: 8px 12px;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    pre {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+<h3>Run Analysis Widget</h3>
+<p>Данные таблицы:</p>
+<pre id="records">Загрузка...</pre>
+
+<button id="runAnalysisBtn">Запустить анализ</button>
+
+<script>
+  // 1) Сообщаем Grist, что виджет готов
+  grist.ready({ requiredAccess: "fullDocument" }).then(() => {
+    console.log("Grist API готов");
+
+    const output = document.getElementById("records");
+    const btn = document.getElementById("runAnalysisBtn");
+
+    let currentRecords = [];
+
+    // 2) Подписка на все записи выбранной таблицы
+    grist.onRecords(function(records) {
+      currentRecords = records;
+      output.innerText = JSON.stringify(records, null, 2);
+    });
+
+    // 3) Кнопка анализа
+    btn.addEventListener("click", async () => {
+      if (!currentRecords.length) {
+        alert("Нет данных для анализа");
+        return;
+      }
+
+      // Пример анализа: считаем количество записей
+      const result = {
+        totalRecords: currentRecords.length,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log("Анализ завершен:", result);
+
+      // 4) Запись результата в другую таблицу (укажи правильное имя таблицы)
+      try {
+        // 'AnalysisResults' — таблица, куда записываем
+        const table = grist.docApi.getTable('AnalysisResults');
+
+        // Если таблица есть, добавляем запись
+        if (table) {
+          await table.addRecord(result);
+          alert("Результаты анализа добавлены в таблицу 'AnalysisResults'");
+        } else {
+          alert("Таблица 'AnalysisResults' не найдена");
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Ошибка при добавлении записи: " + e.message);
+      }
+    });
+
+  }).catch(err => {
+    console.error("Ошибка инициализации Grist API:", err);
+  });
+
+</script>
+</body>
+</html>

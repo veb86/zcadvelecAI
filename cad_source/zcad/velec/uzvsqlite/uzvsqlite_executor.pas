@@ -834,8 +834,17 @@ begin
 
               Inc(Result.RowsProcessed);
 
-              // Добавляем в пакет
-              batchData.Add(@values);
+              // Создаём новый массив для каждого устройства
+              // чтобы избежать перезаписи данных при добавлении в пакет
+              New(pValues);
+              SetLength(pValues^, Length(values));
+
+              // Копируем значения в новый массив
+              for j := 0 to High(values) do
+                pValues^[j] := values[j];
+
+              // Добавляем указатель на новый массив в пакет
+              batchData.Add(pValues);
 
               // Вставляем пакет при достижении размера батча
               if (batchData.Count >= FBatchSize) or (i = entities.Count - 1) then
@@ -845,6 +854,13 @@ begin
                   inserted := InsertBatch(AInstructions.TargetTable,
                     AInstructions, batchData);
                   Inc(Result.RowsInserted, inserted);
+                end;
+
+                // Освобождаем память выделенную для массивов
+                for j := 0 to batchData.Count - 1 do
+                begin
+                  SetLength(PVariantArray(batchData[j])^, 0);
+                  Dispose(PVariantArray(batchData[j]));
                 end;
 
                 batchData.Clear;
@@ -859,6 +875,13 @@ begin
                 );
             end;
           finally
+            // Освобождаем память для оставшихся массивов, если есть
+            for j := 0 to batchData.Count - 1 do
+            begin
+              SetLength(PVariantArray(batchData[j])^, 0);
+              Dispose(PVariantArray(batchData[j]));
+            end;
+
             batchData.Free;
           end;
         end;
