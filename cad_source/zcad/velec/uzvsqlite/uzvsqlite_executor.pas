@@ -27,7 +27,8 @@ uses
   SysUtils, Classes, Variants, DB, SQLDB,
   uzvsqlite_types, uzclog, uzvsqlite_config,
   uzvsqlite_connection, uzvsqlite_validator,
-  uzvsqlite_source_provider, uzvsqlite_sqlbuilder;
+  uzvsqlite_source_provider, uzvsqlite_sqlbuilder,
+  uzvsqlite_template_parser;
 
 type
   // Тип для хранения массива Variant в TList
@@ -364,8 +365,14 @@ var
   i: Integer;
   mapping: TColumnMapping;
   rawValue, convertedValue: Variant;
+  parsedValue: String;
+  lnum: Integer;
 begin
   Result := True;
+
+  // TODO: получить реальное значение lnum из контекста цикла
+  // Пока используем значение по умолчанию 1
+  lnum := 1;
 
   // Извлекаем значения для каждой колонки
   for i := 0 to AInstructions.ColumnMappings.Size - 1 do
@@ -379,8 +386,26 @@ begin
       Continue;
     end;
 
-    // Получаем значение из примитива
-    rawValue := ASourceProvider.GetPropertyValue(AEntity, mapping.SourceParam);
+    // Проверяем, является ли SourceParam шаблоном
+    // Шаблоны содержат @@[ или <
+    if (Pos('@@[', mapping.SourceParam) > 0) or
+       (Pos('<', mapping.SourceParam) > 0) then
+    begin
+      // Парсим шаблон
+      parsedValue := ParseTemplate(mapping.SourceParam, AEntity, lnum);
+      rawValue := parsedValue;
+
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Шаблон "%s" → "%s"',
+        [mapping.SourceParam, parsedValue],
+        LM_Info
+      );
+    end
+    else
+    begin
+      // Обычный параметр - получаем через старый механизм
+      rawValue := ASourceProvider.GetPropertyValue(AEntity, mapping.SourceParam);
+    end;
 
     // Валидируем и преобразуем тип
     if not FValidator.ValidateAndConvert(
