@@ -30,7 +30,7 @@ uses
   uzccommandsabstract,
   uzccommandsmanager,
   uzccommandsimpl,
-  uzbtypes,
+  
   uzcdrawings,
   uzeutils,uzcutils,
   uzglviewareadata,
@@ -38,7 +38,7 @@ uses
   uzegeometry,
   uzeconsts,
   uzegeometrytypes,
-  uzeentpolyline,
+  uzeentpolyline,uzeentcurve,
   uzcLog;
 
 var

@@ -23,11 +23,11 @@ interface
 uses
   SysUtils,uzedrawingdef,uzeExtdrAbstractEntityExtender,
   uzeExtdrBaseEntityExtender,
-  uzeentdevice,TypeDescriptors,uzetextpreprocessor,uzctnrVectorBytes,
-  uzbtypes,uzeentsubordinated,uzeentity,uzeenttext,uzeblockdef,
-  varmandef,Varman,UUnitManager,URecordDescriptor,UBaseTypeDescriptor,
+  uzeentdevice,uzetextpreprocessor,uzctnrVectorBytesStream,
+  uzeTypes,uzeentsubordinated,uzeentity,uzeenttext,uzeblockdef,
+  uzsbVarmanDef,Varman,UUnitManager,URecordDescriptor,UBaseTypeDescriptor,
   uzeffdxfsupport,uzcvariablesutils,usimplegenerics,
-  uzeBaseExtender,uzgldrawcontext,fpexprpars,uzcLog,uzcreglog;
+  uzeBaseExtender,uzgldrawcontext,fpexprpars,uzcLog;
 const
   LayerControlExtenderName='extdrLayerControl';
   //добавить это расширение к примитиву можно командой

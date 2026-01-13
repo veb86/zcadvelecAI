@@ -22,12 +22,12 @@ unit uzeentdimension;
 interface
 
 uses
-  uzemathutils,uzgldrawcontext,uzeentabstracttext,uzestylestexts,uzestylesdim,
-  uzeentmtext,uzestyleslayers,uzedrawingdef,uzecamera,uzbstrproc,
-  uzctnrVectorBytes,uzeenttext,uzegeometry,uzeentline,uzeentcomplex,
-  uzegeometrytypes,SysUtils,uzeentity,uzbtypes,uzeconsts,uzedimensionaltypes,
+  uzgldrawcontext,uzeentabstracttext,uzestylestexts,uzestylesdim,
+  uzeentmtext,uzestyleslayers,uzedrawingdef,uzecamera,
+  uzctnrVectorBytesStream,uzeenttext,uzegeometry,uzeentline,uzeentcomplex,
+  uzegeometrytypes,SysUtils,uzeentity,uzeTypes,uzeconsts,
   uzeentitiesmanager,UGDBOpenArrayOfPV,uzeentblockinsert,uzglviewareadata,
-  uzeSnap,Math;
+  uzeSnap,Math,uzbUnits,uzbUnitsUtils;
 
 type
   PTDXFDimData=^TDXFDimData;

@@ -20,10 +20,10 @@ unit uzcpropertiesutils;
 {$INCLUDE zengineconfig.inc}
 
 interface
-uses sysutils,//uzbtypes,
-     uzeentity,varmandef,uzeentsubordinated,
+uses sysutils,
+     uzeentity,uzsbVarmanDef,uzeentsubordinated,
      uzcoimultiproperties,uzcoimultipropertiesutil,uzcdrawings,
-     Varman,uzedimensionaltypes;
+     Varman,uzbUnits;
 function GetProperty(PEnt:PGDBObjGenericWithSubordinated;propertyname:String; out propertyvalue:String):boolean;
 implementation
 var

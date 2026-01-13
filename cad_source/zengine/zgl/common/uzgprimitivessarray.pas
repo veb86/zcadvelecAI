@@ -20,14 +20,13 @@ unit uzgprimitivessarray;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses gzctnrAlignedVectorObjects,uzbtypes;
+uses gzctnrAlignedVectorObjects,uzeTypes;
 type
-{Export+}
+
   PTLLPrimitivesArray=^TLLPrimitivesArray;
-  {REGISTEROBJECTTYPE TLLPrimitivesArray}
-  TLLPrimitivesArray= object(GZAlignedVectorObjects{-}<PGDBaseObject>{//})
+  TLLPrimitivesArray= object(GZAlignedVectorObjects<PGDBaseObject>)
   end;
-{Export-}
+
 { #todo : Убрать PGDBaseObject, сделать абстрактный примитив }
 implementation
 begin

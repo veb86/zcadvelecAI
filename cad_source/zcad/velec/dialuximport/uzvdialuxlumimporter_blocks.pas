@@ -27,12 +27,11 @@ uses
   SysUtils,
   Classes,
   uzcdrawings,
-  uzbtypes,
+  
   uzclog,
   uzeblockdef,
   gzctnrVectorTypes,
-  uzvdialuxlumimporter_structs,
-  uzvdialuxlumimporter_utils;
+  uzvdialuxlumimporter_structs;
 
 {**Получить список загруженных блоков с фильтром VELEC}
 procedure GetLoadedBlocks(out LoadedBlocks: TLoadedBlocksList);

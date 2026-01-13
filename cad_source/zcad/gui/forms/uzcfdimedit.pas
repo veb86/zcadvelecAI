@@ -12,9 +12,10 @@ uses
   Forms, Controls,
   Buttons, ExtCtrls, StdCtrls, ComCtrls, LCLIntf, LCLType, Spin,
 
-  uzcdrawings,uzbtypes,
-  uzedimensionaltypes,uzestylesdim,
+  uzcdrawings,
+  uzestylesdim,
   uzclog,uzedrawingsimple,uzcsysvars,
+  uzbUnits,uzeTypes,
 
   uzcinterface,uzcstrconsts,uzbstrproc,
   uzepalette,uzcflineweights,uzestyleslinetypes,uzestylestexts,

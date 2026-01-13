@@ -20,13 +20,13 @@ unit uzctnrvectorpgdbaseobjects;
 {$Mode delphi}{$H+}
 
 interface
-uses uzbtypes,gzctnrVectorPData;
+uses uzeTypes,gzctnrVectorPData;
 type
-{Export+}
-TZctnrVectorPGDBaseObjects=object(GZVectorPData{-}<PGDBaseObject>{//})
+
+TZctnrVectorPGDBaseObjects=object(GZVectorPData<PGDBaseObject>)
                               end;
 PGDBOpenArrayOfPObjects=^TZctnrVectorPGDBaseObjects;
-{Export-}
+
 implementation
 begin
 end.

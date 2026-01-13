@@ -22,9 +22,9 @@ interface
 uses
   sysutils,uzedrawingdef,uzeExtdrAbstractEntityExtender,
   uzeExtdrBaseEntityExtender,
-  uzeentgenericsubentry,uzeentline,uzegeometry,
-  uzeentdevice,TypeDescriptors,uzctnrVectorBytes,
-  uzbtypes,uzeentsubordinated,uzeentity,uzeblockdef,
+  uzeentgenericsubentry,uzeentline,
+  uzeentdevice,uzctnrVectorBytesStream,
+  uzeTypes,uzeentsubordinated,uzeentity,uzeblockdef,
   usimplegenerics,uzeffdxfsupport,
   gzctnrVectorTypes,uzeBaseExtender,uzgldrawcontext,
   uzcsysvars,gzctnrVectorSimple,gzctnrVectorP,UGDBOpenArrayOfPV,

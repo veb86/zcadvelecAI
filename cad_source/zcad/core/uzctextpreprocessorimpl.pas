@@ -20,8 +20,8 @@ unit uzctextpreprocessorimpl;
 {$mode objfpc}{$H+}
 
 interface
-uses uzeentity,uzcvariablesutils,uzetextpreprocessor,uzbstrproc,sysutils,
-     varmandef,uzbtypes,uzcenitiesvariablesextender,languade,
+uses uzeentity,uzcvariablesutils,uzetextpreprocessor,sysutils,
+     uzsbVarmanDef,uzeTypes,uzcenitiesvariablesextender,languade,
      uzcpropertiesutils,uzeparser,LazUTF8,uzcTextPreprocessorDXFImpl;
 type
   TStr2VarProcessor=class(TMyParser.TParserTokenizer.TDynamicProcessor)

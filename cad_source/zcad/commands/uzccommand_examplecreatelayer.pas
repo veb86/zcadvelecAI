@@ -25,7 +25,7 @@ interface
 uses
   uzcLog,
   uzccommandsabstract,uzccommandsimpl,
-  uzestyleslayers,uzbtypes,
+  uzestyleslayers,uzeTypes,
   uzcstrconsts,uzccommandsmanager,uzcdrawings,uzeentity,uzeconsts;
 
 implementation

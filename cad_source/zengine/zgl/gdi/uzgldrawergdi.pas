@@ -42,8 +42,7 @@ uses
 const
   NeedScreenInvalidrect=true;
 type
-{EXPORT+}
-{REGISTERRECORDTYPE TGDIPrimitivesCounter}
+
 TGDIPrimitivesCounter=record
           Lines:Integer;
           Triangles:Integer;
@@ -53,8 +52,6 @@ TGDIPrimitivesCounter=record
           SystemSymbols:Integer;
     end;
 TTextRenderingType=(TRT_System,TRT_ZGL,TRT_Both);
-PTGDIData=^TGDIData;
-{REGISTERRECORDTYPE TGDIData}
 TGDIData=record
           RD_TextRendering:TTextRenderingType;
           RD_DrawDebugGeometry:Boolean;
@@ -62,7 +59,10 @@ TGDIData=record
           RD_Renderer:String;(*'Device'*)(*oi_readonly*)
           RD_Version:String;(*'Version'*)(*oi_readonly*)
     end;
-{EXPORT-}
+PTGDIData=^TGDIData;
+
+
+
 TGDIFontCacheKey=record
                        RealSizeInPixels:Integer;
                        PFontRecord:PGDBFontRecord;
@@ -71,7 +71,6 @@ TGDIFontCacheKey=record
                        Handle:HFONT;
                   end;}
 PTLLGDISymbol=^TLLGDISymbol;
-{---REGISTEROBJECTTYPE TLLGDISymbol}
 TLLGDISymbol= object(TLLSymbol)
               procedure drawSymbol(drawer:TZGLAbstractDrawer;var rc:TDrawContext;var GeomData:ZGLGeomData;var LLPArray:TLLPrimitivesArray;var OptData:ZGLOptimizerData;const PSymbolsParam:PTSymbolSParam;const inFrustumState:TInBoundingVolume);virtual;
         end;

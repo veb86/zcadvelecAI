@@ -19,15 +19,17 @@
 unit uzcOIRegister;
 {$INCLUDE zengineconfig.inc}
 interface
-uses Laz2_DOM,Toolwin,Clipbrd,sysutils,uzccommandsabstract,uzcfcommandline,uzcutils,uzbpaths,TypeDescriptors,uzcTranslations,Forms,uzcinterface,uzeroot,
-     uzbtypes,uzedrawingdef,uzgldrawcontext,uzctnrvectorstrings,varmandef,uzedrawingsimple,
-     uzeentity,uzcenitiesvariablesextender,zcobjectinspector,uzcguimanager,uzcstrconsts,
-     gzctnrVectorTypes,Types,Controls,uzcdrawings,Varman,UUnitManager,uzcsysvars,
-     uzcsysparams,zcobjectinspectorui,uzcoimultiobjects,uzccommandsimpl,
-     uzmenusmanager,uzcLog,menus,ComCtrls,uztoolbarsmanager,uzcimagesmanager,
-     uzedimensionaltypes,uzctreenode,uzcActionsManager,uzObjectInspectorManager,
-     zeundostack,uzcOI,UObjectDescriptor,
-     classes;
+uses
+  Laz2_DOM,Toolwin,Clipbrd,sysutils,uzccommandsabstract,uzcfcommandline,
+  uzcutils,uzbpaths,uzcTranslations,Forms,uzcinterface,uzeroot,
+  uzedrawingdef,uzgldrawcontext,uzctnrvectorstrings,uzsbVarmanDef,
+  uzedrawingsimple,uzeentity,uzcenitiesvariablesextender,uzObjectInspector,
+  uzcguimanager,uzcstrconsts,gzctnrVectorTypes,Controls,uzcdrawings,
+  Varman,UUnitManager,uzcsysvars,uzcsysparams,
+  uzcoimultiobjects,uzccommandsimpl,uzmenusmanager,uzcLog,menus,ComCtrls,
+  uztoolbarsmanager,uzcimagesmanager,uzctreenode,uzcActionsManager,
+  uzObjectInspectorManager,zeundostack,uzcOI,UObjectDescriptor,classes,uzbUnits,
+  uzbBaseUtils,uzeTypes;
 const
     PEditorFocusPriority=550;
 type
@@ -99,85 +101,74 @@ begin
                                        GDBobjinsp.SetCurrentObjDefault;
                                   end;
 end;
-function isGDBObjInstance(const currobjgdbtype:PUserTypeDescriptor;const pcurcontext:pointer;const pcurrobj:pointer):boolean;
-begin
-  result:=false;
-  if (currobjgdbtype<>nil)and(pcurrobj<>nil) then
-    if IsIt(typeof(currobjgdbtype^),typeof(ObjectDescriptor)) then
-      if IsIt(typeof(PGDBaseObject(pcurrobj)^),typeof(GDBaseObject)) then
-        result:=True;
-end;
-procedure _onGetOtherValues(var vsa:TZctnrVectorStrings;const valkey:string;const currobjgdbtype:PUserTypeDescriptor;const pcurcontext:pointer;const pcurrobj:pointer;const f:TzeUnitsFormat);
+
+procedure _onGetOtherValues(var vsa:TZctnrVectorStrings;
+  const valkey:string;const DD:TDisplayedData);
 var
   pentvarext:TVariablesExtender;
   pobj:pGDBObjEntity;
   ir:itrec;
   pv:pvardesk;
-  vv:String;
+  vv:string;
 begin
-  if (valkey<>'')and(pcurcontext<>nil) then
-  begin
-       pobj:=PTSimpleDrawing(pcurcontext).GetCurrentROOT.ObjArray.beginiterate(ir);
-       if pobj<>nil then
-       repeat
-             if isGDBObjInstance(currobjgdbtype,pcurcontext,pcurrobj) then
-             begin
-             pentvarext:=pobj^.GetExtension<TVariablesExtender>;
-             if ((pobj^.GetObjType=pgdbobjentity(pcurrobj)^.GetObjType)or(pgdbobjentity(pcurrobj)^.GetObjType=0))and({pobj.ou.Instance}pentvarext<>nil) then
-             begin
-                  pv:={PTEntityUnit(pobj.ou.Instance)}pentvarext.entityunit.FindVariable(valkey);
-                  if pv<>nil then
-                  begin
-                       vv:=pv.data.PTD.GetEditableAsString(pv.data.Addr.Instance,f);
-                       if vv<>'' then
-
-                       vsa.PushBackIfNotPresent(vv);
-                  end;
-             end;
-             end;
-             pobj:=PTSimpleDrawing(pcurcontext).GetCurrentROOT.ObjArray.iterate(ir);
-       until pobj=nil;
-       vsa.sort;
+  if (DD.PObj=@MSEditor)and(valkey<>'')and(DD.Ctx<>nil) then begin
+    pobj:=PTSimpleDrawing(DD.Ctx).GetCurrentROOT.ObjArray.beginiterate(ir);
+    if pobj<>nil then
+      repeat
+        pentvarext:=pobj^.GetExtension<TVariablesExtender>;
+        pv:=pentvarext.entityunit.FindVariable(valkey);
+        if pv<>nil then begin
+          vv:=pv.Data.PTD.GetEditableAsString(pv.Data.Addr.Instance,DD.UnitsFormat);
+          if vv<>'' then
+            vsa.PushBackIfNotPresent(vv);
+        end;
+        pobj:=PTSimpleDrawing(DD.Ctx).GetCurrentROOT.ObjArray.iterate(ir);
+      until pobj=nil;
+    vsa.sort;
   end;
 end;
+
+function isGDBaseObjectInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
+begin
+  result:=false;
+  if (PTypeDesc<>nil)and(PData<>nil) then
+    if IsObjectIt(typeof(PTypeDesc^),typeof(ObjectDescriptor)) then
+      if IsObjectIt(PObjectDescriptor(PTypeDesc)^.PVMT,typeof(GDBaseObject)) then
+        result:=True;
+end;
+
+function isEntityInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
+begin
+  result:=false;
+  if (PTypeDesc<>nil)and(PData<>nil) then
+    if IsObjectIt(typeof(PTypeDesc^),typeof(ObjectDescriptor)) then
+      if IsObjectIt(PObjectDescriptor(PTypeDesc)^.PVMT,typeof(GDBObjEntity)) then
+        result:=True;
+end;
+
 procedure _onUpdateObjectInInsp(const EDContext:TEditorContext;const currobjgdbtype:PUserTypeDescriptor;const pcurcontext:pointer;const pcurrobj:pointer{;const GDBobj:boolean});
-  function CurrObjIsEntity:boolean;
-  begin
-    result:=false;
-    //if GDBobj then
-    //  if PGDBaseObject(pcurrobj)^.IsEntity then
-    //    result:=true;
-  end;
   function IsEntityInCurrentContext:boolean;
   begin
-       if PGDBObjEntity(pcurrobj).bp.ListPos.Owner=PTDrawingDef(pcurcontext)^.GetCurrentRootSimple
-       then
-           result:=true
-      else
-           result:=false;
+    result:=PGDBObjEntity(pcurrobj).bp.ListPos.Owner=
+            PTDrawingDef(pcurcontext)^.GetCurrentRootSimple
   end;
 var
    dc:TDrawContext;
    pdwg:PTSimpleDrawing;
 begin
-  if isGDBObjInstance(currobjgdbtype,pcurcontext,pcurrobj) then
-                begin
-                     dc:=PTDrawingDef(pcurcontext)^.CreateDrawingRC;
-                    if CurrObjIsEntity then
-                                           begin
-                                               PGDBObjEntity(pcurrobj)^.FormatEntity(PTDrawingDef(pcurcontext)^,dc);
-                                               if IsEntityInCurrentContext
-                                               then
-                                                   PGDBObjEntity(pcurrobj).YouChanged(PTDrawingDef(pcurcontext)^)
-                                               else
-                                                   PGDBObjRoot(PTDrawingDef(pcurcontext)^.GetCurrentRootSimple)^.FormatAfterEdit(PTDrawingDef(pcurcontext)^,dc);
-                                           end
-                                       else
-                                        begin
-                                           if assigned(EDContext.ppropcurrentedit) then
-                                             PGDBaseObject(pcurrobj)^.FormatAfterFielfmod(EDContext.ppropcurrentedit^.valueAddres,currobjgdbtype);
-                                        end;
-                end;
+  if isGDBaseObjectInstance(currobjgdbtype,pcurrobj) then begin
+    dc:=PTDrawingDef(pcurcontext)^.CreateDrawingRC;
+    if isEntityInstance(currobjgdbtype,pcurrobj) then begin
+      PGDBObjEntity(pcurrobj)^.FormatEntity(PTDrawingDef(pcurcontext)^,dc);
+      if IsEntityInCurrentContext then
+        PGDBObjEntity( pcurrobj).YouChanged(PTDrawingDef(pcurcontext)^)
+      else
+        PGDBObjRoot(PTDrawingDef(pcurcontext)^.GetCurrentRootSimple)^.FormatAfterEdit(PTDrawingDef(pcurcontext)^,dc);
+    end else begin
+      if assigned(EDContext.ppropcurrentedit) then
+        PGDBaseObject(pcurrobj)^.FormatAfterFielfmod(EDContext.ppropcurrentedit^.valueAddres,currobjgdbtype);
+    end;
+  end;
   //zcUI.Do_GUIaction(nil,zcMsgUIResetOGLWNDProc);
   pdwg:=drawings.GetCurrentDWG;
   if pdwg<>nil then
@@ -421,13 +412,13 @@ initialization
   SysVar.INTF.INTF_OBJINSP_Properties.INTF_ObjInsp_ShowOnlyHotFastEditors.Setup(OIManager.getShowOnlyHotFastEditors,OIManager.setShowOnlyHotFastEditors);
 
 
-  vd:=units.CreateInternalSystemVariable(SysVarUnit,SysVarN,GetSupportPaths,system_pas_path,InterfaceTranslate,'INTF_ObjInsp_Level0HeaderColor','TGetterSetterTZColor');
-  PTGetterSetterTZColor(vd.data.Addr.GetInstance)^.Setup(OIManager.getLevel0HeaderZColor,OIManager.setLevel0HeaderZColor);
-  SysVar.INTF.INTF_OBJINSP_Properties.INTF_ObjInsp_Level0HeaderColor.Setup(OIManager.getLevel0HeaderZColor,OIManager.setLevel0HeaderZColor);
+  vd:=units.CreateInternalSystemVariable(SysVarUnit,SysVarN,GetSupportPaths,system_pas_path,InterfaceTranslate,'INTF_ObjInsp_Level0HeaderColor','TGetterSetterTColor');
+  PTGetterSetterTColor(vd.data.Addr.GetInstance)^.Setup(OIManager.getLevel0HeaderColor,OIManager.setLevel0HeaderColor);
+  SysVar.INTF.INTF_OBJINSP_Properties.INTF_ObjInsp_Level0HeaderColor.Setup(OIManager.getLevel0HeaderColor,OIManager.setLevel0HeaderColor);
 
-  vd:=units.CreateInternalSystemVariable(SysVarUnit,SysVarN,GetSupportPaths,system_pas_path,InterfaceTranslate,'INTF_ObjInsp_BorledColor','TGetterSetterTZColor');
-  PTGetterSetterTZColor(vd.data.Addr.GetInstance)^.Setup(OIManager.getBorderZColor,OIManager.setBorderZColor);
-  SysVar.INTF.INTF_OBJINSP_Properties.INTF_ObjInsp_BorderColor.Setup(OIManager.getBorderZColor,OIManager.setBorderZColor);
+  vd:=units.CreateInternalSystemVariable(SysVarUnit,SysVarN,GetSupportPaths,system_pas_path,InterfaceTranslate,'INTF_ObjInsp_BorledColor','TGetterSetterTColor');
+  PTGetterSetterTColor(vd.data.Addr.GetInstance)^.Setup(OIManager.getBorderColor,OIManager.setBorderColor);
+  SysVar.INTF.INTF_OBJINSP_Properties.INTF_ObjInsp_BorderColor.Setup(OIManager.getBorderColor,OIManager.setBorderColor);
 
   vd:=units.CreateInternalSystemVariable(SysVarUnit,SysVarN,GetSupportPaths,system_pas_path,InterfaceTranslate,'INTF_ObjInsp_RowHeight_OverriderEnable','TGetterSetterBoolean');
   PTGetterSetterBoolean(vd.data.Addr.GetInstance)^.Setup(OIManager.getRowHeightOverrideUsable,OIManager.setRowHeightOverrideUsable);

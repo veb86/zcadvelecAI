@@ -26,13 +26,14 @@ uses
   SysUtils,
   uzcLog,
   uzccommandsabstract,uzccommandsimpl,
-  uzbstrproc,
-  uzeblockdef,uzcdrawing,uzcdrawings,uzcinterface,
-  uzctnrVectorStrings,uzegeometrytypes,
-  uzccomdraw,uzcstrconsts,uzccommandsmanager,Varman,uzeconsts,uzglviewareadata,
-  uzeentsubordinated,uzeentity,uzgldrawcontext,uzeentblockinsert,uzcutils,
-  zcmultiobjectcreateundocommand,uzeentityfactory,uzegeometry,
-  URecordDescriptor,typedescriptors,varmandef,uzccommand_Insert,uzbtypes,
+
+  uzeblockdef,uzcdrawings,uzcinterface,
+  uzegeometrytypes,
+  uzccomdraw,uzcstrconsts,uzccommandsmanager,Varman,uzglviewareadata,
+  uzeentsubordinated,uzeentity,uzgldrawcontext,uzeentblockinsert,
+  uzeentityfactory,
+  URecordDescriptor,uzsbVarmanDef,uzccommand_Insert,
+  uzbBaseUtils,
   uzeentdevice,UUnitManager,uzbPaths,uzcTranslations,uzcEnitiesVariablesExtender;
 
 implementation
@@ -49,7 +50,7 @@ var
 begin
   if (drawings.GetCurrentDWG^.wa.param.SelDesc.Selectedobjcount<>1)  or
     (drawings.GetCurrentDWG^.wa.param.SelDesc.LastSelectedObject=nil)  or
-    not (IsIt(typeof(PGDBObjEntity(
+    not (IsObjectIt(typeof(PGDBObjEntity(
     drawings.GetCurrentDWG^.wa.param.SelDesc.LastSelectedObject)^),typeof(GDBObjDevice))) then
   begin
     zcUI.TextMessage('PlaceDelegate:'+SysUtils.format(rscmSelDevBeforeComm,[]),

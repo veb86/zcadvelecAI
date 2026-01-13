@@ -38,7 +38,7 @@ uses
   gzctnrVectorTypes,
   uzcdrawings,
   //uzeconsts,
-  varmandef,
+  uzsbVarmanDef,
   uzcvariablesutils,
   //uzvconsts,
   uzcenitiesvariablesextender,
@@ -47,7 +47,6 @@ uses
   uzegeometry,
   uzeentpolyline,
   uzvzcadxlsxole,  //работа с xlsx
-  uzbstrproc,
   StrUtils,
   Classes,
   uzgldrawcontext,

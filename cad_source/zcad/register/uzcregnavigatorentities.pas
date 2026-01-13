@@ -19,9 +19,9 @@
 unit uzcregnavigatorentities;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzcfnavigatorentities,uzcfcommandline,uzbpaths,TypeDescriptors,uzctranslations,Forms,
-     varmandef,
-     uzeentity,zcobjectinspector,uzcguimanager,
+uses uzcfnavigatorentities,uzcfcommandline,uzbpaths,uzctranslations,Forms,
+     uzsbVarmanDef,
+     uzeentity,uzObjectInspector,uzcguimanager,
      Types,Controls,Varman,UUnitManager,uzcsysvars,uzcLog;
 resourcestring
   rsEntities='Entities';

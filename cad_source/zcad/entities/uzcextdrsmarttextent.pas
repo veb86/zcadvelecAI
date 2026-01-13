@@ -24,13 +24,13 @@ interface
 uses
   sysutils,
   math,uzegeometry,
-  uzctnrVectorBytes,
+  uzctnrVectorBytesStream,
   uzedrawingdef,uzgldrawcontext,
   uzeffdxfsupport,
   uzeentdevice,uzeentsubordinated,uzeentity,uzeentabstracttext,uzeenttext,
   uzeblockdef,uzeentmtext,uzeentwithlocalcs,uzeentblockinsert,
   uzeExtdrAbstractEntityExtender,uzeExtdrBaseEntityExtender,
-  uzeBaseExtender,uzbtypes,uzegeometrytypes,uzeconsts,usimplegenerics;
+  uzeBaseExtender,uzeTypes,uzegeometrytypes,uzeconsts,usimplegenerics;
 
 type
   TDummyDtawer=procedure(var IODXFContext:TIODXFSaveContext;var outStream:TZctnrVectorBytes;pEntity:PGDBObjEntity;const p1,p2:TzePoint3d;const drawing:TDrawingDef;var DC:TDrawContext);

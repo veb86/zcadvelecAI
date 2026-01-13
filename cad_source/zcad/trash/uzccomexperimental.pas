@@ -38,7 +38,7 @@ uses
   uzegeometrytypes,
   sysutils, math, uzccomexample,uzccominteractivemanipulators,
 
-  URecordDescriptor,TypeDescriptors,
+  URecordDescriptor,uzsbTypeDescriptors,
 
   Forms, uzcfblockinsert, uzcfarrayinsert,
 
@@ -79,7 +79,7 @@ uses
                       //системные переменные
   uzgldrawcontext,
   uzcinterface,
-  uzbtypes, //base types
+   //base types
                       //описания базовых типов
   uzeconsts, //base constants
                       //описания базовых констант
@@ -92,7 +92,7 @@ uses
                       //"Менеджер" чертежей
   uzcutils,         //different functions simplify the creation entities, while there are very few
                       //разные функции упрощающие создание примитивов, пока их там очень мало
-  varmandef,
+  uzsbVarmanDef,
   Varman,
   {UGDBOpenArrayOfUCommands,}zcchangeundocommand,
 

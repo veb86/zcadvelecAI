@@ -19,18 +19,17 @@
 unit uzgeomproxy;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzgeomentity,sysutils,uzbtypes,uzegeometrytypes,uzegeometry,gzctnrVectorTypes;
+uses uzgeomentity,sysutils,uzegeometrytypes,gzctnrVectorTypes;
 type
-{Export+}
+
 PTGeomProxy=^TGeomProxy;
-{REGISTEROBJECTTYPE TGeomProxy}
 TGeomProxy= object(TGeomEntity)
                                              LLEntsStart,LLEntsEnd:TArrayIndex;
                                              BB:TBoundingBox;
                                              constructor init(const LLS,LLE:TArrayIndex;const _BB:TBoundingBox);
                                              function GetBB:TBoundingBox;virtual;
                                            end;
-{Export-}
+
 implementation
 function TGeomProxy.GetBB:TBoundingBox;
 begin

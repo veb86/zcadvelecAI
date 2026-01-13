@@ -21,19 +21,22 @@ unit uzcutils;
 {$Mode delphi}
 {$INCLUDE zengineconfig.inc}
 
-
 interface
-uses uzeutils,LCLProc,zcmultiobjectcreateundocommand,uzepalette,
-     uzeentityfactory,uzgldrawcontext,uzcdrawing,uzestyleslinetypes,uzcsysvars,
-     uzestyleslayers,sysutils,uzbtypes,uzcdrawings,varmandef,
-     uzeconsts,UGDBVisibleOpenArray,uzeentgenericsubentry,uzeentity,
-     uzegeometrytypes,uzeentblockinsert,uzcinterface,gzctnrVectorTypes,uzeentitiesmanager,
-     uzegeometry,zcmultiobjectchangeundocommand,uzeEntBase,UGDBVisibleTreeArray;
+
+uses
+  uzeutils,LCLProc,zcmultiobjectcreateundocommand,uzepalette,uzeentityfactory,
+  uzgldrawcontext,uzcdrawing,uzestyleslinetypes,uzcsysvars,uzestyleslayers,
+  SysUtils,uzeTypes,uzcdrawings,uzsbVarmanDef,uzeconsts,
+  UGDBVisibleOpenArray,uzeentgenericsubentry,uzeentity,uzegeometrytypes,
+  uzeentblockinsert,uzcinterface,gzctnrVectorTypes,uzeentitiesmanager,
+  uzegeometry,zcmultiobjectchangeundocommand,uzeEntBase,UGDBVisibleTreeArray;
 
   {**Добавление в чертеж примитива с обвязкой undo
     @param(PEnt Указатель на добавляемый примитив)
     @param(Drawing Чертеж куда будет добавлен примитив)}
   procedure zcAddEntToDrawingWithUndo(const PEnt:PGDBObjBaseEntity;var Drawing:TZCADDrawing);
+
+  procedure zcAddEntToDrawingWithOutUndo(const APEnt:PGDBObjBaseEntity;var ADwg:TZCADDrawing);
 
   procedure zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(CommandName:String);
 
@@ -152,6 +155,13 @@ begin
           comit;
      end;
 end;
+
+procedure zcAddEntToDrawingWithOutUndo(const APEnt:PGDBObjBaseEntity;var ADwg:TZCADDrawing);
+begin
+  ADwg.GetCurrentROOT^.GoodAddObjectToObjArray(PGDBObjEntity(APEnt));
+  PGDBObjEntity(APEnt)^.YouChanged(drawings.GetCurrentDWG^);
+end;
+
 procedure zcAddEntToCurrentDrawingWithUndo(const PEnt:PGDBObjEntity);
 begin
      zcAddEntToDrawingWithUndo(PEnt,PTZCADDrawing(drawings.GetCurrentDWG)^);

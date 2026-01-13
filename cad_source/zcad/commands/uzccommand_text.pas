@@ -25,15 +25,15 @@ uses
   SysUtils,
   gzctnrVectorTypes,
   uzgldrawcontext,
-  uzbtypes,
+  uzeTypes,
   uzcdrawings,
   uzeutils,uzcutils,
-  URecordDescriptor,typedescriptors,uzeentityfactory,uzegeometry,Varman,
+  URecordDescriptor,uzsbTypeDescriptors,uzeentityfactory,uzegeometry,Varman,
   uzccommandsabstract,uzccmdfloatinsert,uzeentabstracttext,uzeenttext,uzeentmtext,
   uzcinterface,uzcstrconsts,uzccommandsmanager,
   uzeentity,uzcLog,uzctnrvectorstrings,uzestylestexts,uzeconsts,
   uzcsysvars,uzctextenteditor,
-  varmandef,
+  uzsbVarmanDef,
   uzeExtdrAbstractDrawingExtender,uzedrawingabstract,uzedrawingsimple,uzbPaths,
   UBaseTypeDescriptor,UPointerDescriptor;
 
@@ -47,8 +47,7 @@ type
     TO_MText,
     TO_NotDefined
     );
-  {EXPORT+}
-  {REGISTEROBJECTTYPE TextInsert_com}
+
   TextInsert_com=object(FloatInsert_com)
     pt:PGDBObjText;
     TOverrider:TTOMode;
@@ -69,7 +68,7 @@ type
     function getNeedEntityType:TIMode;
     function getNeedText:TDXFEntsInternalStringType;
   end;
-  {EXPORT-}
+
   PTTextInsertParams=^TTextInsertParams;
 
   TTextInsertParams=record

@@ -26,15 +26,14 @@ uses
   LCLProc,Forms{$IFNDEF DELPHI},LazUTF8{$ENDIF},
   uzcLog,uzbPaths;
 type
-{EXPORT+}
-  {REGISTERRECORDTYPE TmyFileVersionInfo}
+
   TmyFileVersionInfo=record
     Major,Minor,Micro,Release,CommitsAfter:Integer;
     AbbreviatedName:AnsiString;
     VersionString:AnsiString;
     ShortVersionString:AnsiString;
   end;
-  {REGISTERRECORDTYPE TZCSavedParams}
+
   TZCSavedParams=record
     UniqueInstance:Boolean;(*'Unique instance'*)
     NoSplash:Boolean;(*'No splash screen'*)
@@ -46,22 +45,24 @@ type
     LastAutoSaveFile:string;(*'Last autosave file'*)
     PreferredDistribPath:String;(*'Path to distributive'*)
   end;
-  {REGISTERRECORDTYPE TZCNotSavedParams}
+
   TZCNotSavedParams=record
     ScreenX:Integer;(*'Screen X'*)(*oi_readonly*)
     ScreenY:Integer;(*'Screen Y'*)(*oi_readonly*)
-    otherinstancerun:Boolean;(*'Other instance run'*)(*oi_readonly*)
+    OtherInstanceRun:Boolean;(*'Other instance run'*)(*oi_readonly*)
     PreloadedFile:String;(*'Preloaded file'*)(*oi_readonly*)
     Ver:TmyFileVersionInfo;(*'Version'*)(*oi_readonly*)
     DefaultHeight:Integer;(*'Default controls height'*)(*oi_readonly*)
   end;
-  PZCSysParams=^TZCSysParams;
-  {REGISTERRECORDTYPE TZCSysParams}
+
   TZCSysParams=record
     saved:TZCSavedParams;(*'Saved params'*)
     notsaved:TZCNotSavedParams;(*'Not saved params'*)(*oi_readonly*)
   end;
-{EXPORT-}
+  PZCSysParams=^TZCSysParams;
+
+
+
 const
   DefaultSavedParams:TZCSavedParams=(UniqueInstance:true;
                                    NoSplash:false;
@@ -136,20 +137,29 @@ var
 begin
   Params:=DefaultSavedParams;
   XMLConfig:=TXMLConfig.Create(nil);
-  XMLConfig.Filename:=xmlfile;
-  XMLConfig.OpenKey('Stage0Params');
-  Params.UniqueInstance:=XMLConfig.GetValue('UniqueInstance',DefaultSavedParams.UniqueInstance);
-  Params.NoSplash:=XMLConfig.GetValue('NoSplash',DefaultSavedParams.NoSplash);
-  Params.NoLoadLayout:=XMLConfig.GetValue('NoLoadLayout',DefaultSavedParams.NoLoadLayout);
-  Params.UpdatePO:=XMLConfig.GetValue('UpdatePO',DefaultSavedParams.UpdatePO);
-  Params.MemProfiling:=XMLConfig.GetValue('MemProfiling',DefaultSavedParams.MemProfiling);
-  Params.LangOverride:=XMLConfig.GetAnsiValue('LangOverride',DefaultSavedParams.LangOverride);
-  Params.DictionariesPath:=XMLConfig.GetAnsiValue('DictionariesPath',DefaultSavedParams.DictionariesPath);
-  Params.LastAutoSaveFile:=XMLConfig.GetAnsiValue('LastAutoSaveFile',DefaultSavedParams.LastAutoSaveFile);
-  Params.PreferredDistribPath:=XMLConfig.GetAnsiValue('PreferredDistribPath',DefaultSavedParams.PreferredDistribPath);
+  try
+    try
+    XMLConfig.Filename:=xmlfile;
+    XMLConfig.OpenKey('Stage0Params');
+    Params.UniqueInstance:=XMLConfig.GetValue('UniqueInstance',DefaultSavedParams.UniqueInstance);
+    Params.NoSplash:=XMLConfig.GetValue('NoSplash',DefaultSavedParams.NoSplash);
+    Params.NoLoadLayout:=XMLConfig.GetValue('NoLoadLayout',DefaultSavedParams.NoLoadLayout);
+    Params.UpdatePO:=XMLConfig.GetValue('UpdatePO',DefaultSavedParams.UpdatePO);
+    Params.MemProfiling:=XMLConfig.GetValue('MemProfiling',DefaultSavedParams.MemProfiling);
+    Params.LangOverride:=XMLConfig.GetAnsiValue('LangOverride',DefaultSavedParams.LangOverride);
+    Params.DictionariesPath:=XMLConfig.GetAnsiValue('DictionariesPath',DefaultSavedParams.DictionariesPath);
+    Params.LastAutoSaveFile:=XMLConfig.GetAnsiValue('LastAutoSaveFile',DefaultSavedParams.LastAutoSaveFile);
+    Params.PreferredDistribPath:=XMLConfig.GetAnsiValue('PreferredDistribPath',DefaultSavedParams.PreferredDistribPath);
+    XMLConfig.CloseKey;
+    except
+      on E:Exception do
+        ProgramLog.LogOutFormatStr('LoadParams: problem with load Stage0Params msg:"%s"',
+          [E.Message],LM_Error,1,MO_SM or MO_SH);
+    end;
+  finally
+  end;
   SetDistribPath(Params.PreferredDistribPath);
-  XMLConfig.CloseKey;
-  FreeAndNil(XMLConfig);
+  XMLConfig.free;
 end;
 
 

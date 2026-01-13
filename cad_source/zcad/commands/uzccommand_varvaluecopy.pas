@@ -29,7 +29,7 @@ uses
   uzbpaths,
   uzccmdinfoform,
   uzccommandsabstract,uzccommandsimpl,
-  uzctnrVectorBytes,
+  uzctnrVectorBytesStream,
   uzeentity,
   gzctnrVectorTypes,
   uzcenitiesvariablesextender,
@@ -37,7 +37,7 @@ uses
   uzcstrconsts,
   uzcdrawings,
   UUnitManager,
-  UGDBSelectedObjArray,varmandef,uzeroot,UGDBOpenArrayOfPV,uzgldrawcontext,
+  UGDBSelectedObjArray,uzsbVarmanDef,uzeroot,UGDBOpenArrayOfPV,uzgldrawcontext,
   uzelongprocesssupport,
   uzctranslations,uzcuitypes;
 

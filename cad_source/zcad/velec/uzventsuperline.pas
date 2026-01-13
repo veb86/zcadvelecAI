@@ -22,11 +22,10 @@ unit uzventsuperline;
 interface
 uses uzeobjectextender,LCLProc,uzeentityfactory,uzedrawingdef,
      uzestyleslayers,uzeentsubordinated,uzcLog,
-     uzeentline,uzeentity,uzctnrVectorBytes,uzbtypes,uzeconsts,
+     uzeentline,uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,
      uzegeometrytypes,uzegeometry,uzeffdxfsupport;
 type
-{Export+}
-{REGISTEROBJECTTYPE GDBObjSuperLine}
+
 PGDBObjSuperLine=^GDBObjSuperLine;
 GDBObjSuperLine= object(GDBObjLine)
                   constructor init(own:Pointer;layeraddres:PGDBLayerProp;LW:SmallInt;p1,p2:TzePoint3d);
@@ -38,7 +37,7 @@ GDBObjSuperLine= object(GDBObjLine)
                   procedure SaveToDXFObjXData(var outStream:TZctnrVectorBytes;var IODXFContext:TIODXFSaveContext);virtual;
                   class function GetDXFIOFeatures:TDXFEntIODataManager;static;
            end;
-{Export-}
+
 function AllocAndInitSuperLine(owner:PGDBObjGenericWithSubordinated):PGDBObjLine;
 var
     GDBObjSuperLineDXFFeatures:TDXFEntIODataManager;

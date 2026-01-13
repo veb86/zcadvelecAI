@@ -42,8 +42,6 @@ rmsrcbackups:
 	rm -rf components/zbaseutilsgui/backup
 	rm -rf components/zbaseutilsgui/examples/simpleapp/backup/*
 	rm -rf components/zbaseutilsgui/examples/simpleapp/backup
-	rm -rf components/zebase/backup/*
-	rm -rf components/zebase/backup
 	rm -rf components/zcontrols/backup/*
 	rm -rf components/zcontrols/backup
 	rm -rf components/zmacros/src/backup/*
@@ -105,7 +103,6 @@ rmpkgslibs:
 	rm -rf components/zcontainers/lib/*
 	rm -rf components/zbaseutils/lib/*
 	rm -rf components/zbaseutilsgui/lib/*
-	rm -rf components/zebase/lib/*
 	rm -rf components/zcontrols/lib/*
 	rm -rf components/zmacros/lib/*
 	rm -rf components/zmath/lib/*
@@ -122,12 +119,12 @@ rmpkgslibs:
 	rm -rf components/zreaders/lib/*
 	rm -rf components/fphunspell/lib/*
 	rm -rf simplecad/lib/*
+	rm -rf other/agraphlaz/lazarus/lib/*
 	rm -rf ../lib/*
 	rm -rf components/metadarkstyle/lib
 	rm -rf components/zcontainers/lib
 	rm -rf components/zbaseutils/lib
 	rm -rf components/zbaseutilsgui/lib
-	rm -rf components/zebase/lib
 	rm -rf components/zcontrols/lib
 	rm -rf components/zmacros/lib
 	rm -rf components/zmath/lib
@@ -143,6 +140,8 @@ rmpkgslibs:
 	rm -rf components/lape/package/lib
 	rm -rf components/zreaders/lib
 	rm -rf components/fphunspell/lib
+	rm -rf components/zunits/lib
 	rm -rf simplecad/lib
+	rm -rf other/agraphlaz/lazarus/lib
 #	rm -rf ../lib
 

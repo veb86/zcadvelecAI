@@ -20,9 +20,9 @@ unit UGDBNamedObjectsArray;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses gzctnrVectorTypes,gzctnrVectorPObjects,sysutils,uzbtypes,uzegeometry,
-     uzeNamedObject,//gzctnrVectorClass,
-     Strings;
+uses
+  gzctnrVectorTypes,gzctnrVectorPObjects,sysutils,uzeNamedObject,uzeTypes,
+  Strings;
 type
 TForCResult=(IsFounded(*'IsFounded'*)=1,
              IsCreated(*'IsCreated'*)=2,
@@ -40,7 +40,7 @@ GDBNamedObjectsArray<PTObj,TObj>
                     procedure IterateCounter(PCounted:Pointer;var Counter:Integer;proc:TProcCounter);virtual;
               end;
 PTGenericNamedObjectsArray=^TGenericNamedObjectsArray;
-TGenericNamedObjectsArray=GDBNamedObjectsArray{-}<PGDBNamedObject,GDBNamedObject>{//};
+TGenericNamedObjectsArray=GDBNamedObjectsArray<PGDBNamedObject,GDBNamedObject>;
 implementation
 procedure GDBNamedObjectsArray<PTObj,TObj>.IterateCounter(PCounted:Pointer;var Counter:Integer;proc:TProcCounter);
 var p:PGDBNamedObject;

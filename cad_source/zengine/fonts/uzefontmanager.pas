@@ -22,9 +22,9 @@ unit uzefontmanager;
 {$ModeSwitch advancedrecords}
 interface
 uses
-  uzctnrVectorBytes,{$IFNDEF DELPHI}LResources,{$ENDIF}uzbLogIntf,uzbpaths,
-  uzelclintfex,uzestrconsts,uzbstrproc,uzefont,
-  sysutils,uzbtypes,uzegeometry,gzctnrSTL,
+  uzctnrVectorBytesStream,{$IFNDEF DELPHI}LResources,{$ENDIF}uzbLogIntf,uzbpaths,
+  uzelclintfex,uzestrconsts,uzefont,
+  sysutils,gzctnrSTL,
   UGDBNamedObjectsArray,classes,uzefontttfpreloader,uzelongprocesssupport;
 type
   TGeneralFontParam=record
@@ -47,17 +47,15 @@ type
   end;
 
   TFontExt2LoadProcMap=GKey2DataMap<String,TFontLoadProcedureData(*{$IFNDEF DELPHI},LessString{$ENDIF}*)>;
-{Export+}
+
   PGDBFontRecord=^GDBFontRecord;
-  {REGISTERRECORDTYPE GDBFontRecord}
   GDBFontRecord = record
     Name: String;
     Pfont: Pointer;
   end;
   PGDBFontManager=^GDBFontManager;
-  {REGISTEROBJECTTYPE GDBFontManager}
-  GDBFontManager=object({GDBOpenArrayOfData}GDBNamedObjectsArray{-}<PGDBfont,GDBfont>{//})
-    FontFiles:{-}TFontName2FontFileMap{/pointer/};
+  GDBFontManager=object({GDBOpenArrayOfData}GDBNamedObjectsArray<PGDBfont,GDBfont>)
+    FontFiles:TFontName2FontFileMap;
     shxfontfiles:TStringList;
     constructor init(m:Integer);
     procedure done;virtual;
@@ -71,7 +69,7 @@ type
     //function FindFonf(FontName:String):Pointer;
     {procedure freeelement(p:Pointer);virtual;}
   end;
-{Export-}
+
 var
    FontManager:GDBFontManager;
    FontExt2LoadProc:TFontExt2LoadProcMap;

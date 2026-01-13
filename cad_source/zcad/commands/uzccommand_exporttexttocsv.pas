@@ -24,7 +24,7 @@ interface
 uses
   gvector,
   CsvDocument,
-  uzbLog,uzcLog,uzcreglog,
+  uzbLog,uzcLog,
   SysUtils,
   uzbpaths,
   Math,
@@ -34,10 +34,10 @@ uses
   uzeentlwpolyline,uzeentpolyline,uzeentityfactory,
   uzcdrawings,
   uzcutils,
-  uzbtypes,
+  uzeTypes,
   uzegeometry,
   uzeentity,uzeenttext,uzeconsts,
-  URecordDescriptor,typedescriptors,Varman,gzctnrVectorTypes,uzelongprocesssupport;
+  URecordDescriptor,uzsbTypeDescriptors,Varman,gzctnrVectorTypes,uzelongprocesssupport;
 
 implementation
 

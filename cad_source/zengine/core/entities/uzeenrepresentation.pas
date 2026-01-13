@@ -23,17 +23,17 @@ interface
 uses
   uzgldrawcontext,uzgldrawerabstract,uzglvectorobject,SysUtils,uzegeometrytypes,
   uzegeometry,uzglgeometry,uzefont,uzeentitiesprop,UGDBPoint3DArray,
-  uzeentsubordinated,uzegeomentitiestree,uzbtypes,gzctnrVectorTypes,
+  uzeentsubordinated,uzegeomentitiestree,uzeTypes,gzctnrVectorTypes,
   uzgeomline3d,uzgeomproxy;
 
 type
   PTZEntityRepresentation=^TZEntityRepresentation;
 
   TZEntityRepresentation=object(GDBaseObject)
-    {-}//private{//}
+    //private
     Graphix:ZGLGraphix;
     Geometry:TGeomEntTreeNode;
-    {-}public{//}
+    public
     constructor init();
     destructor done;virtual;
 

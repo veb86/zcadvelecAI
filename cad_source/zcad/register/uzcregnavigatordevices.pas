@@ -20,9 +20,9 @@ unit uzcregnavigatordevices;
 {$Codepage UTF8}
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzcfnavigatordevices,uzcfcommandline,uzbpaths,TypeDescriptors,uzctranslations,Forms,
-     varmandef,uzeentdevice,uzcnavigatorsnodedesk,
-     uzeentity,zcobjectinspector,uzcguimanager,uzcenitiesvariablesextender,uzbstrproc,
+uses uzcfnavigatordevices,uzcfcommandline,uzbpaths,uzctranslations,Forms,
+     uzsbVarmanDef,uzeentdevice,uzcnavigatorsnodedesk,
+     uzeentity,uzObjectInspector,uzcguimanager,uzcenitiesvariablesextender,
      Types,Controls,Varman,UUnitManager,uzcsysvars,uzcLog,laz.VirtualTrees,
      uzcfnavigatordevicescxmenu,{uzcmainwindow,}MacroDefIntf,sysutils,uzcActionsManager;
 resourcestring

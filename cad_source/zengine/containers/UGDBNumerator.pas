@@ -20,17 +20,15 @@ unit UGDBNumerator;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzbtypes,gzctnrVectorTypes,sysutils,UGDBNamedObjectsArray,uzeNamedObject;
+uses gzctnrVectorTypes,sysutils,UGDBNamedObjectsArray,uzeNamedObject;
 type
-{EXPORT+}
+
 PGDBNumItem=^GDBNumItem;
-{REGISTEROBJECTTYPE GDBNumItem}
 GDBNumItem= object(GDBNamedObject)
                  Nymber:Integer;
                  constructor Init(N:String);
                 end;
 PGDBNumerator=^GDBNumerator;
-{---REGISTEROBJECTTYPE GDBNumerator}
 GDBNumerator= object(GDBNamedObjectsArray<PGDBNumItem,GDBNumItem>)
                        constructor init(m:Integer);
                        function getnamenumber(_Name:String;AutoInc:Boolean):String;
@@ -38,7 +36,7 @@ GDBNumerator= object(GDBNamedObjectsArray<PGDBNumItem,GDBNumItem>)
                        function AddNumerator(Name:String):PGDBNumItem;virtual;
                        procedure sort;
                        end;
-{EXPORT-}
+
 implementation
 //uses
 //    log;

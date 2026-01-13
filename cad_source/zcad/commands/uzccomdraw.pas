@@ -33,11 +33,11 @@ uses
   uzccommandsabstract,uzbstrproc,
   uzccommandsmanager,
   uzccommandsimpl,
-  uzbtypes,
+  uzeTypes,
   uzcdrawings,
   uzeutils,uzcutils,
   sysutils,
-  varmandef,
+  uzsbVarmanDef,
   uzglviewareadata,uzglviewareaabstract,uzglviewareageneral,
   uzcinterface,
   uzegeometry,
@@ -47,8 +47,9 @@ uses
   uzegeometrytypes,uzeentity,uzeentcircle,uzeentline,uzeentgenericsubentry,uzeentmtext,
   uzeentsubordinated,uzeentblockinsert,uzeentpolyline,uzclog,
   math,uzeenttable,uzctnrvectorstrings,
-  uzeentlwpolyline,UBaseTypeDescriptor,uzeblockdef,Varman,URecordDescriptor,TypeDescriptors,UGDBVisibleTreeArray
-  ,uzelongprocesssupport,uzccommand_circle2,uzccommand_erase,uzccmdfloatinsert,
+  uzeentlwpolyline,UBaseTypeDescriptor,uzeblockdef,Varman,URecordDescriptor,
+  UGDBVisibleTreeArray,uzelongprocesssupport,
+  uzccommand_circle2,uzccommand_erase,uzccmdfloatinsert,
   uzccommand_rebuildtree, uzeffmanager,
   masks;
 const
@@ -57,20 +58,18 @@ type
 TDummyClass=class
   procedure RunBEdit(const Context:TZCADCommandContext);
 end;
-{EXPORT+}
+
          BRMode=(
                  BRM_Block(*'Block'*),
                  BRM_Device(*'Device'*),
                  BRM_BD(*'Block and Device'*)
                 );
          PTBlockScaleParams=^TBlockScaleParams;
-         {REGISTERRECORDTYPE TBlockScaleParams}
          TBlockScaleParams=record
                              Scale:TzePoint3d;(*'New scale'*)
                              Absolutely:Boolean;(*'Absolutely'*)
                            end;
          PTBlockRotateParams=^TBlockRotateParams;
-         {REGISTERRECORDTYPE TBlockRotateParams}
          TBlockRotateParams=record
                              Rotate:Double;(*'Rotation angle'*)
                              Absolutely:Boolean;(*'Absolutely'*)
@@ -82,55 +81,47 @@ end;
                              Absolutely:Boolean;(*'Absolutely'*)
                            end;}
          PTExportDevWithAxisParams=^TExportDevWithAxisParams;
-         {REGISTERRECORDTYPE TExportDevWithAxisParams}
          TExportDevWithAxisParams=record
                             AxisDeviceName:String;(*'AxisDeviceName'*)
                       end;
   PTBEditParam=^TBEditParam;
-  {REGISTERRECORDTYPE TBEditParam}
   TBEditParam=record
                     CurrentEditBlock:String;(*'Current block'*)(*oi_readonly*)
                     Filter:string;(*'Filter block name'*)
                     Blocks:TEnumData;(*'Select block'*)
               end;
   ptpcoavector=^tpcoavector;
-  tpcoavector={-}specialize{//}
-              GZVector{-}<TCopyObjectDesc>{//};
-  {REGISTEROBJECTTYPE BlockScale_com}
+  tpcoavector=specialize
+              GZVector<TCopyObjectDesc>;
   BlockScale_com= object(CommandRTEdObject)
                          procedure CommandStart(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure BuildDM(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure Run(const Context:TZCADCommandContext); virtual;
                    end;
-  {REGISTEROBJECTTYPE BlockRotate_com}
   BlockRotate_com= object(CommandRTEdObject)
                          procedure CommandStart(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure BuildDM(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure Run(const Context:TZCADCommandContext); virtual;
                    end;
-  {REGISTEROBJECTTYPE ATO_com}
   ATO_com= object(CommandRTEdObject)
                          powner:PGDBObjDevice;
                          procedure CommandStart(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure ShowMenu;virtual;
                          procedure Run(pdata:PtrInt); virtual;
           end;
-  {REGISTEROBJECTTYPE CFO_com}
   CFO_com= object(ATO_com)
                          procedure ShowMenu;virtual;
                          procedure Run(pdata:PtrInt); virtual;
           end;
-  {REGISTEROBJECTTYPE ExportDevWithAxis_com}
   ExportDevWithAxis_com= object(CommandRTEdObject)
                          procedure CommandStart(const Context:TZCADCommandContext;Operands:TCommandOperands); virtual;
                          procedure ShowMenu;virtual;
                          procedure Run(pdata:PtrInt); virtual;
              end;
-  {REGISTEROBJECTTYPE ITT_com}
   ITT_com =  object(FloatInsert_com)
     procedure Command(Operands:TCommandOperands); virtual;
   end;
-{EXPORT-}
+
 taxisdesc=record
               p1,p2:TzePoint3d;
               d0:double;

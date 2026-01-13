@@ -22,10 +22,10 @@ unit uzeroot;
 
 interface
 Uses
-  uzgldrawcontext,uzedrawingdef,uzecamera,uzeentitiestree,uzbtypes,
+  uzgldrawcontext,uzedrawingdef,uzecamera,uzeentitiestree,
   uzeconsts,uzeentity,uzeentgenericsubentry,uzeentconnected,uzeentsubordinated,
   gzctnrVectorTypes,uzegeometrytypes,uzegeometry,UGDBOpenArrayOfPV,
-  uzelongprocesssupport;
+  uzelongprocesssupport,uzeTypes,uzbBaseUtils;
 
 type
 
@@ -193,9 +193,14 @@ var
   c:integer;
   bb:TBoundingBox;
   HaveNewBB:boolean;
+  internallpsh:TLPSHandle;
 begin
   c:=ents.count;
   HaveNewBB:=False;
+
+  if lpsh=LPSHEmpty then
+    internallpsh:=lps.StartLongProcess('DoFormat',nil,0,LPSOSilentIfFast);
+
   p:=ents.beginiterate(ir);
   if p<>nil then repeat
     p^.Formatafteredit(drawing,dc,[EFCalcEntityCS]);
@@ -226,7 +231,7 @@ begin
 
   p:=ents2Connected.beginiterate(ir);
   if p<>nil then repeat
-      if IsIt(TypeOf(p^),typeof(GDBObjConnected)) then
+      if IsObjectIt(TypeOf(p^),typeof(GDBObjConnected)) then
         PGDBObjConnected(p)^.connectedtogdb(@ConnectedArea,drawing);
       if assigned(p^.EntExtensions)then
         p^.EntExtensions.RunOnConnect(p,drawing,DC);
@@ -258,6 +263,9 @@ begin
       lps.ProgressLongProcess(lpsh,c+ir.itc);
     p:=ents.iterate(ir);
   until p=nil;
+
+  if lpsh=LPSHEmpty then
+    lps.EndLongProcess(internallpsh);
 
 end;
 

@@ -21,14 +21,14 @@ unit uzcregelectrotechfeatures;
 {$INCLUDE zengineconfig.inc}
 interface
 uses uzbpaths,UUnitManager,uzcsysvars,uzctranslations,
-     uzbstrproc,Varman,SysUtils,
-     UBaseTypeDescriptor,uzbtypes,uzctnrVectorBytes,strmy,varmandef,
-     uzcsysparams,TypeDescriptors,URecordDescriptor,
+     Varman,SysUtils,
+     UBaseTypeDescriptor,uzeTypes,uzctnrVectorBytesStream,uzsbVarmanDef,
+     uzcsysparams,URecordDescriptor,
      uzcLog,uzceltechtreeprop,uzcefstringstreeselector,
-     uzccommandsimpl,uzccommandsabstract,uzctypesdecorations,zcobjectinspectorui,
+     uzccommandsimpl,uzccommandsabstract,uzOIDecorations,uzOIUI,
      uzcoidecorations,
      Forms,Controls,
-     uzcinterface,uzcuitypes;
+     uzcinterface,uzcuitypes,uzcTypeDescriprors;
 var
   StringsTreeSelector:TStringsTreeSelector=nil;
 implementation

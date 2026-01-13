@@ -24,9 +24,9 @@ interface
 
 uses
   uzeentity,uzgldrawcontext,uzeentityfactory,uzedrawingdef,uzestyleslayers,Math,
-  uzeentcomplex,SysUtils,UGDBObjBlockdefArray,uzeblockdef,uzbtypes,uzeconsts,
-  uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentsubordinated,
-  gzctnrVectorTypes,uzegeometrytypes,uzctnrVectorBytes,uzestrconsts,LCLProc,
+  uzeentcomplex,SysUtils,UGDBObjBlockdefArray,uzeblockdef,uzeTypes,
+  uzeconsts,uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentsubordinated,
+  gzctnrVectorTypes,uzegeometrytypes,uzctnrVectorBytesStream,uzestrconsts,LCLProc,
   uzbLogIntf,uzMVReader,uzeentwithlocalcs,uzeSnap;
 
 const
@@ -330,9 +330,13 @@ begin
       [index].FormatEntity(drawing,dc);
   end;
   mainowner:=getmainowner;
+
   if mainowner<>nil then
-    if mainowner.gettype=1 then
+    if typeof(mainowner^)=typeof(GDBObjBlockdef)then
       exit;
+    //if mainowner.gettype=1 then
+    //  exit;
+
   pblockdef:=PGDBObjBlockdefArray(
     drawing.GetBlockDefArraySimple).getDataMutable(index);
 

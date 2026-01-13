@@ -20,56 +20,51 @@ unit uzcoimultiobjects;
 {$modeswitch TypeHelpers}{$INCLUDE zengineconfig.inc}
 
 interface
+
 uses
   uzeenttext,uzctnrVectorPointers,uzeentblockinsert,uzeconsts,uzcinterface,
   uzbLog,uzcLog,uzcoimultiproperties,uzctranslations,uzepalette,
-  uzedimensionaltypes,uzcstrconsts,sysutils,uzeentityfactory,
+  uzcstrconsts,SysUtils,uzeentityfactory,
   uzcenitiesvariablesextender,uzgldrawcontext,usimplegenerics,gzctnrSTL,
-  gzctnrVectorTypes,uzbtypes,uzcdrawings,varmandef,uzeentity,
+  gzctnrVectorTypes,uzeTypes,uzcdrawings,uzsbVarmanDef,uzeentity,
   Varman,uzctnrvectorstrings,UGDBSelectedObjArray,uzcoimultipropertiesutil,
   uzeExtdrAbstractEntityExtender,uzelongprocesssupport,uzbLogIntf,uzcutils,
   zUndoCmdChgVariable,uzcdrawing,zUndoCmdChgTypes,
-  uzCtnrVectorPBaseEntity,uzglviewareageneral,uzglviewareaabstract;
+  uzCtnrVectorPBaseEntity,uzglviewareageneral,uzglviewareaabstract,uzbUnits;
+
 type
+
   TObjIDWithExtender2Counter=TMyMapCounter<TObjIDWithExtender>;
-{Export+}
-  {TMSType=(
-           TMST_All(*'All entities'*),
-           TMST_Devices(*'Devices'*),
-           TMST_Cables(*'Cables'*)
-          );}
+
   TVariableProcessSelector=(
-           VPS_OnlyThisEnts(*'Only this ents'*),
-           VPS_OnlyRelatedEnts(*'Only related ents'*),
-           VPS_AllEnts(*'All ents'*),
-           VPS_AllEntsSeparated(*'All ents separated'*)
-          );
-  {REGISTERRECORDTYPE TMSPrimitiveDetector}
+    VPS_OnlyThisEnts(*'Only this ents'*),
+    VPS_OnlyRelatedEnts(*'Only related ents'*),
+    VPS_AllEnts(*'All ents'*),
+    VPS_AllEntsSeparated(*'All ents separated'*)
+    );
+
   TMSPrimitiveDetector=TEnumData;
-  {REGISTERRECORDTYPE TMSBlockNamesDetector}
   TMSBlockNamesDetector=TEnumDataWithOtherStrings;
-  {REGISTERRECORDTYPE TMSTextsStylesDetector}
   TMSTextsStylesDetector=TEnumDataWithOtherPointers;
-  {REGISTERRECORDTYPE TMSEntsLayersDetector}
   TMSEntsLayersDetector=TEnumDataWithOtherPointers;
-  {REGISTERRECORDTYPE TMSEntsLinetypesDetector}
   TMSEntsLinetypesDetector=TEnumDataWithOtherPointers;
-  {REGISTERRECORDTYPE TMSEntsExtendersDetector}
   TMSEntsExtendersDetector=TEnumDataWithOtherPointers;
-  {REGISTEROBJECTTYPE TMSEditor}
-  TMSEditor= object(GDBaseObject)
+
+
+
+  TMSEditor=object(GDBaseObject)
                 TxtEntType:TMSPrimitiveDetector;(*'Process primitives'*)
                 VariableProcessSelector:TVariableProcessSelector;(*'Process variables'*)
-                RelatedVariablesUnit:TEntityUnit;(*'Related variables'*)
-                VariablesUnit:TEntityUnit;(*'Variables'*)
-                ExtendersUnit:TEntityUnit;(*'Extenders'*)
-                GeneralUnit:TEntityUnit;(*'General'*)
-                GeometryUnit:TEntityUnit;(*'Geometry'*)
-                MiscUnit:TEntityUnit;(*'Misc'*)
-                SummaryUnit:TEntityUnit;(*'Summary'*)
-                ObjIDVector:{-}TObjIDVector{/Pointer/};(*hidden_in_objinsp*)
-                ObjID2Counter:{-}TObjID2Counter{/Pointer/};(*hidden_in_objinsp*)
-                ObjIDWithExtenderCounter:{-}TObjIDWithExtender2Counter{/Pointer/};(*hidden_in_objinsp*)
+                RelatedVariablesUnit:TSimpleUnit;(*'Related variables'*)
+                VariablesUnit:TSimpleUnit;(*'Variables'*)
+                ExtendersUnit:TSimpleUnit;(*'Extenders'*)
+                GeneralUnit:TSimpleUnit;(*'General'*)
+                GeometryUnit:TSimpleUnit;(*'Geometry'*)
+                MiscUnit:TSimpleUnit;(*'Misc'*)
+                SummaryUnit:TSimpleUnit;(*'Summary'*)
+                ObjIDVector:TObjIDVector;(*hidden_in_objinsp*)
+                ObjID2Counter:TObjID2Counter;(*hidden_in_objinsp*)
+                ObjIDWithExtenderCounter:TObjIDWithExtender2Counter;(*hidden_in_objinsp*)
                 SavezeUnitsFormat:TzeUnitsFormat;(*hidden_in_objinsp*)
                 procedure FormatAfterFielfmod(PField,PTypeDescriptor:Pointer);virtual;
                 procedure CreateUnit(const f:TzeUnitsFormat;_GetEntsTypes:boolean=true);virtual;
@@ -89,7 +84,7 @@ type
                 procedure ClearErrorRange;
             end;
   PMSEditor=^TMSEditor;
-{Export-}
+
 procedure DeselectEnts(PInstance:Pointer);
 procedure SelectOnlyThisEnts(PInstance:Pointer);
 procedure DeselectBlocsByName(PInstance:Pointer);

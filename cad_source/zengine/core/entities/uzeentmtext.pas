@@ -23,11 +23,11 @@ interface
 
 uses
   uzglgeometry,uzgldrawcontext,uzetextpreprocessor,uzeentityfactory,
-  uzedrawingdef,uzbstrproc,uzefont,uzeentabstracttext,UGDBPoint3DArray,
-  uzestyleslayers,SysUtils,uzeentity,uzctnrVectorBytes,uzbtypes,uzeenttext,
-  uzeconsts,uzegeometry,uzeffdxfsupport,Math,uzeentsubordinated,
+  uzedrawingdef,uzefont,uzeentabstracttext,UGDBPoint3DArray,
+  uzestyleslayers,SysUtils,uzeentity,uzctnrVectorBytesStream,uzeTypes,
+  uzeenttext,uzeconsts,uzegeometry,uzeffdxfsupport,Math,uzeentsubordinated,
   gzctnrVectorTypes,uzegeometrytypes,uzestylestexts,StrUtils,gzctnrVector,
-  uzMVReader,uzcTextPreprocessorDXFImpl;
+  uzMVReader,uzcTextPreprocessorDXFImpl,uzefontbase;
 
 type
   PGDBXYZWStringArray=^XYZWStringArray;
@@ -294,7 +294,6 @@ var
   pswp:pGDBStrWithPoint;
   ir:itrec;
   psyminfo:PGDBsymdolinfo;
-  TCP:TCodePage;
   pfont:pgdbfont;
   l:integer;
   sym:word;
@@ -317,12 +316,9 @@ begin
   pfont:=TXTStyle^.pfont;
   if pfont=nil then
     exit;
-  TCP:=CodePage;
-  CodePage:=CP_win;
   if template='' then
     template:=content;
   content:=textformat(template,SPFSources.GetFull,@self);
-  CodePage:=TCP;
   LdivideS:=linespace/textprop.size;
   if (content='')and(template='') then
     content:=str_empty;

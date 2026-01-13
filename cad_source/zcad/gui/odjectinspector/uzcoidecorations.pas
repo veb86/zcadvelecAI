@@ -23,16 +23,17 @@ interface
 
 uses
   SysUtils,Graphics,LCLType,Themes,Forms,ColorBox,
-  zcobjectinspectorui,uzctypesdecorations,uzccommandsabstract,uzepalette,
-  zcobjectinspectoreditors,UEnumDescriptor,zcobjectinspector,uzcinfoform,
+  uzOIUI,uzOIDecorations,uzccommandsabstract,uzepalette,
+  uzOIEditors,UEnumDescriptor,uzObjectInspector,uzcinfoform,
   uzestyleslinetypes,uzctreenode,uzcfsnapeditor,
   uzeconsts,UGDBNamedObjectsArray,uzctnrvectorstrings,
-  varmandef,Varman,uzcfcolors,uzestyleslayers,uzbtypes,uzcflineweights,usupportgui,
-  StdCtrls,uzcdrawings,uzcstrconsts,Controls,Classes,uzbstrproc,uzcsysvars,uzccommandsmanager,
-  uzcsysparams,gzctnrVectorTypes,uzegeometrytypes,uzcinterface,uzcoimultiobjects,
+  uzsbVarmanDef,Varman,uzcfcolors,uzestyleslayers,uzeTypes,uzcflineweights,
+  usupportgui,uzccommandsmanager,
+  StdCtrls,uzcdrawings,uzcstrconsts,Controls,Classes,uzcsysvars,
+  uzcsysparams,gzctnrVectorTypes,uzcinterface,uzcoimultiobjects,
   uzcgui2color,uzcgui2linewidth,uzcgui2linetypes,
-  uzccommand_layer,uzcuitypes,uzeNamedObject,uzccommandsimpl,uzedimensionaltypes,
-  uzcOI,uzcdrawing;
+  uzccommand_layer,uzcuitypes,uzeNamedObject,uzccommandsimpl,
+  uzcOI,uzcdrawing,uzbUnits,uzeBaseUtils,uzcTypes,uzObjectInspectorManager;
 type
     AsyncCommHelper=class
                          class procedure GetVertex(Pinstance:PtrInt);
@@ -64,7 +65,7 @@ function PaletteColorDecorator(PInstance:Pointer):String;
 begin
      result:=ColorIndex2Name(PTGDBPaletteColor(PInstance)^);
 end;
-function ZColorDecorator(PInstance:Pointer):String;
+function TColorDecorator(PInstance:Pointer):String;
 begin
      result:=ColorToString(PColor(PInstance)^);
 end;
@@ -240,7 +241,7 @@ end;
 
 procedure runlayerswnd(PInstance:Pointer);
 begin
-     layer_cmd(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG)),EmptyCommandOperands);
+     layer_cmd(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG),drawings.GetCurrentROOT),EmptyCommandOperands);
 end;
 procedure runcolorswnd(PInstance:Pointer);
 var
@@ -330,7 +331,7 @@ begin
      result.mode:=TEM_Integrate;
 end;
 
-function ZColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
+function TColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
 var
   cbedit:TColorBox;
 begin
@@ -341,19 +342,19 @@ begin
   result.mode:=TEM_Integrate;
 end;
 
-function TGetterSetterTZColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
+function TGetterSetterTColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
 var
   cbedit:TColorBox;
 begin
   CreateTColorPropEditor(TheOwner,pinstance,FreeOnLostFocus,PTD,result.editor,cbedit,f);
   SetComboSize(cbedit,sysvar.INTF.INTF_DefaultControlHeight^-6);
   cbedit.Style:=cbedit.Style+[cbStandardColors,cbExtendedColors,cbSystemColors,cbIncludeDefault];
-  cbedit.Selected:=PTGetterSetterTZColor(pinstance)^.Getter{PColor(pinstance)^};
+  cbedit.Selected:=PTGetterSetterTColor(pinstance)^.Getter{PColor(pinstance)^};
   result.mode:=TEM_Integrate;
 end;
-function TGetterSetterTZColorDecorator(PInstance:Pointer):String;
+function TGetterSetterTColorDecorator(PInstance:Pointer):String;
 begin
-     result:=ColorToString(PTGetterSetterTZColor(pinstance)^.Getter);
+     result:=ColorToString(PTGetterSetterTColor(pinstance)^.Getter);
 end;
 
 procedure drawLTProp(canvas:TCanvas;ARect:TRect;PInstance:Pointer);
@@ -416,7 +417,7 @@ begin
      modalresult:=zcUI.DOShowModal(InfoForm);
      if modalresult=ZCMrOk then
                          begin
-                              pString(PInstance)^:=String(ConvertToDxfString(InfoForm.memo.text));
+                              PAnsiString(PInstance)^:=ConvertToDxfString(InfoForm.memo.text);
                               StoreBoundsToSavedUnit('TEdWND',InfoForm.BoundsRect);
                          end;
 end;
@@ -560,6 +561,82 @@ begin
      count:=1;
      Application.QueueAsyncCall(AsyncCommHelper.GetVertexZ,PtrInt(PInstance));
 end;}
+
+procedure OIUI_FE_GetterSetterBooleanDraw(canvas:TCanvas;r:trect;PInstance:Pointer;state:TFastEditorState;boundr:trect);
+begin
+  BooleanDraw(PTGetterSetterBoolean(PInstance)^.Getter,canvas,r,state,boundr);
+end;
+procedure OIUI_FE_GetterSetterUsableIntegerUsableDraw(canvas:TCanvas;r:trect;PInstance:Pointer;state:TFastEditorState;boundr:trect);
+begin
+  BooleanDraw(PTGetterSetterTUsableInteger(PInstance)^.Getter.Usable,canvas,r,state,boundr);
+end;
+
+procedure OIUI_FE_GetterSetterIntegerInc(PInstance:Pointer);
+var
+  d:Integer;
+begin
+  if (@PTGetterSetterInteger(PInstance).Getter<>nil)
+  and(@PTGetterSetterInteger(PInstance).Setter<>nil)then begin
+    d:=PTGetterSetterInteger(PInstance).Getter;
+    Inc(d);
+    PTGetterSetterInteger(PInstance).Setter(d);
+  end;
+end;
+procedure OIUI_FE_GetterSetterIntegerDec(PInstance:Pointer);
+var
+  d:Integer;
+begin
+  if (@PTGetterSetterInteger(PInstance).Getter<>nil)
+  and(@PTGetterSetterInteger(PInstance).Setter<>nil)then begin
+    d:=PTGetterSetterInteger(PInstance).Getter;
+    Dec(d);
+    PTGetterSetterInteger(PInstance).Setter(d);
+  end;
+end;
+
+procedure OIUI_FE_GetterSetterBooleanInverse(PInstance:Pointer);
+begin
+  if (@PTGetterSetterBoolean(PInstance).Getter<>nil)
+    and(@PTGetterSetterBoolean(PInstance).Setter<>nil)then begin
+      PTGetterSetterBoolean(PInstance).Setter(not PTGetterSetterBoolean(PInstance).Getter);
+  end;
+end;
+
+procedure OIUI_FE_GetterSetterUsableIntegerInc(PInstance:Pointer);
+var
+  d:TUsableInteger;
+begin
+  if (@PTGetterSetterTUsableInteger(PInstance).Getter<>nil)
+  and(@PTGetterSetterTUsableInteger(PInstance).Setter<>nil)then begin
+    d:=PTGetterSetterTUsableInteger(PInstance).Getter;
+    d.Value:=d.Value+1;
+    PTGetterSetterTUsableInteger(PInstance).Setter(d);
+  end;
+end;
+procedure OIUI_FE_GetterSetterUsableIntegerDec(PInstance:Pointer);
+var
+  d:TUsableInteger;
+begin
+  if (@PTGetterSetterTUsableInteger(PInstance).Getter<>nil)
+  and(@PTGetterSetterTUsableInteger(PInstance).Setter<>nil)then begin
+    d:=PTGetterSetterTUsableInteger(PInstance).Getter;
+    d.Value:=d.Value-1;
+    PTGetterSetterTUsableInteger(PInstance).Setter(d);
+  end;
+end;
+
+procedure OIUI_FE_GetterSetterUsableIntegerUsableInverse(PInstance:Pointer);
+var
+  d:TUsableInteger;
+begin
+  if (@PTGetterSetterTUsableInteger(PInstance).Getter<>nil)
+    and(@PTGetterSetterTUsableInteger(PInstance).Setter<>nil)then begin
+      d:=PTGetterSetterTUsableInteger(PInstance).Getter;
+      d.Usable:=not d.Usable;
+      PTGetterSetterTUsableInteger(PInstance).Setter(d);
+  end;
+end;
+
 procedure DecorateSysTypes;
 begin
   if SysUnit<>nil then begin
@@ -585,9 +662,9 @@ begin
     AddEditorToType(SysUnit.TypeName2PTD('TEnumDataDescriptor'),TBaseTypesEditors.TEnumDataCreateEditor);
     EnumGlobalEditor:=TBaseTypesEditors.EnumDescriptorCreateEditor;
     AddEditorToType(SysUnit.TypeName2PTD('TCalculatedStringDescriptor'),TBaseTypesEditors.BaseCreateEditor);
-    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterIntegerDescriptor'),TBaseTypesEditors.BaseCreateEditor);
-    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterBooleanDescriptor'),TBaseTypesEditors.BooleanCreateEditor);
-    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableIntegerDescriptor'),TBaseTypesEditors.BaseCreateEditor);
+    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterInteger'),TBaseTypesEditors.BaseCreateEditor);
+    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterBoolean'),TBaseTypesEditors.BooleanCreateEditor);
+    AddEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),TBaseTypesEditors.BaseCreateEditor);
 
 
     DecorateType(SysUnit.TypeName2PTD('TGDBLineWeight'),LWDecorator,LineWeightDecoratorCreateEditor,drawLWProp);
@@ -597,8 +674,8 @@ begin
     DecorateType(SysUnit.TypeName2PTD('PGDBDimStyleObjInsp'),NamedObjectsDecorator,DimStyleDecoratorCreateEditor,nil);
     DecorateType(SysUnit.TypeName2PTD('TGDBPaletteColor'),PaletteColorDecorator,ColorDecoratorCreateEditor,drawIndexColorProp);
     DecorateType(SysUnit.TypeName2PTD('TGDBOSMode'),nil,CreateEmptyEditor,nil);
-    DecorateType(SysUnit.TypeName2PTD('TZColor'),ZColorDecorator,ZColorDecoratorCreateEditor,nil);
-    DecorateType(SysUnit.TypeName2PTD('TFString'),TFStringDecorator,ZColorDecoratorCreateEditor,nil);
+    DecorateType(SysUnit.TypeName2PTD('TColor'),TColorDecorator,TColorDecoratorCreateEditor,nil);
+    DecorateType(SysUnit.TypeName2PTD('TFString'),TFStringDecorator,nil,nil);
 
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonGreatThatDraw,@OIUI_FE_GetterSetterIntegerInc);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonLessThatDraw,@OIUI_FE_GetterSetterIntegerDec);
@@ -607,7 +684,7 @@ begin
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonGreatThatDraw,@OIUI_FE_GetterSetterUsableIntegerInc);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonLessThatDraw,@OIUI_FE_GetterSetterUsableIntegerDec);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_BooleanGetPrefferedSize,@OIUI_FE_GetterSetterUsableIntegerUsableDraw,@OIUI_FE_GetterSetterUsableIntegerUsableInverse);
-    DecorateType(SysUnit.TypeName2PTD('TGetterSetterTZColor'),TGetterSetterTZColorDecorator,TGetterSetterTZColorDecoratorCreateEditor,nil);
+    DecorateType(SysUnit.TypeName2PTD('TGetterSetterTColor'),TGetterSetterTColorDecorator,TGetterSetterTColorDecoratorCreateEditor,nil);
 
 
 

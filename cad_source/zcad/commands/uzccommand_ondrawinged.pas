@@ -28,8 +28,8 @@ uses
   uzedrawingabstract,uzedrawingdef,
   uzgldrawcontext,
   UGDBSelectedObjArray,
-  uzeentwithlocalcs,uzeentity,uzeentgenericsubentry,
-  uzbtypes,
+  uzeentwithlocalcs,uzeentity,
+  
   uzcdrawings,
   uzglviewareadata,
   uzegeometrytypes,uzegeometry,

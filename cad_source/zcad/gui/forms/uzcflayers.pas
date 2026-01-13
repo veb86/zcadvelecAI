@@ -12,7 +12,7 @@ uses
   FileUtil, LResources, Forms, Controls, Graphics, GraphType,
   Buttons, ExtCtrls, StdCtrls, ComCtrls,LCLIntf,lcltype, ActnList,
 
-  uzcgui2linetypes,uzeconsts,uzestyleslayers,uzcdrawings,{uzbtypes,}varmandef,
+  uzcgui2linetypes,uzeconsts,uzestyleslayers,uzcdrawings,{}uzsbVarmanDef,
 
   uzcinterface, uzcstrconsts, uzbstrproc,UBaseTypeDescriptor,
   gzctnrVectorTypes,uzcimagesmanager, usupportgui, ZListView, uzcuitypes,
@@ -116,7 +116,7 @@ type
     function IsShortcut(var Message: TLMKey): boolean; override;
     function ShowModal: Integer; override;
     procedure IncreaseChangeStamp;
-    {-}property ChangeStamp:Boolean read fChangeStamp;{//}
+    property ChangeStamp:Boolean read fChangeStamp;
   end;
 
 var

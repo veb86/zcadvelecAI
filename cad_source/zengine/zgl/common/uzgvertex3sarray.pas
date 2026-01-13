@@ -21,20 +21,19 @@ unit uzgvertex3sarray;
 {$INCLUDE zengineconfig.inc}
 interface
 uses gzctnrVector,sysutils,
-     gzctnrVectorTypes,uzegeometrytypes,uzegeometry;
+     gzctnrVectorTypes,uzegeometrytypes;
 type
-{Export+}
+
 TStoredType=Double;
 TCalcedType=Double;
 TStoredCoordType=TzePoint3d;
 PZGLVertex3Sarray=^ZGLVertex3Sarray;
-{REGISTEROBJECTTYPE ZGLVertex3Sarray}
-ZGLVertex3Sarray= object(GZVector{-}<TStoredCoordType>{//})
+ZGLVertex3Sarray= object(GZVector<TStoredCoordType>)
                 function AddGDBVertex(const v:TzePoint3d):TArrayIndex;overload;
                 function AddGDBVertex(const v:TzePoint3s):TArrayIndex;overload;
                 function GetLength(const i:TArrayIndex):TCalcedType;virtual;
              end;
-{Export-}
+
 implementation
 function ZGLVertex3Sarray.GetLength(const i:TArrayIndex):TCalcedType;
 var

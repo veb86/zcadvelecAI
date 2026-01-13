@@ -25,7 +25,7 @@ interface
 uses
   uzcLog,
   uzccommandsabstract,uzccommandsimpl,
-  uzestyleslayers,uzbtypes,gzctnrVectorTypes,UGDBSelectedObjArray,
+  uzestyleslayers,uzeTypes,gzctnrVectorTypes,UGDBSelectedObjArray,
   uzcstrconsts,uzccommandsmanager,uzcdrawings,uzeentity,//uzccominteractivemanipulators,
   uzegeometrytypes,
   uzeentmtext,
@@ -45,7 +45,7 @@ implementation
 
 type
   TCmdProp=record
-    props:TEntityUnit;
+    props:TSimpleUnit;
   end;
 
 var

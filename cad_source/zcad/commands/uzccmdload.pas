@@ -23,12 +23,12 @@ interface
 
 uses
   uzcLog,LCLType,LazUTF8,
-  uzbpaths,uzbtypes,uzcuitypes,
+  uzbpaths,uzeTypes,uzcuitypes,
   uzeffmanager,uzctranslations,
   uzccommandsimpl,uzccommandsabstract,
   uzcdrawings,uzcdrawing,
-  uzctnrVectorBytes,UUnitManager,URecordDescriptor,gzctnrVectorTypes,
-  Varman,varmandef,typedescriptors,
+  uzctnrVectorBytesStream,UUnitManager,URecordDescriptor,gzctnrVectorTypes,
+  Varman,uzsbVarmanDef,uzsbTypeDescriptors,
   uzgldrawcontext,
   uzedrawingsimple,uzeconsts,
   uzcinterface,
@@ -36,7 +36,7 @@ uses
   uzcutils,
   SysUtils,
   uzelongprocesssupport,uzccommandsmanager,
-  uzcreglog,uzeLogIntf;
+  uzeLogIntf;
 
 function Load_Merge(const Operands:TCommandOperands;LoadMode:TLoadOpt):TCommandResult;
 function Internal_Load_Merge(const s:ansistring;loadproc:TFileLoadProcedure;

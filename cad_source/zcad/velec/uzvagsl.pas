@@ -23,8 +23,8 @@ unit uzvagsl;
 interface
 uses
 
-{*uzcenitiesvariablesextender,sysutils,UGDBOpenArrayOfPV,uzbtypes,
-     uzeentity,varmandef,uzeentsubordinated,
+{*uzcenitiesvariablesextender,sysutils,UGDBOpenArrayOfPV,
+     uzeentity,uzsbVarmanDef,uzeentsubordinated,
 
 
   uzeconsts, //base constants
@@ -53,7 +53,7 @@ uses
    *}
    sysutils, math,
 
-  URecordDescriptor,TypeDescriptors,
+  URecordDescriptor,uzsbTypeDescriptors,
 
   Forms, //gzctnrVectorTypes,
   //  uzcfblockinsert, //старое временно
@@ -103,8 +103,6 @@ uses
                       //системные переменные
   //uzgldrawcontext,
   uzcinterface,
-  //uzbtypes, //base types
-                      //описания базовых типов
   uzeconsts, //base constants
                       //описания базовых констант
   uzccommandsmanager,
@@ -117,7 +115,7 @@ uses
                       //"Менеджер" чертежей
   uzcutils,         //different functions simplify the creation entities, while there are very few
                       //разные функции упрощающие создание примитивов, пока их там очень мало
-  varmandef,
+  uzsbVarmanDef,
   Varman,
   {UGDBOpenArrayOfUCommands,}//zcchangeundocommand,
 

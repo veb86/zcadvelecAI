@@ -26,11 +26,12 @@ uses
   uzccommandsimpl,
   uzcdrawings,
   sysutils,
-  varmandef,
+  uzsbVarmanDef,
   varman,
-  uzctnrVectorBytes,
+  uzctnrVectorBytesStream,
   uzeentity,
-  uzcdevicebaseabstract,UUnitManager,strutils,forms,Controls,uzcinterface,uzedrawingdef,uzctnrvectorstrings,strmy,
+  uzcdevicebaseabstract,UUnitManager,strutils,forms,Controls,uzcinterface,
+  uzedrawingdef,uzctnrvectorstrings,uzsbLexParser,
   uzcenitiesvariablesextender,uzcfsinglelinetexteditor,UObjectDescriptor,uzcfprojecttree,uzccommandsmanager,uzclog,uzeentsubordinated,
   uzcuitypes;
 

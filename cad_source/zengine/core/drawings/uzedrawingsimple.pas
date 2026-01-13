@@ -20,22 +20,22 @@ unit uzedrawingsimple;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzedrawingdef,uzeblockdefsfactory,uzestylesdim,
-     gzctnrVectorTypes,uzedrawingabstract,uzbstrproc,UGDBObjBlockdefArray,uzestylestables,
-     UGDBNumerator,uzbtypes,sysutils,uzegeometry,uzeentgenericsubentry,
-     uzestyleslayers,uzestyleslinetypes,uzeentity,UGDBSelectedObjArray,uzestylestexts,
-     uzedimensionaltypes,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,uzefont,
-     uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
-     uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity;
+uses
+  uzedrawingdef,uzeblockdefsfactory,uzestylesdim,gzctnrVectorTypes,
+  uzedrawingabstract,uzbstrproc,UGDBObjBlockdefArray,uzestylestables,
+  UGDBNumerator,uzeTypes,sysutils,uzegeometry,uzeentgenericsubentry,
+  uzestyleslayers,uzestyleslinetypes,uzeentity,UGDBSelectedObjArray,
+  uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
+  uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
+  uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity;
 type
   TMainBlockCreateProc=procedure (_to:PTDrawingDef;name:String) of object;
-{EXPORT+}
+
   TDrawingActualy=record
     EntityLayers:TActuality;
-    {-}procedure CreateDef;{//}
+    procedure CreateDef;
   end;
   PTSimpleDrawing=^TSimpleDrawing;
-{REGISTEROBJECTTYPE TSimpleDrawing}
   TSimpleDrawing= object(TAbstractDrawing)
       type
         TSelector=procedure(PEntity,PGripsCreator:PGDBObjEntity;var SelectedObjCount:Integer)of object;
@@ -119,7 +119,7 @@ type
                        procedure UpdateActuality;
                        procedure LostActuality;
   end;
-{EXPORT-}
+
 function CreateSimpleDWG:PTSimpleDrawing;
 var
   MainBlockCreateProc:TMainBlockCreateProc=nil;

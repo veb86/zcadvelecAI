@@ -21,12 +21,26 @@ unit uzefontbase;
 {$INCLUDE zengineconfig.inc}
 interface
 uses
-  uzgprimitives,uzglvectorobject,uzbstrproc,uzctnrVectorBytes,gzctnrVectorTypes,
-  gzctnrVector,sysutils,uzbtypes,uzegeometrytypes,uzegeometry;
+  uzgprimitives,uzglvectorobject,uzbstrproc,uzctnrVectorBytesStream,gzctnrVectorTypes,
+  gzctnrVector,sysutils,uzegeometrytypes;
 
 const
   SymCasheSize=128;
 type
+  GDBsymdolinfo=record
+      LLPrimitiveStartIndex: Integer;
+      LLPrimitiveCount: Integer;
+      NextSymX, SymMaxY,SymMinY, SymMaxX,SymMinX, w, h: Double;
+      Name:String;
+      Number:Integer;
+      LatestCreate:Boolean;
+    end;
+  PGDBsymdolinfo=^GDBsymdolinfo;
+  GDBUNISymbolInfo=record
+      symbol:Integer;
+      symbolinfo:GDBsymdolinfo;
+    end;
+  PGDBUNISymbolInfo=^GDBUNISymbolInfo;
   TSymbolInfoArray=packed array [0..SymCasheSize-1] of GDBsymdolinfo;
   TGDBUNISymbolInfoVector=GZVector<GDBUNISymbolInfo>;
 

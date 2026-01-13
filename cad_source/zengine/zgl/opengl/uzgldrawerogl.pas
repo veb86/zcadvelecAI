@@ -17,27 +17,30 @@
 }
 
 unit uzgldrawerogl;
+
 {$INCLUDE zengineconfig.inc}
+
 interface
+
 uses
-    uzgindexsarray,uzbLogIntf,uzepalette,
-    {$IFDEF LCLGTK2}
+  uzgindexsarray,uzbLogIntf,uzepalette,
+  {$IFDEF LCLGTK2}
     Gtk2Def,
-    {$ENDIF}
-    {$IFNDEF DELPHI}LCLIntf,LCLType,{$ENDIF}
-    Classes,Controls,
-    uzgvertex3sarray,uzegeometry,uzgldrawergeneral,uzgldrawerabstract,uzgloglstatemanager,Graphics,uzbtypes,
-    uzegeometrytypes,uzecamera;
+  {$ENDIF}
+  {$IFNDEF DELPHI}LCLIntf,LCLType,{$ENDIF}
+  Classes,Controls,
+  uzgvertex3sarray,uzegeometry,uzgldrawergeneral,uzgldrawerabstract,
+  uzgloglstatemanager,Graphics,uzeTypes,
+  uzegeometrytypes,uzecamera;
+
 const
   texturesize=128;
 type
-{EXPORT+}
 TGLVersion=(GLV_1_0,GLV_1_2,GLV_1_3,GLV_1_4,
             GLV_1_5,GLV_2_0,GLV_2_1,GLV_3_0,
             GLV_3_1,GLV_3_2,GLV_3_3,GLV_4_0,
             GLV_4_3);
-PTOpenglData=^TOpenglData;
-{REGISTERRECORDTYPE TOpenglData}
+
 TOpenglData=record
           RD_DraverVersion:TGLVersion;(*'Draver version'*)(*oi_readonly*)
           RD_Renderer:String;(*'Device'*)(*oi_readonly*)
@@ -52,7 +55,9 @@ TOpenglData=record
           RD_MaxLineWidth:Double;(*'Max line width'*)(*oi_readonly*)
           RD_MaxPointSize:Double;(*'Max point size'*)(*oi_readonly*)
     end;
-{EXPORT-}
+PTOpenglData=^TOpenglData;
+
+
 TZGLOpenGLDrawer=class(TZGLGeneralDrawer)
                         myscrbuf:tmyscrbuf;
                         mm:TzeTypedMatrix4d;

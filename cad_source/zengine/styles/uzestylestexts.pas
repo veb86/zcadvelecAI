@@ -20,34 +20,36 @@ unit uzestylestexts;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses LCLProc,uzbpaths,uzefontmanager,sysutils,uzbtypes,uzegeometry,
-     uzbstrproc,uzefont,uzestrconsts,UGDBNamedObjectsArray,uzeNamedObject,
+uses LCLProc,uzbpaths,uzefontmanager,sysutils,
+     uzefont,uzestrconsts,UGDBNamedObjectsArray,uzeNamedObject,
      uzeLogIntf;
 type
-  //ptextstyle = ^textstyle;
-{EXPORT+}
-PGDBTextStyleProp=^GDBTextStyleProp;
-{REGISTERRECORDTYPE GDBTextStyleProp}
+
   GDBTextStyleProp=record
-                    size:Double;
-                    oblique:Double;
-                    wfactor:Double;
-              end;
-  PPGDBTextStyleObjInsp=^PGDBTextStyleObjInsp;
+    size:double;
+    oblique:double;
+    wfactor:double;
+  end;
+  PGDBTextStyleProp=^GDBTextStyleProp;
+
   PGDBTextStyleObjInsp=Pointer;
-  PGDBTextStyle=^GDBTextStyle;
-  {REGISTEROBJECTTYPE GDBTextStyle}
-  GDBTextStyle = object(GDBNamedObject)
-    FontFile:String;
-    FontFamily:String;
-    pfont: PGDBfont;
+  PPGDBTextStyleObjInsp=^PGDBTextStyleObjInsp;
+
+  GDBTextStyle=object(GDBNamedObject)
+    FontFile:string;
+    FontFamily:string;
+    pfont:PGDBfont;
     prop:GDBTextStyleProp;
-    UsedInLTYPE:Boolean;
+    UsedInLTYPE:boolean;
     destructor Done;virtual;
   end;
-{EXPORT-}
+  PGDBTextStyle=^GDBTextStyle;
+
+
+
+
 PGDBTextStyleArray=^GDBTextStyleArray;
-GDBTextStyleArray= object(GDBNamedObjectsArray{-}<PGDBTextStyle,GDBTextStyle>{//})
+GDBTextStyleArray= object(GDBNamedObjectsArray<PGDBTextStyle,GDBTextStyle>)
                     constructor init(m:Integer);
                     constructor initnul;
 

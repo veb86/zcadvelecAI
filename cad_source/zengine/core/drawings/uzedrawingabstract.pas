@@ -21,13 +21,12 @@ unit uzedrawingabstract;
 interface
 uses
     uzestylesdim,uzestylestexts,uzestyleslinetypes,uzgldrawcontext,uzedrawingdef,
-    uzedimensionaltypes,uzbtypes,uzecamera,uzeentity,uzeentgenericsubentry,uzeroot,
+    uzbUnits,uzeTypes,uzecamera,uzeentity,uzeentgenericsubentry,uzeroot,
     uzegeometrytypes,UGDBSelectedObjArray,uzestyleslayers,UGDBOpenArrayOfPV;
 type
-{EXPORT+}
+
 
 PTAbstractDrawing=^TAbstractDrawing;
-{REGISTEROBJECTTYPE TAbstractDrawing}
 TAbstractDrawing= object(TDrawingDef)
                        DXFCodePage:TZCCodePage;
                        LWDisplay:Boolean;
@@ -72,6 +71,6 @@ TAbstractDrawing= object(TDrawingDef)
                        procedure FillDrawingPartRC(var dc:TDrawContext);virtual;abstract;
                        procedure DeSelectAll;virtual;abstract;
                  end;
-{EXPORT-}
+
 implementation
 end.

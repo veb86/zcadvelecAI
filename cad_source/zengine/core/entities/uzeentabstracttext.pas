@@ -22,11 +22,24 @@ unit uzeentabstracttext;
 interface
 
 uses
-  SysUtils,UGDBSelectedObjArray,uzgldrawcontext,uzeentity,uzecamera,uzbstrproc,
-  uzeentplainwithox,uzegeometrytypes,uzbtypes,uzegeometry,Math,uzglviewareadata,
-  uzeSnap,uzedrawingdef,uzCtnrVectorpBaseEntity;
+  SysUtils,UGDBSelectedObjArray,uzgldrawcontext,uzeentity,uzecamera,
+  uzeentplainwithox,uzegeometrytypes,uzeTypes,uzegeometry,Math,
+  uzglviewareadata,uzeSnap,uzedrawingdef,uzCtnrVectorpBaseEntity;
 
 type
+
+  TTextJustify=(jstl(*'TopLeft'*),
+                jstc(*'TopCenter'*),
+                jstr(*'TopRight'*),
+                jsml(*'MiddleLeft'*),
+                jsmc(*'MiddleCenter'*), //СерединаЦентр
+                jsmr(*'MiddleRight'*),
+                jsbl(*'BottomLeft'*),
+                jsbc(*'BottomCenter'*),
+                jsbr(*'BottomRight'*),
+                jsbtl(*'Left'*),
+                jsbtc(*'Center'*),
+                jsbtr(*'Right'*));
 
   PGDBTextProp=^GDBTextProp;
 

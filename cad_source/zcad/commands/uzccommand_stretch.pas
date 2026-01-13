@@ -27,7 +27,7 @@ uses
   uzccommandsmanager,
   uzccommandsabstract,
   uzccommandsimpl,
-  uzbtypes,
+  
   uzcdrawings,
   uzglviewareadata,
   uzcinterface,
@@ -35,7 +35,6 @@ uses
   uzeentity,
   uzclog,
   uzegeometrytypes,
-  uzegeometry,
   uzccommand_selectframe,uzccommand_ondrawinged,
   UGDBSelectedObjArray,
   UGDBControlPointArray;

@@ -46,10 +46,10 @@
     </RunParams>
     <RequiredPackages Count="5">
       <Item1>
-        <PackageName Value="zreaders"/>
+        <PackageName Value="zunits"/>
       </Item1>
       <Item2>
-        <PackageName Value="zebase"/>
+        <PackageName Value="zreaders"/>
       </Item2>
       <Item3>
         <PackageName Value="zmath"/>

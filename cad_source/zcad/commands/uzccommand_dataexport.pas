@@ -33,14 +33,14 @@ uses
   uzeentlwpolyline,uzeentpolyline,uzeentityfactory,
   uzcdrawings,
   uzcutils,
-  uzbtypes,
+  uzeTypes,
   uzegeometry,
   uzeentity,uzeenttext,
-  URecordDescriptor,typedescriptors,Varman,gzctnrVectorTypes,
+  URecordDescriptor,uzsbTypeDescriptors,Varman,gzctnrVectorTypes,
   uzeparserenttypefilter,uzeparserentpropfilter,uzeentitiestypefilter,
-  uzelongprocesssupport,uzeparser,uzcoimultiproperties,uzedimensionaltypes,
-  uzcoimultipropertiesutil,varmandef,uzcvariablesutils,Masks,uzcregother,
-  uzeparsercmdprompt,uzcinterface,uzcdialogsfiles;
+  uzelongprocesssupport,uzeparser,uzcoimultiproperties,
+  uzcoimultipropertiesutil,uzsbVarmanDef,uzcvariablesutils,Masks,uzcregother,
+  uzeparsercmdprompt,uzcinterface,uzcdialogsfiles,uzbUnits;
 
 resourcestring
   RSCLPDataExportWaitFile=

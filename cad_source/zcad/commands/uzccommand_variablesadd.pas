@@ -29,7 +29,7 @@ uses
   uzccommandsabstract,
   uzccommandsmanager,
   uzccommandsimpl,
-  //uzbtypes,
+  //
   uzcdrawings,
   uzcutils,
   SysUtils,
@@ -41,7 +41,7 @@ uses
   uzcenitiesvariablesextender,
   uzcLog,
   uzeentsubordinated,
-  varmandef,UBaseTypeDescriptor,uzeconsts,uzeentdevice,Masks;
+  uzsbVarmanDef,UBaseTypeDescriptor,uzeconsts,uzeentdevice,Masks;
 
 type
   TEntsProcessedReport=record
@@ -70,7 +70,6 @@ type
   TVarTextSelectParams=record
     TemplateToFind:ansistring;
   end;
-  {REGISTEROBJECTTYPE SelSim_com}
   VariablesAdd_com=object(CommandRTEdObject)
     procedure CommandStart(
       const Context:TZCADCommandContext;Operands:TCommandOperands);virtual;

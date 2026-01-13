@@ -20,15 +20,14 @@ unit uzgeomentity;
 {$INCLUDE zengineconfig.inc}
 interface
 uses
-  sysutils,uzbtypes,uzegeometrytypes,uzegeometry;
+  sysutils,uzeTypes,uzegeometrytypes;
 type
-{Export+}
+
 PTGeomEntity=^TGeomEntity;
-{REGISTEROBJECTTYPE TGeomEntity}
 TGeomEntity= object(GDBaseObject)
                                              function GetBB:TBoundingBox;virtual;abstract;
                                            end;
-{Export-}
+
 implementation
 begin
 end.

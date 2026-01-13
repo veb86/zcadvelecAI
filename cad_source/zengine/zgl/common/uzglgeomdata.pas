@@ -20,11 +20,10 @@ unit uzglgeomdata;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzgindexsarray,uzgvertex3sarray,sysutils,uzbtypes,
-     uzegeometrytypes,uzegeometry,gzctnrVectorTypes;
+uses uzgindexsarray,uzgvertex3sarray,sysutils,uzeTypes,
+     uzegeometrytypes,gzctnrVectorTypes;
 type
-{Export+}
-{REGISTEROBJECTTYPE ZGLGeomData}
+
 ZGLGeomData=object(GDBaseObject)
                                                 Vertex3S:ZGLVertex3Sarray;
                                                 Indexes:ZGLIndexsArray;
@@ -34,7 +33,7 @@ ZGLGeomData=object(GDBaseObject)
                                                 procedure Shrink;virtual;
                                                 function Add2DPoint(const x,y:fontfloat):TArrayIndex;virtual;
                                           end;
-{Export-}
+
 implementation
 //uses log;
 function ZGLGeomData.Add2DPoint(const x,y:fontfloat):TArrayIndex;

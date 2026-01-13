@@ -28,7 +28,7 @@ uses
   
   uzccommandsmanager,
   uzccommandsimpl,
-  uzbtypes,
+  uzbBaseUtils,
   uzcdrawings,
   sysutils,
   uzcinterface,
@@ -36,7 +36,7 @@ uses
   uzeentity,
   uzeentmtext,
   uzeentblockinsert,
-  Varman, varmandef,
+  Varman, uzsbVarmanDef,
   uzcLog,
   uzccomdraw,UGDBSelectedObjArray,uzeentdevice,uzgldrawcontext,
   uzegeometrytypes,uzegeometry,uzeentwithlocalcs,garrayutils,
@@ -69,7 +69,7 @@ type
   PTNumberingParams=^TNumberingParams;
   TNumberingParams=record
                      AlgoType:TAlgoType;
-                     AlgoParams:TFaceTypedData;
+                     AlgoParams:THardTypedData;
                      OnlyDevices:Boolean;
                      StartNumber:Integer;//Start
                      Increment:Integer;//Increment
@@ -158,7 +158,7 @@ end;
 
 function IsHavePoint(pent:PGDBObjEntity;out pt:TzePoint3d):boolean;
 begin
-  if IsIt(TypeOf(pent^),typeof(GDBObjWithLocalCS)) then
+  if IsObjectIt(TypeOf(pent^),typeof(GDBObjWithLocalCS)) then
     pt:=PGDBObjWithLocalCS(pent)^.P_insert_in_WCS
   else
     pt:=(pent^.vp.BoundingBox.LBN+pent^.vp.BoundingBox.RTF)/2;

@@ -23,10 +23,10 @@ interface
 
 uses
   uzgldrawcontext,uzeentityfactory,uzeentdimension,uzestylesdim,uzestyleslayers,
-  uzegeometrytypes,uzedrawingdef,uzbstrproc,uzctnrVectorBytes,
+  uzegeometrytypes,uzedrawingdef,uzctnrVectorBytesStream,
   UGDBControlPointArray,uzegeometry,uzeentline,uzeentcomplex,SysUtils,
-  UGDBSelectedObjArray,uzeentity,uzbtypes,uzeconsts,uzeffdxfsupport,
-  uzeentsubordinated,uzglviewareadata,uzeSnap;
+  UGDBSelectedObjArray,uzeentity,uzeconsts,uzeffdxfsupport,
+  uzeentsubordinated,uzglviewareadata,uzeSnap,uzeTypes;
 (*
 
 Diametric dimension structure in DXF

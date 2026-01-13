@@ -1,10 +1,9 @@
 unit uzcdevicebaseabstract;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzcsysvars,{$IFNDEF DELPHI}fileutil,{$ENDIF}uzbstrproc,strmy,
-     uzbtypes,UUnitManager,varman,sysutils,typedescriptors,uzclog;
+uses uzcsysvars,{$IFNDEF DELPHI}fileutil,{$ENDIF}uzbstrproc,//strmy,
+     uzeTypes,UUnitManager,varman,sysutils,uzsbTypeDescriptors,uzclog;
 type
-{EXPORT+}
 TOborudCategory=(_misc(*'**Разное'*),
                  _elapp(*'**Электроаппараты'*),
                  _ppkop(*'**Приборы приемноконтрольные ОПС'*),
@@ -12,8 +11,7 @@ TOborudCategory=(_misc(*'**Разное'*),
                  _kables(*'**Кабельная продукция'*));
 TEdIzm=(_sht(*'**шт.'*),
         _m(*'**м'*));
-PDbBaseObject=^DbBaseObject;
-{REGISTEROBJECTTYPE DbBaseObject}
+
 DbBaseObject= object(GDBaseObject)
                        Category:TOborudCategory;(*'**Категория'*)
                        Group:String;(*'**Группа'*)
@@ -31,7 +29,10 @@ DbBaseObject= object(GDBaseObject)
                        PartNumber:String;(*'**Каталожный номер'*)
                        constructor initnul;
                  end;
-{EXPORT-}
+PDbBaseObject=^DbBaseObject;
+
+
+
 implementation
 constructor DbBaseObject.initnul;
 begin

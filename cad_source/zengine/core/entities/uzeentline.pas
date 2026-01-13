@@ -24,16 +24,17 @@ interface
 uses
   uzbLogIntf,uzeentityfactory,uzgldrawcontext,uzedrawingdef,uzecamera,
   uzestyleslayers,uzeentsubordinated,UGDBSelectedObjArray,uzeent3d,uzeentity,
-  uzctnrVectorBytes,uzbtypes,uzeconsts,uzegeometrytypes,uzglviewareadata,
-  uzegeometry,uzeffdxfsupport,uzeSnap,uzMVReader,uzCtnrVectorpBaseEntity;
+  uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzegeometrytypes,
+  uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeSnap,uzMVReader,
+  uzCtnrVectorpBaseEntity;
 
 type
   PGDBObjLine=^GDBObjLine;
 
   GDBObjLine=object(GDBObj3d)
-    {-}private{//}
+    private
     fCoordInWCS:GDBLineProp;
-    {-}public{//}
+    public
     CoordInOCS:GDBLineProp;
 
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
@@ -94,8 +95,8 @@ type
 
     function getCoordInWCS:GDBLineProp;
 
-    {-} property CoordInWCS:GDBLineProp
-      read fCoordInWCS write fCoordInWCS;{//}
+     property CoordInWCS:GDBLineProp
+      read fCoordInWCS write fCoordInWCS;
   end;
   ptlinertmodify=^tlinertmodify;
 

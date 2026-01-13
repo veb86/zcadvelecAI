@@ -27,11 +27,11 @@ uses
   uzeconsts,uzcctrldynamiccommandmenu,uzcinfoform,uzcstrconsts,
   gzctnrVectorTypes,uzegeometrytypes,uzbstrproc,gzctnrVectorP,
   uzccommandsabstract,SysUtils,uzglviewareadata,
-  uzclog,varmandef,varman,uzedrawingdef,uzcinterface,
+  uzclog,uzsbVarmanDef,varman,uzedrawingdef,uzcinterface,
   uzcsysparams,uzedrawingsimple,uzcdrawings,uzctnrvectorstrings,Forms,
   uzcctrlcommandlineprompt,uzeparsercmdprompt,uzeSnap,
   uzeentity,uzgldrawcontext,Classes,
-  uzglviewareageneral,uzcdrawing,
+  uzglviewareageneral,uzcdrawing,uzeentgenericsubentry,
   MacroDefIntf,uzmacros;
 
 const
@@ -53,7 +53,7 @@ type
   TOnCommandRun=procedure(command:string) of object;
   TButtonMethod2=procedure(const Data:TZCADCommandContext) of object;
 
-  TZctnrPCommandObjectDef=object(GZVectorP{-}<PCommandObjectDef>{//})
+  TZctnrPCommandObjectDef=object(GZVectorP<PCommandObjectDef>)
     //TODO:почемуто не работают синонимы с объектами, приходится наследовать
     //TODO:надо тут поменять GZVectorP на GZVectorSimple
   end;
@@ -63,7 +63,7 @@ type
     Context:TZCADCommandContext;
   end;
 
-  GDBcommandmanager=object(GZVectorPObects{-}<PCommandObjectDef,CommandObjectDef>{//})
+  GDBcommandmanager=object(GZVectorPObects<PCommandObjectDef,CommandObjectDef>)
     lastcommand:string;
 
     CurrCmd:TCmdWithContext;
@@ -900,11 +900,15 @@ procedure GDBcommandmanager.run(pc:PCommandObjectDef;operands:string;
   pdrawing:PTDrawingDef);
 var
   pd:PTSimpleDrawing;
+  pr:PGDBObjGenericSubEntry;
 begin
   pd:={gdb.GetCurrentDWG}PTSimpleDrawing(pdrawing);
-  if pd<>nil then
+  if pd<>nil then begin
     if not(CEDWGNChanged in pc^.CEndActionAttr) then
       pd.ChangeStampt(True);
+    pr:=pd.GetCurrentROOT;
+  end else
+    pr:=nil;
   if CurrCmd.pcommandrunning<>nil then begin
     if pc^.overlay then begin
       if
@@ -932,7 +936,7 @@ begin
     end;
   end;
   CurrCmd.pcommandrunning:=pointer(pc);
-  CurrCmd.context:=TZCADCommandContext.CreateRec(PTZCADDrawing(pdrawing));
+  CurrCmd.context:=TZCADCommandContext.CreateRec(PTZCADDrawing(pdrawing),pr);
   CurrCmd.pcommandrunning^.pdwg:=pd;
   CurrCmd.pcommandrunning^.pcontext:=@CurrCmd.context;
   CurrCmd.pcommandrunning^.CommandStart(CurrCmd.context,operands);

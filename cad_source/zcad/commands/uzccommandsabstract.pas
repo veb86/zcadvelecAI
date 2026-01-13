@@ -22,8 +22,9 @@ unit uzccommandsabstract;
 interface
 
 uses
-  uzegeometrytypes,uzbtypes,uzglviewareadata,uzclog,gzctnrVectorTypes,
-  uzcdrawing,uzeentity,
+  uzegeometrytypes,uzglviewareadata,uzclog,gzctnrVectorTypes,
+  uzcdrawing,uzeentgenericsubentry,
+  uzeentity,UGDBVisibleOpenArray,uzeentsubordinated,
   SysUtils;
 
 const
@@ -70,13 +71,15 @@ type
   TGetPossibleResult=set of TGetPossible;
   PTZCADCommandContext=^TZCADCommandContext;
   TZCADCommandContext=record
-    PCurrentDWG:PTZCADDrawing;
-    constructor CreateRec(ACDWG:PTZCADDrawing);
+    PDWG:PTZCADDrawing;
+    PRoot:PGDBObjGenericSubEntry;
+    POwner:PGDBObjGenericWithSubordinated;
+    constructor CreateRec(ADWG:PTZCADDrawing;ARoot:PGDBObjGenericSubEntry);
   end;
-  {Export+}
   TCommandEndAction=(CEGUIRePrepare,CEGUIReturnToDefaultObject,
     CEDeSelect,CEDWGNChanged);
-  TCommandEndActions={-}set of TCommandEndAction{/Byte/};
+  TCommandEndActions=set of TCommandEndAction;
+  TCStartAttr=integer;
   TGetPointMode=(
     TGPMWait{point},//ожидание указания точки
     TGPMPoint,      //точка указана
@@ -88,27 +91,22 @@ type
     TGPMCloseDWG,
     TGPMCloseApp
     );
-  {REGISTERRECORDTYPE TInteractiveData}
   TInteractiveData=record
     GetPointMode:TGetPointMode;(*hidden_in_objinsp*)
     BasePoint,currentPointValue,GetPointValue:TzePoint3d;
     (*hidden_in_objinsp*)
     DrawFromBasePoint:boolean;(*hidden_in_objinsp*)
     PInteractiveData:Pointer;
-    PInteractiveProc:{-}TInteractiveProcObjBuild{/Pointer/};
-    PInteractiveESP:{-}TEntitySetupProc{/Pointer/};
+    PInteractiveProc:TInteractiveProcObjBuild;
+    PInteractiveESP:TEntitySetupProc;
     Input:ansistring;
     Id:integer;
-    {-}PossibleResult:TGetPossibleResult;{//}
-    {-}InputMode:TGetInputMode;{//}
+    PossibleResult:TGetPossibleResult;
+    InputMode:TGetInputMode;
   end;
-  TCommandOperands={-}string{/Pointer/};
-  TCommandResult=integer;
-  TCStartAttr=integer;
-  {атрибут разрешения\запрещения запуска команды}
-  PCommandObjectDef=^CommandObjectDef;
-  {REGISTEROBJECTTYPE CommandObjectDef}
-  CommandObjectDef=object(GDBaseObject)
+  TCommandOperands=string;
+
+  CommandObjectDef=object
     CommandName:string;(*hidden_in_objinsp*)
     CommandString:string;(*hidden_in_objinsp*)
     savemousemode:byte;(*hidden_in_objinsp*)
@@ -134,14 +132,15 @@ type
     function IsRTECommand:boolean;virtual;
     procedure CommandContinue(const Context:TZCADCommandContext);virtual;
   end;
-  {REGISTEROBJECTTYPE CommandFastObjectDef}
+  PCommandObjectDef=^CommandObjectDef;
+  TCommandResult=integer;
+
   CommandFastObjectDef=object(CommandObjectDef)
     UndoTop:TArrayIndex;(*hidden_in_objinsp*)
     procedure CommandInit;virtual;abstract;
     procedure CommandEnd(const Context:TZCADCommandContext);virtual;abstract;
   end;
-  PCommandRTEdObjectDef=^CommandRTEdObjectDef;
-  {REGISTEROBJECTTYPE CommandRTEdObjectDef}
+
   CommandRTEdObjectDef=object(CommandFastObjectDef)
     procedure CommandStart(const Context:TZCADCommandContext;Operands:TCommandOperands);
       virtual;abstract;
@@ -157,7 +156,8 @@ type
       mc:TzePoint2i;var button:byte;osp:pos_record):integer;virtual;
     function IsRTECommand:boolean;virtual;
   end;
-  {Export-}
+  PCommandRTEdObjectDef=^CommandRTEdObjectDef;
+
 const
   SomethingWait=[TGPMWait,TGPMWaitEnt,TGPMWaitInput];
 
@@ -165,7 +165,9 @@ implementation
 
 constructor TZCADCommandContext.CreateRec;
 begin
-  PCurrentDWG:=ACDWG;
+  PDWG:=ADWG;
+  PRoot:=ARoot;
+  POwner:=nil;
 end;
 
 function CommandObjectDef.IsRTECommand:boolean;

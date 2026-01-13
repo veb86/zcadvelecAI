@@ -21,12 +21,12 @@ unit uzeffdxf;
 interface
 uses
   uzbpaths,uzbstrproc,uzgldrawcontext,usimplegenerics,uzestylesdim,uzeentityfactory,
-  {$IFNDEF DELPHI}LazUTF8,{$ENDIF}
+  {$IFNDEF DELPHI}LazUTF8,{$ENDIF}uzbUnits,
   UGDBNamedObjectsArray,uzestyleslinetypes,uzedrawingsimple,uzelongprocesssupport,
   gzctnrVectorTypes,uzglviewareadata,uzeffdxfsupport,uzestrconsts,uzestylestexts,
-  uzegeometry,uzeentsubordinated,uzeentgenericsubentry,uzbtypes,
-  uzedimensionaltypes,uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
-  uzctnrVectorBytes,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
+  uzegeometry,uzeentsubordinated,uzeentgenericsubentry,uzeTypes,
+  uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
+  uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader;
 resourcestring

@@ -21,8 +21,8 @@ unit uzcregother;
 interface
 uses uzbpaths,UUnitManager,uzcsysvars,{$IFNDEF DELPHI}uzctranslations,{$ENDIF}
      uzbstrproc,Varman,SysUtils,
-     UBaseTypeDescriptor,uzctnrVectorBytes,strmy,varmandef,
-     uzcsysparams,TypeDescriptors,URecordDescriptor,
+     UBaseTypeDescriptor,uzctnrVectorBytesStream,uzsbVarmanDef,
+     uzcsysparams,uzsbTypeDescriptors,URecordDescriptor,
      uzcLog,uzcFileStructure;
 implementation
 var
@@ -89,11 +89,6 @@ initialization;
   units.loadunit(GetSupportPaths,InterfaceTranslate,expandpath('$(DistribPath)/rtl/devices.pas'),nil);
   units.loadunit(GetSupportPaths,InterfaceTranslate,expandpath('$(DistribPath)/rtl/connectors.pas'),nil);
   units.loadunit(GetSupportPaths,InterfaceTranslate,expandpath('$(DistribPath)/rtl/styles/styles.pas'),nil);
-
-  SysVar.debug.memdeb.GetMemCount:=nil;
-  SysVar.debug.memdeb.FreeMemCount:=nil;
-  SysVar.debug.memdeb.TotalAllocMb:=nil;
-  SysVar.debug.memdeb.CurrentAllocMB:=nil;
 
   if sysunit<>nil then begin
     PRecordDescriptor(sysunit.TypeName2PTD('CommandRTEdObject'))^.FindField('commanddata')^.Collapsed:=false;

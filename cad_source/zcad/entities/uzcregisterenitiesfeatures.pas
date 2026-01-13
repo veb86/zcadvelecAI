@@ -20,9 +20,10 @@ unit uzcregisterenitiesfeatures;
 
 interface
 uses uzcinterface,uzeffdxf,uzbpaths,uzcsysvars,uzcTranslations,sysutils,
-     uzcenitiesvariablesextender,uzcstrconsts,uzeconsts,devices,uzccomdb,uzcentcable,uzcentnet,uzeentdevice,TypeDescriptors,uzeffdxfsupport,
-     uzetextpreprocessor,uzctnrVectorBytes,uzbtypes,uzeobjectextender,
-     uzeentsubordinated,uzeentity,uzeenttext,uzeblockdef,varmandef,Varman,UUnitManager,
+     uzcenitiesvariablesextender,uzcstrconsts,uzeconsts,devices,uzccomdb,
+     uzcentcable,uzcentnet,uzeentdevice,uzeffdxfsupport,
+     uzetextpreprocessor,uzctnrVectorBytesStream,uzeTypes,uzeobjectextender,
+     uzeentsubordinated,uzeentity,uzeenttext,uzeblockdef,uzsbVarmanDef,Varman,UUnitManager,
      URecordDescriptor,UBaseTypeDescriptor,uzedrawingdef,
      uzbstrproc,uzeentitiesprop,uzcentelleader,math,gzctnrVectorTypes,uzccommandsmanager;
 var
@@ -127,6 +128,8 @@ begin
   end;
   if not PGDBObjElLeader(PEnt)^.ShowTable then
       dxfStringout(outStream,1000,'%8=ShowTable|Boolean|'+booltostr(PGDBObjElLeader(PEnt)^.ShowTable,true)+'|');
+  if not PGDBObjElLeader(PEnt)^.ShowHeader then
+      dxfStringout(outStream,1000,'%9=ShowHeader|Boolean|'+booltostr(PGDBObjElLeader(PEnt)^.ShowHeader,true)+'|');
 end;
 
 procedure EntityIOSave_all(var outStream:TZctnrVectorBytes;PEnt:PGDBObjEntity;var IODXFContext:TIODXFSaveContext);

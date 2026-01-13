@@ -20,10 +20,10 @@ unit uzestylesdim;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzepalette,uzeconsts,uzestyleslinetypes,uzestylestexts,usimplegenerics,
-     uzedimensionaltypes,sysutils,uzbtypes,uzegeometry,
-     gzctnrVectorTypes,uzbstrproc,UGDBNamedObjectsArray,uzeffdxfsupport,
-     {uzeEntityStylesRegister,}uzeNamedObject;
+uses
+  uzepalette,uzeconsts,uzestyleslinetypes,uzestylestexts,usimplegenerics,
+  uzbUnits,sysutils,gzctnrVectorTypes,UGDBNamedObjectsArray,uzeffdxfsupport,
+  uzeNamedObject,uzeTypes;
 const
      DIMLWEDefaultValue=LnWtByBlock;
      DIMCLREDefaultValue=ClByBlock;
@@ -39,55 +39,55 @@ TDimArrowBlockParam=record
                      name:String;
                      width:Double;
                end;
-{EXPORT+}
+
 TDimTextVertPosition=(DTVPCenters,DTVPAbove,DTVPOutside,DTVPJIS,DTVPBellov);
 TArrowStyle=(TSClosedFilled,TSClosedBlank,TSClosed,TSDot,TSArchitecturalTick,TSOblique,TSOpen,TSOriginIndicator,TSOriginIndicator2,
             TSRightAngle,TSOpen30,TSDotSmall,TSDotBlank,TSDotSmallBlank,TSBox,TSBoxFilled,TSDatumTriangle,TSDatumtTriangleFilled,TSIntegral,TSUserDef);
 TDimTextMove=(DTMMoveDimLine,DTMCreateLeader,DTMnothung);
-PTDimStyleDXFLoadingData=^TDimStyleDXFLoadingData;
-{REGISTERRECORDTYPE TDimStyleDXFLoadingData}
+
 TDimStyleDXFLoadingData=record
                               TextStyleName:string;
                               DIMBLK1handle,DIMBLK2handle,DIMLDRBLKhandle:TDWGHandle;
                         end;
-{REGISTERRECORDTYPE TGDBDimLinesProp}
+PTDimStyleDXFLoadingData=^TDimStyleDXFLoadingData;
+
 TGDBDimLinesProp=record
                        //выносные линии
                        DIMEXE:Double;//Extension line extension//group44
                        DIMEXO:Double;//Extension line offset//group42
                        DIMLWE:TGDBLineWeight;//DIMLWD (lineweight enum value)//group372
                        DIMCLRE:TGDBPaletteColor;//DIMCLRE//group177
-                       DIMLTEX1,DIMLTEX2:{-}PGDBLtypeProp{/PGDBLtypePropObjInsp/};
+                       DIMLTEX1,DIMLTEX2:PGDBLtypeProp;
                        //размерные линии
                        DIMDLE:Double;//Dimension line extension//group46
                        DIMCEN:Double;//Size of center mark/lines//group141
                        //DIMLTYPE:PGDBLtypeProp;//Size of center mark/lines//group141
                        DIMLWD:TGDBLineWeight;//DIMLWD (lineweight enum value)//group371
                        DIMCLRD:TGDBPaletteColor;//DIMCLRD//group176
-                       DIMLTYPE:{-}PGDBLtypeProp{/PGDBLtypePropObjInsp/};
+                       DIMLTYPE:PGDBLtypeProp;
                  end;
-{REGISTERRECORDTYPE TGDBDimArrowsProp}
+
 TGDBDimArrowsProp=record
                        DIMASZ:Double; //Dimensioning arrow size//group41
                        DIMBLK1:TArrowStyle;//First arrow block name//group343
                        DIMBLK2:TArrowStyle;//First arrow block name//group344
                        DIMLDRBLK:TArrowStyle;//Arrow block name for leaders//group341
                   end;
-{REGISTERRECORDTYPE TGDBDimTextProp}
+
 TGDBDimTextProp=record
                        DIMTXT:Double; //Text size//group140
                        DIMTIH:Boolean;//Text inside horizontal if nonzero//group73
                        DIMTOH:Boolean;//Text outside horizontal if nonzero//group74
                        DIMTAD:TDimTextVertPosition;//Text above dimension line if nonzero//group77
                        DIMGAP:Double; //Dimension line gap //Смещение текста//group147
-                       DIMTXSTY:{-}PGDBTextStyle{/PGDBTextStyleObjInsp/};//340 DIMTXSTY (handle of referenced STYLE)
+                       DIMTXSTY:PGDBTextStyle;//340 DIMTXSTY (handle of referenced STYLE)
                        DIMCLRT:TGDBPaletteColor;//DIMCLRT//group176
                  end;
-{REGISTERRECORDTYPE TGDBDimPlacingProp}
+
 TGDBDimPlacingProp=record
                        DIMTMOVE:TDimTextMove;
                  end;
-{REGISTERRECORDTYPE TGDBDimUnitsProp}
+
 TGDBDimUnitsProp=record
                        DIMLFAC:Double;//Linear measurements scale factor//group144
                        DIMLUNIT:TDimUnit;//Sets units for all dimension types except Angular://group277
@@ -98,10 +98,10 @@ TGDBDimUnitsProp=record
                        DIMSCALE:Double;//DIMSCALE//group40
                        DIMZIN:Integer;//Controls the suppression of zeros in the primary unit values//group78
                  end;
-PPGDBDimStyleObjInsp=^PGDBDimStyleObjInsp;
+
 PGDBDimStyleObjInsp=Pointer;
-PGDBDimStyle=^GDBDimStyle;
-{REGISTEROBJECTTYPE GDBDimStyle}
+PPGDBDimStyleObjInsp=^PGDBDimStyleObjInsp;
+
 GDBDimStyle = object(GDBNamedObject)
                       Lines:TGDBDimLinesProp;
                       Arrows:TGDBDimArrowsProp;
@@ -119,9 +119,12 @@ GDBDimStyle = object(GDBNamedObject)
                       procedure ResolveTextstyles(const tst:TGenericNamedObjectsArray);
                       destructor Done;virtual;
              end;
-{EXPORT-}
+PGDBDimStyle=^GDBDimStyle;
+
+
+
 PGDBDimStyleArray=^GDBDimStyleArray;
-GDBDimStyleArray= object(GDBNamedObjectsArray{-}<PGDBDimStyle,GDBDimStyle>{//})
+GDBDimStyleArray= object(GDBNamedObjectsArray<PGDBDimStyle,GDBDimStyle>)
                     constructor init(m:Integer);
                     constructor initnul;
                     procedure ResolveDXFHandles(const Handle2BlockName:TMapBlockHandle_BlockNames);

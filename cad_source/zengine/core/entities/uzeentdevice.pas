@@ -22,10 +22,10 @@ unit uzeentdevice;
 interface
 
 uses
-  uzestyleslayers,uzepalette,uzeobjectextender,uabstractunit,uzeentityfactory,
-  uzgldrawcontext,uzedrawingdef,uzecamera,uzcsysvars,SysUtils,uzctnrVectorBytes,
-  uunitmanager,uzegeometry,uzeconsts,uzeentity,uzeentsubordinated,varmandef,
-  uzegeometrytypes,uzeentblockinsert,uzbtypes,UGDBVisibleOpenArray,
+  uzestyleslayers,uzepalette,uzeobjectextender,uzeentityfactory,
+  uzgldrawcontext,uzedrawingdef,uzecamera,uzcsysvars,SysUtils,uzctnrVectorBytesStream,
+  uunitmanager,uzegeometry,uzeconsts,uzeentity,uzeentsubordinated,uzsbVarmanDef,
+  uzegeometrytypes,uzeentblockinsert,uzeTypes,UGDBVisibleOpenArray,
   UGDBObjBlockdefArray,gzctnrVectorTypes,uzeblockdef,uzeffdxfsupport,
   UGDBSelectedObjArray,uzeentitiestree,uzbLogIntf,uzestrconsts,uzglviewareadata,
   uzeSnap,uzCtnrVectorpBaseEntity;
@@ -637,7 +637,7 @@ begin
   Result:=AllocAndInitDevice(nil);
 end;
 
-function UpgradeBlockInsert2Device(ptu:PTAbstractUnit;pent:PGDBObjBlockInsert;
+function UpgradeBlockInsert2Device(ptu:PExtensionData;pent:PGDBObjBlockInsert;
   const drawing:TDrawingDef):PGDBObjDevice;
 begin
   pent^.index:=PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple).getindex(

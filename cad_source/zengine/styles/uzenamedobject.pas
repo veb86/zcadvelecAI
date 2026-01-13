@@ -19,7 +19,8 @@
 unit uzeNamedObject;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzepalette,sysutils,uzbtypes,uzegeometry,uzbstrproc;
+uses
+  sysutils,uzeTypes;
 type
   TNamedObject=class
     private
@@ -30,9 +31,7 @@ type
 
       property Name:String read fName write fName;
   end;
-{EXPORT+}
-  PGDBNamedObject=^GDBNamedObject;
-  {REGISTEROBJECTTYPE GDBNamedObject}
+
   GDBNamedObject=object(GDBaseObject)
                        Name:AnsiString;(*'Name'*)
                        constructor initnul;
@@ -44,7 +43,8 @@ type
                        procedure SetDefaultValues;virtual;
                        procedure IterateCounter(PCounted:Pointer;var Counter:Integer;proc:TProcCounter);virtual;
                  end;
-{EXPORT-}
+  PGDBNamedObject=^GDBNamedObject;
+
 implementation
 constructor TNamedObject.Create(const n:String);
 begin

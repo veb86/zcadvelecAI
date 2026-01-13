@@ -26,13 +26,12 @@ uses
   SysUtils,
   uzcLog,
   uzccommandsabstract,uzccommandsimpl,
-  uzbstrproc,
   uzeblockdef,uzcdrawing,uzcdrawings,uzcinterface,
   uzctnrVectorStrings,uzegeometrytypes,
   uzccomdraw,uzcstrconsts,uzccommandsmanager,Varman,uzeconsts,uzglviewareadata,
   uzeentsubordinated,uzeentity,uzgldrawcontext,uzeentblockinsert,uzcutils,
   zcmultiobjectcreateundocommand,uzeentityfactory,uzegeometry,
-  URecordDescriptor,typedescriptors,varmandef;
+  URecordDescriptor,uzsbTypeDescriptors,uzsbVarmanDef;
 
 type
   TAfterInsertProc=procedure(PInsert:PGDBObjBlockInsert);

@@ -30,12 +30,12 @@ uses
   Menus,Graphics,Themes,
   Types,UniqueInstanceBase,simpleipc,Laz2_XMLCfg,LCLVersion,
   {ZCAD BASE}
-  uzcsysparams,gzctnrVectorTypes,uzemathutils,uzelongprocesssupport,
+  uzcsysparams,gzctnrVectorTypes,uzelongprocesssupport,
   uzgldrawergdi,uzcdrawing,UGDBOpenArrayOfPV,uzedrawingabstract,
   uzepalette,uzbpaths,uzglviewareadata,uzeentitiesprop,uzcinterface,
-  uzctnrVectorBytes,uzbtypes,
-  uzegeometry,uzcsysvars,uzcstrconsts,uzbstrproc,uzcLog,uzbLogTypes,uzbLog,
-  uzedimensionaltypes,varmandef,varman,UUnitManager,uzcsysinfo,strmy,
+  uzctnrVectorBytesStream,uzeTypes,
+  uzcsysvars,uzcstrconsts,uzcLog,uzbLogTypes,uzbLog,
+  uzsbVarmanDef,varman,UUnitManager,uzcsysinfo,
   uzestylestexts,uzestylesdim,
   uzbexceptionscl,uzbexceptionsgui,
   {ZCAD ENTITIES}
@@ -58,7 +58,8 @@ uses
   uzgldrawcontext,uzglviewareaabstract,uzcguimanager,uzcinterfacedata,
   uzcenitiesvariablesextender,uzglviewareageneral,UniqueInstanceRaw,
   uzmacros,uzcviewareacxmenu,uzccommand_quit,uzeMouseTimer,
-  uzccommand_multiselect2objinsp{$IfDef LINUX},BaseUnix{$EndIf};
+  uzccommand_multiselect2objinsp{$IfDef LINUX},BaseUnix{$EndIf},uzbUnits,
+  uzbUnitsUtils;
 
 resourcestring
   rsClosed='Closed';
@@ -853,7 +854,7 @@ begin
       HardcodedButtonSize:=21;
       {Грузим раскладку окон}
       if not ZCSysParams.saved.noloadlayout then
-        LoadLayout_com(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG)),EmptyCommandOperands);
+        LoadLayout_com(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG),drawings.GetCurrentROOT),EmptyCommandOperands);
 
       if ZCSysParams.saved.noloadlayout then begin
         DockMaster.ShowControl('CommandLine',True);
@@ -1461,8 +1462,10 @@ begin
   str(TotalLPTime*10e4:3:2,TimeStr);
   LPName:=lps.getLPName(LPHandle);
 
-  if (not lps.hasOptions(LPHandle,LPSOSilent))and(not CommandManager.isBusy)and
-    ((Options and LPSOSilent)=0) then begin
+  if (not CommandManager.isBusy)and((Options and LPSOSilent)=0) then begin
+    if (Options and LPSOSilentIfFast)<>0 then
+      if TotalLPTime<0.00001 then
+        exit;
     if (LPName='') then
       zcUI.TextMessage(format(rscompiledtimemsg,[TimeStr]),[TMWOToConsole])
     else
@@ -1927,7 +1930,7 @@ begin
   if sender_wa.param.SelDesc.Selectedobjcount>objcount then begin
     if drawings.GetCurrentDWG.SelObjArray.Count>0 then begin
       //commandmanager.ExecuteCommandSilent('MultiSelect2ObjIbsp',sender_wa.pdwg,@sender_wa.param)
-      MultiSelect2ObjIbsp_com(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG)),'');
+      MultiSelect2ObjIbsp_com(TZCADCommandContext.CreateRec(PTZCADDrawing(drawings.GetCurrentDWG),drawings.GetCurrentROOT),'');
     end else
       zcUI.Do_GUIaction(nil,zcMsgUIReturnToDefaultObject);
   end else begin

@@ -23,7 +23,7 @@ interface
 
 uses
   uzcLog,
-  uzbpaths,uzbtypes,
+  uzbpaths,uzeTypes,
   uzeffmanager,
   uzccommand_DWGNew,
   uzccmdload,

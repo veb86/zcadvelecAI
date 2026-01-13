@@ -21,9 +21,10 @@ unit uzeentitiesprop;
 {$INCLUDE zengineconfig.inc}
 interface
 
-uses uzedimensionaltypes,uzepalette,uzestyleslinetypes,uzegeometrytypes,
-  uzbtypes,uzegeometry,SysUtils,
-  uzctnrVectorBytes,uzestyleslayers;
+uses
+  uzepalette,uzestyleslinetypes,uzegeometrytypes,
+  uzeTypes,SysUtils,
+ uzctnrVectorBytesStream,uzestyleslayers;
 
 type
   PGDBObjVisualProp=^GDBObjVisualProp;

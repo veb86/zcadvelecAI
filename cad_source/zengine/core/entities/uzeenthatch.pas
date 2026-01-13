@@ -24,8 +24,8 @@ uses
   SysUtils,Math,
   uzeentityfactory,uzeentsubordinated,uzgldrawcontext,uzedrawingdef,
   gzctnrVectorTypes,uzestyleslayers,uzehelpobj,UGDBSelectedObjArray,
-  uzegeometrytypes,uzeentity,UGDBPoint3DArray,uzctnrVectorBytes,
-  uzbtypes,uzeentwithlocalcs,uzeconsts,uzegeometry,uzeffdxfsupport,uzecamera,
+  uzegeometrytypes,uzeentity,UGDBPoint3DArray,uzctnrVectorBytesStream,
+  uzeTypes,uzeentwithlocalcs,uzeconsts,uzegeometry,uzeffdxfsupport,uzecamera,
   UGDBPolyLine2DArray,uzglviewareadata,uzeTriangulator,uzeBoundaryPath,
   uzeStylesHatchPatterns,gvector,garrayutils,uzMVReader;
 

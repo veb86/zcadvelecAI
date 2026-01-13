@@ -8,14 +8,12 @@ uses
 
   LazUTF8,CsvDocument,uzcsysvars,
 
-  varmandef,Varman,URecordDescriptor,UObjectDescriptor,typedescriptors,UUnitManager,
+  uzsbVarmanDef,Varman,URecordDescriptor,UObjectDescriptor,uzsbTypeDescriptors,UUnitManager,
   uzcdevicebaseabstract,
 
-  uzbpaths,uzbtypes;
+  uzbpaths,uzeTypes;
 type
-{EXPORT+}
-PDeviceDbBaseObject=^DeviceDbBaseObject;
-{REGISTEROBJECTTYPE DeviceDbBaseObject}
+
 DeviceDbBaseObject= object(DbBaseObject)
                        UID:String;(*'**Уникальный идентификатор'*)
 
@@ -23,21 +21,21 @@ DeviceDbBaseObject= object(DbBaseObject)
                        NameTemplate:String;(*'**Формат названия'*)
                        NameFullTemplate:String;(*'**Формат полного названия'*)
                        UIDTemplate:String;(*'**Формат уникального идентификатора'*)
-                       Variants:{-}TCSVDocument{/Pointer/};(*'Варианты'*)
+                       Variants:TCSVDocument;(*'Варианты'*)
                        constructor initnul;
                        procedure FormatAfterFielfmod(PField,PTypeDescriptor:Pointer);virtual;
                        procedure Format;virtual;
                        procedure SetOtherFields(PField,PTypeDescriptor:Pointer);virtual;
                  end;
-PElDeviceBaseObject=^ElDeviceBaseObject;
-{REGISTEROBJECTTYPE ElDeviceBaseObject}
+PDeviceDbBaseObject=^DeviceDbBaseObject;
+
 ElDeviceBaseObject= object(DeviceDbBaseObject)
                                    Pins:String;(*'**Клеммы'*)
                                    constructor initnul;
                                    procedure Format;virtual;
                              end;
-PCableDeviceBaseObject=^CableDeviceBaseObject;
-{REGISTEROBJECTTYPE CableDeviceBaseObject}
+PElDeviceBaseObject=^ElDeviceBaseObject;
+
 CableDeviceBaseObject= object(DeviceDbBaseObject)
                                    CoreCrossSection:Double;(*'**Сечение жилы'*)
                                    NumberOfCores:Double;(*'**Количество жил'*)
@@ -45,7 +43,10 @@ CableDeviceBaseObject= object(DeviceDbBaseObject)
                                    DDT:Double;(*'**ДТТ'*)
                                    constructor initnul;
                              end;
-{EXPORT-}
+PCableDeviceBaseObject=^CableDeviceBaseObject;
+
+
+
 DeviceManager=object(GDBaseObject)
                     constructor init;
                     procedure loadfromdir(path: String);
@@ -56,8 +57,7 @@ thead=record
             cheked:boolean;
       end;
 theadarray=TVector<thead>;
-{procedure startup;
-procedure finalize;}
+
 const
      firstfilename='_startup.pas';
 var devman:DeviceManager;

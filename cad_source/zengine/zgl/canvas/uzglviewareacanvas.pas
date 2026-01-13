@@ -25,10 +25,14 @@ uses
      {$ENDIF}*)
      uzgldrawercanvas,uzglviewareaabstract,sysutils,
      
-     varmandef,uzccommandsmanager,uzcsysvars,uzegeometry,LCLType,
+     uzsbVarmanDef,uzccommandsmanager,uzcsysvars,uzegeometry,LCLType,
      ExtCtrls,classes,Controls,Graphics,uzglbackendmanager,
      uzglviewareacanvasgeneral;
 type
+    PTCanvasData=^TCanvasData;
+    TCanvasData=record
+              RD_Renderer:String;(*'Device'*)(*oi_readonly*)
+        end;
     TCanvasViewArea=class(TGeneralCanvasViewArea)
                       public
                       CanvasData:TCanvasData;

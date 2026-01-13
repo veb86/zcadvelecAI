@@ -22,18 +22,18 @@ uses
   uzccommandsmanager,uzccomdraw,uzcentelleader,
   uzccommandsabstract,
   uzccommandsimpl,
-  uzegeometrytypes,uzbtypes,
+  uzegeometrytypes,uzeTypes,
   uzcutils,
   SysUtils,
   LazUTF8,
-  varmandef,
+  uzsbVarmanDef,
   uzglviewareadata,uzglviewareaabstract,uzglviewareageneral,
   uzcinterface,
   uzegeometry,
   gzctnrSTL,
   UGDBGraf,
   uzeconsts,
-  uzeentity,uzeentline,
+  uzeentity,uzeentline,uzeentcurve,
   uzcentnet,
   uzeentsubordinated,uzcentcable,varman,uzcdialogsfiles,uunitmanager,
   uzcbillofmaterial,uzccablemanager,uzeentdevice,uzeenttable,
@@ -43,7 +43,7 @@ uses
   generics.Collections,
   uzccommand_treestat,uzccommand_line2,uzccmdfloatinsert,uzcregother,uzcfcommandline,
   uzeparsercmdprompt,uzeSnap,uzCtnrVectorpBaseEntity,
-  uzeEntBase;
+  uzeEntBase,uzeentabstracttext;
 type
   TELCableComParam=record
     Traces:TEnumData;(*'Trace'*)

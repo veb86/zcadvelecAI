@@ -21,13 +21,20 @@ unit uzeblockdef;
 interface
 uses
   gzctnrVectorTypes,uzeentity,uzeentityfactory,uzgldrawcontext,uzeobjectextender,
-  uzedrawingdef,uzeentsubordinated,uzctnrVectorBytes,sysutils,uzbtypes,
+  uzedrawingdef,uzeentsubordinated,uzctnrVectorBytesStream,sysutils,uzeTypes,
   uzegeometrytypes,uzegeometry,uzestyleslayers,uzeconsts,uzeentgenericsubentry,
   uzbLogIntf,uzMVReader,uzeffdxfsupport;
 type
-{Export+}
+TBlockType=(BT_Connector,BT_Unknown);
+TBlockBorder=(BB_Owner,BB_Self,BB_Empty);
+TBlockGroup=(BG_El_Device,BG_Unknown);
+TBlockDesc=record
+                 BType:TBlockType;(*'Block type'*)
+                 BBorder:TBlockBorder;(*'Border'*)
+                 BGroup:TBlockGroup;(*'Block group'*)
+           end;
+
 PGDBObjBlockdef=^GDBObjBlockdef;
-{REGISTEROBJECTTYPE GDBObjBlockdef}
 GDBObjBlockdef= object(GDBObjGenericSubEntry)
                      Name:String;
                      VarFromFile:String;
@@ -44,19 +51,14 @@ GDBObjBlockdef= object(GDBObjGenericSubEntry)
                      function GetMatrix:PzeTypedMatrix4d;virtual;
                      function GetHandle:PtrInt;virtual;
                      function GetMainOwner:PGDBObjSubordinated;virtual;
-                     function GetType:PtrInt;virtual;
                      class function GetDXFIOFeatures:TDXFEntIODataManager;static;
                end;
-{Export-}
+
 var
    GDBObjBlockDefDXFFeatures:TDXFEntIODataManager;
 
 implementation
 
-function GDBObjBlockdef.GetType:PtrInt;
-begin
-     result:=1;
-end;
 function GDBObjBlockdef.GetMainOwner:PGDBObjSubordinated;
 begin
      result:=@self;

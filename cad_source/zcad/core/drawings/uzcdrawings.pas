@@ -21,21 +21,20 @@ unit uzcdrawings;
 {$INCLUDE zengineconfig.inc}
 interface
 uses
-    uzglviewareaabstract,uzglviewareageneral,uzcTranslations,uzedimblocksregister,uzeblockdefsfactory,
-    uzemathutils,uzgldrawcontext,uzcdrawing,uzedrawingdef,uzbpaths,uzestylesdim,
-    uzedrawingabstract,uzcdialogsfiles,LResources,uzcsysvars,uzcinterface,
-    uzcstrconsts,uzbstrproc,uzeblockdef,UGDBObjBlockdefArray,UUnitManager,
-    uzbtypes,varmandef,varman,sysutils,uzegeometry,uzeconsts,
-    uzedrawingsimple,uzeentgenericsubentry,uzestyleslayers,uzeentity,
-    UGDBSelectedObjArray,uzestylestexts,uzefontmanager,uzestyleslinetypes,
-    UGDBOpenArrayOfPV,uzefont,UGDBVisibleOpenArray,
-    gzctnrVectorTypes,uzedimensionaltypes,uzetrash,uzctnrVectorBytes,uzglviewareadata,
-    uzeentitiestypefilter,uzctnrvectorpgdbaseobjects,uzCtnrVectorpBaseEntity,
-    uzcLog,uzcreglog;
+  uzglviewareaabstract,uzglviewareageneral,uzcTranslations,uzedimblocksregister,
+  uzeblockdefsfactory,uzgldrawcontext,uzcdrawing,uzedrawingdef,uzbpaths,
+  uzestylesdim,uzedrawingabstract,uzcdialogsfiles,LResources,uzcsysvars,
+  uzcinterface,uzcstrconsts,uzeblockdef,UGDBObjBlockdefArray,
+  UUnitManager,uzeTypes,uzsbVarmanDef,varman,sysutils,uzeconsts,
+  uzedrawingsimple,uzeentgenericsubentry,uzestyleslayers,uzeentity,
+  UGDBSelectedObjArray,uzestylestexts,uzefontmanager,uzestyleslinetypes,
+  UGDBOpenArrayOfPV,uzefont,UGDBVisibleOpenArray,gzctnrVectorTypes,uzetrash,
+  uzctnrVectorBytesStream,uzglviewareadata,uzeentitiestypefilter,
+  uzctnrvectorpgdbaseobjects,uzCtnrVectorpBaseEntity,uzcLog,uzbUnits,
+  uzbUnitsUtils;
 type
-{EXPORT+}
+
 PTZCADDrawingsManager=^TZCADDrawingsManager;
-{REGISTEROBJECTTYPE TZCADDrawingsManager}
 TZCADDrawingsManager= object(TZctnrVectorPGDBaseObjects)
                     CurrentDWG:{PTZCADDrawing}PTSimpleDrawing;
                     ProjectUnits:TUnitManager;
@@ -83,7 +82,7 @@ TZCADDrawingsManager= object(TZctnrVectorPGDBaseObjects)
                     procedure AfterNotAutoProcessGDB(const AUndoMethod:TMethod);
                     procedure AfterEnt(const pent:PGDBObjEntity);
               end;
-{EXPORT-}
+
 var drawings: TZCADDrawingsManager;
     BlockBaseDWG:{PTZCADDrawing}PTSimpleDrawing=nil;
     ClipboardDWG:{PTZCADDrawing}PTSimpleDrawing=nil;
@@ -95,7 +94,7 @@ procedure CalcZ(z:Double);
 procedure RemapAll(_from,_to:PTSimpleDrawing;_source,_dest:PGDBObjEntity);
 procedure startup(preloadedfile1,preloadedfile2:String);
 procedure finalize;
-procedure SetObjCreateManipulator(out domethod,undomethod:tmethod);
+procedure SetObjCreateManipulator(out ADoMth,AUnDoMth:TMethod);overload;
 procedure clearotrack;
 procedure clearcp;
 //procedure redrawoglwnd(GUIAction:TZMessageID);
@@ -307,13 +306,15 @@ begin
 
      end;
 end;
- procedure SetObjCreateManipulator(out domethod,undomethod:tmethod);
- begin
-      domethod.Code:=pointer(drawings.GetCurrentROOT^.GoodAddObjectToObjArray);
-      domethod.Data:=drawings.GetCurrentROOT;
-      undomethod.Code:=pointer(drawings.GetCurrentROOT^.GoodRemoveMiFromArray);
-      undomethod.Data:=drawings.GetCurrentROOT;
- end;
+
+procedure SetObjCreateManipulator(out ADoMth,AUnDoMth:TMethod);
+begin
+  ADoMth.Code:=pointer(drawings.GetCurrentROOT^.GoodAddObjectToObjArray);
+  ADoMth.Data:=drawings.GetCurrentROOT;
+  AUnDoMth.Code:=pointer(drawings.GetCurrentROOT^.GoodRemoveMiFromArray);
+  AUnDoMth.Data:=drawings.GetCurrentROOT;
+end;
+
 function TZCADDrawingsManager.FindOneInArray(const entities:GDBObjOpenArrayOfPV;objID:Word; InOwner:Boolean):PGDBObjEntity;
 var
    //pobj:pGDBObjEntity;

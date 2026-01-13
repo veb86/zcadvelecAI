@@ -19,8 +19,8 @@
 unit uzgprimitivescreatorabstract;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzgprimitivessarray,uzgindexsarray,sysutils,uzbtypes,//
-     gzctnrVectorTypes,uzegeometry;
+uses
+  uzgprimitivessarray,uzgindexsarray,sysutils,uzeTypes,gzctnrVectorTypes;
 type
 TLLPrimitivesCreatorAbstract=class
                 function CreateLLLine(var pa:TLLPrimitivesArray;const P1Index:TLLVertexIndex;OnlyOne:Boolean=False):TArrayIndex;virtual;abstract;

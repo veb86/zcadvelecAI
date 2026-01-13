@@ -20,34 +20,39 @@ unit uzestyleslayers;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses sysutils,uzbtypes,uzegeometry,
-     uzeconsts,UGDBNamedObjectsArray,uzbstrproc,uzeNamedObject,//gzctnrVectorClass,
-     uzeEntityStylesRegister;
+uses
+  sysutils,uzeTypes,
+  uzeconsts,UGDBNamedObjectsArray,uzeNamedObject,
+  uzeEntityStylesRegister;
 type
-{EXPORT+}
-PPGDBLayerPropObjInsp=^PGDBLayerPropObjInsp;
-PGDBLayerPropObjInsp={GDBPtrUInt}Pointer;
-PGDBLayerProp=^GDBLayerProp;
-{REGISTEROBJECTTYPE GDBLayerProp}
-GDBLayerProp= object(GDBNamedObject)
-               color:Byte;(*'Color'*)
-               lineweight:SmallInt;(*'Line weight'*)
-               LT:Pointer;(*'Line type'*)
-               _on:Boolean;(*'On'*)
-               _lock:Boolean;(*'Lock'*)
-               _print:Boolean;(*'Print'*)
-               desk:AnsiString;(*'Description'*)
-               constructor InitWithParam(const N:String; C: Integer; LW: Integer;oo,ll,pp:Boolean;const d:String);
-               function GetFullName:String;virtual;
-               procedure SetValueFromDxf(group:Integer;const value:String);virtual;
-               procedure SetDefaultValues;virtual;
-               destructor done;virtual;
-         end;
-{EXPORT-}
+
+  PGDBLayerPropObjInsp=Pointer;
+  PPGDBLayerPropObjInsp=^PGDBLayerPropObjInsp;
+
+  GDBLayerProp=object(GDBNamedObject)
+    color:byte;(*'Color'*)
+    lineweight:smallint;(*'Line weight'*)
+    LT:Pointer;(*'Line type'*)
+    _on:boolean;(*'On'*)
+    _lock:boolean;(*'Lock'*)
+    _print:boolean;(*'Print'*)
+    desk:ansistring;(*'Description'*)
+    constructor InitWithParam(const N:string;C:integer;
+      LW:integer;oo,ll,pp:boolean;const d:string);
+    function GetFullName:string;virtual;
+    procedure SetValueFromDxf(group:integer;const Value:string);virtual;
+    procedure SetDefaultValues;virtual;
+    destructor done;virtual;
+  end;
+  PGDBLayerProp=^GDBLayerProp;
+
+
+
+
 PGDBLayerPropArray=^GDBLayerPropArray;
 GDBLayerPropArray=packed array [0..0] of PGDBLayerProp;
   PGDBLayerArray=^GDBLayerArray;
-  GDBLayerArray= object(GDBNamedObjectsArray{-}<PGDBLayerProp,GDBLayerProp>{//})
+  GDBLayerArray= object(GDBNamedObjectsArray<PGDBLayerProp,GDBLayerProp>)
     private
       fActlState:TActuality;
     public
@@ -59,9 +64,9 @@ GDBLayerPropArray=packed array [0..0] of PGDBLayerProp;
       function createlayerifneed(_source:PGDBLayerProp):PGDBLayerProp;
       function createlayerifneedbyname(const lname:String;_source:PGDBLayerProp):PGDBLayerProp;
       procedure NewState;
-      {-}property ActlState:TActuality read fActlState;{//}
+      property ActlState:TActuality read fActlState;
   end;
-{EXPORT-}
+
 
 TLayerProp=class(TNamedObject)
 end;
@@ -194,24 +199,8 @@ begin
     desk:=d;
 end;
 function GDBLayerProp.GetFullName;
-{const
-     ls=24;}
-//var ss:String;
 begin
-     result:=ansi2cp(getname);
-     {  if _on then
-                       ss:='[O'
-                   else
-                       ss:='[–';
-       if _lock then
-                       ss:=ss+'L'
-                   else
-                       ss:=ss+'–';
-       if _print then
-                       ss:=ss+'P] '
-                   else
-                       ss:=ss+'–] '; }
-       result:={ss+}result;
+  result:=getname;
 end;
 function GDBLayerArray.GetSystemLayer;
 begin

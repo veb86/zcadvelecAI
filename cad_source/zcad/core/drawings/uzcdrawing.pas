@@ -21,18 +21,15 @@ unit uzcdrawing;
 {$INCLUDE zengineconfig.inc}
 interface
 uses
-    uzcTranslations,uzcinterface,uzgldrawcontext,zeundostack,gzUndoCmdChgData,
-    gzUndoCmdChgMethod,zUndoCmdChgCameraBaseProp,zebaseundocommands,uzbpaths,uzestylesdim,
-    uzcdialogsfiles,LResources,uzcsysvars,uzcstrconsts,uzbstrproc,uzeblockdef,UUnitManager,
-    uzbtypes,varmandef,varman,sysutils,uzegeometry, uzeconsts,
-    uzedrawingsimple,uzestyleslayers,uzeentity,uzefontmanager,
-    uzedimensionaltypes,uzegeometrytypes,uzctnrVectorBytes,gzctnrVectorTypes,uzglviewareadata
-    //,zUndoCmdChgExtTypes
-    ;
+  uzcTranslations,uzcinterface,uzgldrawcontext,zeundostack,gzUndoCmdChgData,
+  gzUndoCmdChgMethod,zUndoCmdChgCameraBaseProp,zebaseundocommands,uzbpaths,
+  uzestylesdim,uzcdialogsfiles,LResources,uzcsysvars,uzcstrconsts,
+  uzeblockdef,UUnitManager,uzsbVarmanDef,varman,sysutils,uzegeometry,
+  uzeconsts,uzedrawingsimple,uzestyleslayers,uzeentity,uzefontmanager,uzbUnits,
+  uzegeometrytypes,uzctnrVectorBytesStream,gzctnrVectorTypes,uzglviewareadata;
 type
-{EXPORT+}
+
 PTZCADDrawing=^TZCADDrawing;
-{REGISTEROBJECTTYPE TZCADDrawing}
 TZCADDrawing= object(TSimpleDrawing)
 
            FileName:String;
@@ -67,7 +64,7 @@ TZCADDrawing= object(TSimpleDrawing)
            procedure SetUnitsFormat(f:TzeUnitsFormat);virtual;
            procedure FillDrawingPartRC(var dc:TDrawContext);virtual;
      end;
-{EXPORT-}
+
 //procedure standardization(PEnt:PGDBObjEntity;ObjType:TObjID);
 implementation
  uses uzcdrawings,uzccommandsmanager;

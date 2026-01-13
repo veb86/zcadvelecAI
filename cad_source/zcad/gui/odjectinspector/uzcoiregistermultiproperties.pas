@@ -24,10 +24,9 @@ uses
   uzeentwithlocalcs,Math,uzcoimultiobjects,uzepalette,SysUtils,uzeentityfactory,
   uzctranslations,
   uzegeometrytypes,
-  varmandef,
+  uzsbVarmanDef,
   uzeconsts,
   uzeentity,
-  uzedimensionaltypes,
   Varman,
   uzcoimultipropertiesutil,
   uzeentcircle,uzeentarc,uzeentline,uzeentblockinsert,uzeenttext,
@@ -36,8 +35,8 @@ uses
   uzeenthatch,
   uzegeometry,uzcoimultiproperties,uzcLog,
   uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,
-  uzcutils,uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
-  uzctnrVectorStrings,uzbtypes;
+  uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
+  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport;
 implementation
 var
   ptdTHAlign:PUserTypeDescriptor;
@@ -564,6 +563,7 @@ const
      pellipse:PGDBObjEllipse=nil;
      LayerControlExtender:TLayerControlExtender=nil;
      SmartTextEntExtender:TSmartTextEntExtender=nil;
+     ReportExtender:TReportExtender=nil;
      NetConnectorExtender:TSCHConnectorExtender=nil;
 var
   ptype:PUserTypeDescriptor;
@@ -576,18 +576,20 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRLAYERCONTROL_BadLayer','False layer',sysunit^.TypeName2PTD('String'),MPCExtenders,0,TLayerControlExtender,PtrInt(@LayerControlExtender.BadLayer),PtrInt(@LayerControlExtender.BadLayer),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRLAYERCONTROL_Expression','Expression',sysunit^.TypeName2PTD('String'),MPCExtenders,0,TLayerControlExtender,PtrInt(@LayerControlExtender.FExpression),PtrInt(@LayerControlExtender.FExpression),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPropertyMultiproperty('LControl_T','LControl_T',MPCExtenders,0,TLayerControlExtender,TLayerControlExtender,'Expr',OneVarDataMIPD,OneVarDataEIPD);
-    RegisterVarCategory('EXTDRSSMARTTEXTENT','Text control',@InterfaceTranslate);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_LeaderStartDrawDist','Leader start draw distance',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FLeaderStartDrawDist),PtrInt(@SmartTextEntExtender.FLeaderStartDrawDist),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_ExtensionLine','Extension line',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FExtensionLine),PtrInt(@SmartTextEntExtender.FExtensionLine),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_ExtensionLineStartShift','Extension line start shift',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FExtensionLineStartShift),PtrInt(@SmartTextEntExtender.FExtensionLineStartShift),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_BaseLine','Base line',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLine),PtrInt(@SmartTextEntExtender.FBaseLine),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_BaseLineOffsetX','Base line offset X',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLineOffset.x),PtrInt(@SmartTextEntExtender.FBaseLineOffset.x),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_BaseLineOffsetY','Base line offset Y',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLineOffset.y),PtrInt(@SmartTextEntExtender.FBaseLineOffset.y),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_TextHeightOverride','Height override',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FTextHeightOverride),PtrInt(@SmartTextEntExtender.FTextHeightOverride),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_HJOverride','Horizontal justify override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FHJOverride),PtrInt(@SmartTextEntExtender.FHJOverride),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_VJOverride','Vertical justify override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FVJOverride),PtrInt(@SmartTextEntExtender.FVJOverride),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_EnableRotateOverride','Rotate override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FRotateOverride),PtrInt(@SmartTextEntExtender.FRotateOverride),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSSMARTTEXTENT_RotateOverride','Rotate override value',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FRotateOverrideValue),PtrInt(@SmartTextEntExtender.FRotateOverrideValue),OneVarDataMIPD,OneVarDataEIPD);
+    RegisterVarCategory('EXTDRSMARTTEXTENT','Text control',@InterfaceTranslate);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_LeaderStartDrawDist','Leader start draw distance',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FLeaderStartDrawDist),PtrInt(@SmartTextEntExtender.FLeaderStartDrawDist),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_ExtensionLine','Extension line',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FExtensionLine),PtrInt(@SmartTextEntExtender.FExtensionLine),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_ExtensionLineStartShift','Extension line start shift',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FExtensionLineStartShift),PtrInt(@SmartTextEntExtender.FExtensionLineStartShift),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_BaseLine','Base line',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLine),PtrInt(@SmartTextEntExtender.FBaseLine),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_BaseLineOffsetX','Base line offset X',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLineOffset.x),PtrInt(@SmartTextEntExtender.FBaseLineOffset.x),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_BaseLineOffsetY','Base line offset Y',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FBaseLineOffset.y),PtrInt(@SmartTextEntExtender.FBaseLineOffset.y),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_TextHeightOverride','Height override',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FTextHeightOverride),PtrInt(@SmartTextEntExtender.FTextHeightOverride),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_HJOverride','Horizontal justify override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FHJOverride),PtrInt(@SmartTextEntExtender.FHJOverride),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_VJOverride','Vertical justify override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FVJOverride),PtrInt(@SmartTextEntExtender.FVJOverride),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_EnableRotateOverride','Rotate override',sysunit^.TypeName2PTD('Boolean'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FRotateOverride),PtrInt(@SmartTextEntExtender.FRotateOverride),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRSMARTTEXTENT_RotateOverride','Rotate override value',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSmartTextEntExtender,PtrInt(@SmartTextEntExtender.FRotateOverrideValue),PtrInt(@SmartTextEntExtender.FRotateOverrideValue),OneVarDataMIPD,OneVarDataEIPD);
+    RegisterVarCategory('EXTDRREPORT','Report',@InterfaceTranslate);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRREPORT_Scriptname','Script name',sysunit^.TypeName2PTD('AnsiString'),MPCExtenders,0,TReportExtender,PtrInt(@ReportExtender.fScriptName),PtrInt(@ReportExtender.fScriptName),OneVarDataMIPD,OneVarDataEIPD);
 
     ptype:=sysunit^.TypeName2PTD('TConnectorType');
     if ptype=nil then begin
@@ -838,6 +840,7 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('LeaderSize','Size',sysunit^.TypeName2PTD('Integer'),MPCMisc,GDBElLeaderID,nil,PtrInt(@pelleader^.size),PtrInt(@pelleader^.size),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('Leaderscale','Scale',sysunit^.TypeName2PTD('Double'),MPCMisc,GDBElLeaderID,nil,PtrInt(@pelleader^.scale),PtrInt(@pelleader^.scale),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('LeaderWidth','Width',sysunit^.TypeName2PTD('Double'),MPCMisc,GDBElLeaderID,nil,PtrInt(@pelleader^.twidth),PtrInt(@pelleader^.twidth),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('ShowHeader','Show header',sysunit^.TypeName2PTD('Boolean'),MPCMisc,GDBElLeaderID,nil,PtrInt(@pelleader^.ShowHeader),PtrInt(@pelleader^.ShowHeader),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('ShowTable','Show table',sysunit^.TypeName2PTD('Boolean'),MPCMisc,GDBElLeaderID,nil,PtrInt(@pelleader^.ShowTable),PtrInt(@pelleader^.ShowTable),OneVarDataMIPD,OneVarDataEIPD);
 
     {RotatedDimension misc}

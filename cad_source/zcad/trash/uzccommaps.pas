@@ -13,12 +13,12 @@ uses
   uzctranslations,uzeentity,uzglviewareaabstract,uzgldrawcontext,
   uzeenttext,uzeentityfactory,uzcsysvars,uzbstrproc,
   uzcinterface,uzccommandsmanager,uzclog,
-  uzccommandsabstract,uzccommandsimpl,uzbtypes,uzcdrawings,uzeutils,uzcutils,sysutils,
-  varmandef,uzctnrVectorBytes,uzegeometry,uzeconsts,
+  uzccommandsabstract,uzccommandsimpl,uzcdrawings,uzeutils,uzcutils,sysutils,
+  uzsbVarmanDef,uzctnrVectorBytesStream,uzegeometry,uzeconsts,
   uzccomdraw,uzeentline,uzbpaths,uzeentblockinsert,
   uzegeometrytypes,varman,uzeentdevice,uzeentmtext,math,
   uzcentcable,UUnitManager,
-  gzctnrVectorTypes,uzccomelectrical,URecordDescriptor,TypeDescriptors,uzcLog,
+  gzctnrVectorTypes,uzccomelectrical,URecordDescriptor,uzsbTypeDescriptors,uzcLog,
   gzctnrSTL,gutil,uzccmdfloatinsert;
 
 const
@@ -41,7 +41,6 @@ type
   LessDouble=TLess<double>;
   TIntersections=GKey2DataMapOld<double,TIntersectedCom,LessDouble>;
   TPointMap=GKey2DataMap<AnsiString,TMAPPoint{,LessAnsiString}>;
-  {REGISTEROBJECTTYPE TProfileBuildCom}
   TProfileBuildCom= object(FloatInsert_com)
     PointMap:TPointMap;
     PlanScale,VertScale,HorScale:double;

@@ -20,35 +20,37 @@ unit uzestylestables;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
-uses sysutils,uzbtypes,uzegeometry,
-     UGDBNamedObjectsArray,gzctnrVector,uzeNamedObject;
+uses
+  sysutils,UGDBNamedObjectsArray,gzctnrVector,uzeNamedObject;
 type
-{EXPORT+}
-TTableCellJustify=(jcl(*'TopLeft'*),
-              jcc(*'TopCenter'*),
-              jcr(*'TopRight'*));
-PTGDBTableCellStyle=^TGDBTableCellStyle;
-{REGISTERRECORDTYPE TGDBTableCellStyle}
-TGDBTableCellStyle=record
-                          Width,TextWidth:Double;
-                          CF:TTableCellJustify;
-                    end;
-{REGISTEROBJECTTYPE GDBCellFormatArray}
-GDBCellFormatArray= object(GZVector{-}<TGDBTableCellStyle>{//})
-                   end;
-PTGDBTableStyle=^TGDBTableStyle;
-{REGISTEROBJECTTYPE TGDBTableStyle}
-TGDBTableStyle= object(GDBNamedObject)
-                     rowheight:Integer;
-                     textheight:Double;
-                     tblformat:GDBCellFormatArray;
-                     HeadBlockName:String;
-                     constructor Init(const n:String);
-                     destructor Done;virtual;
-               end;
-{EXPORT-}
+
+  TTableCellJustify=(jcl(*'TopLeft'*),
+    jcc(*'TopCenter'*),
+    jcr(*'TopRight'*));
+  PTGDBTableCellStyle=^TGDBTableCellStyle;
+
+  TGDBTableCellStyle=record
+    Width,TextWidth:double;
+    CF:TTableCellJustify;
+  end;
+
+  GDBCellFormatArray=GZVector<TGDBTableCellStyle>;
+
+  TGDBTableStyle=object(GDBNamedObject)
+    rowheight:integer;
+    textheight:double;
+    tblformat:GDBCellFormatArray;
+    HeadBlockName:string;
+    constructor Init(const n:string);
+    destructor Done;virtual;
+  end;
+  PTGDBTableStyle=^TGDBTableStyle;
+
+
+
+
 PGDBTableStyleArray=^GDBTableStyleArray;
-GDBTableStyleArray= object(GDBNamedObjectsArray{-}<PTGDBTableStyle,TGDBTableStyle>{//})
+GDBTableStyleArray= object(GDBNamedObjectsArray<PTGDBTableStyle,TGDBTableStyle>)
                     constructor init(m:Integer);
                     constructor initnul;
                     function AddStyle(const name:String):PTGDBTableStyle;
@@ -56,8 +58,7 @@ GDBTableStyleArray= object(GDBNamedObjectsArray{-}<PTGDBTableStyle,TGDBTableStyl
 var
   PTempTableStyle:PTGDBTableStyle;
 implementation
-//uses
-//    log;
+
 constructor GDBTableStyleArray.init;
 begin
   inherited init(m);

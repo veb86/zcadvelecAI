@@ -32,10 +32,8 @@ uses
   uzccommandsmanager,
   uzeentlwpolyline,uzeentpolyline,uzeentityfactory,
   uzcutils,
-  //uzbtypes,
-  uzegeometry,
   uzccommand_polygon,
-  URecordDescriptor,typedescriptors,Varman,varmandef;
+  URecordDescriptor,uzsbTypeDescriptors,Varman,uzsbVarmanDef;
 
 type
   //** Тип данных для отображения в инспекторе опций команды Rectangle

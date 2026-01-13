@@ -32,9 +32,9 @@ uses
   uzccommandsmanager,
   uzeentlwpolyline,uzeentpolyline,uzeentityfactory,
   uzcutils,
-  //uzbtypes,
+  //
   uzegeometry,
-  URecordDescriptor,typedescriptors,Varman,varmandef;
+  URecordDescriptor,uzsbTypeDescriptors,Varman,uzsbVarmanDef;
 
 type
   //** Перечислимый тип для отображения в инспекторе режима создания прямоугольника (из 3DPolyLine или LWPolyLine, составная часть TRectangParam)

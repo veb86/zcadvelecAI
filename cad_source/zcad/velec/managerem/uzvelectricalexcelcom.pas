@@ -38,15 +38,14 @@ uses
   //gzctnrVectorTypes,
   //uzcdrawings,
   //uzeconsts,
-  varmandef,
+  uzsbVarmanDef,
   //uzcvariablesutils,
   //uzvconsts,
   uzcenitiesvariablesextender,
   uzvmanemshieldsgroupparams,
-  uzegeometry,
   //garrayutils,
   Varman,
-  fpsTypes, fpSpreadsheet, fpsUtils, fpsSearch, fpsAllFormats,fpsClasses,fpsExprParser,  uzbstrproc,
+  fpsTypes, fpSpreadsheet, fpsUtils, fpsClasses,fpsExprParser,
   comobj, variants, LConvEncoding{, strutils};
 
 

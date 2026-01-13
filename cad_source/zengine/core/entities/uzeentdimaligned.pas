@@ -22,11 +22,11 @@ unit uzeentdimaligned;
 interface
 
 uses uzgldrawcontext,uzeentityfactory,uzeentdimension,uzeentpoint,uzestylesdim,
-  uzestyleslayers,uzedrawingdef,uzbstrproc,
-  uzctnrVectorBytes,UGDBControlPointArray,uzegeometry,uzeentline,
-  uzeentcomplex,SysUtils,UGDBSelectedObjArray,uzeentity,uzbtypes,uzeconsts,
+  uzestyleslayers,uzedrawingdef,
+  uzctnrVectorBytesStream,UGDBControlPointArray,uzegeometry,uzeentline,
+  uzeentcomplex,SysUtils,UGDBSelectedObjArray,uzeentity,uzeconsts,
   uzegeometrytypes,uzeffdxfsupport,uzeentsubordinated,
-  UGDBOpenArrayOfPV,uzglviewareadata,uzeSnap;
+  UGDBOpenArrayOfPV,uzglviewareadata,uzeSnap,uzeTypes;
 (*
 Alligned dimension structure in DXF
 

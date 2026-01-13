@@ -23,9 +23,9 @@ interface
 uses
   sysutils,UGDBObjBlockdefArray,uzedrawingdef,uzeExtdrAbstractEntityExtender,
   uzeExtdrBaseEntityExtender,
-  uzeentdevice,TypeDescriptors,uzctnrVectorBytes,
-  uzbtypes,uzeentsubordinated,uzeentity,uzeblockdef,
-  varmandef,Varman,UUnitManager,URecordDescriptor,UBaseTypeDescriptor,
+  uzeentdevice,uzsbTypeDescriptors,uzctnrVectorBytesStream,
+  uzbBaseUtils,uzeTypes,uzeentsubordinated,uzeentity,uzeblockdef,
+  uzsbVarmanDef,Varman,UUnitManager,URecordDescriptor,UBaseTypeDescriptor,
   uzeentitiestree,usimplegenerics,uzeffdxfsupport,uzbpaths,uzcTranslations,
   gzctnrVectorTypes,uzeBaseExtender,uzeconsts,uzgldrawcontext,
   gzctnrVectorP,uzetextpreprocessor;
@@ -487,7 +487,7 @@ var
 begin
   IsNothingWrite:=true;
   //сохранять переменные определений блоков ненадо, берем их из внешних файлов
-  if not IsIt(typeof(PGDBObjEntity(PEnt)^),typeof(GDBObjBlockdef))then begin
+  if not IsObjectIt(typeof(PGDBObjEntity(PEnt)^),typeof(GDBObjBlockdef))then begin
      ishavevars:=false;
      vardata:=PGDBObjEntity(PEnt)^.GetExtension<TVariablesExtender>;
      if vardata<>nil then

@@ -19,12 +19,12 @@
 unit uzctnrvectorobjid;
 {$INCLUDE zengineconfig.inc}
 interface
-uses uzbtypes,gzctnrVectorSimple;
+uses uzeTypes,gzctnrVectorSimple;
 type
-{Export+}
+
 PTZctnrVectorObjID=^TZctnrVectorObjID;
-TZctnrVectorObjID=GZVectorSimple{-}<TObjID>{//};
-{Export-}
+TZctnrVectorObjID=GZVectorSimple<TObjID>;
+
 implementation
 begin
 end.

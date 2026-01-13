@@ -34,11 +34,11 @@ uses
   uzcdrawings,            // Drawings manager / Менеджер чертежей
   uzestyleslayers,        // Layer management / Управление слоями
   uzeentity,
-  varmandef,
+  uzsbVarmanDef,
   uzeconsts,
   uzcEnitiesVariablesExtender,
   UBaseTypeDescriptor,
-  uzbtypes;
+  uzeTypes;
 
 type
   {** Структура для хранения одного параметра команды

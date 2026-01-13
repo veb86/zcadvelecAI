@@ -25,7 +25,7 @@ uses
      uzctranslations,//работа с локализацией
      uzcefstringstreeselector,//окно выбора в дереве
      uzcsysparams,
-     uzctypesdecorations,zcobjectinspectorui,//uzcoidecorations,//для "быстрых" редакторов
+     uzOIDecorations,uzOIUI,//uzcoidecorations,//для "быстрых" редакторов
      UUnitManager,
      sysutils,
      Forms,Controls,
@@ -45,9 +45,8 @@ uses
      uzcinterface,
      //uzctnrvectorString,
      //uzegeometrytypes,
-     uzegeometry,
      uzcuitypes,
-     uzbtypes,
+     uzeTypes,
      typinfo,
      //gzctnrVector,
      //uzvconsts,
