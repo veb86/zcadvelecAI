@@ -757,38 +757,39 @@ begin
               );
 
               // Добавляем все строки в пакет
-              try
-                for j := 0 to loopRows.Count - 1 do
-                begin
-                  Inc(Result.RowsProcessed);
-                  batchData.Add(loopRows[j]);
+              for j := 0 to loopRows.Count - 1 do
+              begin
+                Inc(Result.RowsProcessed);
+                batchData.Add(loopRows[j]);
 
-                  // Вставляем пакет при достижении размера батча
-                  if (batchData.Count >= FBatchSize) or
-                     ((i = entities.Count - 1) and (j = loopRows.Count - 1)) then
+                // Вставляем пакет при достижении размера батча
+                if (batchData.Count >= FBatchSize) or
+                   ((i = entities.Count - 1) and (j = loopRows.Count - 1)) then
+                begin
+                  if not FConfig.DryRun then
                   begin
-                    if not FConfig.DryRun then
-                    begin
-                      inserted := InsertBatch(
-                        AInstructions.TargetTable,
-                        AInstructions,
-                        batchData
-                      );
-                      Inc(Result.RowsInserted, inserted);
-                    end;
-
-                    batchData.Clear;
+                    inserted := InsertBatch(
+                      AInstructions.TargetTable,
+                      AInstructions,
+                      batchData
+                    );
+                    Inc(Result.RowsInserted, inserted);
                   end;
+
+                  // Освобождаем память для вставленных строк
+                  for k := 0 to batchData.Count - 1 do
+                  begin
+                    pValues := batchData[k];
+                    Dispose(pValues);
+                  end;
+
+                  batchData.Clear;
                 end;
-              finally
-                // Освобождаем память для строк итераций
-                for k := 0 to loopRows.Count - 1 do
-                begin
-                  pValues := loopRows[k];
-                  Dispose(pValues);
-                end;
-                loopRows.Free;
               end;
+
+              // Освобождаем список loopRows (память для данных уже была
+              // либо освобождена после вставки, либо будет освобождена позже)
+              loopRows.Free;
 
               // Прогресс
               if (i + 1) mod 100 = 0 then
@@ -799,6 +800,13 @@ begin
                 );
             end;
           finally
+            // Освобождаем память для оставшихся массивов, если есть
+            for j := 0 to batchData.Count - 1 do
+            begin
+              pValues := batchData[j];
+              Dispose(pValues);
+            end;
+
             batchData.Free;
           end;
         end
