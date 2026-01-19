@@ -27,7 +27,7 @@ uses
   SysUtils, Classes, Variants, DB, SQLDB,
   uzvsqlite_types, uzclog, uzvsqlite_config,
   uzvsqlite_connection, uzvsqlite_validator,
-  uzvsqlite_source_provider, uzvsqlite_sqlbuilder,
+  uzvsqlite_source_provider, uzvsqlite_sqlbuilder,uzcinterface,
   uzvsqlite_template_parser;
 
 type
@@ -181,9 +181,11 @@ begin
     else
     begin
       case mapping.DataType of
-        cdtString:
+        cdtString: begin
           AQuery.Params.CreateParam(ftString, paramName, ptInput).AsString :=
             VarToStr(value);
+          zcUI.TextMessage('cdtString: ' + VarToStr(value), TMWOHistoryOut);
+        end;
 
         cdtInteger:
           AQuery.Params.CreateParam(ftInteger, paramName, ptInput).AsInteger :=
@@ -520,7 +522,7 @@ begin
 
     // Получаем значение из примитива
     rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
-
+    //zcUI.TextMessage('rawValue ' + rawValue, TMWOHistoryOut);
     // Если хотя бы один параметр с плейсхолдером вернул nil - прекращаем цикл
     if mapping.HasLoopPlaceholder and VarIsNull(rawValue) then
     begin
@@ -575,6 +577,7 @@ var
   values: TVariantArray;
   pValues: PVariantArray;
   success: Boolean;
+  i:integer;
 begin
   Result := 0;
   ARowsList := TList.Create;
@@ -608,10 +611,20 @@ begin
     end;
 
     // Добавляем строку данных в список
+    //New(pValues);
+    //pValues^ := Copy(values, 0, Length(values));
+    //ARowsList.Add(pValues);
+    //Inc(Result);
     New(pValues);
-    pValues^ := Copy(values, 0, Length(values));
+    SetLength(pValues^, Length(values));
+
+    for i := 0 to High(values) do
+      pValues^[i] := values[i];  // ВАЖНО: отдельное присваивание Variant
+
     ARowsList.Add(pValues);
     Inc(Result);
+
+
 
     Inc(loopNum);
 
