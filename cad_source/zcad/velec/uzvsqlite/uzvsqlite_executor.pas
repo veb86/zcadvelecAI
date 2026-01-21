@@ -181,11 +181,11 @@ begin
     else
     begin
       case mapping.DataType of
-        cdtString: begin
+        cdtString: //begin
           AQuery.Params.CreateParam(ftString, paramName, ptInput).AsString :=
             VarToStr(value);
-          zcUI.TextMessage('cdtString: ' + VarToStr(value), TMWOHistoryOut);
-        end;
+          //zcUI.TextMessage('cdtString: ' + VarToStr(value), TMWOHistoryOut);
+        //end;
 
         cdtInteger:
           AQuery.Params.CreateParam(ftInteger, paramName, ptInput).AsInteger :=

@@ -56,7 +56,7 @@ begin
   openDialog := TOpenDialog.Create(nil);
   try
     openDialog.Title := 'Выберите файл базы данных MS SQLite';
-    openDialog.Filter := 'MS SQLite Database|*.mdb;*.accdb|All Files|*.*';
+    openDialog.Filter := 'SQLiteDB-GRIST|*.grist;*.mdb;*.accdb|All Files|*.*';
     openDialog.Options := [ofFileMustExist, ofEnableSizing];
 
     if openDialog.Execute then
