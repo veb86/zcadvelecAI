@@ -45,7 +45,8 @@ type
   TColumnDataType = (
     cdtString,   // Строка
     cdtInteger,  // Целое число
-    cdtFloat     // Число с плавающей точкой
+    cdtFloat,    // Число с плавающей точкой
+    cdtBoolean   // Логическое значение
   );
 
   // Тип источника данных
@@ -314,6 +315,8 @@ begin
     Result := cdtInteger
   else if lowerValue = 'float' then
     Result := cdtFloat
+  else if lowerValue = 'boolean' then
+    Result := cdtBoolean
   else
     Result := cdtString; // По умолчанию
 end;
@@ -362,6 +365,7 @@ begin
     cdtString: Result := 'string';
     cdtInteger: Result := 'integer';
     cdtFloat: Result := 'float';
+    cdtBoolean: Result := 'boolean';
   else
     Result := 'unknown';
   end;
