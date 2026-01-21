@@ -194,6 +194,10 @@ begin
         cdtFloat:
           AQuery.Params.CreateParam(ftFloat, paramName, ptInput).AsFloat :=
             Double(value);
+
+        cdtBoolean:
+          AQuery.Params.CreateParam(ftBoolean, paramName, ptInput).AsBoolean :=
+            Boolean(value);
       end;
     end;
   end;
