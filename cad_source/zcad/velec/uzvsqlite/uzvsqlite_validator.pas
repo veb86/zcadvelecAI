@@ -61,6 +61,12 @@ type
       out AResult: Double
     ): Boolean;
 
+    // Валидация логического значения
+    function ValidateBoolean(
+      const AValue: Variant;
+      out AResult: Boolean
+    ): Boolean;
+
   public
     constructor Create(
       AStrictMode: Boolean;
@@ -264,6 +270,77 @@ begin
   end;
 end;
 
+function TTypeValidator.ValidateBoolean(
+  const AValue: Variant;
+  out AResult: Boolean
+): Boolean;
+var
+  valueStr: String;
+  valueInt: Integer;
+begin
+  Result := True;
+  AResult := False;
+
+  // Проверка на NULL
+  if IsNullOrEmpty(AValue) then
+  begin
+    if not FAllowNull then
+    begin
+      Result := False;
+    end;
+    Exit;
+  end;
+
+  // Попытка прямого преобразования
+  try
+    AResult := VarAsType(AValue, varBoolean);
+    Exit;
+  except
+    // Ничего не делаем, пробуем другие способы
+  end;
+
+  // Попытка преобразования через строку
+  valueStr := LowerCase(Trim(VarToStr(AValue)));
+
+  try
+    // Проверяем строковые представления
+    if (valueStr = 'true') or (valueStr = '1') or (valueStr = 'yes') or (valueStr = 'y') then
+    begin
+      AResult := True;
+    end
+    else if (valueStr = 'false') or (valueStr = '0') or (valueStr = 'no') or (valueStr = 'n') then
+    begin
+      AResult := False;
+    end
+    else if TryStrToInt(valueStr, valueInt) then
+    begin
+      // Попытка интерпретировать как число (0 = false, остальное = true)
+      AResult := (valueInt <> 0);
+    end
+    else
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Невозможно преобразовать в boolean: "%s"',
+        [valueStr],
+        LM_Info
+      );
+      Result := False;
+    end;
+
+  except
+    on E: Exception do
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Ошибка преобразования в boolean: "%s" - %s',
+        [valueStr, E.Message],
+        LM_Info
+      );
+      AResult := False;
+      Result := False;
+    end;
+  end;
+end;
+
 function TTypeValidator.ValidateAndConvert(
   const AValue: Variant;
   ATargetType: TColumnDataType;
@@ -273,6 +350,7 @@ var
   strValue: String;
   intValue: Integer;
   floatValue: Double;
+  boolValue: Boolean;
 begin
   Result := True;
   AResult := Null;
@@ -298,6 +376,14 @@ begin
     begin
       if ValidateFloat(AValue, floatValue) then
         AResult := floatValue
+      else
+        Result := False;
+    end;
+
+    cdtBoolean:
+    begin
+      if ValidateBoolean(AValue, boolValue) then
+        AResult := boolValue
       else
         Result := False;
     end;

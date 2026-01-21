@@ -265,6 +265,11 @@ begin
       Result := valueFloat;
     end;
 
+    'GDBBoolean':
+    begin
+      Result := PBoolean(pvd^.data.Addr.Instance)^;
+    end;
+
   else
     // Для остальных типов пытаемся получить строковое представление
     valueStr := pvd^.Data.ptd^.GetValueAsString(pvd^.Data.Addr.Instance);
