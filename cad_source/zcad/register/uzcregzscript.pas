@@ -412,7 +412,7 @@ begin
                             'clipLCS','projMatrixLCS','notuseLCS'],
                             [FNProgram,FNUser]);
     otd^.RegisterObject(TypeOf(GDBObjCamera),@GDBObjCamera.initnul);
-    otd^.AddMetod('','initnul','',@GDBBaseCamera.initnul,m_constructor);
+    otd^.AddMetod('','initnul','',@GDBObjCamera.initnul,m_constructor);
   end;
   ptsu^.RegisterType(TypeInfo(PGDBObjCamera),'PGDBObjCamera');
 
@@ -635,6 +635,8 @@ begin
 
   utd:=ptsu^.RegisterType(TypeInfo(TMSPrimitiveDetector),
                                   'TMSPrimitiveDetector');
+  if  utd<>nil then
+    registerRecTypeDescriptorOverrider(utd,@GDBEnumDataDescriptorObj);
   utd:=ptsu^.RegisterType(TypeInfo(TMSBlockNamesDetector),
                                   'TMSBlockNamesDetector');
   utd:=ptsu^.RegisterType(TypeInfo(TMSTextsStylesDetector),
