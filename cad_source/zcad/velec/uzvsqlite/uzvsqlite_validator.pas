@@ -159,7 +159,7 @@ function TTypeValidator.ValidateInteger(
 var
   valueStr: String;
   floatValue: Double;
-  varType: Word;
+  actualVarType: Word;
 begin
   Result := True;
   AResult := 0;
@@ -175,10 +175,10 @@ begin
   end;
 
   // Определяем фактический тип Variant для безопасной обработки
-  varType := VarType(AValue) and varTypeMask;
+  actualVarType := VarType(AValue) and varTypeMask;
 
   // Если значение уже целое число — берём напрямую
-  if varType in [varSmallInt, varInteger, varShortInt,
+  if actualVarType in [varSmallInt, varInteger, varShortInt,
     varByte, varWord, varLongWord] then
   begin
     try
@@ -190,7 +190,7 @@ begin
   end;
 
   // Для boolean: True = 1, False = 0
-  if varType = varBoolean then
+  if actualVarType = varBoolean then
   begin
     if AValue then
       AResult := 1
@@ -200,7 +200,7 @@ begin
   end;
 
   // Для вещественных — округляем (с учётом строгого режима)
-  if varType in [varSingle, varDouble, varCurrency] then
+  if actualVarType in [varSingle, varDouble, varCurrency] then
   begin
     try
       floatValue := AValue;
@@ -282,7 +282,7 @@ function TTypeValidator.ValidateFloat(
 ): Boolean;
 var
   valueStr: String;
-  varType: Word;
+  actualVarType: Word;
 begin
   Result := True;
   AResult := 0.0;
@@ -298,10 +298,10 @@ begin
   end;
 
   // Определяем фактический тип Variant для безопасной обработки
-  varType := VarType(AValue) and varTypeMask;
+  actualVarType := VarType(AValue) and varTypeMask;
 
   // Если значение уже вещественное — берём напрямую
-  if varType in [varSingle, varDouble, varCurrency] then
+  if actualVarType in [varSingle, varDouble, varCurrency] then
   begin
     try
       AResult := AValue;
@@ -312,7 +312,7 @@ begin
   end;
 
   // Целочисленные типы — безопасно приводим к Double
-  if varType in [varSmallInt, varInteger, varShortInt,
+  if actualVarType in [varSmallInt, varInteger, varShortInt,
     varByte, varWord, varLongWord, varInt64, varQWord] then
   begin
     try
@@ -324,7 +324,7 @@ begin
   end;
 
   // Для boolean: True = 1.0, False = 0.0
-  if varType = varBoolean then
+  if actualVarType = varBoolean then
   begin
     if AValue then
       AResult := 1.0
@@ -373,7 +373,7 @@ function TTypeValidator.ValidateBoolean(
 var
   valueStr: String;
   valueInt: Integer;
-  varType: Word;
+  actualVarType: Word;
 begin
   Result := True;
   AResult := False;
@@ -389,17 +389,17 @@ begin
   end;
 
   // Определяем фактический тип Variant для безопасной обработки
-  varType := VarType(AValue) and varTypeMask;
+  actualVarType := VarType(AValue) and varTypeMask;
 
   // Если значение уже boolean — берём напрямую
-  if varType = varBoolean then
+  if actualVarType = varBoolean then
   begin
     AResult := AValue;
     Exit;
   end;
 
   // Для числовых типов: 0 = False, остальное = True
-  if varType in [varSmallInt, varInteger, varShortInt,
+  if actualVarType in [varSmallInt, varInteger, varShortInt,
     varByte, varWord, varLongWord, varInt64, varQWord] then
   begin
     try
@@ -411,7 +411,7 @@ begin
   end;
 
   // Для вещественных типов: 0.0 = False, остальное = True
-  if varType in [varSingle, varDouble, varCurrency] then
+  if actualVarType in [varSingle, varDouble, varCurrency] then
   begin
     try
       AResult := (Double(AValue) <> 0.0);
