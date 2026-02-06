@@ -435,26 +435,46 @@ begin
     end;
 
     // Валидируем и преобразуем тип
-    if not FValidator.ValidateAndConvert(
-      rawValue,
-      mapping.DataType,
-      convertedValue
-    ) then
-    begin
-      programlog.LogOutFormatStr(
-        'uzvsqlite: Ошибка валидации значения для колонки "%s"',
-        [mapping.ColumnName],
-        LM_Info
-      );
-
-      if FConfig.ErrorMode = emStop then
+    try
+      if not FValidator.ValidateAndConvert(
+        rawValue,
+        mapping.DataType,
+        convertedValue
+      ) then
       begin
-        Result := False;
-        Exit;
-      end;
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Ошибка валидации для колонки "%s"',
+          [mapping.ColumnName],
+          LM_Info
+        );
 
-      // В мягком режиме используем значение по умолчанию
-      convertedValue := Null;
+        if FConfig.ErrorMode = emStop then
+        begin
+          Result := False;
+          Exit;
+        end;
+
+        // В мягком режиме используем значение по умолчанию
+        convertedValue := Null;
+      end;
+    except
+      on E: Exception do
+      begin
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Исключение при валидации '
+          + 'колонки "%s": %s',
+          [mapping.ColumnName, E.Message],
+          LM_Info
+        );
+
+        if FConfig.ErrorMode = emStop then
+        begin
+          Result := False;
+          Exit;
+        end;
+
+        convertedValue := Null;
+      end;
     end;
 
     AValues[i] := convertedValue;
@@ -589,23 +609,41 @@ begin
       hasAnyValue := True;
 
     // Валидируем и преобразуем тип
-    if not FValidator.ValidateAndConvert(
-      rawValue,
-      mapping.DataType,
-      convertedValue
-    ) then
-    begin
-      programlog.LogOutFormatStr(
-        'uzvsqlite: Ошибка валидации значения для колонки "%s" (итерация %d)',
-        [mapping.ColumnName, ALoopNum],
-        LM_Info
-      );
+    try
+      if not FValidator.ValidateAndConvert(
+        rawValue,
+        mapping.DataType,
+        convertedValue
+      ) then
+      begin
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Ошибка валидации для колонки "%s" '
+          + '(итерация %d)',
+          [mapping.ColumnName, ALoopNum],
+          LM_Info
+        );
 
-      if FConfig.ErrorMode = emStop then
-        Exit; // Result = False
+        if FConfig.ErrorMode = emStop then
+          Exit; // Result = False
 
-      // В мягком режиме используем значение по умолчанию
-      convertedValue := Null;
+        // В мягком режиме используем значение по умолчанию
+        convertedValue := Null;
+      end;
+    except
+      on E: Exception do
+      begin
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Исключение при валидации колонки '
+          + '"%s" (итерация %d): %s',
+          [mapping.ColumnName, ALoopNum, E.Message],
+          LM_Info
+        );
+
+        if FConfig.ErrorMode = emStop then
+          Exit; // Result = False
+
+        convertedValue := Null;
+      end;
     end;
 
     AValues[i] := convertedValue;
