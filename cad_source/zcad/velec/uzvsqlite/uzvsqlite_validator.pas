@@ -159,6 +159,7 @@ function TTypeValidator.ValidateInteger(
 var
   valueStr: String;
   floatValue: Double;
+  varType: Word;
 begin
   Result := True;
   AResult := 0;
@@ -173,16 +174,70 @@ begin
     Exit;
   end;
 
-  // Попытка прямого преобразования
-  try
-    AResult := VarAsType(AValue, varInteger);
-    Exit;
-  except
-    // Ничего не делаем, пробуем другие способы
+  // Определяем фактический тип Variant для безопасной обработки
+  varType := VarType(AValue) and varTypeMask;
+
+  // Если значение уже целое число — берём напрямую
+  if varType in [varSmallInt, varInteger, varShortInt,
+    varByte, varWord, varLongWord] then
+  begin
+    try
+      AResult := AValue;
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
   end;
 
-  // Попытка преобразования через строку
-  valueStr := Trim(VarToStr(AValue));
+  // Для boolean: True = 1, False = 0
+  if varType = varBoolean then
+  begin
+    if AValue then
+      AResult := 1
+    else
+      AResult := 0;
+    Exit;
+  end;
+
+  // Для вещественных — округляем (с учётом строгого режима)
+  if varType in [varSingle, varDouble, varCurrency] then
+  begin
+    try
+      floatValue := AValue;
+      AResult := Round(floatValue);
+
+      if FStrictMode then
+      begin
+        programlog.LogOutFormatStr(
+          'uzvsqlite: Строгий режим: '
+          + 'недопустимое преобразование float→integer: %s',
+          [VarToStr(AValue)],
+          LM_Info
+        );
+        Result := False;
+      end;
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
+  end;
+
+  // Преобразование через строку — универсальный способ
+  try
+    valueStr := Trim(VarToStr(AValue));
+  except
+    on E: Exception do
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Ошибка получения строки из Variant: %s',
+        [E.Message],
+        LM_Info
+      );
+      AResult := 0;
+      Result := False;
+      Exit;
+    end;
+  end;
 
   try
     // Проверяем, не является ли это числом с плавающей точкой
@@ -191,13 +246,11 @@ begin
       floatValue := StrToFloat(valueStr);
       AResult := Round(floatValue);
 
-      if not FStrictMode then
-      begin
-      end
-      else
+      if FStrictMode then
       begin
         programlog.LogOutFormatStr(
-          'uzvsqlite: Строгий режим: недопустимое преобразование float→integer: %s',
+          'uzvsqlite: Строгий режим: '
+          + 'недопустимое преобразование float→integer: %s',
           [valueStr],
           LM_Info
         );
@@ -229,6 +282,7 @@ function TTypeValidator.ValidateFloat(
 ): Boolean;
 var
   valueStr: String;
+  varType: Word;
 begin
   Result := True;
   AResult := 0.0;
@@ -243,16 +297,58 @@ begin
     Exit;
   end;
 
-  // Попытка прямого преобразования
-  try
-    AResult := VarAsType(AValue, varDouble);
-    Exit;
-  except
-    // Ничего не делаем, пробуем другие способы
+  // Определяем фактический тип Variant для безопасной обработки
+  varType := VarType(AValue) and varTypeMask;
+
+  // Если значение уже вещественное — берём напрямую
+  if varType in [varSingle, varDouble, varCurrency] then
+  begin
+    try
+      AResult := AValue;
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
   end;
 
-  // Попытка преобразования через строку
-  valueStr := Trim(VarToStr(AValue));
+  // Целочисленные типы — безопасно приводим к Double
+  if varType in [varSmallInt, varInteger, varShortInt,
+    varByte, varWord, varLongWord, varInt64, varQWord] then
+  begin
+    try
+      AResult := AValue;
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
+  end;
+
+  // Для boolean: True = 1.0, False = 0.0
+  if varType = varBoolean then
+  begin
+    if AValue then
+      AResult := 1.0
+    else
+      AResult := 0.0;
+    Exit;
+  end;
+
+  // Преобразование через строку — универсальный способ
+  try
+    valueStr := Trim(VarToStr(AValue));
+  except
+    on E: Exception do
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Ошибка получения строки из Variant: %s',
+        [E.Message],
+        LM_Info
+      );
+      AResult := 0.0;
+      Result := False;
+      Exit;
+    end;
+  end;
 
   try
     AResult := StrToFloat(valueStr);
@@ -277,6 +373,7 @@ function TTypeValidator.ValidateBoolean(
 var
   valueStr: String;
   valueInt: Integer;
+  varType: Word;
 begin
   Result := True;
   AResult := False;
@@ -291,30 +388,71 @@ begin
     Exit;
   end;
 
-  // Попытка прямого преобразования
-  try
-    AResult := VarAsType(AValue, varBoolean);
+  // Определяем фактический тип Variant для безопасной обработки
+  varType := VarType(AValue) and varTypeMask;
+
+  // Если значение уже boolean — берём напрямую
+  if varType = varBoolean then
+  begin
+    AResult := AValue;
     Exit;
-  except
-    // Ничего не делаем, пробуем другие способы
   end;
 
-  // Попытка преобразования через строку
-  valueStr := LowerCase(Trim(VarToStr(AValue)));
+  // Для числовых типов: 0 = False, остальное = True
+  if varType in [varSmallInt, varInteger, varShortInt,
+    varByte, varWord, varLongWord, varInt64, varQWord] then
+  begin
+    try
+      AResult := (AValue <> 0);
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
+  end;
+
+  // Для вещественных типов: 0.0 = False, остальное = True
+  if varType in [varSingle, varDouble, varCurrency] then
+  begin
+    try
+      AResult := (Double(AValue) <> 0.0);
+      Exit;
+    except
+      // При ошибке пробуем через строку
+    end;
+  end;
+
+  // Преобразование через строку — универсальный способ
+  try
+    valueStr := LowerCase(Trim(VarToStr(AValue)));
+  except
+    on E: Exception do
+    begin
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Ошибка получения строки из Variant: %s',
+        [E.Message],
+        LM_Info
+      );
+      AResult := False;
+      Result := False;
+      Exit;
+    end;
+  end;
 
   try
     // Проверяем строковые представления
-    if (valueStr = 'true') or (valueStr = '1') or (valueStr = 'yes') or (valueStr = 'y') then
+    if (valueStr = 'true') or (valueStr = '1')
+      or (valueStr = 'yes') or (valueStr = 'y') then
     begin
       AResult := True;
     end
-    else if (valueStr = 'false') or (valueStr = '0') or (valueStr = 'no') or (valueStr = 'n') then
+    else if (valueStr = 'false') or (valueStr = '0')
+      or (valueStr = 'no') or (valueStr = 'n') then
     begin
       AResult := False;
     end
     else if TryStrToInt(valueStr, valueInt) then
     begin
-      // Попытка интерпретировать как число (0 = false, остальное = true)
+      // Интерпретируем как число (0 = false, остальное = true)
       AResult := (valueInt <> 0);
     end
     else
