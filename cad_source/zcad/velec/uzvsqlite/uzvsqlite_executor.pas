@@ -27,8 +27,8 @@ uses
   SysUtils, Classes, Variants, DB, SQLDB,
   uzvsqlite_types, uzclog, uzvsqlite_config,
   uzvsqlite_connection, uzvsqlite_validator,
-  uzvsqlite_source_provider, uzvsqlite_sqlbuilder,uzcinterface,
-  uzvsqlite_template_parser;
+  uzvsqlite_source_provider, uzvsqlite_sqlbuilder, uzcinterface,
+  uzvsqlite_template_parser, uzvsqlite_functions, uzeentity;
 
 type
   // Тип для хранения массива Variant в TList
@@ -373,6 +373,8 @@ var
   rawValue, convertedValue: Variant;
   parsedValue: String;
   lnum: Integer;
+  context: TExportContext;
+  funcName: String;
 begin
   Result := True;
 
@@ -392,9 +394,28 @@ begin
       Continue;
     end;
 
+    // Проверяем, является ли SourceParam вызовом функции
+    if IsFunctionCall(mapping.SourceParam) then
+    begin
+      // Извлекаем имя функции
+      funcName := ExtractFunctionName(mapping.SourceParam);
+
+      // Подготавливаем контекст для вызова функции
+      context.Entity := PGDBObjEntity(AEntity);
+      context.LoopIndex := lnum;
+
+      // Вызываем функцию и получаем результат
+      rawValue := ProcessFunctionCall(funcName, context);
+
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Функция "%s" → "%s"',
+        [mapping.SourceParam, VarToStr(rawValue)],
+        LM_Info
+      );
+    end
     // Проверяем, является ли SourceParam шаблоном
     // Шаблоны содержат @@[ или <
-    if (Pos('@@[', mapping.SourceParam) > 0) or
+    else if (Pos('@@[', mapping.SourceParam) > 0) or
        (Pos('<', mapping.SourceParam) > 0) then
     begin
       // Парсим шаблон
@@ -488,6 +509,8 @@ var
   rawValue, convertedValue: Variant;
   paramName: String;
   hasAnyValue: Boolean;
+  context: TExportContext;
+  funcName: String;
 begin
   Result := False;
   hasAnyValue := False;
@@ -518,14 +541,37 @@ begin
       Continue;
     end;
 
-    // Для параметров с плейсхолдером заменяем номер
-    if mapping.HasLoopPlaceholder then
-      paramName := ReplacePlaceholder(mapping.SourceParam, ALoopNum)
-    else
-      paramName := mapping.SourceParam;
+    // Проверяем, является ли SourceParam вызовом функции
+    if IsFunctionCall(mapping.SourceParam) then
+    begin
+      // Извлекаем имя функции
+      funcName := ExtractFunctionName(mapping.SourceParam);
 
-    // Получаем значение из примитива
-    rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+      // Подготавливаем контекст для вызова функции
+      context.Entity := PGDBObjEntity(AEntity);
+      context.LoopIndex := ALoopNum;
+
+      // Вызываем функцию и получаем результат
+      rawValue := ProcessFunctionCall(funcName, context);
+      hasAnyValue := True;
+
+      programlog.LogOutFormatStr(
+        'uzvsqlite: Функция "%s" (итерация %d) → "%s"',
+        [mapping.SourceParam, ALoopNum, VarToStr(rawValue)],
+        LM_Info
+      );
+    end
+    else
+    begin
+      // Для параметров с плейсхолдером заменяем номер
+      if mapping.HasLoopPlaceholder then
+        paramName := ReplacePlaceholder(mapping.SourceParam, ALoopNum)
+      else
+        paramName := mapping.SourceParam;
+
+      // Получаем значение из примитива
+      rawValue := ASourceProvider.GetPropertyValue(AEntity, paramName);
+    end;
     //zcUI.TextMessage('rawValue ' + rawValue, TMWOHistoryOut);
     // Если хотя бы один параметр с плейсхолдером вернул nil - прекращаем цикл
     if mapping.HasLoopPlaceholder and VarIsNull(rawValue) then
