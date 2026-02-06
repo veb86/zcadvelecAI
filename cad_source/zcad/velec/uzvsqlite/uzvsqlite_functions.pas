@@ -107,14 +107,14 @@ begin
 
   try
     // Получаем имя слоя через механизм переменных
-    layerName := GetVariableValueFromSelectedEntity(
-      AContext.Entity,
-      'NMU_Layer'
-    );
-
-    // Проверяем, что значение не пустое
-    if not VarIsNull(layerName) then
-      Result := (Trim(VarToStr(layerName)) <> '');
+    //layerName := GetVariableValueFromSelectedEntity(
+    //  AContext.Entity,
+    //  'NMU_Layer'
+    //);
+    //
+    //// Проверяем, что значение не пустое
+    //if not VarIsNull(layerName) then
+    //  Result := (Trim(VarToStr(layerName)) <> '');
 
     programlog.LogOutFormatStr(
       'uzvsqlite: Func_Test1 вызвана, результат: %s',
@@ -152,13 +152,13 @@ begin
 
   try
     // Пытаемся получить количество подобъектов
-    subEntCount := GetVariableValueFromSelectedEntity(
-      AContext.Entity,
-      'ObjArray.Size'
-    );
-
-    if not VarIsNull(subEntCount) then
-      Result := StrToIntDef(VarToStr(subEntCount), 0);
+    //subEntCount := GetVariableValueFromSelectedEntity(
+    //  AContext.Entity,
+    //  'ObjArray.Size'
+    //);
+    //
+    //if not VarIsNull(subEntCount) then
+    //  Result := StrToIntDef(VarToStr(subEntCount), 0);
 
     programlog.LogOutFormatStr(
       'uzvsqlite: Func_Test2 вызвана, результат: %d',
@@ -196,20 +196,20 @@ begin
 
   try
     // Пытаемся получить длину объекта
-    length := GetVariableValueFromSelectedEntity(
-      AContext.Entity,
-      'Length'
-    );
-
-    if not VarIsNull(length) then
-    begin
-      // Пытаемся преобразовать к числу
-      try
-        Result := StrToFloatDef(VarToStr(length), 0.0);
-      except
-        Result := 0.0;
-      end;
-    end;
+    //length := GetVariableValueFromSelectedEntity(
+    //  AContext.Entity,
+    //  'Length'
+    //);
+    //
+    //if not VarIsNull(length) then
+    //begin
+    //  // Пытаемся преобразовать к числу
+    //  try
+    //    Result := StrToFloatDef(VarToStr(length), 0.0);
+    //  except
+    //    Result := 0.0;
+    //  end;
+    //end;
 
     programlog.LogOutFormatStr(
       'uzvsqlite: Func_Test3 вызвана, результат: %.2f',
@@ -247,21 +247,21 @@ begin
 
   try
     // Получаем имя объекта
-    objName := GetVariableValueFromSelectedEntity(
-      AContext.Entity,
-      'Name'
-    );
-
-    if not VarIsNull(objName) then
-    begin
-      Result := 'OBJ_' + VarToStr(objName);
-    end;
-
-    programlog.LogOutFormatStr(
-      'uzvsqlite: Func_Test4 вызвана, результат: %s',
-      [Result],
-      LM_Info
-    );
+    //objName := GetVariableValueFromSelectedEntity(
+    //  AContext.Entity,
+    //  'Name'
+    //);
+    //
+    //if not VarIsNull(objName) then
+    //begin
+    //  Result := 'OBJ_' + VarToStr(objName);
+    //end;
+    //
+    //programlog.LogOutFormatStr(
+    //  'uzvsqlite: Func_Test4 вызвана, результат: %s',
+    //  [Result],
+    //  LM_Info
+    //);
 
   except
     on E: Exception do
