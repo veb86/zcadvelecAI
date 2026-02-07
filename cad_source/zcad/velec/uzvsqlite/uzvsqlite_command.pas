@@ -74,30 +74,18 @@ function SQLiteExport_com(
 
 implementation
 
-{**
-  Разбор строки операндов команды на Mode и DBFileName
-
-  Операнды передаются через запятую: "Mode,DBFileName"
-  Если операнды пустые, Mode=0, DBFileName=''
-**}
-procedure ParseOperands(
-  const operands: string;
-  out exportMode: Integer;
+{**Разделить строку операндов на подстроку Mode и DBFileName}
+procedure SplitOperands(
+  const trimmedOps: string;
+  out modeStr: string;
   out dbFileName: string
 );
 var
   commaPos: Integer;
-  modeStr: string;
-  trimmedOps: string;
 begin
-  exportMode := EXPORT_MODE_ALL;
+  modeStr := '';
   dbFileName := '';
-  trimmedOps := Trim(operands);
 
-  if trimmedOps = '' then
-    Exit;
-
-  // Ищем разделитель (запятую) между параметрами
   commaPos := Pos(',', trimmedOps);
 
   if commaPos > 0 then
@@ -109,38 +97,60 @@ begin
   end
   else
     modeStr := trimmedOps;
+end;
 
-  // Преобразуем Mode в число
+{**Безопасно преобразовать строку режима в целое число}
+function SafeParseMode(const modeStr: string): Integer;
+begin
   try
-    exportMode := StrToInt(modeStr);
+    Result := StrToInt(modeStr);
   except
     on E: EConvertError do
     begin
       programlog.LogOutFormatStr(
-        'uzvsqlite: Некорректное значение Mode="%s",'
-        + ' используется 0',
+        'uzvsqlite: Некорректное значение Mode="%s"',
         [modeStr],
         LM_Info
       );
-      exportMode := EXPORT_MODE_ALL;
+      Result := EXPORT_MODE_ALL;
     end;
   end;
 
-  // Проверяем допустимость значения Mode
-  if not (exportMode in [EXPORT_MODE_ALL, EXPORT_MODE_SELECTED])
+  // Проверяем допустимость значения
+  if not (Result in [EXPORT_MODE_ALL, EXPORT_MODE_SELECTED])
   then
   begin
     programlog.LogOutFormatStr(
-      'uzvsqlite: Недопустимое значение Mode=%d,'
-      + ' используется 0',
-      [exportMode],
+      'uzvsqlite: Недопустимое значение Mode=%d',
+      [Result],
       LM_Info
     );
-    exportMode := EXPORT_MODE_ALL;
+    Result := EXPORT_MODE_ALL;
   end;
+end;
+
+{**Разбор операндов команды на Mode и DBFileName}
+procedure ParseOperands(
+  const operands: string;
+  out exportMode: Integer;
+  out dbFileName: string
+);
+var
+  modeStr: string;
+  trimmedOps: string;
+begin
+  exportMode := EXPORT_MODE_ALL;
+  dbFileName := '';
+  trimmedOps := Trim(operands);
+
+  if trimmedOps = '' then
+    Exit;
+
+  SplitOperands(trimmedOps, modeStr, dbFileName);
+  exportMode := SafeParseMode(modeStr);
 
   programlog.LogOutFormatStr(
-    'uzvsqlite: Параметры команды: Mode=%d, DBFileName="%s"',
+    'uzvsqlite: Mode=%d, DBFileName="%s"',
     [exportMode, dbFileName],
     LM_Info
   );
@@ -195,15 +205,38 @@ begin
   Result := ExtractFilePath(drawingFile);
 end;
 
+{**Скопировать содержимое одного файла в другой}
+procedure CopyFileContents(
+  const sourceFile: string;
+  const destFile: string
+);
+var
+  sourceStream, destStream: TFileStream;
+begin
+  sourceStream := TFileStream.Create(
+    sourceFile, fmOpenRead or fmShareDenyWrite
+  );
+  try
+    destStream := TFileStream.Create(destFile, fmCreate);
+    try
+      destStream.CopyFrom(sourceStream, 0);
+    finally
+      destStream.Free;
+    end;
+  finally
+    sourceStream.Free;
+  end;
+end;
+
 {**
   Скопировать файл БД в папку чертежа
 
-  Защищает оригинал от изменений — экспорт идёт в копию.
-  Если файл с таким именем уже есть в папке чертежа — перезаписать.
+  Защищает оригинал — экспорт идёт в копию.
+  Если копия уже существует — перезаписать.
 
-  @param sourceFile - путь к исходному файлу БД
-  @param drawingDir - путь к папке чертежа
-  @return Путь к копии файла или пустая строка при ошибке
+  @param sourceFile - исходный файл БД
+  @param drawingDir - папка чертежа
+  @return Путь к копии или пустая строка при ошибке
 **}
 function CopyDatabaseToDrawingDir(
   const sourceFile: string;
@@ -211,39 +244,16 @@ function CopyDatabaseToDrawingDir(
 ): string;
 var
   destFile: string;
-  sourceStream, destStream: TFileStream;
 begin
   Result := '';
   destFile := IncludeTrailingPathDelimiter(drawingDir)
     + ExtractFileName(sourceFile);
 
-  programlog.LogOutFormatStr(
-    'uzvsqlite: Копирование БД: "%s" -> "%s"',
-    [sourceFile, destFile],
-    LM_Info
-  );
-
   try
-    sourceStream := TFileStream.Create(
-      sourceFile, fmOpenRead or fmShareDenyWrite
-    );
-    try
-      destStream := TFileStream.Create(
-        destFile, fmCreate
-      );
-      try
-        destStream.CopyFrom(sourceStream, 0);
-      finally
-        destStream.Free;
-      end;
-    finally
-      sourceStream.Free;
-    end;
-
+    CopyFileContents(sourceFile, destFile);
     Result := destFile;
-
     programlog.LogOutFormatStr(
-      'uzvsqlite: Файл БД скопирован: "%s"',
+      'uzvsqlite: БД скопирована: "%s"',
       [destFile],
       LM_Info
     );
@@ -255,7 +265,7 @@ begin
         TMWOHistoryOut
       );
       programlog.LogOutFormatStr(
-        'uzvsqlite: Ошибка копирования БД: %s',
+        'uzvsqlite: Ошибка копирования: %s',
         [E.Message],
         LM_Info
       );
@@ -263,55 +273,12 @@ begin
   end;
 end;
 
-{**
-  Определить рабочий файл базы данных
-
-  Логика:
-  - Если DBFileName не передан -> диалог выбора файла
-  - Если файл не найден -> диалог выбора файла
-  - Если файл найден -> копировать в папку чертежа
-
-  @param dbFileName - путь к файлу БД из параметров команды
-  @return Путь к рабочему файлу БД или пустая строка
-**}
-function ResolveDatabasePath(
-  const dbFileName: string
-): string;
+{**Скопировать указанный файл БД в папку чертежа}
+function CopyToDrawingFolder(const dbFileName: string): string;
 var
   drawingDir: string;
 begin
   Result := '';
-
-  // Если параметр не передан — открываем диалог
-  if dbFileName = '' then
-  begin
-    programlog.LogOutFormatStr(
-      'uzvsqlite: DBFileName не задан, открываем диалог',
-      [],
-      LM_Info
-    );
-    Result := ShowDatabaseDialog;
-    Exit;
-  end;
-
-  // Если указанный файл не существует — открываем диалог
-  if not FileExists(dbFileName) then
-  begin
-    programlog.LogOutFormatStr(
-      'uzvsqlite: Файл не найден: "%s", открываем диалог',
-      [dbFileName],
-      LM_Info
-    );
-    zcUI.TextMessage(
-      'Файл не найден: ' + dbFileName
-      + '. Выберите файл вручную.',
-      TMWOHistoryOut
-    );
-    Result := ShowDatabaseDialog;
-    Exit;
-  end;
-
-  // Файл существует — копируем в папку чертежа
   drawingDir := GetDrawingDirectory;
 
   if drawingDir = '' then
@@ -325,6 +292,39 @@ begin
   end;
 
   Result := CopyDatabaseToDrawingDir(dbFileName, drawingDir);
+end;
+
+{**
+  Определить рабочий файл базы данных
+
+  @param dbFileName - путь к файлу БД из параметров
+  @return Путь к рабочему файлу БД или пустая строка
+**}
+function ResolveDatabasePath(
+  const dbFileName: string
+): string;
+begin
+  // Если параметр не передан — открываем диалог
+  if dbFileName = '' then
+  begin
+    Result := ShowDatabaseDialog;
+    Exit;
+  end;
+
+  // Если указанный файл не существует — диалог
+  if not FileExists(dbFileName) then
+  begin
+    zcUI.TextMessage(
+      'Файл не найден: ' + dbFileName
+      + '. Выберите файл вручную.',
+      TMWOHistoryOut
+    );
+    Result := ShowDatabaseDialog;
+    Exit;
+  end;
+
+  // Файл существует — копируем в папку чертежа
+  Result := CopyToDrawingFolder(dbFileName);
 end;
 
 {**
@@ -422,11 +422,22 @@ begin
   Result := cmd_OK;
 end;
 
+{**Создать конфигурацию для экспорта}
+function CreateExportConfig(
+  const databasePath: string;
+  exportMode: Integer
+): TExportConfig;
+begin
+  Result := TExportConfig.Create;
+  Result.DatabasePath := databasePath;
+  Result.EntityMode := exportMode;
+end;
+
 {**
   Выполнить процесс экспорта данных
 
   @param databasePath - путь к рабочему файлу БД
-  @param exportMode - режим экспорта (0=все, 1=выделенные)
+  @param exportMode - режим (0=все, 1=выделенные)
   @return Код результата выполнения
 **}
 function PerformExport(
@@ -438,18 +449,13 @@ var
   exporter: TSQLiteExporter;
   exportResult: TExportResult;
 begin
-  Result := cmd_Error;
+  zcUI.TextMessage(
+    'Файл базы данных: ' + databasePath,
+    TMWOHistoryOut
+  );
 
-  config := TExportConfig.Create;
+  config := CreateExportConfig(databasePath, exportMode);
   try
-    config.DatabasePath := databasePath;
-    config.EntityMode := exportMode;
-
-    zcUI.TextMessage(
-      'Файл базы данных: ' + databasePath,
-      TMWOHistoryOut
-    );
-
     exporter := TSQLiteExporter.Create(config);
     try
       exportResult := exporter.Execute;
@@ -470,12 +476,32 @@ begin
 end;
 
 {**
+  Проверить, можно ли выполнить экспорт в режиме Mode=1
+
+  @return True если есть выделенные объекты нужных типов
+**}
+function ValidateSelectedMode: Boolean;
+begin
+  Result := HasSelectedEntities;
+
+  if not Result then
+  begin
+    zcUI.TextMessage(
+      'Не выбраны объекты для экспорта',
+      TMWOHistoryOut
+    );
+    programlog.LogOutFormatStr(
+      'uzvsqlite: Нет выделенных объектов, отмена',
+      [],
+      LM_Info
+    );
+  end;
+end;
+
+{**
   Функция команды экспорта данных в SQLite
 
-  Формат вызова: SQLiteExport(Mode, DBFileName)
-    Mode=0 - экспорт всего чертежа
-    Mode=1 - экспорт выделенных объектов
-    DBFileName - путь к файлу БД (необязательный)
+  Формат: SQLiteExport(Mode, DBFileName)
 **}
 function SQLiteExport_com(
   const Context: TZCADCommandContext;
@@ -491,36 +517,17 @@ begin
     TMWOHistoryOut
   );
 
-  programlog.LogOutFormatStr(
-    'uzvsqlite: Запуск команды экспорта в SQLite',
-    [],
-    LM_Info
-  );
-
   try
-    // Разбор параметров команды
     ParseOperands(operands, exportMode, dbFileName);
 
-    // При Mode=1 проверяем наличие выделенных объектов
-    if exportMode = EXPORT_MODE_SELECTED then
+    // При Mode=1 проверяем наличие выделения
+    if (exportMode = EXPORT_MODE_SELECTED)
+      and (not ValidateSelectedMode) then
     begin
-      if not HasSelectedEntities then
-      begin
-        zcUI.TextMessage(
-          'Не выбраны объекты для экспорта',
-          TMWOHistoryOut
-        );
-        programlog.LogOutFormatStr(
-          'uzvsqlite: Нет выделенных объектов, отмена',
-          [],
-          LM_Info
-        );
-        Result := cmd_OK;
-        Exit;
-      end;
+      Result := cmd_OK;
+      Exit;
     end;
 
-    // Определяем рабочий файл БД
     databasePath := ResolveDatabasePath(dbFileName);
 
     if databasePath = '' then
@@ -533,7 +540,6 @@ begin
       Exit;
     end;
 
-    // Выполняем экспорт
     Result := PerformExport(databasePath, exportMode);
 
   except
@@ -543,13 +549,11 @@ begin
         'ОШИБКА: ' + E.Message,
         TMWOHistoryOut
       );
-
       programlog.LogOutFormatStr(
-        'uzvsqlite: Ошибка выполнения команды: %s',
+        'uzvsqlite: Ошибка команды: %s',
         [E.Message],
         LM_Info
       );
-
       Result := cmd_Error;
     end;
   end;
