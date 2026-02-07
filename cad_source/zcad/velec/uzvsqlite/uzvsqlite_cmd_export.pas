@@ -49,7 +49,7 @@ var
 begin
   // Вывод информационного сообщения
   zcUI.TextMessage(
-    'Запуск экспорта данных в MS SQLite...',
+    'Запуск экспорта данных в SQLite...',
     TMWOHistoryOut
   );
 
@@ -68,8 +68,8 @@ begin
 
       openDialog := TOpenDialog.Create(nil);
       try
-        openDialog.Title := 'Выберите файл базы данных MS SQLite';
-        openDialog.Filter := 'MS SQLite Database|*.mdb;*.accdb|All Files|*.*';
+        openDialog.Title := 'Выберите файл базы данных SQLite';
+        openDialog.Filter := 'SQLite DB|*.db;*.sqlite;*.grist|All Files|*.*';
         openDialog.Options := [ofFileMustExist, ofEnableSizing];
 
         if openDialog.Execute then
