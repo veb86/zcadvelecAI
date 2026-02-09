@@ -34,10 +34,10 @@ type
   GDBObjExtendable=object(GDBObjBaseEntity)
     EntExtensions:TEntityExtensions;
     procedure AddExtension(ExtObj:TAbstractEntityExtender);
-    procedure RemoveExtension(ExtType:TMetaEntityExtender);
+    procedure RemoveExtension(ExtType:TzeEntityExtenderClass);
     generic function GetExtension<GEntityExtenderType>:GEntityExtenderType;overload;
     function GetExtension(
-      ExtType:TMetaEntityExtender):TAbstractEntityExtender;overload;
+      ExtType:TzeEntityExtenderClass):TAbstractEntityExtender;overload;
     function GetExtension(n:integer):
       TAbstractEntityExtender;
       overload;
@@ -62,6 +62,11 @@ type
     procedure DelSelectedSubitem(var drawing:TDrawingDef);virtual;
     procedure AddMi(pobj:PGDBObjSubordinated);virtual;abstract;
     //procedure RemoveInArray(pobjinarray:integer);virtual;abstract;
+    procedure GoodAddObjectToObjArray(
+      const obj:PGDBObjSubordinated);virtual;abstract;
+    procedure GoodRemoveMiFromArray(
+      const obj:PGDBObjSubordinated;
+      const drawing:TDrawingDef);virtual;abstract;
     procedure createfield;virtual;
     function GetMatrix:PzeTypedMatrix4d;virtual;abstract;
     function GetLayer:PGDBLayerProp;virtual;abstract;
@@ -114,7 +119,7 @@ begin
   EntExtensions.AddExtension(ExtObj);
 end;
 
-procedure GDBObjExtendable.RemoveExtension(ExtType:TMetaEntityExtender);
+procedure GDBObjExtendable.RemoveExtension(ExtType:TzeEntityExtenderClass);
 begin
   if assigned(EntExtensions) then
     EntExtensions.RemoveExtension(ExtType);
@@ -129,7 +134,7 @@ begin
     Result:=nil;
 end;
 
-function GDBObjExtendable.GetExtension(ExtType:TMetaEntityExtender):
+function GDBObjExtendable.GetExtension(ExtType:TzeEntityExtenderClass):
 TAbstractEntityExtender;
 begin
   if assigned(EntExtensions) then
@@ -168,9 +173,9 @@ begin
   for i:=0 to GetExtensionsCount-1 do begin
     SourceExt:=GetExtension(i);
     if SourceExt<>nil then begin
-      DestExt:=Dest.GetExtension(TMetaEntityExtender(TypeOf(SourceExt)));
+      DestExt:=Dest.GetExtension(TzeEntityExtenderClass(TypeOf(SourceExt)));
       if not Assigned(DestExt) then begin
-        DestExt:=TMetaEntityExtender(SourceExt.ClassType).Create(@Dest);
+        DestExt:=TzeEntityExtenderClass(SourceExt.ClassType).Create(@Dest);
         DestExt.Assign(SourceExt);
         Dest.AddExtension(DestExt);
       end else
