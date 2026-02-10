@@ -99,6 +99,7 @@ uses
   uzeenttext,uzeentmtext,
   uzeentpoint,
   uzeentpolyline,
+  uzeentpolyfacemesh,
   uzeEntSpline,
   uzeenttable,
 
