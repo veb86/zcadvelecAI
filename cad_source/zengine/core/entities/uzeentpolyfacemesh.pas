@@ -180,8 +180,12 @@ begin
           end;
         end
         else if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
-          // Это начало координат вершины (код группы 10)
-          // Не добавляем вершину сразу, ждем пока все координаты будут прочитаны
+          // X-координата вершины (код группы 10)
+          programlog.LogOutFormatStr('uzeentpolyfacemesh: Вершина №%d, X=%.2f, Y=%.2f, Z=%.2f', [context.GDBVertexLoadCache.Count + 1, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+        end
+        else if dxfLoadGroupCodeVertex(rdr,20,byt,currentVertex) then begin
+          // Y-координата вершины (код группы 20)
+          programlog.LogOutFormatStr('uzeentpolyfacemesh: Вершина №%d, X=%.2f, Y=%.2f, Z=%.2f', [context.GDBVertexLoadCache.Count + 1, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
         end
         else if dxfLoadGroupCodeVertex(rdr,30,byt,currentVertex) then begin
           // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
