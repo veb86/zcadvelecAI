@@ -85,7 +85,8 @@ type
 
 implementation
 
-constructor GDBObjPolyFaceMesh.init;
+constructor GDBObjPolyFaceMesh.init(own:Pointer;layeraddres:PGDBLayerProp;
+  LW:smallint);
 begin
   inherited init(own,layeraddres,lw);
   FVertexCount := 0;
@@ -93,7 +94,8 @@ begin
   SetLength(FFaces, 0);
 end;
 
-procedure GDBObjPolyFaceMesh.LoadFromDXF;
+procedure GDBObjPolyFaceMesh.LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
+  var drawing:TDrawingDef;var context:TIODXFLoadContext);
 var
   s: string;
   byt: integer;
@@ -211,7 +213,8 @@ begin
   programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней', [FVertexCount, FFaceCount], LM_Info);
 end;
 
-procedure GDBObjPolyFaceMesh.FormatEntity;
+procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
+  var DC:TDrawContext;Stage:TEFStages=EFAllStages);
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
@@ -231,7 +234,8 @@ begin
     EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);
 end;
 
-procedure GDBObjPolyFaceMesh.SaveToDXF;
+procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
+  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
 begin
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDbPolyFaceMesh',IODXFContext);
   dxfIntegerout(outStream,66,1);
@@ -244,12 +248,13 @@ begin
   programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [FVertexCount, FFaceCount], LM_Info);
 end;
 
-procedure GDBObjPolyFaceMesh.DrawGeometry;
+procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
+  const inFrustumState:TInBoundingVolume);
 begin
   self.Representation.DrawGeometry(DC,VP.BoundingBox,inFrustumState);
 end;
 
-function GDBObjPolyFaceMesh.Clone;
+function GDBObjPolyFaceMesh.Clone(own:Pointer):PGDBObjEntity;
 var
   tpo:PGDBObjPolyFaceMesh;
   i: Integer;
@@ -274,7 +279,7 @@ begin
   Result:=tpo;
 end;
 
-function GDBObjPolyFaceMesh.GetObjTypeName;
+function GDBObjPolyFaceMesh.GetObjTypeName:string;
 begin
   Result:=ObjN_GDBObjPolyFaceMesh;
 end;
@@ -309,7 +314,8 @@ begin
   inc(FFaceCount);
 end;
 
-function GDBObjPolyFaceMesh.CalcTrueInFrustum;
+function GDBObjPolyFaceMesh.CalcTrueInFrustum(
+  const frustum:TzeFrustum):TInBoundingVolume;
 begin
   Result := VertexArrayInWCS.CalcTrueInFrustum(frustum,False);
 end;
