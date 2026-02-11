@@ -36,7 +36,8 @@ uses
   uzegeometry,uzcoimultiproperties,uzcLog,
   uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,
   uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
-  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport;
+  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport,
+  uzeentpolyfacemesh;
 implementation
 var
   ptdTHAlign:PUserTypeDescriptor;
@@ -552,6 +553,7 @@ const
      pcircle:PGDBObjCircle=nil;
      parc:PGDBObjArc=nil;
      pline:PGDBObjLine=nil;
+     pfacemesh:PGDBObjPolyFaceMesh=nil;
      pblockinsert:PGDBObjBlockInsert=nil;
      ptext:PGDBObjText=nil;
      pmtext:PGDBObjMText=nil;
@@ -565,6 +567,7 @@ const
      SmartTextEntExtender:TSmartTextEntExtender=nil;
      ReportExtender:TReportExtender=nil;
      NetConnectorExtender:TSCHConnectorExtender=nil;
+
 var
   ptype:PUserTypeDescriptor;
 begin
@@ -791,6 +794,15 @@ begin
     {--Summary}
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyLineID,nil,PtrInt(@p3dpoly^.VertexArrayInOCS.Count),PtrInt(@p3dpoly^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalLength','Total length',sysunit^.TypeName2PTD('Double'),MPCSummary,GDBPolyLineID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@GDBPolyLineSumLengthEntIterateProc,nil));
+
+    {PolyFaceMesh uzegeometry}
+    MultiPropertiesManager.RestartMultipropertySortID;
+    MultiPropertiesManager.RegisterPhysMultiproperty('VertexCount','Vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('Vertex3DControl_','Vertex control',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInWCS),PtrInt(@pfacemesh^.VertexArrayInOCS),TMainIterateProcsData.Create(@GetVertex3DControlData,@FreeVertex3DControlData),TEntIterateProcsData.Create(@PolylineVertex3DControlBeforeEntIterateProc,@PolylineVertex3DControlEntIterateProc,@PolylineVertex3DControlFromVarEntChangeProc));
+    MultiPropertiesManager.RegisterPhysMultiproperty('FaceCount','Face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));
+    {--Summary}
+    MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
+    MultiPropertiesManager.RegisterPhysMultiproperty('TotalFaceCount','Total face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));
 
     {Cable uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;

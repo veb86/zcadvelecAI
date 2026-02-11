@@ -74,6 +74,7 @@ type
     function GetFaceCount: Integer;
     function GetFaceVertices(Index: Integer): TFaceIndices;
     procedure AddFace(const Face: TFaceIndices);
+    function GetFaceCountReadOnly: Integer; // Только для чтения, для инспектора объектов
     
     // Вспомогательные методы
     class function CreateInstance:PGDBObjPolyFaceMesh;static;
@@ -105,8 +106,8 @@ var
   currentFace: TFaceIndices;
   vertexIndex: Integer;
   isProcessingVertex: Boolean;
-  vertexCounter: Integer;
   isFaceRecord: Boolean;
+  faceProcessed: Boolean;
 begin
   FVertexCount := 0;
   FFaceCount := 0;
@@ -116,8 +117,8 @@ begin
   vertexFlags := 0;
   currentVertex := NulVertex;
   isProcessingVertex := False;
-  vertexCounter := 0;
   isFaceRecord := False;
+  faceProcessed := False;
 
   byt := rdr.ParseInteger;
   while not rdr.EOF do begin
@@ -127,7 +128,13 @@ begin
         if s = 'VERTEX' then begin
           isProcessingVertex := True;
           vertexFlags := 0;
-          isFaceRecord := False; // Сброс состояния записи грани
+          isFaceRecord := False;
+          faceProcessed := False;
+          currentFace.VertexCount := 0;
+          currentFace.Vertex1 := 0;
+          currentFace.Vertex2 := 0;
+          currentFace.Vertex3 := 0;
+          currentFace.Vertex4 := 0;
         end
         else if s = 'SEQEND' then
           system.Break
@@ -148,45 +155,49 @@ begin
           if not isFaceRecord then begin
             // Это координаты вершины (не грань)
             context.GDBVertexLoadCache.PushBackData(currentVertex);
-            inc(vertexCounter);
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [vertexCounter, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
           end;
         end
-        else begin
-          // Обработка других кодов группы для вершины
-          if isFaceRecord then begin
-            // Обработка записи грани (face record) - обработка индексов
-            if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
+        else if isFaceRecord then begin
+          // Обработка записи грани (face record) - обработка индексов
+          if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) then begin
+            if vertexIndex <> 0 then begin
               currentFace.Vertex1 := abs(vertexIndex);
               inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            end;
+          end
+          else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) then begin
+            if vertexIndex <> 0 then begin
               currentFace.Vertex2 := abs(vertexIndex);
               inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            end;
+          end
+          else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) then begin
+            if vertexIndex <> 0 then begin
               currentFace.Vertex3 := abs(vertexIndex);
               inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            end;
+          end
+          else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) then begin
+            if vertexIndex <> 0 then begin
               currentFace.Vertex4 := abs(vertexIndex);
               inc(currentFace.VertexCount);
-            end
-            else begin
-              // Если мы в режиме записи грани, но получили другой код группы,
-              // возможно, это означает, что грань завершена и мы переходим к следующей вершине
-              if currentFace.VertexCount >= 3 then begin
-                AddFace(currentFace);
-                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
-              end;
-              isFaceRecord := False; // Сброс флага для следующей вершины
-              s := rdr.ParseString; // Пропускаем неподдерживаемый код группы
             end;
           end
           else begin
-            // Прочитали что-то другое для обычной вершины, пропускаем
-            s := rdr.ParseString;
+            // Если мы в режиме записи грани, но получили другой код группы,
+            // значит, грань завершена
+            if (currentFace.VertexCount >= 3) and not faceProcessed then begin
+              AddFace(currentFace);
+              programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
+              faceProcessed := True; // Помечаем, что грань обработана
+            end;
+            s := rdr.ParseString; // Пропускаем неподдерживаемый код группы
           end;
+        end
+        else begin
+          // Прочитали что-то другое для обычной вершины, пропускаем
+          s := rdr.ParseString;
         end;
       end
       else begin
@@ -218,7 +229,7 @@ begin
   end;
 
   // Завершаем обработку последней грани, если она была начата
-  if isFaceRecord and (currentFace.VertexCount >= 3) then begin
+  if isFaceRecord and (currentFace.VertexCount >= 3) and not faceProcessed then begin
     AddFace(currentFace);
     programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
   end;
@@ -345,6 +356,11 @@ begin
 end;
 
 function GDBObjPolyFaceMesh.GetFaceCount;
+begin
+  Result := FFaceCount;
+end;
+
+function GDBObjPolyFaceMesh.GetFaceCountReadOnly: Integer;
 begin
   Result := FFaceCount;
 end;
