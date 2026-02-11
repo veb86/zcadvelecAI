@@ -26,7 +26,7 @@ uses
   uzestyleslayers,uzeentsubordinated,uzeentcurve,UGDBSelectedObjArray,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,uzesnap,
-  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzeLog;
+  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog;
 
 type
   // Структура для хранения индексов вершин грани
@@ -91,7 +91,7 @@ begin
   inherited init(own,layeraddres,lw);
   FVertexCount := 0;
   FFaceCount := 0;
-  SetLength(FFaces, 0);
+  system.SetLength(FFaces, 0);
 end;
 
 procedure GDBObjPolyFaceMesh.LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
@@ -105,85 +105,87 @@ var
   currentFace: TFaceIndices;
   vertexIndex: Integer;
   isProcessingVertex: Boolean;
+  vertexCounter: Integer;
+  isFaceRecord: Boolean;
 begin
   FVertexCount := 0;
   FFaceCount := 0;
-  SetLength(FFaces, 0);
-  
+  system.SetLength(FFaces, 0);
+
   polylineFlags := 0;
   vertexFlags := 0;
   currentVertex := NulVertex;
   isProcessingVertex := False;
-  
+  vertexCounter := 0;
+  isFaceRecord := False;
+
   byt := rdr.ParseInteger;
-  while True do begin
+  while not rdr.EOF do begin
     s := '';
     if not LoadFromDXFObjShared(rdr,byt,ptu,drawing,context) then
       if dxfLoadGroupCodeString(rdr,0,byt,s) then begin
         if s = 'VERTEX' then begin
           isProcessingVertex := True;
           vertexFlags := 0;
+          isFaceRecord := False; // Сброс состояния записи грани
         end
         else if s = 'SEQEND' then
-          system.Break;
+          system.Break
+        else begin
+          // Если встречаем другую сущность, выходим
+          s := rdr.ParseString; // Пропускаем значение
+          continue; // Переходим к следующей итерации
+        end;
       end
       else if isProcessingVertex then begin
         // Обработка VERTEX сущностей
         if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
-          // Флаги вершины: 128 = face record, 64 = polyline vertex
-          if (vertexFlags and 128) = 128 then begin
-            // Это запись грани (face record)
-            currentFace.VertexCount := 0;
-            currentFace.Vertex1 := 0;
-            currentFace.Vertex2 := 0;
-            currentFace.Vertex3 := 0;
-            currentFace.Vertex4 := 0;
-          end;
+          // Флаги вершины: 128 = face record, другие значения = vertex record
+          isFaceRecord := (vertexFlags and 128) = 128;
         end
         else if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
-          if (vertexFlags and 128) = 0 then begin
-            // Это координаты вершины
-            if byt = 30 then begin
-              vertexarrayinocs.PushBackData(currentVertex);
-              inc(FVertexCount);
-              programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [FVertexCount, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
-            end;
+          // Это координаты вершины
+          if not isFaceRecord then begin
+            // Это координаты вершины (не грань)
+            context.GDBVertexLoadCache.PushBackData(currentVertex);
+            inc(vertexCounter);
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [vertexCounter, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
           end;
         end
-        else if (vertexFlags and 128) = 128 then begin
-          // Получаем индексы вершин для грани
-          if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) then begin
-            if vertexIndex <> 0 then begin
+        else begin
+          // Обработка других кодов группы для вершины
+          if isFaceRecord then begin
+            // Обработка записи грани (face record) - обработка индексов
+            if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
               currentFace.Vertex1 := abs(vertexIndex);
               inc(currentFace.VertexCount);
-            end;
-            
-            if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) then begin
-              if vertexIndex <> 0 then begin
-                currentFace.Vertex2 := abs(vertexIndex);
-                inc(currentFace.VertexCount);
+            end
+            else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
+              currentFace.Vertex2 := abs(vertexIndex);
+              inc(currentFace.VertexCount);
+            end
+            else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
+              currentFace.Vertex3 := abs(vertexIndex);
+              inc(currentFace.VertexCount);
+            end
+            else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
+              currentFace.Vertex4 := abs(vertexIndex);
+              inc(currentFace.VertexCount);
+            end
+            else begin
+              // Если мы в режиме записи грани, но получили другой код группы,
+              // возможно, это означает, что грань завершена и мы переходим к следующей вершине
+              if currentFace.VertexCount >= 3 then begin
+                AddFace(currentFace);
+                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
               end;
-              
-              if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) then begin
-                if vertexIndex <> 0 then begin
-                  currentFace.Vertex3 := abs(vertexIndex);
-                  inc(currentFace.VertexCount);
-                end;
-                
-                if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) then begin
-                  if vertexIndex <> 0 then begin
-                    currentFace.Vertex4 := abs(vertexIndex);
-                    inc(currentFace.VertexCount);
-                  end;
-                end;
-              end;
+              isFaceRecord := False; // Сброс флага для следующей вершины
+              s := rdr.ParseString; // Пропускаем неподдерживаемый код группы
             end;
-            
-            // Добавляем грань в массив
-            if currentFace.VertexCount >= 3 then begin
-              AddFace(currentFace);
-              programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
-            end;
+          end
+          else begin
+            // Прочитали что-то другое для обычной вершины, пропускаем
+            s := rdr.ParseString;
           end;
         end;
       end
@@ -207,9 +209,27 @@ begin
         else
           s := rdr.ParseString;
       end;
+
+    // Проверяем EOF перед следующим чтением
+    if rdr.EOF then
+      break;
+
     byt := rdr.ParseInteger;
   end;
-  
+
+  // Завершаем обработку последней грани, если она была начата
+  if isFaceRecord and (currentFace.VertexCount >= 3) then begin
+    AddFace(currentFace);
+    programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
+  end;
+
+  // Копируем вершины из кэша в текущий объект
+  vertexarrayinocs.SetSize(context.GDBVertexLoadCache.Count);
+  context.GDBVertexLoadCache.copyto(vertexarrayinocs);
+  context.GDBVertexLoadCache.Clear;
+
+  FVertexCount := vertexarrayinocs.Count;
+
   programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней', [FVertexCount, FFaceCount], LM_Info);
 end;
 
@@ -253,6 +273,36 @@ procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
 begin
   self.Representation.DrawGeometry(DC,VP.BoundingBox,inFrustumState);
 end;
+//
+//function GDBObjPolyFaceMesh.Clone(own:Pointer):PGDBObjEntity;
+//var
+//  tpo: PGDBObjPolyFaceMesh;
+//  i: Integer;
+//  NewFaces: TFaceArray; // временный массив
+//begin
+//  GetMem(Pointer(tpo), SizeOf(GDBObjPolyFaceMesh));
+//  tpo^.init(own, vp.Layer, vp.LineWeight);
+//  CopyVPto(tpo^);
+//  CopyExtensionsTo(tpo^);
+//
+//  // Копируем массив вершин
+//  tpo^.vertexarrayinocs.SetSize(vertexarrayinocs.Count);
+//  vertexarrayinocs.copyto(tpo^.vertexarrayinocs);
+//
+//  // Копируем данные о гранях
+//  tpo^.FVertexCount := FVertexCount;
+//  tpo^.FFaceCount := FFaceCount;
+//
+//  // 👇 ВАЖНО: сначала работаем с локальным массивом
+//  SetLength(NewFaces, Length(FFaces));
+//  for i := 0 to High(FFaces) do
+//    NewFaces[i] := FFaces[i];
+//
+//  tpo^.FFaces := NewFaces;  // а потом присваиваем целиком
+//
+//  tpo^.bp.ListPos.owner := own;
+//  Result := tpo;
+//end;
 
 function GDBObjPolyFaceMesh.Clone(own:Pointer):PGDBObjEntity;
 var
@@ -271,7 +321,7 @@ begin
   // Копируем данные о гранях
   tpo^.FVertexCount := FVertexCount;
   tpo^.FFaceCount := FFaceCount;
-  SetLength(tpo^.FFaces, Length(FFaces));
+  system.SetLength(tpo^.FFaces, system.Length(FFaces));
   for i := 0 to High(FFaces) do
     tpo^.FFaces[i] := FFaces[i];
     
@@ -301,7 +351,7 @@ end;
 
 function GDBObjPolyFaceMesh.GetFaceVertices;
 begin
-  if (Index >= 0) and (Index < Length(FFaces)) then
+  if (Index >= 0) and (Index < system.Length(FFaces)) then
     Result := FFaces[Index]
   else
     Result := Default(TFaceIndices);
@@ -309,7 +359,7 @@ end;
 
 procedure GDBObjPolyFaceMesh.AddFace;
 begin
-  SetLength(FFaces, Length(FFaces) + 1);
+  system.SetLength(FFaces, system.Length(FFaces) + 1);
   FFaces[High(FFaces)] := Face;
   inc(FFaceCount);
 end;
@@ -325,6 +375,11 @@ begin
   Result:=AllocAndInitPolyFaceMesh(nil);
 end;
 
+function AllocPolyFaceMesh:Pointer;
+begin
+  Getmem(pointer(Result),sizeof(GDBObjPolyFaceMesh));
+end;
+
 function AllocAndInitPolyFaceMesh(owner:PGDBObjGenericWithSubordinated):PGDBObjPolyFaceMesh;
 begin
   Getmem(pointer(Result),sizeof(GDBObjPolyFaceMesh));
@@ -333,5 +388,5 @@ begin
 end;
 
 begin
-  RegisterDXFEntity(GDBPolyFaceMeshID,'POLYLINE','PolyFaceMesh',@AllocAndInitPolyFaceMesh,nil);
+  RegisterDXFEntity(GDBPolyFaceMeshID,'POLYLINE','PolyFaceMesh',@AllocPolyFaceMesh,@AllocAndInitPolyFaceMesh);
 end.
