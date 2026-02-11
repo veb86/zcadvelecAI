@@ -107,17 +107,22 @@ var
   vertexIndex: Integer;
   isProcessingVertex: Boolean;
   isFaceRecord: Boolean;
+  isPolyFaceVertex: Boolean;
   faceAdded: Boolean;
 begin
   FVertexCount := 0;
   FFaceCount := 0;
   system.SetLength(FFaces, 0);
 
+  // Очищаем кэш вершин от возможных остаточных данных
+  context.GDBVertexLoadCache.Clear;
+
   polylineFlags := 0;
   vertexFlags := 0;
   currentVertex := NulVertex;
   isProcessingVertex := False;
   isFaceRecord := False;
+  isPolyFaceVertex := False;
   faceAdded := False;
 
   byt := rdr.ParseInteger;
@@ -136,7 +141,9 @@ begin
           isProcessingVertex := True;
           vertexFlags := 0;
           isFaceRecord := False;
+          isPolyFaceVertex := False;
           faceAdded := False; // Сбрасываем флаг при начале новой вершины
+          currentVertex := NulVertex; // Сбрасываем координаты для новой вершины
           currentFace.VertexCount := 0;
           currentFace.Vertex1 := 0;
           currentFace.Vertex2 := 0;
@@ -153,7 +160,14 @@ begin
       end
       else if isProcessingVertex then begin
         // Обработка VERTEX сущностей
-        if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
+        if dxfLoadGroupCodeString(rdr,100,byt,s) then begin
+          // Определяем подтип вершины по DXF классу
+          if s = 'AcDbPolyFaceMeshVertex' then
+            isPolyFaceVertex := True
+          else if s = 'AcDbFaceRecord' then
+            isFaceRecord := True;
+        end
+        else if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
           // Флаги вершины: 128 = face record, другие значения = vertex record
           isFaceRecord := (vertexFlags and 128) = 128;
           if isFaceRecord then begin
@@ -166,9 +180,13 @@ begin
           end;
         end
         else if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
-          // Это координаты вершины
-          if not isFaceRecord then begin
-            // Это координаты вершины (не грань)
+          // Это начало координат вершины (код группы 10)
+          // Не добавляем вершину сразу, ждем пока все координаты будут прочитаны
+        end
+        else if dxfLoadGroupCodeVertex(rdr,30,byt,currentVertex) then begin
+          // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
+          if isPolyFaceVertex and not isFaceRecord then begin
+            // Это координаты вершины PolyFaceMesh (не грань)
             context.GDBVertexLoadCache.PushBackData(currentVertex);
             programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
           end;
