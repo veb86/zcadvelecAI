@@ -108,7 +108,7 @@ var
   isProcessingVertex: Boolean;
   isFaceRecord: Boolean;
   isPolyFaceVertex: Boolean;
-  faceAdded: Boolean;
+  xLoaded, yLoaded, zLoaded: Boolean;
 begin
   FVertexCount := 0;
   FFaceCount := 0;
@@ -123,35 +123,45 @@ begin
   isProcessingVertex := False;
   isFaceRecord := False;
   isPolyFaceVertex := False;
-  faceAdded := False;
+  xLoaded := False;
+  yLoaded := False;
+  zLoaded := False;
 
   byt := rdr.ParseInteger;
   while not rdr.EOF do begin
     s := '';
     if not LoadFromDXFObjShared(rdr,byt,ptu,drawing,context) then
       if dxfLoadGroupCodeString(rdr,0,byt,s) then begin
-        // Если мы обрабатывали грань и переходим к следующей VERTEX или SEQEND, добавляем её
-        if isFaceRecord and (currentFace.VertexCount >= 3) and not faceAdded then begin
-          AddFace(currentFace);
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
-          faceAdded := True;
-        end;
-
         if s = 'VERTEX' then begin
+          // Если предыдущая запись была гранью с достаточным количеством вершин, добавляем её
+          if isFaceRecord and (currentFace.VertexCount >= 3) then begin
+            AddFace(currentFace);
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
+          end;
+          
+          // Начинаем обработку новой VERTEX сущности
           isProcessingVertex := True;
           vertexFlags := 0;
           isFaceRecord := False;
           isPolyFaceVertex := False;
-          faceAdded := False; // Сбрасываем флаг при начале новой вершины
-          currentVertex := NulVertex; // Сбрасываем координаты для новой вершины
+          currentVertex := NulVertex;
           currentFace.VertexCount := 0;
           currentFace.Vertex1 := 0;
           currentFace.Vertex2 := 0;
           currentFace.Vertex3 := 0;
           currentFace.Vertex4 := 0;
+          xLoaded := False;
+          yLoaded := False;
+          zLoaded := False;
         end
-        else if s = 'SEQEND' then
-          system.Break
+        else if s = 'SEQEND' then begin
+          // Завершаем обработку последней грани
+          if isFaceRecord and (currentFace.VertexCount >= 3) then begin
+            AddFace(currentFace);
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
+          end;
+          system.Break;
+        end
         else begin
           // Если встречаем другую сущность, выходим
           s := rdr.ParseString; // Пропускаем значение
@@ -161,65 +171,76 @@ begin
       else if isProcessingVertex then begin
         // Обработка VERTEX сущностей
         if dxfLoadGroupCodeString(rdr,100,byt,s) then begin
-          // Определяем подтип вершины по DXF классу
-          if s = 'AcDbPolyFaceMeshVertex' then
-            isPolyFaceVertex := True
-          else if s = 'AcDbFaceRecord' then
+          // Определяем подтип вершины по DXF классу (этот метод более надежный)
+          if s = 'AcDbPolyFaceMeshVertex' then begin
+            isPolyFaceVertex := True;
+            isFaceRecord := False;
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена вершина PolyFaceMesh', [], LM_Info);
+          end
+          else if s = 'AcDbFaceRecord' then begin
             isFaceRecord := True;
-        end
-        else if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
-          // Флаги вершины: 128 = face record, другие значения = vertex record
-          isFaceRecord := (vertexFlags and 128) = 128;
-          if isFaceRecord then begin
+            isPolyFaceVertex := False;
             // Начинаем новую грань
             currentFace.VertexCount := 0;
             currentFace.Vertex1 := 0;
             currentFace.Vertex2 := 0;
             currentFace.Vertex3 := 0;
             currentFace.Vertex4 := 0;
+            programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена запись грани', [], LM_Info);
           end;
         end
-        else if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
-          // X-координата вершины (код группы 10)
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Вершина №%d, X=%.2f, Y=%.2f, Z=%.2f', [context.GDBVertexLoadCache.Count + 1, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+        else if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
+          // Флаги вершины для дополнительной проверки: 128 = face record, 192 = 128+64 = polyface vertex
+          programlog.LogOutFormatStr('uzeentpolyfacemesh: Флаги вершины = %d', [vertexFlags], LM_Info);
+          // Основное определение типа идет по 100 коду группы, флаги используем для отладки
         end
-        else if dxfLoadGroupCodeVertex(rdr,20,byt,currentVertex) then begin
-          // Y-координата вершины (код группы 20)
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Вершина №%d, X=%.2f, Y=%.2f, Z=%.2f', [context.GDBVertexLoadCache.Count + 1, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
-        end
-        else if dxfLoadGroupCodeVertex(rdr,30,byt,currentVertex) then begin
-          // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
-          if isPolyFaceVertex and not isFaceRecord then begin
-            // Это координаты вершины PolyFaceMesh (не грань)
-            context.GDBVertexLoadCache.PushBackData(currentVertex);
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
-          end;
-        end
-        else begin
-          // Обработка других кодов группы для вершины
-          if isFaceRecord then begin
-            // Обработка записи грани (face record) - обработка индексов
-            if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
-              currentFace.Vertex1 := abs(vertexIndex);
-              inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
-              currentFace.Vertex2 := abs(vertexIndex);
-              inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
-              currentFace.Vertex3 := abs(vertexIndex);
-              inc(currentFace.VertexCount);
-            end
-            else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
-              currentFace.Vertex4 := abs(vertexIndex);
-              inc(currentFace.VertexCount);
+        else if not isFaceRecord then begin
+          // Обработка координат для вершин PolyFaceMesh
+          if dxfLoadGroupCodeFloat(rdr,10,byt,currentVertex.x) then begin
+            xLoaded := True;
+          end
+          else if dxfLoadGroupCodeFloat(rdr,20,byt,currentVertex.y) then begin
+            yLoaded := True;
+          end
+          else if dxfLoadGroupCodeFloat(rdr,30,byt,currentVertex.z) then begin
+            zLoaded := True;
+            // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
+            if xLoaded and yLoaded and zLoaded and isPolyFaceVertex then begin
+              context.GDBVertexLoadCache.PushBackData(currentVertex);
+              programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
             end;
           end
           else begin
             // Прочитали что-то другое для обычной вершины, пропускаем
             s := rdr.ParseString;
           end;
+        end
+        else if isFaceRecord then begin
+          // Обработка записи грани (face record) - обработка индексов
+          if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            currentFace.Vertex1 := abs(vertexIndex);
+            inc(currentFace.VertexCount);
+          end
+          else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            currentFace.Vertex2 := abs(vertexIndex);
+            inc(currentFace.VertexCount);
+          end
+          else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            currentFace.Vertex3 := abs(vertexIndex);
+            inc(currentFace.VertexCount);
+          end
+          else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            currentFace.Vertex4 := abs(vertexIndex);
+            inc(currentFace.VertexCount);
+          end
+          else begin
+            // Прочитали что-то другое для записи грани, пропускаем
+            s := rdr.ParseString;
+          end;
+        end
+        else begin
+          // Прочитали что-то другое, пропускаем
+          s := rdr.ParseString;
         end;
       end
       else begin
@@ -248,12 +269,6 @@ begin
       break;
 
     byt := rdr.ParseInteger;
-  end;
-
-  // Завершаем обработку последней грани, если она была начата
-  if isFaceRecord and (currentFace.VertexCount >= 3) and not faceAdded then begin
-    AddFace(currentFace);
-    programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань с %d вершинами: %d,%d,%d,%d', [currentFace.VertexCount, currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
   end;
 
   // Копируем вершины из кэша в текущий объект
