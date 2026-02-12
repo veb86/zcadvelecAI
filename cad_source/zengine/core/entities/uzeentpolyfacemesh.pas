@@ -108,7 +108,6 @@ var
   isProcessingVertex: Boolean;
   isFaceRecord: Boolean;
   isPolyFaceVertex: Boolean;
-  xLoaded, yLoaded, zLoaded: Boolean;
 begin
   FVertexCount := 0;
   FFaceCount := 0;
@@ -123,9 +122,6 @@ begin
   isProcessingVertex := False;
   isFaceRecord := False;
   isPolyFaceVertex := False;
-  xLoaded := False;
-  yLoaded := False;
-  zLoaded := False;
 
   byt := rdr.ParseInteger;
   while not rdr.EOF do begin
@@ -150,9 +146,6 @@ begin
           currentFace.Vertex2 := 0;
           currentFace.Vertex3 := 0;
           currentFace.Vertex4 := 0;
-          xLoaded := False;
-          yLoaded := False;
-          zLoaded := False;
         end
         else if s = 'SEQEND' then begin
           // Завершаем обработку последней грани
@@ -196,18 +189,13 @@ begin
         end
         else if not isFaceRecord then begin
           // Обработка координат для вершин PolyFaceMesh
-          if dxfLoadGroupCodeFloat(rdr,10,byt,currentVertex.x) then begin
-            xLoaded := True;
-          end
-          else if dxfLoadGroupCodeFloat(rdr,20,byt,currentVertex.y) then begin
-            yLoaded := True;
-          end
-          else if dxfLoadGroupCodeFloat(rdr,30,byt,currentVertex.z) then begin
-            zLoaded := True;
-            // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
-            if xLoaded and yLoaded and zLoaded and isPolyFaceVertex then begin
-              context.GDBVertexLoadCache.PushBackData(currentVertex);
-              programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+          if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
+            if byt=30 then begin
+              // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
+              if isPolyFaceVertex then begin
+                context.GDBVertexLoadCache.PushBackData(currentVertex);
+                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+              end;
             end;
           end
           else begin
