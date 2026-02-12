@@ -51,10 +51,6 @@ type
     FFaceCount: Integer;      // Количество граней в сети
     FFaces: TFaceArray;       // Массив индексов граней
     
-  private
-    // Вспомогательная функция для расчета нормали треугольника
-    function CalcFaceNormal(const v1, v2, v3: TzePoint3d): TzePoint3d;
-    
   public
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
       LW:smallint);
@@ -97,25 +93,6 @@ begin
   FVertexCount := 0;
   FFaceCount := 0;
   system.SetLength(FFaces, 0);
-end;
-
-function GDBObjPolyFaceMesh.CalcFaceNormal(const v1, v2, v3: TzePoint3d): TzePoint3d;
-var
-  crossVector: TzePoint3d;
-  edge1, edge2: TzePoint3d;
-begin
-  // Вычисляем два ребра треугольника
-  edge1 := VertexSub(v2, v1);
-  edge2 := VertexSub(v3, v1);
-  
-  // Вычисляем векторное произведение для получения нормали
-  crossVector := vectordot(edge1, edge2);
-  
-  // Нормализуем вектор
-  if IsVectorNul(crossVector) then
-    Result := xy_Z_Vertex  // нормаль по умолчанию, если грани лежат в одной плоскости
-  else
-    Result := normalizevertex(crossVector);
 end;
 
 procedure GDBObjPolyFaceMesh.LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
@@ -179,11 +156,9 @@ begin
           system.Break;
         end
         else begin
-          // Если встречаем другую сущность, это может быть нормальная ситуация
-          // в некоторых DXF файлах. Не выходим, а продолжаем обработку
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Встречена неизвестная сущность: %s', [s], LM_Info);
+          // Если встречаем другую сущность, выходим
           s := rdr.ParseString; // Пропускаем значение
-          // Не выходим из цикла, продолжаем обработку
+          continue; // Переходим к следующей итерации
         end;
       end
       else if isProcessingVertex then begin
@@ -296,11 +271,6 @@ end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
   var DC:TDrawContext;Stage:TEFStages=EFAllStages);
-var
-  i: Integer;
-  face: TFaceIndices;
-  v1, v2, v3, v4: TzePoint3d;
-  facesDrawn: Integer;
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
@@ -308,80 +278,12 @@ begin
   calcbb(dc);
   CalcActualVisible(dc.DrawingContext.VActuality);
   
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: FormatEntity - вершин: %d, граней: %d', [VertexArrayInWCS.Count, FFaceCount], LM_Info);
-  
   if (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
     Representation.Clear;
-    
-    facesDrawn := 0;
-    
-    // Отрисовка граней полигональной сети
-    if (FFaceCount > 0) and (VertexArrayInWCS.Count > 0) then begin
-      programlog.LogOutFormatStr('uzeentpolyfacemesh: Попытка отрисовки %d граней', [FFaceCount], LM_Info);
-      
-      for i := 0 to FFaceCount - 1 do begin
-        face := FFaces[i];
-        
-        // Проверяем, что индексы вершин действительны
-        if (face.Vertex1 > 0) and (face.Vertex1 <= VertexArrayInWCS.Count) and
-           (face.Vertex2 > 0) and (face.Vertex2 <= VertexArrayInWCS.Count) and
-           (face.Vertex3 > 0) and (face.Vertex3 <= VertexArrayInWCS.Count) then begin
-          
-          // Получаем координаты вершин (индексы в DXF начинаются с 1)
-          v1 := VertexArrayInWCS.PArray^[face.Vertex1 - 1];
-          v2 := VertexArrayInWCS.PArray^[face.Vertex2 - 1];
-          v3 := VertexArrayInWCS.PArray^[face.Vertex3 - 1];
-          
-          if (face.VertexCount >= 3) then begin
-            if (face.VertexCount >= 4) and 
-               (face.Vertex4 > 0) and (face.Vertex4 <= VertexArrayInWCS.Count) then begin
-              // Отрисовка четырехугольника
-              v4 := VertexArrayInWCS.PArray^[face.Vertex4 - 1];
-              
-              // Для четырехугольника рисуем два треугольника
-              dc.drawer.DrawTriangle3DInModelSpace(
-                CalcFaceNormal(v1, v2, v3), v1, v2, v3, dc.DrawingContext.matrixs);
-              dc.drawer.DrawTriangle3DInModelSpace(
-                CalcFaceNormal(v1, v3, v4), v1, v3, v4, dc.DrawingContext.matrixs);
-              
-              inc(facesDrawn, 2);
-              programlog.LogOutFormatStr('uzeentpolyfacemesh: Нарисован четырехугольник %d: (%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)', 
-                [i+1, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z, v4.x, v4.y, v4.z], LM_Info);
-            end else begin
-              // Отрисовка треугольника
-              dc.drawer.DrawTriangle3DInModelSpace(
-                CalcFaceNormal(v1, v2, v3), v1, v2, v3, dc.DrawingContext.matrixs);
-              
-              inc(facesDrawn);
-              programlog.LogOutFormatStr('uzeentpolyfacemesh: Нарисован треугольник %d: (%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)', 
-                [i+1, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z], LM_Info);
-            end;
-          end;
-        end else begin
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Пропуск грани %d из-за недействительных индексов: %d,%d,%d,%d', 
-            [i+1, face.Vertex1, face.Vertex2, face.Vertex3, face.Vertex4], LM_Info);
-        end;
-      end;
-    end;
-    
-    // Если грани не были нарисованы, используем fallback отрисовку
-    if facesDrawn = 0 then begin
-      programlog.LogOutFormatStr('uzeentpolyfacemesh: Грани не отрисованы, использование fallback режима', [], LM_Info);
-      
-      // Запасной вариант: отрисовка линий если есть вершины
-      if VertexArrayInWCS.Count > 1 then begin
-        Representation.DrawPolyLineWithLT(dc,VertexArrayInWCS,vp,False,False);
-        programlog.LogOutFormatStr('uzeentpolyfacemesh: Отрисован полилинией с %d вершинами', [VertexArrayInWCS.Count], LM_Info);
-      end else if VertexArrayInWCS.Count = 1 then begin
-        // Если есть только одна вершина, рисуем точку
-        Representation.DrawPoint(dc,VertexArrayInWCS.PArray^[0],vp);
-        programlog.LogOutFormatStr('uzeentpolyfacemesh: Отрисована точка', [], LM_Info);
-      end else begin
-        programlog.LogOutFormatStr('uzeentpolyfacemesh: Нет вершин для отрисовки', [], LM_Info);
-      end;
-    end else begin
-      programlog.LogOutFormatStr('uzeentpolyfacemesh: Успешно отрисовано %d треугольников', [facesDrawn], LM_Info);
-    end;
+    // Здесь будет код отрисовки граней полигональной сети
+    // Пока используем базовую отрисовку для отладки
+    if VertexArrayInWCS.Count > 1 then
+      Representation.DrawPolyLineWithLT(dc,VertexArrayInWCS,vp,False,False);
   end;
   
   if assigned(EntExtensions) then
@@ -497,33 +399,10 @@ begin
 end;
 
 procedure GDBObjPolyFaceMesh.AddFace;
-var
-  newIndex: Integer;
 begin
-  // Проверяем валидность грани перед добавлением
-  if (Face.VertexCount < 3) or (Face.VertexCount > 4) then begin
-    programlog.LogOutFormatStr('uzeentpolyfacemesh: Отклонена некорректная грань с %d вершинами', [Face.VertexCount], LM_Info);
-    Exit;
-  end;
-  
-  if (Face.Vertex1 <= 0) or (Face.Vertex2 <= 0) or (Face.Vertex3 <= 0) then begin
-    programlog.LogOutFormatStr('uzeentpolyfacemesh: Отклонена грань с некорректными индексами: %d,%d,%d,%d', 
-      [Face.Vertex1, Face.Vertex2, Face.Vertex3, Face.Vertex4], LM_Info);
-    Exit;
-  end;
-  
-  if (Face.VertexCount = 4) and (Face.Vertex4 <= 0) then begin
-    programlog.LogOutFormatStr('uzeentpolyfacemesh: Отклонена четырехугольная грань с некорректным четвертым индексом: %d', [Face.Vertex4], LM_Info);
-    Exit;
-  end;
-  
-  // Добавляем грань в массив
-  newIndex := system.Length(FFaces);
-  system.SetLength(FFaces, newIndex + 1);
-  FFaces[newIndex] := Face;
+  system.SetLength(FFaces, system.Length(FFaces) + 1);
+  FFaces[High(FFaces)] := Face;
   inc(FFaceCount);
-  
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Успешно добавлена грань %d с %d вершинами', [FFaceCount, Face.VertexCount], LM_Info);
 end;
 
 function GDBObjPolyFaceMesh.CalcTrueInFrustum(
