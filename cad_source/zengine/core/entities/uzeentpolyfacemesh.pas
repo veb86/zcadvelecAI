@@ -131,6 +131,12 @@ begin
     if not LoadFromDXFObjShared(rdr,byt,ptu,drawing,context) then
       if dxfLoadGroupCodeString(rdr,0,byt,s) then begin
         if s = 'VERTEX' then begin
+          // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
+          if isFaceRecord and (currentFace.VertexCount >= 3) and
+             ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+            AddFace(currentFace);
+          end;
+
           // Начинаем обработку новой VERTEX сущности
           isProcessingVertex := True;
           vertexFlags := 0;
@@ -144,9 +150,9 @@ begin
           currentFace.Vertex4 := 0;
         end
         else if s = 'SEQEND' then begin
-          // Завершаем обработку последней грани
+          // Если есть незавершенная грань, добавляем её
           if (currentFace.VertexCount >= 3) and
-             ((currentFace.Vertex1 > 0) or (currentFace.Vertex2 > 0) or (currentFace.Vertex3 > 0) or (currentFace.Vertex4 > 0)) then begin
+             ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
             programlog.LogOutFormatStr('uzeentpolyfacemesh: Обработка последней грани перед SEQEND с вершинами: %d,%d,%d,%d', [currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
             AddFace(currentFace);
           end;
@@ -163,11 +169,23 @@ begin
         if dxfLoadGroupCodeString(rdr,100,byt,s) then begin
           // Определяем подтип вершины по DXF классу (этот метод более надежный)
           if s = 'AcDbPolyFaceMeshVertex' then begin
+            // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
+            if isFaceRecord and (currentFace.VertexCount >= 3) and
+               ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+              AddFace(currentFace);
+            end;
+
             isPolyFaceVertex := True;
             isFaceRecord := False;
             programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена вершина PolyFaceMesh', [], LM_Info);
           end
           else if s = 'AcDbFaceRecord' then begin
+            // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
+            if isFaceRecord and (currentFace.VertexCount >= 3) and
+               ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+              AddFace(currentFace);
+            end;
+
             isFaceRecord := True;
             isPolyFaceVertex := False;
             // Начинаем новую грань
@@ -191,7 +209,7 @@ begin
               // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
               if isPolyFaceVertex then begin
                 context.GDBVertexLoadCache.PushBackData(currentVertex);
-                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина: (%.2f, %.2f, %.2f)', [currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [context.GDBVertexLoadCache.Count, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
               end;
             end;
           end
@@ -203,6 +221,17 @@ begin
         else if isFaceRecord then begin
           // Обработка записи грани (face record) - обработка индексов
           if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
+            // Если уже есть предыдущая грань с данными, добавляем её
+            if (currentFace.VertexCount > 0) and
+               ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+              AddFace(currentFace);
+              // Сбрасываем текущую грань для следующей
+              currentFace.VertexCount := 0;
+              currentFace.Vertex1 := 0;
+              currentFace.Vertex2 := 0;
+              currentFace.Vertex3 := 0;
+              currentFace.Vertex4 := 0;
+            end;
             currentFace.Vertex1 := abs(vertexIndex);
             inc(currentFace.VertexCount);
           end
@@ -219,8 +248,18 @@ begin
             inc(currentFace.VertexCount);
           end
           else begin
-            // Прочитали что-то другое для записи грани, пропускаем
+            // Если прочитали что-то другое и есть непустая грань, добавляем её
             s := rdr.ParseString;
+            if (currentFace.VertexCount >= 3) and
+               ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+              AddFace(currentFace);
+              // Сбрасываем текущую грань для следующей
+              currentFace.VertexCount := 0;
+              currentFace.Vertex1 := 0;
+              currentFace.Vertex2 := 0;
+              currentFace.Vertex3 := 0;
+              currentFace.Vertex4 := 0;
+            end;
           end;
         end
         else begin
