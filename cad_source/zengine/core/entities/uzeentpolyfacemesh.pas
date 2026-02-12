@@ -268,21 +268,318 @@ end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
   var DC:TDrawContext;Stage:TEFStages=EFAllStages);
+var
+  i: Integer;
+  face: TFaceIndices;
+  vertexIndex1, vertexIndex2: Integer;
+  absIndex1, absIndex2: Integer;
+  edgeKey: string;
+  j: Integer;
+  // Для отслеживания нарисованных рёбер используем динамический массив строк
+  drawnEdges: array of string;
+  edgeExists: Boolean;
+  edgePairs: array of record
+    idx1, idx2: Integer;
+  end;
+  edgeCount: Integer;
+  tempPoint1, tempPoint2: TzePoint3d;
+  //tempArray: TVectorP3D;
+
+  // Внутренняя функция для проверки, существует ли ребро
+  function EdgeAlreadyDrawn(const key: string): Boolean;
+  var
+    k: Integer;
+  begin
+    for k := 0 to High(drawnEdges) do
+    begin
+      if drawnEdges[k] = key then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+    Result := False;
+  end;
+
+  // Внутренняя функция для добавления ребра в список нарисованных
+  procedure AddEdgeToDrawn(const key: string);
+  var
+    newSize: Integer;
+  begin
+    newSize := system.Length(drawnEdges);
+    system.SetLength(drawnEdges, newSize + 1);
+    drawnEdges[newSize] := key;
+  end;
+
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
   FormatWithoutSnapArray;
   calcbb(dc);
   CalcActualVisible(dc.DrawingContext.VActuality);
-  
+
   if (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
     Representation.Clear;
-    // Здесь будет код отрисовки граней полигональной сети
-    // Пока используем базовую отрисовку для отладки
-    if VertexArrayInWCS.Count > 1 then
-      Representation.DrawPolyLineWithLT(dc,VertexArrayInWCS,vp,False,False);
+
+    // Создаем массив для хранения уникальных рёбер
+    edgeCount := 0;
+    system.SetLength(edgePairs, 0);
+    system.SetLength(drawnEdges, 0);
+
+    // Проходим по всем граням и формируем рёбра
+    for i := 0 to FFaceCount - 1 do
+    begin
+      face := GetFaceVertices(i);
+
+      if face.VertexCount < 3 then
+        Continue; // Пропускаем некорректные грани
+
+      // Определяем индексы вершин с учетом их видимости (знака)
+      case face.VertexCount of
+        3: // Треугольник: v1-v2, v2-v3, v3-v1
+        begin
+          // Ребро 1-2: проверяем только знак Vertex2 (второго индекса в паре)
+          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex1);
+            absIndex2 := abs(face.Vertex2);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              // Нормализуем пару вершин для предотвращения дубликатов
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              // Проверяем, не было ли это ребро уже нарисовано
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                // Увеличиваем размер массива и добавляем новое ребро
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+
+          // Ребро 2-3: проверяем только знак Vertex3 (третьего индекса в паре)
+          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex2);
+            absIndex2 := abs(face.Vertex3);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+
+          // Ребро 3-1: проверяем только знак Vertex1 (первого индекса, т.к. это замыкающее ребро)
+          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex3);
+            absIndex2 := abs(face.Vertex1);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+        end;
+
+        4: // Четырехугольник: v1-v2, v2-v3, v3-v4, v4-v1
+        begin
+          // Ребро 1-2: проверяем только знак Vertex2 (второго индекса в паре)
+          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex1);
+            absIndex2 := abs(face.Vertex2);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+
+          // Ребро 2-3: проверяем только знак Vertex3 (третьего индекса в паре)
+          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex2);
+            absIndex2 := abs(face.Vertex3);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+
+          // Ребро 3-4: проверяем только знак Vertex4 (четвертого индекса в паре)
+          if face.Vertex4 > 0 then  // Ребро видимо, если четвертый индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex3);
+            absIndex2 := abs(face.Vertex4);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+
+          // Ребро 4-1: проверяем только знак Vertex1 (первого индекса, т.к. это замыкающее ребро)
+          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
+          begin
+            absIndex1 := abs(face.Vertex4);
+            absIndex2 := abs(face.Vertex1);
+            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+            begin
+              if absIndex1 > absIndex2 then
+              begin
+                vertexIndex1 := absIndex2;
+                vertexIndex2 := absIndex1;
+              end
+              else
+              begin
+                vertexIndex1 := absIndex1;
+                vertexIndex2 := absIndex2;
+              end;
+
+              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+              if not EdgeAlreadyDrawn(edgeKey) then
+              begin
+                AddEdgeToDrawn(edgeKey);
+
+                system.SetLength(edgePairs, edgeCount + 1);
+                edgePairs[edgeCount].idx1 := vertexIndex1;
+                edgePairs[edgeCount].idx2 := vertexIndex2;
+                Inc(edgeCount);
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+
+    // Теперь рисуем все уникальные рёбра
+    for i := 0 to edgeCount - 1 do
+    begin
+      if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
+         (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
+      begin
+        // Получаем координаты вершин (учитываем, что индексация в DXF начинается с 1)
+        tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
+        tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
+
+        // Рисуем линию напрямую через drawer
+        Representation.DrawLineWithoutLT(dc, tempPoint1, tempPoint2);
+      end;
+    end;
   end;
-  
+
   if assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);
 end;
