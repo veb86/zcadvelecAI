@@ -232,19 +232,19 @@ begin
               currentFace.Vertex3 := 0;
               currentFace.Vertex4 := 0;
             end;
-            currentFace.Vertex1 := abs(vertexIndex);
+            currentFace.Vertex1 := vertexIndex;  // Сохраняем знак индекса
             inc(currentFace.VertexCount);
           end
           else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex2 := abs(vertexIndex);
+            currentFace.Vertex2 := vertexIndex;  // Сохраняем знак индекса
             inc(currentFace.VertexCount);
           end
           else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex3 := abs(vertexIndex);
+            currentFace.Vertex3 := vertexIndex;  // Сохраняем знак индекса
             inc(currentFace.VertexCount);
           end
           else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex4 := abs(vertexIndex);
+            currentFace.Vertex4 := vertexIndex;  // Сохраняем знак индекса
             inc(currentFace.VertexCount);
           end
           else begin
@@ -377,8 +377,8 @@ begin
       case face.VertexCount of
         3: // Треугольник: v1-v2, v2-v3, v3-v1
         begin
-          // Ребро 1-2: проверяем только знак Vertex2 (второго индекса в паре)
-          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
+          // Ребро 1-2: проверяем знак Vertex1 (видимость ребра из вершины 1)
+          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
           begin
             absIndex1 := abs(face.Vertex1);
             absIndex2 := abs(face.Vertex2);
@@ -411,8 +411,8 @@ begin
             end;
           end;
 
-          // Ребро 2-3: проверяем только знак Vertex3 (третьего индекса в паре)
-          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
+          // Ребро 2-3: проверяем знак Vertex2 (видимость ребра из вершины 2)
+          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
           begin
             absIndex1 := abs(face.Vertex2);
             absIndex2 := abs(face.Vertex3);
@@ -442,8 +442,8 @@ begin
             end;
           end;
 
-          // Ребро 3-1: проверяем только знак Vertex1 (первого индекса, т.к. это замыкающее ребро)
-          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
+          // Ребро 3-1: проверяем знак Vertex3 (видимость ребра из вершины 3)
+          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
           begin
             absIndex1 := abs(face.Vertex3);
             absIndex2 := abs(face.Vertex1);
@@ -476,8 +476,8 @@ begin
 
         4: // Четырехугольник: v1-v2, v2-v3, v3-v4, v4-v1
         begin
-          // Ребро 1-2: проверяем только знак Vertex2 (второго индекса в паре)
-          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
+          // Ребро 1-2: проверяем знак Vertex1 (видимость ребра из вершины 1)
+          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
           begin
             absIndex1 := abs(face.Vertex1);
             absIndex2 := abs(face.Vertex2);
@@ -507,8 +507,8 @@ begin
             end;
           end;
 
-          // Ребро 2-3: проверяем только знак Vertex3 (третьего индекса в паре)
-          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
+          // Ребро 2-3: проверяем знак Vertex2 (видимость ребра из вершины 2)
+          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
           begin
             absIndex1 := abs(face.Vertex2);
             absIndex2 := abs(face.Vertex3);
@@ -538,8 +538,8 @@ begin
             end;
           end;
 
-          // Ребро 3-4: проверяем только знак Vertex4 (четвертого индекса в паре)
-          if face.Vertex4 > 0 then  // Ребро видимо, если четвертый индекс положительный
+          // Ребро 3-4: проверяем знак Vertex3 (видимость ребра из вершины 3)
+          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
           begin
             absIndex1 := abs(face.Vertex3);
             absIndex2 := abs(face.Vertex4);
@@ -569,8 +569,8 @@ begin
             end;
           end;
 
-          // Ребро 4-1: проверяем только знак Vertex1 (первого индекса, т.к. это замыкающее ребро)
-          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
+          // Ребро 4-1: проверяем знак Vertex4 (видимость ребра из вершины 4)
+          if face.Vertex4 > 0 then  // Ребро видимо, если четвертый индекс положительный
           begin
             absIndex1 := abs(face.Vertex4);
             absIndex2 := abs(face.Vertex1);
