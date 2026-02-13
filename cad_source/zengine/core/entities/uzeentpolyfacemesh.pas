@@ -104,25 +104,22 @@ var
   s: string;
   byt: integer;
   polylineFlags: integer;
-  vertexFlags: integer;
   currentVertex: TzePoint3d;
   currentFace: TFaceIndices;
   vertexIndex: Integer;
   isProcessingVertex: Boolean;
   isFaceRecord: Boolean;
   isPolyFaceVertex: Boolean;
-  declaredVertexCount: Integer;  // Объявленное количество вершин из заголовка
-  declaredFaceCount: Integer;    // Объявленное количество граней из заголовка
+  declaredVertexCount: Integer;
+  declaredFaceCount: Integer;
 
-  // Внутренняя процедура для добавления грани
   procedure AddCurrentFace;
   begin
     if (currentFace.VertexCount >= 3) and
-       ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+       ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or
+        (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
       FFaces.PushBackData(currentFace);
       inc(FFaceCount);
-
-      // Сбрасываем текущую грань для следующей
       currentFace.VertexCount := 0;
       currentFace.Vertex1 := 0;
       currentFace.Vertex2 := 0;
@@ -134,14 +131,10 @@ var
 begin
   FVertexCount := 0;
   FFaceCount := 0;
-  FFaces.initnul; // Инициализируем вектор граней
-
-  // Очищаем кэш вершин от возможных остаточных данных
+  FFaces.initnul;
   context.GDBVertexLoadCache.Clear;
 
-  // Инициализация переменных
   polylineFlags := 0;
-  vertexFlags := 0;
   currentVertex := NulVertex;
   isProcessingVertex := False;
   isFaceRecord := False;
@@ -149,149 +142,160 @@ begin
   declaredVertexCount := 0;
   declaredFaceCount := 0;
 
-  // Инициализируем структуру текущей грани
   currentFace.VertexCount := 0;
   currentFace.Vertex1 := 0;
   currentFace.Vertex2 := 0;
   currentFace.Vertex3 := 0;
   currentFace.Vertex4 := 0;
 
+  if declaredVertexCount > 0 then
+    context.GDBVertexLoadCache.Reserve(declaredVertexCount);
+  if declaredFaceCount > 0 then
+    FFaces.Reserve(declaredFaceCount);
+
   byt := rdr.ParseInteger;
   while not rdr.EOF do begin
-    s := '';
-    if not LoadFromDXFObjShared(rdr,byt,ptu,drawing,context) then
-      if dxfLoadGroupCodeString(rdr,0,byt,s) then begin
+    case byt of
+      0:
+      begin
+        s := rdr.ParseString;
         if s = 'VERTEX' then begin
-          // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
           if isFaceRecord then
             AddCurrentFace;
-
-          // Начинаем обработку новой VERTEX сущности
           isProcessingVertex := True;
-          vertexFlags := 0;
           isFaceRecord := False;
           isPolyFaceVertex := False;
           currentVertex := NulVertex;
         end
         else if s = 'SEQEND' then begin
-          // Если есть незавершенная грань, добавляем её
           if isFaceRecord then
             AddCurrentFace;
-
           system.Break;
-        end
-        else begin
-          // Если встречаем другую сущность, выходим
-          s := rdr.ParseString; // Пропускаем значение
-          continue; // Переходим к следующей итерации
         end;
-      end
-      else if isProcessingVertex then begin
-        // Обработка VERTEX сущностей
-        if dxfLoadGroupCodeString(rdr,100,byt,s) then begin
-          // Определяем подтип вершины по DXF классу (этот метод более надежный)
+      end;
+      10:
+      begin
+        if isProcessingVertex and not isFaceRecord then begin
+          currentVertex.x := rdr.ParseDouble;
+          byt := rdr.ParseInteger;
+          if byt = 20 then begin
+            currentVertex.y := rdr.ParseDouble;
+            byt := rdr.ParseInteger;
+            if byt = 30 then begin
+              currentVertex.z := rdr.ParseDouble;
+              if isPolyFaceVertex then
+                context.GDBVertexLoadCache.PushBackData(currentVertex);
+              byt := rdr.ParseInteger;
+              continue;
+            end
+            else
+              currentVertex.z := 0;
+          end
+          else
+            currentVertex.y := 0;
+        end
+        else
+          rdr.ParseDouble;
+      end;
+      70:
+      begin
+        polylineFlags := rdr.ParseInteger;
+      end;
+      71:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            AddCurrentFace;
+            currentFace.Vertex1 := vertexIndex;
+            currentFace.VertexCount := 1;
+          end
+          else
+            rdr.ParseInteger;
+        end
+        else if not isProcessingVertex then begin
+          declaredVertexCount := rdr.ParseInteger;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      72:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex2 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else if not isProcessingVertex then begin
+          declaredFaceCount := rdr.ParseInteger;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      73:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex3 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      74:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex4 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      100:
+      begin
+        s := rdr.ParseString;
+        if isProcessingVertex then begin
           if s = 'AcDbPolyFaceMeshVertex' then begin
-            // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
             if isFaceRecord then
               AddCurrentFace;
-
             isPolyFaceVertex := True;
             isFaceRecord := False;
           end
           else if s = 'AcDbFaceRecord' then begin
-            // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
             if isFaceRecord then
               AddCurrentFace;
-
             isFaceRecord := True;
             isPolyFaceVertex := False;
-            // Начинаем новую грань
             currentFace.VertexCount := 0;
             currentFace.Vertex1 := 0;
             currentFace.Vertex2 := 0;
             currentFace.Vertex3 := 0;
             currentFace.Vertex4 := 0;
           end;
-        end
-        else if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
-          // Флаги вершины для дополнительной проверки: 128 = face record, 192 = 128+64 = polyface vertex
-          // Основное определение типа идет по 100 коду группы, флаги используем для отладки
-        end
-        else if not isFaceRecord then begin
-          // Обработка координат для вершин PolyFaceMesh
-          if dxfLoadGroupCodeVertex(rdr,10,byt,currentVertex) then begin
-            if byt=30 then begin
-              // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
-              if isPolyFaceVertex then begin
-                context.GDBVertexLoadCache.PushBackData(currentVertex);
-              end;
-            end;
-          end
-          else begin
-            // Прочитали что-то другое для обычной вершины, пропускаем
-            s := rdr.ParseString;
-          end;
-        end
-        else if isFaceRecord then begin
-          // Обработка записи грани (face record) - обработка индексов
-          if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            AddCurrentFace; // Добавляем предыдущую грань если она была
-            currentFace.Vertex1 := vertexIndex;  // Сохраняем знак индекса
-            inc(currentFace.VertexCount);
-          end
-          else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex2 := vertexIndex;  // Сохраняем знак индекса
-            inc(currentFace.VertexCount);
-          end
-          else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex3 := vertexIndex;  // Сохраняем знак индекса
-            inc(currentFace.VertexCount);
-          end
-          else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) and (vertexIndex <> 0) then begin
-            currentFace.Vertex4 := vertexIndex;  // Сохраняем знак индекса
-            inc(currentFace.VertexCount);
-          end
-          else begin
-            // Если прочитали что-то другое, пропускаем
-            s := rdr.ParseString;
-          end;
-        end
-        else begin
-          // Прочитали что-то другое, пропускаем
-          s := rdr.ParseString;
         end;
-      end
-      else begin
-        // Обработка заголовка POLYLINE
-        if dxfLoadGroupCodeInteger(rdr,70,byt,polylineFlags) then begin
-          // Проверяем флаг Polyface Mesh (бит 64)
-        end
-        else if dxfLoadGroupCodeInteger(rdr,71,byt,declaredVertexCount) then begin
-          // Количество вершин (может быть неверным в некоторых DXF)
-          // Используем объявленное количество для оптимизации (если возможно)
-        end
-        else if dxfLoadGroupCodeInteger(rdr,72,byt,declaredFaceCount) then begin
-          // Количество граней (может быть неверным в некоторых DXF)
-          // Используем объявленное количество для оптимизации (если возможно)
-        end
-        else
-          s := rdr.ParseString;
       end;
-
-    // Проверяем EOF перед следующим чтением
-    if rdr.EOF then
-      break;
+      210, 62, 8:
+      begin
+        rdr.ParseInteger;
+      end;
+    else
+      rdr.ParseString;
+    end;
 
     byt := rdr.ParseInteger;
   end;
 
-  // Копируем вершины из кэша в текущий объект
   vertexarrayinocs.SetSize(context.GDBVertexLoadCache.Count);
   context.GDBVertexLoadCache.copyto(vertexarrayinocs);
   context.GDBVertexLoadCache.Clear;
-
   FVertexCount := vertexarrayinocs.Count;
-
 end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
