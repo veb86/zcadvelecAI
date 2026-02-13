@@ -113,16 +113,12 @@ var
   isPolyFaceVertex: Boolean;
   declaredVertexCount: Integer;  // Объявленное количество вершин из заголовка
   declaredFaceCount: Integer;    // Объявленное количество граней из заголовка
-  //timer: TTimeMeter;             // Таймер для измерения времени загрузки
 begin
   //programlog.LogOutFormatStr('uzeentpolyfacemesh: Начало LoadFromDXF - FFaceCount до инициализации: %d', [FFaceCount], LM_Info);
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul; // Инициализируем вектор граней
   //programlog.LogOutFormatStr('uzeentpolyfacemesh: После инициализации - FFaceCount: %d', [FFaceCount], LM_Info);
-
-  // Запускаем таймер для измерения времени загрузки
-  //timer := TTimeMeter.StartMeasure;
 
   // Очищаем кэш вершин от возможных остаточных данных
   context.GDBVertexLoadCache.Clear;
@@ -307,7 +303,10 @@ begin
           // Количество граней (может быть неверным в некоторых DXF)
           //programlog.LogOutFormatStr('uzeentpolyfacemesh: Объявлено количество граней = %d', [declaredFaceCount], LM_Info);
           // Предварительная инициализация вектора граней с оценкой размера
-          // FFaces может автоматически расширяться по мере необходимости
+          if declaredFaceCount > 0 then begin
+            // Попробуем предварительно выделить память для вектора граней
+            // FFaces может автоматически расширяться по мере необходимости
+          end;
         end
         else
           s := rdr.ParseString;
@@ -327,10 +326,6 @@ begin
 
   FVertexCount := vertexarrayinocs.Count;
 
-  // Завершаем измерение времени и выводим результат
-  //timer.EndMeasure;
-  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней, время загрузки: %d мс', [FVertexCount, FFaces.Count, timer.ElapsedMiliSec], LM_Info);
-  //zcUI.TextMessage(Format('PolyFaceMesh: Загружено %d вершин и %d граней, время загрузки: %d мс', [FVertexCount, FFaces.Count, timer.ElapsedMiliSec]), TMWOHistoryOut);
 end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
