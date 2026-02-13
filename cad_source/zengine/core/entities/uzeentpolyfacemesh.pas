@@ -272,9 +272,25 @@ begin
           end;
         end;
       end;
-      210, 62, 8:
+      210:
+      begin
+        rdr.ParseDouble;
+      end;
+      220:
+      begin
+        rdr.ParseDouble;
+      end;
+      230:
+      begin
+        rdr.ParseDouble;
+      end;
+      62:
       begin
         rdr.ParseInteger;
+      end;
+      8:
+      begin
+        rdr.ParseString;
       end;
     else
       rdr.ParseString;
