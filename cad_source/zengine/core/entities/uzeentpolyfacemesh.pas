@@ -110,8 +110,6 @@ var
   isProcessingVertex: Boolean;
   isFaceRecord: Boolean;
   isPolyFaceVertex: Boolean;
-  declaredVertexCount: Integer;
-  declaredFaceCount: Integer;
 
   procedure AddCurrentFace;
   begin
@@ -139,19 +137,12 @@ begin
   isProcessingVertex := False;
   isFaceRecord := False;
   isPolyFaceVertex := False;
-  declaredVertexCount := 0;
-  declaredFaceCount := 0;
 
   currentFace.VertexCount := 0;
   currentFace.Vertex1 := 0;
   currentFace.Vertex2 := 0;
   currentFace.Vertex3 := 0;
   currentFace.Vertex4 := 0;
-
-  if declaredVertexCount > 0 then
-    context.GDBVertexLoadCache.Reserve(declaredVertexCount);
-  if declaredFaceCount > 0 then
-    FFaces.Reserve(declaredFaceCount);
 
   byt := rdr.ParseInteger;
   while not rdr.EOF do begin
@@ -214,7 +205,7 @@ begin
             rdr.ParseInteger;
         end
         else if not isProcessingVertex then begin
-          declaredVertexCount := rdr.ParseInteger;
+          rdr.ParseInteger;
         end
         else
           rdr.ParseInteger;
@@ -229,7 +220,7 @@ begin
           end;
         end
         else if not isProcessingVertex then begin
-          declaredFaceCount := rdr.ParseInteger;
+          rdr.ParseInteger;
         end
         else
           rdr.ParseInteger;
