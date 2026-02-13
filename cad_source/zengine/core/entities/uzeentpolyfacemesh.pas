@@ -109,11 +109,11 @@ var
   isFaceRecord: Boolean;
   isPolyFaceVertex: Boolean;
 begin
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Начало LoadFromDXF - FFaceCount до инициализации: %d', [FFaceCount], LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Начало LoadFromDXF - FFaceCount до инициализации: %d', [FFaceCount], LM_Info);
   FVertexCount := 0;
   FFaceCount := 0;
   system.SetLength(FFaces, 0);
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: После инициализации - FFaceCount: %d, Length(FFaces): %d', [FFaceCount, system.Length(FFaces)], LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: После инициализации - FFaceCount: %d, Length(FFaces): %d', [FFaceCount, system.Length(FFaces)], LM_Info);
 
   // Очищаем кэш вершин от возможных остаточных данных
   context.GDBVertexLoadCache.Clear;
@@ -153,7 +153,7 @@ begin
           // Если есть незавершенная грань, добавляем её
           if (currentFace.VertexCount >= 3) and
              ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Обработка последней грани перед SEQEND с вершинами: %d,%d,%d,%d', [currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
+            //programlog.LogOutFormatStr('uzeentpolyfacemesh: Обработка последней грани перед SEQEND с вершинами: %d,%d,%d,%d', [currentFace.Vertex1, currentFace.Vertex2, currentFace.Vertex3, currentFace.Vertex4], LM_Info);
             AddFace(currentFace);
           end;
           system.Break;
@@ -177,7 +177,7 @@ begin
 
             isPolyFaceVertex := True;
             isFaceRecord := False;
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена вершина PolyFaceMesh', [], LM_Info);
+            //programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена вершина PolyFaceMesh', [], LM_Info);
           end
           else if s = 'AcDbFaceRecord' then begin
             // Если мы обрабатывали запись грани и есть непустая грань, добавляем её
@@ -194,12 +194,12 @@ begin
             currentFace.Vertex2 := 0;
             currentFace.Vertex3 := 0;
             currentFace.Vertex4 := 0;
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена запись грани', [], LM_Info);
+            //programlog.LogOutFormatStr('uzeentpolyfacemesh: Найдена запись грани', [], LM_Info);
           end;
         end
         else if dxfLoadGroupCodeInteger(rdr,70,byt,vertexFlags) then begin
           // Флаги вершины для дополнительной проверки: 128 = face record, 192 = 128+64 = polyface vertex
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Флаги вершины = %d', [vertexFlags], LM_Info);
+          //programlog.LogOutFormatStr('uzeentpolyfacemesh: Флаги вершины = %d', [vertexFlags], LM_Info);
           // Основное определение типа идет по 100 коду группы, флаги используем для отладки
         end
         else if not isFaceRecord then begin
@@ -209,7 +209,7 @@ begin
               // Z-координата вершины - все координаты прочитаны, можно добавлять вершину
               if isPolyFaceVertex then begin
                 context.GDBVertexLoadCache.PushBackData(currentVertex);
-                programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [context.GDBVertexLoadCache.Count, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
+                //programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена вершина %d: (%.2f, %.2f, %.2f)', [context.GDBVertexLoadCache.Count, currentVertex.x, currentVertex.y, currentVertex.z], LM_Info);
               end;
             end;
           end
@@ -269,22 +269,23 @@ begin
       end
       else begin
         // Обработка заголовка POLYLINE
-        if dxfLoadGroupCodeInteger(rdr,70,byt,polylineFlags) then begin
-          // Проверяем флаг Polyface Mesh (бит 64)
-          if (polylineFlags and 64) = 0 then begin
-            programlog.LogOutFormatStr('uzeentpolyfacemesh: Предупреждение - отсутствует флаг Polyface Mesh (64) в POLYLINE', [], LM_Info);
-          end;
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Загрузка Polyface Mesh с флагами = %d', [polylineFlags], LM_Info);
-        end
-        else if dxfLoadGroupCodeInteger(rdr,71,byt,FVertexCount) then begin
-          // Количество вершин (может быть неверным в некоторых DXF)
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Объявлено количество вершин = %d', [FVertexCount], LM_Info);
-        end
-        else if dxfLoadGroupCodeInteger(rdr,72,byt,byt) then begin  // используем временную переменную вместо FFaceCount
-          // Количество граней (может быть неверным в некоторых DXF)
-          programlog.LogOutFormatStr('uzeentpolyfacemesh: Объявлено количество граней = %d', [byt], LM_Info);
-        end
-        else
+        if dxfLoadGroupCodeInteger(rdr,70,byt,polylineFlags) = false then
+        //begin
+        //  // Проверяем флаг Polyface Mesh (бит 64)
+        //  if (polylineFlags and 64) = 0 then begin
+        //    programlog.LogOutFormatStr('uzeentpolyfacemesh: Предупреждение - отсутствует флаг Polyface Mesh (64) в POLYLINE', [], LM_Info);
+        //  end;
+        //  programlog.LogOutFormatStr('uzeentpolyfacemesh: Загрузка Polyface Mesh с флагами = %d', [polylineFlags], LM_Info);
+        //end
+        //else if dxfLoadGroupCodeInteger(rdr,71,byt,FVertexCount) then begin
+        //  // Количество вершин (может быть неверным в некоторых DXF)
+        //  programlog.LogOutFormatStr('uzeentpolyfacemesh: Объявлено количество вершин = %d', [FVertexCount], LM_Info);
+        //end
+        //else if dxfLoadGroupCodeInteger(rdr,72,byt,byt) then begin  // используем временную переменную вместо FFaceCount
+        //  // Количество граней (может быть неверным в некоторых DXF)
+        //  programlog.LogOutFormatStr('uzeentpolyfacemesh: Объявлено количество граней = %d', [byt], LM_Info);
+        //end
+        //else
           s := rdr.ParseString;
       end;
 
@@ -302,7 +303,7 @@ begin
 
   FVertexCount := vertexarrayinocs.Count;
 
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней', [FVertexCount, FFaceCount], LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней', [FVertexCount, FFaceCount], LM_Info);
 end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
@@ -739,7 +740,7 @@ begin
   FFaces[High(FFaces)] := Face;
   faceNumber := FFaceCount + 1;  // Номер грани до увеличения счетчика
   inc(FFaceCount);
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань %d с вершинами: %d,%d,%d,%d', [faceNumber, Face.Vertex1, Face.Vertex2, Face.Vertex3, Face.Vertex4], LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Добавлена грань %d с вершинами: %d,%d,%d,%d', [faceNumber, Face.Vertex1, Face.Vertex2, Face.Vertex3, Face.Vertex4], LM_Info);
 end;
 
 function GDBObjPolyFaceMesh.CalcTrueInFrustum(
