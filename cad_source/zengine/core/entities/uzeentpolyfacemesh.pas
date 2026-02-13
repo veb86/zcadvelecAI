@@ -26,7 +26,8 @@ uses
   uzestyleslayers,uzeentsubordinated,uzeentcurve,UGDBSelectedObjArray,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,uzesnap,
-  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector;
+  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector,
+  uzcinterface;
 
 type
   // Структура для хранения индексов вершин грани
@@ -112,12 +113,16 @@ var
   isPolyFaceVertex: Boolean;
   declaredVertexCount: Integer;  // Объявленное количество вершин из заголовка
   declaredFaceCount: Integer;    // Объявленное количество граней из заголовка
+  //timer: TTimeMeter;             // Таймер для измерения времени загрузки
 begin
   //programlog.LogOutFormatStr('uzeentpolyfacemesh: Начало LoadFromDXF - FFaceCount до инициализации: %d', [FFaceCount], LM_Info);
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul; // Инициализируем вектор граней
   //programlog.LogOutFormatStr('uzeentpolyfacemesh: После инициализации - FFaceCount: %d', [FFaceCount], LM_Info);
+
+  // Запускаем таймер для измерения времени загрузки
+  //timer := TTimeMeter.StartMeasure;
 
   // Очищаем кэш вершин от возможных остаточных данных
   context.GDBVertexLoadCache.Clear;
@@ -322,7 +327,10 @@ begin
 
   FVertexCount := vertexarrayinocs.Count;
 
-  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней', [FVertexCount, FFaces.Count], LM_Info);
+  // Завершаем измерение времени и выводим результат
+  //timer.EndMeasure;
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Загружено %d вершин и %d граней, время загрузки: %d мс', [FVertexCount, FFaces.Count, timer.ElapsedMiliSec], LM_Info);
+  //zcUI.TextMessage(Format('PolyFaceMesh: Загружено %d вершин и %d граней, время загрузки: %d мс', [FVertexCount, FFaces.Count, timer.ElapsedMiliSec]), TMWOHistoryOut);
 end;
 
 procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;

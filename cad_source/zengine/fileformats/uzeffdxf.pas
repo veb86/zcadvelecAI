@@ -28,7 +28,8 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader;
+  uzMVSMemoryMappedFile,uzMVReader,uzclog,
+  uzcinterface;
 resourcestring
   rsLoadDXFFile='Load DXF file';
 type
@@ -1071,11 +1072,16 @@ var
   Handle2BlockName:TMapBlockHandle_BlockNames;
   lph:TLPSHandle;
   SaveOptions:TDContextOptions;
+  timer: TTimeMeter;             // Таймер для измерения времени загрузки файла
 begin
   ctstyle:='';
   clayer:='';
   cltype:='';
   cdimstyle:='';
+
+  // Запускаем таймер для измерения времени загрузки DXF файла
+  timer := TTimeMeter.StartMeasure;
+
   lph:=lps.StartLongProcess('addfromdxf2000',@rdr,rdr.CurrentPos);
   Handle2BlockName:=TMapBlockHandle_BlockNames.Create;
   blockload:=false;
@@ -1231,6 +1237,12 @@ begin
   {$ENDIF}
   zDebugLn('{D-}[DXF_CONTENTS]end; {AddFromDXF2000}');
   //programlog.LogOutStr('end; {AddFromDXF2000}',lp_DecPos,LM_Debug);
+
+  // Завершаем измерение времени и выводим результат
+  timer.EndMeasure;
+  programlog.LogOutFormatStr('AddFromDXF20XX: Загрузка DXF файла завершена, время загрузки: %d мс', [timer.ElapsedMiliSec], LM_Info);
+  zcUI.TextMessage(Format('Загрузка содержимого DXF файла завершена, время: %d мс', [timer.ElapsedMiliSec]), TMWOHistoryOut);
+
   lps.EndLongProcess(lph);
 end;
 
@@ -1240,12 +1252,17 @@ var
   lph:TLPSHandle;
   DxfStream:TZMVSMemoryMappedFile;
   rdr:TZMemReader;
+  globalTimer: TTimeMeter;
 const
    ffs='%s (%s)';
 begin
   DefaultFormatSettings.DecimalSeparator:='.';
   result.InitRec;
   zDebugLn('{D+}AddFromDXF("%s")',[AFileName]);
+
+  // Запускаем таймер для измерения общего времени загрузки DXF файла
+  globalTimer := TTimeMeter.StartMeasure;
+
   try
     Log(LogIntf,ZESGeneral,ZEMsgCriticalInfo,format(rsLoadingFile,[AFileName]));
     try
@@ -1293,7 +1310,12 @@ begin
       rdr.Free;
     end;
   finally
-      zDebugLn('{D-}end; {AddFromDXF}');
+    // Завершаем измерение общего времени загрузки и выводим результат
+    globalTimer.EndMeasure;
+    programlog.LogOutFormatStr('AddFromDXF: Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [AFileName, globalTimer.ElapsedMiliSec], LM_Info);
+    zcUI.TextMessage(Format('Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [ExtractFileName(AFileName), globalTimer.ElapsedMiliSec]), TMWOHistoryOut);
+
+    zDebugLn('{D-}end; {AddFromDXF}');
   end;
 end;
 procedure saveentitiesdxf2000(pva: PGDBObjEntityOpenArray; var outStream:TZctnrVectorBytes;var drawing:TSimpleDrawing;var IODXFContext:TIODXFSaveContext);
