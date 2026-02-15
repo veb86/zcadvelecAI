@@ -631,15 +631,76 @@ end;
 
 procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
   var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
+var
+  i: Integer;
+  face: TFaceIndices;
 begin
+  // Записываем заголовок POLYLINE
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDbPolyFaceMesh',IODXFContext);
-  dxfIntegerout(outStream,66,1);
+  dxfIntegerout(outStream,66,1); // Следует за POLYLINE
   dxfvertexout(outStream,10,uzegeometry.NulVertex);
   dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
   dxfIntegerout(outStream,71,FVertexCount); // Количество вершин
   dxfIntegerout(outStream,72,FFaceCount);   // Количество граней
-  
-  // TODO: Сохранение вершин и граней
+
+  // Сохраняем вершины полигональной сетки
+  for i := 0 to vertexarrayinocs.Count - 1 do
+  begin
+    // VERTEX для вершины полигональной сетки
+    dxfStringout(outStream,0,'VERTEX');
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity');
+    dxfStringout(outStream,100,'AcDbVertex');
+    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex');
+    
+    // Координаты вершины
+    dxfDoubleout(outStream,10,vertexarrayinocs.Items[i].x);
+    dxfDoubleout(outStream,20,vertexarrayinocs.Items[i].y);
+    dxfDoubleout(outStream,30,vertexarrayinocs.Items[i].z);
+    
+    // Флаг для вершины полигональной сетки (64 + 128 = 192)
+    dxfIntegerout(outStream,70,192);
+  end;
+
+  // Сохраняем грани (Face Records)
+  for i := 0 to FFaces.Count - 1 do
+  begin
+    face := GetFaceVertices(i);
+    
+    // VERTEX для Face Record
+    dxfStringout(outStream,0,'VERTEX');
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity');
+    dxfStringout(outStream,100,'AcDbFaceRecord');
+    
+    // Координаты (не используются для Face Record, но должны быть указаны)
+    dxfDoubleout(outStream,10,0.0);
+    dxfDoubleout(outStream,20,0.0);
+    dxfDoubleout(outStream,30,0.0);
+    
+    // Флаг для Face Record (128)
+    dxfIntegerout(outStream,70,128);
+    
+    // Индексы вершин (начинаются с 1, а не с 0)
+    // Сохраняем оригинальные значения, включая отрицательные (для указания видимости ребер)
+    if face.Vertex1 <> 0 then
+      dxfIntegerout(outStream,71,face.Vertex1);
+    if face.Vertex2 <> 0 then
+      dxfIntegerout(outStream,72,face.Vertex2);
+    if face.Vertex3 <> 0 then
+      dxfIntegerout(outStream,73,face.Vertex3);
+    if face.Vertex4 <> 0 then
+      dxfIntegerout(outStream,74,face.Vertex4);
+  end;
+
+  // SEQEND - конец последовательности
+  dxfStringout(outStream,0,'SEQEND');
+  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+  inc(IODXFContext.handle);
+  dxfStringout(outStream,100,'AcDbEntity');
+
   programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [FVertexCount, FFaceCount], LM_Info);
 end;
 
