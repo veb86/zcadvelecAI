@@ -353,11 +353,17 @@ var
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
-  FormatWithoutSnapArray;
-  calcbb(dc);
-  CalcActualVisible(dc.DrawingContext.VActuality);
 
-  if (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
+  // Стадия расчета: только расчеты, необходимые для отображения
+  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then
+  begin
+    FormatWithoutSnapArray;
+    calcbb(dc);
+    CalcActualVisible(dc.DrawingContext.VActuality);
+  end;
+
+  // Стадия отрисовки: создание визуального представления
+  if ((Stage = EFAllStages) or (EFDraw in Stage)) and (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
     Representation.Clear;
 
     // Создаем массив для хранения уникальных рёбер
