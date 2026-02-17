@@ -32,7 +32,8 @@ uses
   uzcinterface, uzclog, uzcutils, uzcsysvars, uzeconsts, uzcstrconsts,
   uzeentdevice, uzeentblockinsert, uzeentlwpolyline, uzeentpolyline,
   uzeentcircle, uzeentarc, uzeenttext, uzeentmtext,
-  uzeffdxf, uzeffdxfsupport, uzbpaths, uzcFileStructure;
+  uzeffdxf, uzeffdxfsupport, uzbpaths, uzcFileStructure, uzbLogTypes,
+  uzeTypes;
 
 const
   {** Порт по умолчанию для IPC-сервера }
@@ -98,7 +99,7 @@ type
     FServerSocket: TSocket;
     FRunning: Boolean;
     FDebugMode: Boolean;
-    procedure Log(const AMessage: string; ALogLevel: TLogLevel = LM_Info);
+    procedure Log(const AMessage: string; ALogLevel: TLogLevel);
     procedure ProcessClient(ASocket: TSocket);
     function ParseCommand(const AJSON: string; out ACmd: PIPCCommand): Boolean;
     function ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
@@ -124,7 +125,7 @@ type
     FToken: string;
     FDebugMode: Boolean;
     FWhiteList: TStringList;
-    procedure Log(const AMessage: string; ALogLevel: TLogLevel = LM_Info);
+    procedure Log(const AMessage: string; ALogLevel: TLogLevel);
   public
     constructor Create;
     destructor Destroy; override;
@@ -370,7 +371,7 @@ begin
       Root := Parser.Parse as TJSONObject;
       if Root = nil then
       begin
-        Log('Failed to parse JSON', LM_Error);
+        Log('Failed to parse JSON', LM_Info);
         Exit;
       end;
 
@@ -379,7 +380,7 @@ begin
         Token := Root.Get('token', '');
         if not ValidateToken(Token) then
         begin
-          Log('Invalid token', LM_Warning);
+          Log('Invalid token', LM_Info);
           Exit;
         end;
 
@@ -387,7 +388,7 @@ begin
         ID := Root.Get('id', '');
         if ID = '' then
         begin
-          Log('Missing command ID', LM_Warning);
+          Log('Missing command ID', LM_Info);
           Exit;
         end;
 
@@ -395,7 +396,7 @@ begin
         CmdName := Root.Get('cmd', '');
         if CmdName = '' then
         begin
-          Log('Missing command name', LM_Warning);
+          Log('Missing command name', LM_Info);
           Exit;
         end;
 
@@ -470,7 +471,7 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
   begin
     FileName := GetStringArg(0);
     if FileName = '' then
-      FileName := drawings.GetCurrentDWG.GetFileName;
+      FileName := drawings.GetCurrentDWG^.GetFileName;
 
     if FileName = '' then
     begin
@@ -481,16 +482,9 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
 
     try
       {** Используем команду QSave для сохранения }
-      if commandmanager.ExecuteCommandSilent('QSave', drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam) = cmd_ok then
-      begin
-        Result.Status := 'ok';
-        Result.Result := Format('File saved: %s', [FileName]);
-      end
-      else
-      begin
-        Result.Status := 'error';
-        Result.Error := 'Failed to save file';
-      end;
+      commandmanager.ExecuteCommandSilent('QSave', drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam);
+      Result.Status := 'ok';
+      Result.Result := Format('File saved: %s', [FileName]);
     except
       on E: Exception do
       begin
@@ -519,17 +513,10 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
     begin
       try
         {** Используем команду SaveAs для экспорта }
-        if commandmanager.ExecuteCommandSilent('SaveAs(' + FileName + ')', 
-          drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam) = cmd_ok then
-        begin
-          Result.Status := 'ok';
-          Result.Result := Format('Exported to: %s', [FileName]);
-        end
-        else
-        begin
-          Result.Status := 'error';
-          Result.Error := 'Failed to export file';
-        end;
+        commandmanager.ExecuteCommandSilent('SaveAs(' + FileName + ')',
+          drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam);
+        Result.Status := 'ok';
+        Result.Result := Format('Exported to: %s', [FileName]);
       except
         on E: Exception do
         begin
@@ -628,7 +615,7 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
     PText^.TXTStyle := drawings.GetCurrentDWG^.GetCurrentTextStyle;
     PText^.Local.P_insert := InsertPoint;
     PText^.Template := TDXFEntsInternalStringType(TextContent);
-    PText^.Height := Height;
+    PText^.obj_height := Height;
     zcAddEntToCurrentDrawingWithUndo(PText);
     zcRedrawCurrentDrawing;
 
@@ -719,7 +706,7 @@ var
   CmdResult: TIPCCommandResult;
   Response: TJSONObject;
 begin
-  Log('Client connected');
+  Log('Client connected', LM_Info);
 
   try
     {** Чтение данных от клиента }
@@ -728,7 +715,7 @@ begin
 
     if BytesRead <= 0 then
     begin
-      Log('Client disconnected or error reading', LM_Warning);
+      Log('Client disconnected or error reading', LM_Info);
       Exit;
     end;
 
@@ -802,13 +789,13 @@ var
   ClientAddr: TInetSockAddr;
   ClientAddrLen: TSockLen;
 begin
-  Log(Format('Starting IPC server on %s:%d', [FHost, FPort]));
+  Log(Format('Starting IPC server on %s:%d', [FHost, FPort]), LM_Info);
 
   {** Создание сокета }
   FServerSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
   if FServerSocket < 0 then
   begin
-    Log('Failed to create socket', LM_Error);
+    Log('Failed to create socket', LM_Info);
     Exit;
   end;
 
@@ -821,19 +808,19 @@ begin
     {** Привязка сокета }
     if fpBind(FServerSocket, @Addr, SizeOf(Addr)) <> 0 then
     begin
-      Log(Format('Failed to bind socket: %s', [StrError(fpGetErrno)]), LM_Error);
+      Log(Format('Failed to bind socket: %s', [SysErrorMessage(SocketError)]), LM_Info);
       Exit;
     end;
 
     {** Прослушивание }
     if fpListen(FServerSocket, 5) <> 0 then
     begin
-      Log(Format('Failed to listen on socket: %s', [StrError(fpGetErrno)]), LM_Error);
+      Log(Format('Failed to listen on socket: %s', [SysErrorMessage(SocketError)]), LM_Info);
       Exit;
     end;
 
     FRunning := True;
-    Log('IPC server started successfully');
+    Log('IPC server started successfully', LM_Info);
 
     {** Цикл приема соединений }
     while not Terminated and FRunning do
@@ -843,8 +830,8 @@ begin
 
       if ClientSocket < 0 then
       begin
-        if fpGetErrno <> ESysEINTR then
-          Log(Format('Accept error: %s', [StrError(fpGetErrno)]), LM_Warning);
+        if SocketError <> EsockEINTR then
+          Log(Format('Accept error: %s', [SysErrorMessage(SocketError)]), LM_Info);
         Continue;
       end;
 
@@ -862,7 +849,7 @@ begin
       FServerSocket := 0;
     end;
     FRunning := False;
-    Log('IPC server stopped');
+    Log('IPC server stopped',LM_Info);
   end;
 end;
 
@@ -916,7 +903,7 @@ begin
 
   if FEnabled then
   begin
-    Log('IPC server already running', LM_Warning);
+    Log('IPC server already running', LM_Info);
     Exit;
   end;
 
@@ -930,12 +917,12 @@ begin
     FServerThread.Start;
 
     FEnabled := True;
-    Log(Format('IPC server started on %s:%d', [FHost, FPort]));
+    Log(Format('IPC server started on %s:%d', [FHost, FPort]),LM_Info);
     Result := True;
   except
     on E: Exception do
     begin
-      Log(Format('Failed to start IPC server: %s', [E.Message]), LM_Error);
+      Log(Format('Failed to start IPC server: %s', [E.Message]), LM_Info);
       FServerThread := nil;
     end;
   end;
@@ -954,7 +941,7 @@ begin
   end;
 
   FEnabled := False;
-  Log('IPC server stopped');
+  Log('IPC server stopped',LM_Info);
 end;
 
 function TIPCServerManager.IsRunning: Boolean;

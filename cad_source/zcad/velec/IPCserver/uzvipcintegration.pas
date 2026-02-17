@@ -27,7 +27,7 @@ interface
 
 uses
   Classes, SysUtils, ExtCtrls, Forms, fpjson,
-  uzclog, uzcinterface, uzvipcserver;
+  uzclog, uzcinterface, uzvipcserver, uzeTypes;
 
 type
   {** Обработчик команд IPC в главном потоке }
@@ -160,7 +160,7 @@ var
   begin
     FileName := GetStringArg(0);
     if FileName = '' then
-      FileName := drawings.GetCurrentDWG.GetFileName;
+      FileName := drawings.GetCurrentDWG^.GetFileName;
     
     if FileName = '' then
     begin
@@ -170,17 +170,10 @@ var
     end;
     
     try
-      if commandmanager.ExecuteCommandSilent('QSave', 
-        drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam) = cmd_ok then
-      begin
-        CmdResult.Status := 'ok';
-        CmdResult.Result := Format('File saved: %s', [FileName]);
-      end
-      else
-      begin
-        CmdResult.Status := 'error';
-        CmdResult.Error := 'Failed to save file';
-      end;
+      commandmanager.ExecuteCommandSilent('QSave',
+        drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam);
+      CmdResult.Status := 'ok';
+      CmdResult.Result := Format('File saved: %s', [FileName]);
     except
       on E: Exception do
       begin
@@ -208,17 +201,10 @@ var
     if FileExt = '.DXF' then
     begin
       try
-        if commandmanager.ExecuteCommandSilent('SaveAs(' + FileName + ')', 
-          drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam) = cmd_ok then
-        begin
-          CmdResult.Status := 'ok';
-          CmdResult.Result := Format('Exported to: %s', [FileName]);
-        end
-        else
-        begin
-          CmdResult.Status := 'error';
-          CmdResult.Error := 'Failed to export file';
-        end;
+        commandmanager.ExecuteCommandSilent('SaveAs(' + FileName + ')',
+          drawings.GetCurrentDWG, drawings.GetCurrentOGLWParam);
+        CmdResult.Status := 'ok';
+        CmdResult.Result := Format('Exported to: %s', [FileName]);
       except
         on E: Exception do
         begin
@@ -336,7 +322,7 @@ var
       PText^.TXTStyle := drawings.GetCurrentDWG^.GetCurrentTextStyle;
       PText^.Local.P_insert := InsertPoint;
       PText^.Template := TDXFEntsInternalStringType(TextContent);
-      PText^.Height := Height;
+      PText^.obj_height := Height;
       zcAddEntToCurrentDrawingWithUndo(PText);
       zcRedrawCurrentDrawing;
       
