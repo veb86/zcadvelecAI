@@ -91,7 +91,7 @@ begin
   inherited;
   FTimer := TTimer.Create(Self);
   FTimer.Enabled := False;
-  FTimer.Interval := 100; {** Проверка очереди каждые 100 мс }
+  FTimer.Interval := 10; {** Проверка очереди каждые 10 мс для быстрой обработки }
   FTimer.OnTimer := @OnTimer;
   FProcessing := False;
   FBatchMode := False;
@@ -417,17 +417,16 @@ var
   end;
 
 begin
-  {** Проверяем наличие команд в очереди }
-  if (IPCCommandQueue = nil) or IPCCommandQueue.IsEmpty then
-    Exit;
-  
-  {** Получаем команду из очереди }
-  Cmd := IPCCommandQueue.Dequeue;
-  if Cmd = nil then
-    Exit;
-  
-  {** Устанавливаем статус busy }
-  IPCCommandQueue.SetStatus(csBusy);
+  {** Обрабатываем несколько команд за один вызов для производительности }
+  while (IPCCommandQueue <> nil) and (not IPCCommandQueue.IsEmpty) do
+  begin
+    {** Получаем команду из очереди }
+    Cmd := IPCCommandQueue.Dequeue;
+    if Cmd = nil then
+      Exit;
+
+    {** Устанавливаем статус busy }
+    IPCCommandQueue.SetStatus(csBusy);
   
   try
     {** Инициализация результата }
@@ -487,6 +486,7 @@ begin
     
     {** Устанавливаем статус idle }
     IPCCommandQueue.SetStatus(csIdle);
+  end;
   end;
 end;
 

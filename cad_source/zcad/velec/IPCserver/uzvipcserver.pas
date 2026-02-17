@@ -709,81 +709,95 @@ var
   Cmd: PIPCCommand;
   CmdResult: TIPCCommandResult;
   Response: TJSONObject;
+  RequestCount: Integer;
 begin
   Log('Client connected', LM_Info);
+  RequestCount := 0;
 
   try
-    {** Чтение данных от клиента }
-    FillChar(Buffer, SizeOf(Buffer), 0);
-    BytesRead := fpRecv(ASocket, @Buffer[0], SizeOf(Buffer) - 1, 0);
-
-    if BytesRead <= 0 then
+    {** Цикл обработки нескольких запросов в одном соединении }
+    while FRunning do
     begin
-      Log('Client disconnected or error reading', LM_Info);
-      Exit;
-    end;
+      FillChar(Buffer, SizeOf(Buffer), 0);
+      BytesRead := fpRecv(ASocket, @Buffer[0], SizeOf(Buffer) - 1, 0);
 
-    SetString(RequestStr, PAnsiChar(@Buffer[0]), BytesRead);
-    RequestStr := Trim(RequestStr);
+      if BytesRead <= 0 then
+      begin
+        Log('Client disconnected or error reading', LM_Info);
+        Exit;
+      end;
 
-    Log(Format('Received: %s', [RequestStr]), LM_Debug);
+      SetString(RequestStr, PAnsiChar(@Buffer[0]), BytesRead);
+      RequestStr := Trim(RequestStr);
 
-    {** Парсинг команды }
-    if not ParseCommand(RequestStr, Cmd) then
-    begin
-      Response := CreateResponse('', 'error', '', 'Invalid request or token');
-      SendResponse(ASocket, Response);
-      Response.Free;
-      Exit;
-    end;
+      Log(Format('Received [%d]: %s', [RequestCount, RequestStr]), LM_Debug);
 
-    try
-      {** Выполнение команды в главном потоке через очередь }
-      IPCCommandQueue.SetStatus(csBusy);
+      {** Парсинг команды }
+      if not ParseCommand(RequestStr, Cmd) then
+      begin
+        Response := CreateResponse('', 'error', '', 'Invalid request or token');
+        SendResponse(ASocket, Response);
+        Response.Free;
+        Exit;
+      end;
+
       try
-        {** Добавляем команду в очередь }
-        IPCCommandQueue.Enqueue(Cmd);
+        {** Выполнение команды в главном потоке через очередь }
+        IPCCommandQueue.SetStatus(csBusy);
+        try
+          {** Добавляем команду в очередь }
+          IPCCommandQueue.Enqueue(Cmd);
 
-        {** Ждем завершения выполнения команды в главном потоке }
-        {** Это будет обработано в ProcessMessages или аналогичном механизме }
-        Cmd^.Completed.WaitFor(IPC_COMMAND_TIMEOUT);
+          {** Ждем завершения выполнения команды в главном потоке }
+          Cmd^.Completed.WaitFor(IPC_COMMAND_TIMEOUT);
 
-        {** Получаем результат }
-        if Cmd^.Response <> nil then
-        begin
-          SendResponse(ASocket, Cmd^.Response);
-        end
-        else
-        begin
-          {** Таймаут или ошибка }
-          CmdResult.Status := 'error';
-          CmdResult.Error := 'Command timeout or execution error';
-          Response := CreateResponse(Cmd^.ID, CmdResult.Status, CmdResult.Result, CmdResult.Error);
-          SendResponse(ASocket, Response);
-          Response.Free;
+          {** Получаем результат }
+          if Cmd^.Response <> nil then
+          begin
+            SendResponse(ASocket, Cmd^.Response);
+          end
+          else
+          begin
+            {** Таймаут или ошибка }
+            CmdResult.Status := 'error';
+            CmdResult.Error := 'Command timeout or execution error';
+            Response := CreateResponse(Cmd^.ID, CmdResult.Status, CmdResult.Result, CmdResult.Error);
+            SendResponse(ASocket, Response);
+            Response.Free;
+          end;
+        finally
+          IPCCommandQueue.SetStatus(csIdle);
         end;
       finally
-        IPCCommandQueue.SetStatus(csIdle);
+        {** Очистка }
+        if Cmd^.Response <> nil then
+          Cmd^.Response.Free;
+        if Cmd^.Args <> nil then
+          Cmd^.Args.Free;
+        Cmd^.Completed.Free;
+        Dispose(Cmd);
       end;
-    finally
-      {** Очистка }
-      if Cmd^.Response <> nil then
-        Cmd^.Response.Free;
-      if Cmd^.Args <> nil then
-        Cmd^.Args.Free;
-      Cmd^.Completed.Free;
-      Dispose(Cmd);
+
+      Inc(RequestCount);
+      Log(Format('Request %d processed', [RequestCount]), LM_Debug);
     end;
 
   except
     on E: Exception do
     begin
       Log(Format('Error processing client: %s', [E.Message]), LM_Error);
-      Response := CreateResponse('', 'error', '', E.Message);
-      SendResponse(ASocket, Response);
-      Response.Free;
+      try
+        Response := CreateResponse('', 'error', '', E.Message);
+        SendResponse(ASocket, Response);
+        Response.Free;
+      except
+      end;
     end;
   end;
+  
+  {** Закрытие соединения с клиентом }
+  CloseSocket(ASocket);
+  Log('Client connection closed', LM_Info);
 end;
 
 procedure TIPCServerThread.Execute;

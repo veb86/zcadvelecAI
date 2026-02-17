@@ -35,50 +35,90 @@ from typing import List, Optional
 
 class ZCADIPCClient:
     """Клиент для взаимодействия с ZCAD через IPC."""
-    
+
     def __init__(self, host: str = '127.0.0.1', port: int = 7777, token: str = ''):
         self.host = host
         self.port = port
         self.token = token
         self._counter = 0
-    
+        self._socket = None
+
     def _generate_id(self) -> str:
         """Генерация уникального ID команды."""
         self._counter += 1
         return f"cmd-{self._counter:04d}"
-    
-    def _send_command(self, cmd: str, args: List = None) -> dict:
+
+    def connect(self):
+        """Установить постоянное соединение."""
+        if self._socket is None:
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.settimeout(30)
+            self._socket.connect((self.host, self.port))
+
+    def disconnect(self):
+        """Закрыть постоянное соединение."""
+        if self._socket:
+            self._socket.close()
+            self._socket = None
+
+    def _send_command(self, cmd: str, args: List = None, use_persistent: bool = False) -> dict:
         """Отправка команды на сервер и получение ответа."""
         if args is None:
             args = []
-        
+
         request = {
             'id': self._generate_id(),
             'cmd': cmd.upper(),
             'args': args
         }
-        
+
         if self.token:
             request['token'] = self.token
-        
+
         request_json = json.dumps(request)
-        
+
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(30)
-                sock.connect((self.host, self.port))
+            if use_persistent and self._socket:
+                # Используем постоянное соединение
+                sock = self._socket
                 sock.sendall(request_json.encode('utf-8'))
                 
                 response_data = b''
+                sock.settimeout(5)  # Короткий таймаут для чтения
                 while True:
-                    chunk = sock.recv(4096)
-                    if not chunk:
+                    try:
+                        chunk = sock.recv(4096)
+                        if not chunk:
+                            break
+                        response_data += chunk
+                        # Проверяем, получили ли полный JSON
+                        try:
+                            response = json.loads(response_data.decode('utf-8'))
+                            return response
+                        except json.JSONDecodeError:
+                            continue  # Ждём ещё данных
+                    except socket.timeout:
                         break
-                    response_data += chunk
                 
                 response = json.loads(response_data.decode('utf-8'))
                 return response
-                
+            else:
+                # Создаём новое соединение для каждой команды
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(30)
+                    sock.connect((self.host, self.port))
+                    sock.sendall(request_json.encode('utf-8'))
+
+                    response_data = b''
+                    while True:
+                        chunk = sock.recv(4096)
+                        if not chunk:
+                            break
+                        response_data += chunk
+
+                    response = json.loads(response_data.decode('utf-8'))
+                    return response
+
         except socket.timeout:
             return {'id': request['id'], 'status': 'error', 'error': 'Connection timeout'}
         except ConnectionRefusedError:
@@ -113,38 +153,48 @@ class ZCADIPCClient:
 
     def begin_batch(self) -> dict:
         """Начало пакетной вставки примитивов."""
-        return self._send_command('BEGIN_BATCH')
+        self.connect()
+        return self._send_command('BEGIN_BATCH', use_persistent=True)
 
     def end_batch(self) -> dict:
         """Завершение пакетной вставки и фиксация в чертеже."""
-        return self._send_command('END_BATCH')
+        result = self._send_command('END_BATCH', use_persistent=True)
+        self.disconnect()
+        return result
 
     def random_lines(self, count: int = 1000, min_coord: float = -100, max_coord: float = 100) -> List[dict]:
         """Создание множества линий с рандомными координатами в пакетном режиме."""
         results = []
         
-        # Начинаем пакетный режим
-        result = self.begin_batch()
-        if result.get('status') != 'ok':
-            return [{'status': 'error', 'error': 'Failed to start batch mode'}]
-        results.append(result)
+        # Устанавливаем постоянное соединение
+        self.connect()
         
-        # Отправляем все линии
-        for i in range(count):
-            x1 = random.uniform(min_coord, max_coord)
-            y1 = random.uniform(min_coord, max_coord)
-            x2 = random.uniform(min_coord, max_coord)
-            y2 = random.uniform(min_coord, max_coord)
-            result = self.line(x1, y1, x2, y2)
+        try:
+            # Начинаем пакетный режим
+            result = self._send_command('BEGIN_BATCH', use_persistent=True)
+            if result.get('status') != 'ok':
+                return [{'status': 'error', 'error': 'Failed to start batch mode'}]
             results.append(result)
             
-            # Вывод прогресса каждые 100 линий
-            if (i + 1) % 100 == 0:
-                print(f"Progress: {i + 1}/{count} lines queued", file=sys.stderr)
-        
-        # Завершаем пакетный режим
-        result = self.end_batch()
-        results.append(result)
+            # Отправляем все линии через одно соединение
+            for i in range(count):
+                x1 = random.uniform(min_coord, max_coord)
+                y1 = random.uniform(min_coord, max_coord)
+                x2 = random.uniform(min_coord, max_coord)
+                y2 = random.uniform(min_coord, max_coord)
+                result = self._send_command('LINE', [x1, y1, x2, y2], use_persistent=True)
+                results.append(result)
+                
+                # Вывод прогресса каждые 100 линий
+                if (i + 1) % 100 == 0:
+                    print(f"Progress: {i + 1}/{count} lines queued", file=sys.stderr)
+            
+            # Завершаем пакетный режим
+            result = self._send_command('END_BATCH', use_persistent=True)
+            results.append(result)
+        finally:
+            # Закрываем соединение
+            self.disconnect()
         
         return results
 
