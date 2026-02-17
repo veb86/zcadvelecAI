@@ -8,16 +8,19 @@ IPC Client for ZCAD
 Примеры использования:
     # Проверка доступности
     python uzvipcclient.py ping
-    
+
     # Сохранение файла
     python uzvipcclient.py save /path/to/file.dxf
-    
-    # Создание линии
+
+    # Создание линии (одной)
     python uzvipcclient.py line 0 0 100 100
-    
+
+    # Создание 1000 линий с рандомными координатами
+    python uzvipcclient.py random_lines 1000
+
     # Создание окружности
     python uzvipcclient.py circle 50 50 25
-    
+
     # Создание текста
     python uzvipcclient.py text 10 10 "Hello ZCAD" 5
 """
@@ -26,6 +29,7 @@ import socket
 import json
 import sys
 import argparse
+import random
 from typing import List, Optional
 
 
@@ -107,6 +111,23 @@ class ZCADIPCClient:
         """Создание текста."""
         return self._send_command('TEXT', [x, y, content, height])
 
+    def random_lines(self, count: int = 1000, min_coord: float = -100, max_coord: float = 100) -> List[dict]:
+        """Создание множества линий с рандомными координатами."""
+        results = []
+        for i in range(count):
+            x1 = random.uniform(min_coord, max_coord)
+            y1 = random.uniform(min_coord, max_coord)
+            x2 = random.uniform(min_coord, max_coord)
+            y2 = random.uniform(min_coord, max_coord)
+            result = self.line(x1, y1, x2, y2)
+            results.append(result)
+            
+            # Вывод прогресса каждые 100 линий
+            if (i + 1) % 100 == 0:
+                print(f"Progress: {i + 1}/{count} lines drawn", file=sys.stderr)
+        
+        return results
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -125,7 +146,7 @@ Examples:
     )
     
     parser.add_argument('command', choices=[
-        'ping', 'save', 'export', 'line', 'circle', 'text'
+        'ping', 'save', 'export', 'line', 'random_lines', 'circle', 'text'
     ], help='Command to execute')
     
     parser.add_argument('args', nargs='*', help='Command arguments')
@@ -161,7 +182,17 @@ Examples:
         except ValueError:
             print("Error: coordinates must be numbers")
             sys.exit(1)
-    
+
+    elif args.command == 'random_lines':
+        count = int(args.args[0]) if args.args else 1000
+        print(f"Drawing {count} random lines with coordinates from -100 to 100...", file=sys.stderr)
+        results = client.random_lines(count=count, min_coord=-100, max_coord=100)
+        # Вывод статистики
+        success = sum(1 for r in results if r.get('status') == 'ok')
+        failed = len(results) - success
+        print(f"\nCompleted: {success} succeeded, {failed} failed", file=sys.stderr)
+        result = {'status': 'ok', 'total': count, 'success': success, 'failed': failed}
+
     elif args.command == 'circle':
         if len(args.args) < 3:
             print("Error: circle requires 3 arguments: x y radius")
