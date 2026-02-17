@@ -111,9 +111,25 @@ class ZCADIPCClient:
         """Создание текста."""
         return self._send_command('TEXT', [x, y, content, height])
 
+    def begin_batch(self) -> dict:
+        """Начало пакетной вставки примитивов."""
+        return self._send_command('BEGIN_BATCH')
+
+    def end_batch(self) -> dict:
+        """Завершение пакетной вставки и фиксация в чертеже."""
+        return self._send_command('END_BATCH')
+
     def random_lines(self, count: int = 1000, min_coord: float = -100, max_coord: float = 100) -> List[dict]:
-        """Создание множества линий с рандомными координатами."""
+        """Создание множества линий с рандомными координатами в пакетном режиме."""
         results = []
+        
+        # Начинаем пакетный режим
+        result = self.begin_batch()
+        if result.get('status') != 'ok':
+            return [{'status': 'error', 'error': 'Failed to start batch mode'}]
+        results.append(result)
+        
+        # Отправляем все линии
         for i in range(count):
             x1 = random.uniform(min_coord, max_coord)
             y1 = random.uniform(min_coord, max_coord)
@@ -124,7 +140,11 @@ class ZCADIPCClient:
             
             # Вывод прогресса каждые 100 линий
             if (i + 1) % 100 == 0:
-                print(f"Progress: {i + 1}/{count} lines drawn", file=sys.stderr)
+                print(f"Progress: {i + 1}/{count} lines queued", file=sys.stderr)
+        
+        # Завершаем пакетный режим
+        result = self.end_batch()
+        results.append(result)
         
         return results
 
@@ -185,13 +205,19 @@ Examples:
 
     elif args.command == 'random_lines':
         count = int(args.args[0]) if args.args else 1000
-        print(f"Drawing {count} random lines with coordinates from -100 to 100...", file=sys.stderr)
+        print(f"Sending {count} random lines to ZCAD (coordinates from -100 to 100)...", file=sys.stderr)
         results = client.random_lines(count=count, min_coord=-100, max_coord=100)
-        # Вывод статистики
-        success = sum(1 for r in results if r.get('status') == 'ok')
-        failed = len(results) - success
-        print(f"\nCompleted: {success} succeeded, {failed} failed", file=sys.stderr)
-        result = {'status': 'ok', 'total': count, 'success': success, 'failed': failed}
+        # Вывод статистики - последний результат это END_BATCH
+        if results:
+            last_result = results[-1]
+            if last_result.get('status') == 'ok':
+                print(f"\nCompleted: {last_result.get('result', 'Batch completed')}", file=sys.stderr)
+                result = {'status': 'ok', 'message': last_result.get('result', 'Batch completed')}
+            else:
+                print(f"\nError: {last_result.get('error', 'Unknown error')}", file=sys.stderr)
+                result = last_result
+        else:
+            result = {'status': 'error', 'error': 'No results'}
 
     elif args.command == 'circle':
         if len(args.args) < 3:

@@ -59,7 +59,7 @@ type
   {** Тип команды IPC }
   TIPCCommandType = (ictPing, ictSave, ictExport, ictLine, ictCircle,
                      ictArc, ictPolyline, ictText, ictMText, ictBlockInsert,
-                     ictUnknown);
+                     ictBeginBatch, ictEndBatch, ictUnknown);
 
   {** Запись команды в очереди }
   PIPCCommand = ^TIPCCommand;
@@ -350,6 +350,10 @@ begin
     Result := ictMText
   else if SameText(ACmdName, 'BLOCKINSERT') then
     Result := ictBlockInsert
+  else if SameText(ACmdName, 'BEGIN_BATCH') then
+    Result := ictBeginBatch
+  else if SameText(ACmdName, 'END_BATCH') then
+    Result := ictEndBatch
   else
     Result := ictUnknown;
 end;

@@ -35,6 +35,8 @@ type
   private
     FTimer: TTimer;
     FProcessing: Boolean;
+    FBatchMode: Boolean;
+    FBatchCount: Integer;
     procedure OnTimer(Sender: TObject);
     procedure ProcessQueue;
   public
@@ -92,6 +94,8 @@ begin
   FTimer.Interval := 100; {** Проверка очереди каждые 100 мс }
   FTimer.OnTimer := @OnTimer;
   FProcessing := False;
+  FBatchMode := False;
+  FBatchCount := 0;
 end;
 
 destructor TIPCCommandHandler.Destroy;
@@ -220,6 +224,45 @@ var
     end;
   end;
   
+  procedure ExecuteBeginBatch;
+  begin
+    FBatchMode := True;
+    FBatchCount := 0;
+    CmdResult.Status := 'ok';
+    CmdResult.Result := 'Batch mode started';
+    ProgramLog.LogOutFormatStr('IPC batch mode started', [], LM_Info, 0);
+  end;
+
+  procedure ExecuteEndBatch;
+  begin
+    if FBatchMode then
+    begin
+      try
+        {** Перемещаем все примитивы из ConstructRoot в чертёж с одним Undo }
+        zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('IPC_BATCH_IMPORT');
+        {** Одна перерисовка после всех примитивов }
+        zcRedrawCurrentDrawing;
+
+        CmdResult.Status := 'ok';
+        CmdResult.Result := Format('Batch mode completed: %d primitives imported', [FBatchCount]);
+        ProgramLog.LogOutFormatStr('IPC batch mode completed: %d primitives', [FBatchCount], LM_Info, 0);
+      except
+        on E: Exception do
+        begin
+          CmdResult.Status := 'error';
+          CmdResult.Error := Format('Batch commit error: %s', [E.Message]);
+        end;
+      end;
+    end
+    else
+    begin
+      CmdResult.Status := 'error';
+      CmdResult.Error := 'EndBatch called without BeginBatch';
+    end;
+    FBatchMode := False;
+    FBatchCount := 0;
+  end;
+
   procedure ExecuteLine;
   var
     PLine: PGDBObjLine;
@@ -231,25 +274,38 @@ var
       CmdResult.Error := 'LINE requires 4 arguments: x1 y1 x2 y2';
       Exit;
     end;
-    
+
     P1.x := GetFloatArg(0);
     P1.y := GetFloatArg(1);
     P1.z := 0;
-    
+
     P2.x := GetFloatArg(2);
     P2.y := GetFloatArg(3);
     P2.z := 0;
-    
+
     try
       PLine := AllocEnt(GDBLineID);
       PLine^.init(nil, nil, LnWtByLayer, P1, P2);
       zcSetEntPropFromCurrentDrawingProp(PLine);
-      zcAddEntToCurrentDrawingWithUndo(PLine);
-      zcRedrawCurrentDrawing;
+      
+      if FBatchMode then
+      begin
+        {** В пакетном режиме добавляем в ConstructRoot без Undo и Redraw }
+        zcAddEntToCurrentDrawingConstructRoot(PLine);
+        Inc(FBatchCount);
+        CmdResult.Result := Format('Line queued: (%.2f,%.2f)-(%.2f,%.2f)',
+          [P1.x, P1.y, P2.x, P2.y]);
+      end
+      else
+      begin
+        {** В обычном режиме добавляем с Undo и Redraw }
+        zcAddEntToCurrentDrawingWithUndo(PLine);
+        zcRedrawCurrentDrawing;
+        CmdResult.Result := Format('Line created: (%.2f,%.2f)-(%.2f,%.2f)',
+          [P1.x, P1.y, P2.x, P2.y]);
+      end;
       
       CmdResult.Status := 'ok';
-      CmdResult.Result := Format('Line created: (%.2f,%.2f)-(%.2f,%.2f)', 
-        [P1.x, P1.y, P2.x, P2.y]);
     except
       on E: Exception do
       begin
@@ -271,22 +327,33 @@ var
       CmdResult.Error := 'CIRCLE requires 3 arguments: x y radius';
       Exit;
     end;
-    
+
     Center.x := GetFloatArg(0);
     Center.y := GetFloatArg(1);
     Center.z := 0;
     Radius := GetFloatArg(2);
-    
+
     try
       PCircle := AllocEnt(GDBCircleID);
       PCircle^.init(nil, nil, LnWtByLayer, Center, Radius);
       zcSetEntPropFromCurrentDrawingProp(PCircle);
-      zcAddEntToCurrentDrawingWithUndo(PCircle);
-      zcRedrawCurrentDrawing;
+      
+      if FBatchMode then
+      begin
+        zcAddEntToCurrentDrawingConstructRoot(PCircle);
+        Inc(FBatchCount);
+        CmdResult.Result := Format('Circle queued: center (%.2f,%.2f), radius %.2f',
+          [Center.x, Center.y, Radius]);
+      end
+      else
+      begin
+        zcAddEntToCurrentDrawingWithUndo(PCircle);
+        zcRedrawCurrentDrawing;
+        CmdResult.Result := Format('Circle created: center (%.2f,%.2f), radius %.2f',
+          [Center.x, Center.y, Radius]);
+      end;
       
       CmdResult.Status := 'ok';
-      CmdResult.Result := Format('Circle created: center (%.2f,%.2f), radius %.2f', 
-        [Center.x, Center.y, Radius]);
     except
       on E: Exception do
       begin
@@ -309,13 +376,13 @@ var
       CmdResult.Error := 'TEXT requires at least 3 arguments: x y text [height]';
       Exit;
     end;
-    
+
     InsertPoint.x := GetFloatArg(0);
     InsertPoint.y := GetFloatArg(1);
     InsertPoint.z := 0;
     TextContent := GetStringArg(2);
     Height := GetFloatArg(3, 2.5);
-    
+
     try
       PText := GDBObjText.CreateInstance;
       zcSetEntPropFromCurrentDrawingProp(PText);
@@ -323,12 +390,23 @@ var
       PText^.Local.P_insert := InsertPoint;
       PText^.Template := TDXFEntsInternalStringType(TextContent);
       PText^.obj_height := Height;
-      zcAddEntToCurrentDrawingWithUndo(PText);
-      zcRedrawCurrentDrawing;
+      
+      if FBatchMode then
+      begin
+        zcAddEntToCurrentDrawingConstructRoot(PText);
+        Inc(FBatchCount);
+        CmdResult.Result := Format('Text queued: "%s" at (%.2f,%.2f)',
+          [TextContent, InsertPoint.x, InsertPoint.y]);
+      end
+      else
+      begin
+        zcAddEntToCurrentDrawingWithUndo(PText);
+        zcRedrawCurrentDrawing;
+        CmdResult.Result := Format('Text created: "%s" at (%.2f,%.2f)',
+          [TextContent, InsertPoint.x, InsertPoint.y]);
+      end;
       
       CmdResult.Status := 'ok';
-      CmdResult.Result := Format('Text created: "%s" at (%.2f,%.2f)', 
-        [TextContent, InsertPoint.x, InsertPoint.y]);
     except
       on E: Exception do
       begin
@@ -366,6 +444,8 @@ begin
         ictLine: ExecuteLine;
         ictCircle: ExecuteCircle;
         ictText: ExecuteText;
+        ictBeginBatch: ExecuteBeginBatch;
+        ictEndBatch: ExecuteEndBatch;
         ictUnknown:
           begin
             CmdResult.Status := 'error';
