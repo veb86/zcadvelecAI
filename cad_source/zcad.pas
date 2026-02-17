@@ -298,6 +298,11 @@ uses
   uzvaccess_command,
   uzvsqlite_command,
 
+  //**IPC Server for remote control**//
+  uzvipcserver,
+  uzvipcintegration,
+  //**//
+
   //**//
   {$ENDIF}
   //contolelschema_main,
