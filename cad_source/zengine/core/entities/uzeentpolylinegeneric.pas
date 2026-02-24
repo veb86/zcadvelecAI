@@ -284,19 +284,25 @@ begin
         else if s='SEQEND' then begin
           programlog.LogOutStr('LoadFromDXF: найден SEQEND - завершение загрузки',LM_Info);
           if isFaceRecord then begin
+            programlog.LogOutFormatStr('LoadFromDXF: SEQEND - currentFace: V1=%d V2=%d V3=%d V4=%d Count=%d',
+              [currentFace.Vertex1,currentFace.Vertex2,currentFace.Vertex3,currentFace.Vertex4,currentFace.VertexCount],LM_Info);
             if (currentFace.VertexCount>=3)and
                ((currentFace.Vertex1<>0)or(currentFace.Vertex2<>0)or
                 (currentFace.Vertex3<>0)or(currentFace.Vertex4<>0)) then begin
               AddTempFace(currentFace);
+              programlog.LogOutStr('LoadFromDXF: SEQEND - грань добавлена',LM_Info);
+            end
+            else begin
+              programlog.LogOutStr('LoadFromDXF: SEQEND - грань НЕ добавлена (некорректная)',LM_Info);
             end;
           end;
           system.Break;
         end;
       end
-      // Читаем индексы вершин грани (коды 71-74)
+      // Читаем индексы вершин грани (коды 71-74) - только isFaceRecord (как в uzeentpolyfacemesh.pas)
       else if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) then begin
         programlog.LogOutFormatStr('LoadFromDXF: код 71 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
-        if isProcessingVertex and isFaceRecord then begin
+        if isFaceRecord then begin
           if vertexIndex<>0 then begin
             if currentFace.VertexCount>=3 then begin
               AddTempFace(currentFace);
@@ -308,33 +314,37 @@ begin
             end;
             currentFace.Vertex1:=vertexIndex;
             currentFace.VertexCount:=1;
+            programlog.LogOutFormatStr('LoadFromDXF: код 71 - установлен V1=%d Count=%d',[vertexIndex,currentFace.VertexCount],LM_Info);
           end;
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) then begin
         programlog.LogOutFormatStr('LoadFromDXF: код 72 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
-        if isProcessingVertex and isFaceRecord then begin
+        if isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex2:=vertexIndex;
             inc(currentFace.VertexCount);
+            programlog.LogOutFormatStr('LoadFromDXF: код 72 - установлен V2=%d Count=%d',[vertexIndex,currentFace.VertexCount],LM_Info);
           end;
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) then begin
         programlog.LogOutFormatStr('LoadFromDXF: код 73 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
-        if isProcessingVertex and isFaceRecord then begin
+        if isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex3:=vertexIndex;
             inc(currentFace.VertexCount);
+            programlog.LogOutFormatStr('LoadFromDXF: код 73 - установлен V3=%d Count=%d',[vertexIndex,currentFace.VertexCount],LM_Info);
           end;
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) then begin
         programlog.LogOutFormatStr('LoadFromDXF: код 74 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
-        if isProcessingVertex and isFaceRecord then begin
+        if isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex4:=vertexIndex;
             inc(currentFace.VertexCount);
+            programlog.LogOutFormatStr('LoadFromDXF: код 74 - установлен V4=%d Count=%d',[vertexIndex,currentFace.VertexCount],LM_Info);
           end;
         end;
       end

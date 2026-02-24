@@ -71,10 +71,12 @@ type
     // Основные методы сущности
     procedure LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
       var drawing:TDrawingDef;var context:TIODXFLoadContext);virtual;
-    
+
     procedure FormatEntity(var drawing:TDrawingDef;
       var DC:TDrawContext;Stage:TEFStages=EFAllStages);virtual;
     procedure SaveToDXF(var outStream:TZctnrVectorBytes;
+      var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);virtual;
+    procedure SaveToDXFFollow(var outStream:TZctnrVectorBytes;
       var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);virtual;
     procedure DrawGeometry(lw:integer;var DC:TDrawContext;
       const inFrustumState:TInBoundingVolume);virtual;
@@ -647,13 +649,23 @@ procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
 var
   i: Integer;
   face: TFaceIndices;
+  tmpHandle: TDWGHandle;
 begin
-  // Записываем заголовок POLYLINE
-  SaveToDXFObjPrefix(outStream,'POLYLINE','AcDbPolyFaceMesh',IODXFContext);
+  // Записываем заголовок POLYLINE (без кода 6 - тип линии)
+  dxfStringout(outStream,0,'POLYLINE');
+  IODXFContext.p2h.MyGetOrCreateValue(@self,IODXFContext.handle,tmpHandle);
+  dxfStringout(outStream,5,inttohex(tmpHandle,0));
+  dxfStringout(outStream,100,'AcDbEntity');
+  dxfStringout(outStream,8,dxfEnCodeString(vp.layer^.Name,IODXFContext.header));
+  if vp.color<>ClByLayer then
+    dxfStringout(outStream,62,IntToStr(vp.color));
+  if vp.lineweight<>-1 then
+    dxfIntegerout(outStream,370,vp.lineweight);
+  dxfStringout(outStream,100,'AcDbPolyFaceMesh');
   dxfIntegerout(outStream,66,1); // Следует за POLYLINE
   dxfvertexout(outStream,10,uzegeometry.NulVertex);
   dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
-  dxfIntegerout(outStream,71,FVertexCount); // Количество вершин
+  dxfIntegerout(outStream,71,vertexarrayinocs.Count); // Количество вершин
   dxfIntegerout(outStream,72,FFaceCount);   // Количество граней
 
   // Сохраняем вершины полигональной сетки
@@ -714,7 +726,14 @@ begin
   inc(IODXFContext.handle);
   dxfStringout(outStream,100,'AcDbEntity');
 
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [FVertexCount, FFaceCount], LM_Info);
+  programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [vertexarrayinocs.Count, FFaceCount], LM_Info);
+end;
+
+procedure GDBObjPolyFaceMesh.SaveToDXFFollow(var outStream:TZctnrVectorBytes;
+  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
+begin
+  // Пустая реализация - PolyFaceMesh не должен сохранять дополнительные вершины через SaveToDXFFollow
+  // Все вершины и грани сохраняются в SaveToDXF
 end;
 
 procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
@@ -851,6 +870,7 @@ var
   pFace:PTempFaceIndices;
 begin
   programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces START Count=%d',[Count],LM_Info);
+  FFaces.initnul; // Инициализация вектора перед использованием
   FFaceCount:=Count;
   for i:=0 to Count-1 do begin
     pFace:=PTempFaceIndices(PtrUInt(TempFaces)+PtrUInt(i*SizeOf(TTempFaceIndices)));
