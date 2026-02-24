@@ -222,6 +222,7 @@ begin
           end;
           isFaceRecord:=True;
           isPolyFaceVertex:=False;
+          isProcessingVertex:=False; // Сбрасываем чтобы не добавлять вершину (0,0,0) из Face Record
           currentFace.VertexCount:=0;
           currentFace.Vertex1:=0;
           currentFace.Vertex2:=0;
@@ -243,12 +244,19 @@ begin
       end
       // Читаем флаг (код группы 70)
       else if dxfLoadGroupCodeInteger(rdr,70,byt,hlGDBWord) then begin
-        programlog.LogOutFormatStr('LoadFromDXF: код 70 = %d (тип=%d)',[hlGDBWord,ord(PolylineSubType)],LM_Info);
+        programlog.LogOutFormatStr('LoadFromDXF: код 70 = %d (тип=%d isFaceRecord=%s)',[hlGDBWord,ord(PolylineSubType),BoolToStr(isFaceRecord,'T','F')],LM_Info);
         if PolylineSubType=PST_3DPolyline then begin
           // Для 3dpolyline: бит 0 = closed
           if (hlGDBWord and 1)=1 then begin
             Closed3D:=True;
             programlog.LogOutStr('LoadFromDXF: установлен флаг Closed',LM_Info);
+          end;
+        end
+        else if PolylineSubType=PST_PolyFaceMesh then begin
+          // Для polyfacemesh: флаг 192 = вершина сетки, 128 = грань
+          if (hlGDBWord and 128)<>0 then begin
+            // Это грань, но мы уже знаем это из AcDbFaceRecord
+            programlog.LogOutStr('LoadFromDXF: флаг Face Record (128)',LM_Info);
           end;
         end;
       end
@@ -287,6 +295,7 @@ begin
       end
       // Читаем индексы вершин грани (коды 71-74)
       else if dxfLoadGroupCodeInteger(rdr,71,byt,vertexIndex) then begin
+        programlog.LogOutFormatStr('LoadFromDXF: код 71 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
         if isProcessingVertex and isFaceRecord then begin
           if vertexIndex<>0 then begin
             if currentFace.VertexCount>=3 then begin
@@ -303,6 +312,7 @@ begin
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,72,byt,vertexIndex) then begin
+        programlog.LogOutFormatStr('LoadFromDXF: код 72 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
         if isProcessingVertex and isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex2:=vertexIndex;
@@ -311,6 +321,7 @@ begin
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,73,byt,vertexIndex) then begin
+        programlog.LogOutFormatStr('LoadFromDXF: код 73 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
         if isProcessingVertex and isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex3:=vertexIndex;
@@ -319,6 +330,7 @@ begin
         end;
       end
       else if dxfLoadGroupCodeInteger(rdr,74,byt,vertexIndex) then begin
+        programlog.LogOutFormatStr('LoadFromDXF: код 74 = %d (isProcessingVertex=%s isFaceRecord=%s)',[vertexIndex,BoolToStr(isProcessingVertex,'T','F'),BoolToStr(isFaceRecord,'T','F')],LM_Info);
         if isProcessingVertex and isFaceRecord then begin
           if vertexIndex<>0 then begin
             currentFace.Vertex4:=vertexIndex;
