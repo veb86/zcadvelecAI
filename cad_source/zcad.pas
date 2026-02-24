@@ -99,6 +99,7 @@ uses
   uzeenttext,uzeentmtext,
   uzeentpoint,
   uzeentpolyline,
+  uzeentpolylinegeneric,
   uzeentpolyfacemesh,
   uzeEntSpline,
   uzeenttable,
@@ -297,6 +298,11 @@ uses
   uzvgetentity,
   uzvaccess_command,
   uzvsqlite_command,
+
+  //**IPC Server for remote control**//
+  uzvipcserver,
+  uzvipcintegration,
+  //**//
 
   //**//
   {$ENDIF}

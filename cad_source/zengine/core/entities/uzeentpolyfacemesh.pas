@@ -41,6 +41,17 @@ type
 
   PFaceIndices = ^TFaceIndices;
 
+  // Вспомогательная структура для временного хранения граней (используется в uzeentpolylinegeneric)
+  TTempFaceIndices = record
+    Vertex1: Integer;
+    Vertex2: Integer;
+    Vertex3: Integer;
+    Vertex4: Integer;
+    VertexCount: Integer;
+  end;
+
+  PTempFaceIndices = ^TTempFaceIndices;
+
   // Вектор для хранения граней
   GDBFaceArray = object(GZVector<TFaceIndices>)
   end;
@@ -78,6 +89,7 @@ type
     function GetFaceVertices(Index: Integer): TFaceIndices;
     procedure AddFace(const Face: TFaceIndices);
     function GetFaceCountReadOnly: Integer; // Только для чтения, для инспектора объектов
+    procedure InitFacesFromTempFaces(TempFaces:PTempFaceIndices;Count:Integer);
     
     // Вспомогательные методы
     class function CreateInstance:PGDBObjPolyFaceMesh;static;
@@ -127,6 +139,7 @@ var
   end;
 
 begin
+  programlog.LogOutStr('uzeentpolyfacemesh: LoadFromDXF START (старый метод, не должен вызываться)',LM_Info);
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul;
@@ -353,11 +366,17 @@ var
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
-  FormatWithoutSnapArray;
-  calcbb(dc);
-  CalcActualVisible(dc.DrawingContext.VActuality);
 
-  if (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
+  // Стадия расчета: только расчеты, необходимые для отображения
+  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then
+  begin
+    FormatWithoutSnapArray;
+    calcbb(dc);
+    CalcActualVisible(dc.DrawingContext.VActuality);
+  end;
+
+  // Стадия отрисовки: создание визуального представления
+  if ((Stage = EFAllStages) or (EFDraw in Stage)) and (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
     Representation.Clear;
 
     // Создаем массив для хранения уникальных рёбер
@@ -625,15 +644,76 @@ end;
 
 procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
   var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
+var
+  i: Integer;
+  face: TFaceIndices;
 begin
+  // Записываем заголовок POLYLINE
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDbPolyFaceMesh',IODXFContext);
-  dxfIntegerout(outStream,66,1);
+  dxfIntegerout(outStream,66,1); // Следует за POLYLINE
   dxfvertexout(outStream,10,uzegeometry.NulVertex);
   dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
   dxfIntegerout(outStream,71,FVertexCount); // Количество вершин
   dxfIntegerout(outStream,72,FFaceCount);   // Количество граней
-  
-  // TODO: Сохранение вершин и граней
+
+  // Сохраняем вершины полигональной сетки
+  for i := 0 to vertexarrayinocs.Count - 1 do
+  begin
+    // VERTEX для вершины полигональной сетки
+    dxfStringout(outStream,0,'VERTEX');
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity');
+    dxfStringout(outStream,100,'AcDbVertex');
+    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex');
+    
+    // Координаты вершины
+    dxfDoubleout(outStream,10,vertexarrayinocs.Items[i].x);
+    dxfDoubleout(outStream,20,vertexarrayinocs.Items[i].y);
+    dxfDoubleout(outStream,30,vertexarrayinocs.Items[i].z);
+    
+    // Флаг для вершины полигональной сетки (64 + 128 = 192)
+    dxfIntegerout(outStream,70,192);
+  end;
+
+  // Сохраняем грани (Face Records)
+  for i := 0 to FFaces.Count - 1 do
+  begin
+    face := GetFaceVertices(i);
+    
+    // VERTEX для Face Record
+    dxfStringout(outStream,0,'VERTEX');
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity');
+    dxfStringout(outStream,100,'AcDbFaceRecord');
+    
+    // Координаты (не используются для Face Record, но должны быть указаны)
+    dxfDoubleout(outStream,10,0.0);
+    dxfDoubleout(outStream,20,0.0);
+    dxfDoubleout(outStream,30,0.0);
+    
+    // Флаг для Face Record (128)
+    dxfIntegerout(outStream,70,128);
+    
+    // Индексы вершин (начинаются с 1, а не с 0)
+    // Сохраняем оригинальные значения, включая отрицательные (для указания видимости ребер)
+    if face.Vertex1 <> 0 then
+      dxfIntegerout(outStream,71,face.Vertex1);
+    if face.Vertex2 <> 0 then
+      dxfIntegerout(outStream,72,face.Vertex2);
+    if face.Vertex3 <> 0 then
+      dxfIntegerout(outStream,73,face.Vertex3);
+    if face.Vertex4 <> 0 then
+      dxfIntegerout(outStream,74,face.Vertex4);
+  end;
+
+  // SEQEND - конец последовательности
+  dxfStringout(outStream,0,'SEQEND');
+  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+  inc(IODXFContext.handle);
+  dxfStringout(outStream,100,'AcDbEntity');
+
   programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [FVertexCount, FFaceCount], LM_Info);
 end;
 
@@ -764,6 +844,28 @@ begin
   Result.bp.ListPos.Owner:=owner;
 end;
 
+procedure GDBObjPolyFaceMesh.InitFacesFromTempFaces(TempFaces:PTempFaceIndices;Count:Integer);
+var
+  i:Integer;
+  FaceIndices:TFaceIndices;
+  pFace:PTempFaceIndices;
+begin
+  programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces START Count=%d',[Count],LM_Info);
+  FFaceCount:=Count;
+  for i:=0 to Count-1 do begin
+    pFace:=PTempFaceIndices(PtrUInt(TempFaces)+PtrUInt(i*SizeOf(TTempFaceIndices)));
+    FaceIndices.Vertex1:=pFace^.Vertex1;
+    FaceIndices.Vertex2:=pFace^.Vertex2;
+    FaceIndices.Vertex3:=pFace^.Vertex3;
+    FaceIndices.Vertex4:=pFace^.Vertex4;
+    FaceIndices.VertexCount:=pFace^.VertexCount;
+    FFaces.PushBackData(FaceIndices);
+    programlog.LogOutFormatStr('  Грань %d: V1=%d V2=%d V3=%d V4=%d Count=%d',
+      [i+1,FaceIndices.Vertex1,FaceIndices.Vertex2,FaceIndices.Vertex3,FaceIndices.Vertex4,FaceIndices.VertexCount],LM_Info);
+  end;
+  programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces END Faces=%d',[FFaces.Count],LM_Info);
+end;
+
 destructor GDBObjPolyFaceMesh.done;
 begin
   FFaces.done;
@@ -771,5 +873,6 @@ begin
 end;
 
 begin
-  RegisterDXFEntity(GDBPolyFaceMeshID,'POLYLINE','PolyFaceMesh',@AllocPolyFaceMesh,@AllocAndInitPolyFaceMesh);
+  // Регистрация только для создания через GenericPolyline
+  RegisterEntity(GDBPolyFaceMeshID,'PolyFaceMesh',@AllocPolyFaceMesh,@AllocAndInitPolyFaceMesh);
 end.

@@ -50,6 +50,7 @@ const {as_normal=0;
   GDBBlockDefID = 15;
   GDBHatchID = 16;
   GDBPolyFaceMeshID = 17;
+  GDBGenericPolylineID = 18;
 
   GDBNetID = 100;
   GDBDeviceID = 101;
