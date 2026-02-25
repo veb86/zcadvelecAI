@@ -101,6 +101,8 @@ end;
 destructor TIPCCommandHandler.Destroy;
 begin
   Stop;
+  FTimer.Free;
+  FTimer := nil;
   inherited;
 end;
 
@@ -496,7 +498,7 @@ procedure IPCIntegrationInit;
 begin
   if IPCCommandHandler = nil then
   begin
-    IPCCommandHandler := TIPCCommandHandler.Create(Application);
+    IPCCommandHandler := TIPCCommandHandler.Create(nil); {** Создаём без владельца, чтобы избежать проблем при завершении }
     IPCCommandHandler.Start;
     ProgramLog.LogOutFormatStr('IPC integration initialized', [], LM_Info, 0);
   end;
@@ -506,6 +508,7 @@ procedure IPCIntegrationDone;
 begin
   if IPCCommandHandler <> nil then
   begin
+    IPCCommandHandler.Stop;
     IPCCommandHandler.Free;
     IPCCommandHandler := nil;
     ProgramLog.LogOutFormatStr('IPC integration finalized', [], LM_Info, 0);
