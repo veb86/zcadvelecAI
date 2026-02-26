@@ -397,7 +397,7 @@ begin
     bw:=bw+2;
   if bw<>0 then
     dxfIntegerout(outStream,71,bw);
-  dxfStringout(outStream,7,PGDBTextStyle(TXTStyle)^.Name);
+  dxfStringout(outStream,7,PGDBTextStyle(TXTStyle)^.Name,IODXFContext.Header);
 
   SaveToDXFObjPostfix(outStream);
 
@@ -418,7 +418,7 @@ begin
   s:=StringReplace(s,#10,'\P',[rfReplaceAll]);
   dxfStringout(outStream,1,z2dxftext(s),IODXFContext.Header);
 
-  dxfStringout(outStream,100,'AcDbText');
+  dxfStringWithoutEncodeOut(outStream,100,'AcDbText');
   dxfIntegerout(outStream,73,vv);
 end;
 
@@ -453,7 +453,7 @@ begin
             else if dxfLoadGroupCodeDouble(rdr,51,byt,textprop.oblique) then
               textprop.oblique:=
                 textprop.oblique*pi/180
-            else if dxfLoadGroupCodeString(rdr,7,byt,style) then begin
+            else if dxfLoadGroupCodeString(rdr,7,byt,style,context.Header) then begin
               TXTStyle:=
                 drawing.GetTextStyleTable^.FindStyle(Style,False);
               if TXTStyle=nil then

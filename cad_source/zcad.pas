@@ -98,8 +98,8 @@ uses
   uzeentlwpolyline,
   uzeenttext,uzeentmtext,
   uzeentpoint,
-  uzeentpolyline,
   uzeentpolylinegeneric,
+  uzeentpolyline,
   uzeentpolyfacemesh,
   uzeEntSpline,
   uzeenttable,
@@ -429,6 +429,7 @@ begin
 
     //отработали))
     sysvar.SYS.SYS_RunTime:=nil;
+    uzcdrawings.finalize;
     programlog.logoutstr('END.',0,LM_Necessarily);
   end;
   programlog.logoutstr('<<<<<<<<<<<<<<<Start units finalization',0,LM_Debug);

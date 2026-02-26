@@ -67,7 +67,7 @@ type
     procedure SaveToDXF(var outStream:TZctnrVectorBytes;
       var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);virtual;
     procedure SaveToDXFPostProcess(var outStream:TZctnrVectorBytes;
-      var IODXFContext:TIODXFSaveContext);virtual;
+      var IODXFContext:TIODXFSaveContext;AAPS:TAdditionalPostProcess=nil;AAPSData:PtrUInt=0);virtual;
     procedure FormatEntity(var drawing:TDrawingDef;
       var DC:TDrawContext;Stage:TEFStages=EFAllStages);virtual;
     procedure ProcessLine(const c:integer;const l1,l2,c1,c2:TzePoint2d;
@@ -200,7 +200,7 @@ begin
   SaveToDXFObjPrefix(outStream,'HATCH','AcDbHatch',IODXFContext);
   dxfvertexout(outStream,10,Local.p_insert);
   dxfvertexout(outStream,210,local.basis.oz);
-  dxfStringout(outStream,2,PatternName);
+  dxfStringout(outStream,2,PatternName,IODXFContext.Header);
   if PPattern=nil then
     dxfIntegerout(outStream,70,1)
   else
@@ -228,7 +228,7 @@ begin
 end;
 
 procedure GDBObjHatch.SaveToDXFPostProcess(var outStream:TZctnrVectorBytes;
-  var IODXFContext:TIODXFSaveContext);
+  var IODXFContext:TIODXFSaveContext;AAPS:TAdditionalPostProcess=nil;AAPSData:PtrUInt=0);
 begin
   inherited;
   if not IsVectorNul(Origin) then
@@ -639,13 +639,13 @@ begin
   byt:=rdr.ParseInteger;
   while byt<>0 do begin
     if not LoadFromDXFObjShared(rdr,byt,ptu,drawing,context) then
-      if not Path.LoadFromDXF(rdr,byt) then
+      if not Path.LoadFromDXF(rdr,byt,context) then
         if not LoadPatternFromDXF(PPattern,rdr,byt,Angle,Scale) then
           if not dxfLoadGroupCodeInteger(rdr,75,byt,hstyle) then
             if not dxfLoadGroupCodeDouble(rdr,52,byt,Angle) then
               if not dxfLoadGroupCodeDouble(rdr,41,byt,Scale) then
-                if not dxfLoadGroupCodeString(rdr,2,byt,PatternName) then
-                  if not dxfLoadGroupCodeString(rdr,2,byt,PatternName) then
+                //if not dxfLoadGroupCodeString(rdr,2,byt,PatternName,context.Header) then
+                  if not dxfLoadGroupCodeString(rdr,2,byt,PatternName,context.Header) then
                     if not dxfLoadGroupCodeVertex(rdr,1010,byt,Origin) then
                       rdr.SkipString;
     byt:=rdr.ParseInteger;

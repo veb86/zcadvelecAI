@@ -28,8 +28,7 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzclog,
-  uzcinterface;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
 resourcestring
   rsLoadDXFFile='Load DXF file';
 type
@@ -61,7 +60,6 @@ function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const Lo
 function savedxf2000(const SavedFileName:String; const TemplateFileName:String;var drawing:TSimpleDrawing;codepage:integer):boolean;
 
 implementation
-var FOC:Integer;
 
 function IsIgnoredEntity(const name:String):Integer;
 var
@@ -354,6 +352,19 @@ begin
           end;
           if PGDBObjEntity(pobj)^.PExtAttrib^.OwnerHandle>200 then
             newowner:=context.h2p.MyGetValue(PGDBObjEntity(pobj)^.PExtAttrib^.OwnerHandle).p;
+
+          if newowner<>nil then
+            case newowner.DXFLoadTryMi(PExtLoadData,pobj) of
+              TR_NeedTrash:begin
+                postobj:=nil;
+                trash:=true;
+              end;
+              TR_Nothing:begin
+                pointer(postobj):=PGDBObjEntity(pobj)^.FromDXFPostProcessBeforeAdd(PExtLoadData,drawing);
+                trash:=false;
+              end;
+          end;
+
           if PGDBObjEntity(pobj)^.PExtAttrib^.OwnerHandle=h_trash then
             trash:=true;
         end;
@@ -372,11 +383,17 @@ begin
             pobj^.CalcObjMatrix(@drawing);
         end;
         if not trash then begin
-          newowner^.AddMi(@pobj);
-        if foc=0 then begin
-          PGDBObjEntity(pobj)^.BuildGeometry(drawing);
-          PGDBObjEntity(pobj)^.FormatAfterDXFLoad(drawing,dc);
-          PGDBObjEntity(pobj)^.FromDXFPostProcessAfterAdd;
+          newowner^.DXFLoadAddMi(pobj);
+        if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
+          if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
+            {PGDBObjEntity(pobj)^.BuildGeometry(drawing);
+            PGDBObjEntity(pobj)^.FormatAfterDXFLoad(drawing,dc);
+            PGDBObjEntity(pobj)^.FromDXFPostProcessAfterAdd;}
+          end else begin
+            PGDBObjEntity(pobj)^.BuildGeometry(drawing);
+            PGDBObjEntity(pobj)^.FormatAfterDXFLoad(drawing,dc);
+            PGDBObjEntity(pobj)^.FromDXFPostProcessAfterAdd;
+          end
         end;
         end else begin
           pobj^.done;
@@ -397,13 +414,13 @@ begin
           if newowner<>owner then begin
             m4:=PGDBObjEntity(newowner)^.getmatrix^;
             MatrixInvert(m4);
-            postobj^.FormatEntity(drawing,dc);
+            postobj^.FormatEntity(drawing,dc,[EFCalcEntityCS]);
             postobj^.transform(m4);
           end;
-          newowner^.AddMi(@postobj);
+          newowner^.AddMi(postobj);
           if assigned(pobj^.EntExtensions)then
             pobj^.EntExtensions.CopyAllExtToEnt(pobj,postobj);
-          if foc=0 then begin
+          if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
             PGDBObjEntity(postobj)^.BuildGeometry(drawing);
             PGDBObjEntity(postobj)^.FormatAfterDXFLoad(drawing,dc);
             PGDBObjEntity(postobj)^.FromDXFPostProcessAfterAdd;
@@ -1202,12 +1219,10 @@ begin
                     byt:=rdr.ParseInteger;
                 end;
                 zDebugLn(format('{D+}[DXF_CONTENTS]Base x:%g y:%g z:%g',[tp^.Base.x,tp^.Base.y,tp^.Base.z]));
-                inc(foc);
                 SaveOptions:=ZCDCtx.dc.Options;
                 exclude(ZCDCtx.dc.Options,DCODrawable);
                 AddEntitiesFromDXF(rdr,'ENDBLK',tp,ZCDCtx.pdrawing^,ZCDCtx.dc,context);
                 ZCDCtx.dc.Options:=SaveOptions;
-                dec(foc);
                 tp^.LoadFromDXF(rdr,nil,ZCDCtx.pdrawing^,context);
                 blockload:=true;
                 zDebugLn('{D-}[DXF_CONTENTS]end block;');
@@ -1643,11 +1658,11 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(100));
                 outstream.TXTAddStringEOL('AcDbBlockEnd');
 
-                dxfStringout(outstream,1001,ZCADAppNameInDXF);
-                dxfStringout(outstream,1002,'{');
+                dxfStringWithoutEncodeOut(outstream,1001,ZCADAppNameInDXF);
+                dxfStringWithoutEncodeOut(outstream,1002,'{');
                 if assigned(PBlockdefArray(drawing.BlockDefArray.parray)^[i].EntExtensions) then
                   PBlockdefArray(drawing.BlockDefArray.parray)^[i].EntExtensions.RunSaveToDxf(outstream,@PBlockdefArray(drawing.BlockDefArray.parray)^[i],IODXFContext);
-                dxfStringout(outstream,1002,'}');
+                dxfStringWithoutEncodeOut(outstream,1002,'}');
 
 
               end;
@@ -2563,5 +2578,4 @@ ENDTAB}
   IODXFContext.done;
 end;
 begin
-  FOC:=0;//убрать нахер
 end.

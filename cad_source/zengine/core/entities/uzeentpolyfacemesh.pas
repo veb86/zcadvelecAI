@@ -1,3 +1,6 @@
+{На базе кода сгенерированного ИИ}
+
+
 {
 *****************************************************************************
 *                                                                           *
@@ -141,7 +144,7 @@ var
   end;
 
 begin
-  programlog.LogOutStr('uzeentpolyfacemesh: LoadFromDXF START (старый метод, не должен вызываться)',LM_Info);
+  //programlog.LogOutStr('uzeentpolyfacemesh: LoadFromDXF START (старый метод, не должен вызываться)',LM_Info);
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul;
@@ -652,16 +655,16 @@ var
   tmpHandle: TDWGHandle;
 begin
   // Записываем заголовок POLYLINE (без кода 6 - тип линии)
-  dxfStringout(outStream,0,'POLYLINE');
+  dxfStringout(outStream,0,'POLYLINE',IODXFContext.header);
   IODXFContext.p2h.MyGetOrCreateValue(@self,IODXFContext.handle,tmpHandle);
-  dxfStringout(outStream,5,inttohex(tmpHandle,0));
-  dxfStringout(outStream,100,'AcDbEntity');
-  dxfStringout(outStream,8,dxfEnCodeString(vp.layer^.Name,IODXFContext.header));
+  dxfStringout(outStream,5,inttohex(tmpHandle,0),IODXFContext.header);
+  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+  dxfStringout(outStream,8,vp.layer^.Name,IODXFContext.header);
   if vp.color<>ClByLayer then
-    dxfStringout(outStream,62,IntToStr(vp.color));
+    dxfStringout(outStream,62,IntToStr(vp.color),IODXFContext.header);
   if vp.lineweight<>-1 then
     dxfIntegerout(outStream,370,vp.lineweight);
-  dxfStringout(outStream,100,'AcDbPolyFaceMesh');
+  dxfStringout(outStream,100,'AcDbPolyFaceMesh',IODXFContext.header);
   dxfIntegerout(outStream,66,1); // Следует за POLYLINE
   dxfvertexout(outStream,10,uzegeometry.NulVertex);
   dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
@@ -672,12 +675,12 @@ begin
   for i := 0 to vertexarrayinocs.Count - 1 do
   begin
     // VERTEX для вершины полигональной сетки
-    dxfStringout(outStream,0,'VERTEX');
-    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
     inc(IODXFContext.handle);
-    dxfStringout(outStream,100,'AcDbEntity');
-    dxfStringout(outStream,100,'AcDbVertex');
-    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex');
+    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbVertex',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex',IODXFContext.header);
     
     // Координаты вершины
     dxfDoubleout(outStream,10,vertexarrayinocs.Items[i].x);
@@ -694,11 +697,11 @@ begin
     face := GetFaceVertices(i);
     
     // VERTEX для Face Record
-    dxfStringout(outStream,0,'VERTEX');
-    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
     inc(IODXFContext.handle);
-    dxfStringout(outStream,100,'AcDbEntity');
-    dxfStringout(outStream,100,'AcDbFaceRecord');
+    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbFaceRecord',IODXFContext.header);
     
     // Координаты (не используются для Face Record, но должны быть указаны)
     dxfDoubleout(outStream,10,0.0);
@@ -721,12 +724,12 @@ begin
   end;
 
   // SEQEND - конец последовательности
-  dxfStringout(outStream,0,'SEQEND');
-  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0));
+  dxfStringout(outStream,0,'SEQEND',IODXFContext.header);
+  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
   inc(IODXFContext.handle);
-  dxfStringout(outStream,100,'AcDbEntity');
+  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
 
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [vertexarrayinocs.Count, FFaceCount], LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [vertexarrayinocs.Count, FFaceCount], LM_Info);
 end;
 
 procedure GDBObjPolyFaceMesh.SaveToDXFFollow(var outStream:TZctnrVectorBytes;
@@ -869,7 +872,7 @@ var
   FaceIndices:TFaceIndices;
   pFace:PTempFaceIndices;
 begin
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces START Count=%d',[Count],LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces START Count=%d',[Count],LM_Info);
   FFaces.initnul; // Инициализация вектора перед использованием
   FFaceCount:=Count;
   for i:=0 to Count-1 do begin
@@ -880,10 +883,10 @@ begin
     FaceIndices.Vertex4:=pFace^.Vertex4;
     FaceIndices.VertexCount:=pFace^.VertexCount;
     FFaces.PushBackData(FaceIndices);
-    programlog.LogOutFormatStr('  Грань %d: V1=%d V2=%d V3=%d V4=%d Count=%d',
-      [i+1,FaceIndices.Vertex1,FaceIndices.Vertex2,FaceIndices.Vertex3,FaceIndices.Vertex4,FaceIndices.VertexCount],LM_Info);
+    //programlog.LogOutFormatStr('  Грань %d: V1=%d V2=%d V3=%d V4=%d Count=%d',
+    //  [i+1,FaceIndices.Vertex1,FaceIndices.Vertex2,FaceIndices.Vertex3,FaceIndices.Vertex4,FaceIndices.VertexCount],LM_Info);
   end;
-  programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces END Faces=%d',[FFaces.Count],LM_Info);
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: InitFacesFromTempFaces END Faces=%d',[FFaces.Count],LM_Info);
 end;
 
 destructor GDBObjPolyFaceMesh.done;
