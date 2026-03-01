@@ -64,16 +64,18 @@ type
   TEdgePair = record
     idx1, idx2: Integer;
   end;
-  TEdgePairArray = array of TEdgePair;
+
+  GDBEdgePairArray = object(GZVector<TEdgePair>)
+  end;
 
   GDBObjPolyFaceMesh=object(GDBObjCurve)
   private
     FVertexCount: Integer;    // Количество вершин в сети
     FFaceCount: Integer;      // Количество граней в сети
     FFaces: GDBFaceArray;     // Вектор индексов граней
-    
+
     // Вспомогательная процедура для формирования уникальных рёбер
-    procedure BuildEdgePairs(out edgePairs:TEdgePairArray; out edgeCount: Integer);
+    procedure BuildEdgePairs(out edgePairs:GDBEdgePairArray; out edgeCount: Integer);
     
   public
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
@@ -123,7 +125,7 @@ begin
   FFaces.initnul;
 end;
 
-procedure GDBObjPolyFaceMesh.BuildEdgePairs(out edgePairs: TEdgePairArray;
+procedure GDBObjPolyFaceMesh.BuildEdgePairs(out edgePairs: GDBEdgePairArray;
   out edgeCount: Integer);
 var
   i: Integer;
@@ -132,6 +134,7 @@ var
   absIndex1, absIndex2: Integer;
   edgeKey: string;
   drawnEdges: array of string;
+  ep: TEdgePair;
 
   function EdgeAlreadyDrawn(const key: string): Boolean;
   var
@@ -148,18 +151,9 @@ var
     Result := False;
   end;
 
-  procedure AddEdgeToDrawn(const key: string);
-  var
-    newSize: Integer;
-  begin
-    newSize := system.Length(drawnEdges);
-    system.SetLength(drawnEdges, newSize + 1);
-    drawnEdges[newSize] := key;
-  end;
-
 begin
+  edgePairs.Clear;
   edgeCount := 0;
-  system.SetLength(edgePairs, 0);
   system.SetLength(drawnEdges, 0);
 
   for i := 0 to FFaces.Count - 1 do
@@ -193,10 +187,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -223,10 +216,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -253,10 +245,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -286,10 +277,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -316,10 +306,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -346,10 +335,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -376,10 +364,9 @@ begin
             edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
             if not EdgeAlreadyDrawn(edgeKey) then
             begin
-              AddEdgeToDrawn(edgeKey);
-              system.SetLength(edgePairs, edgeCount + 1);
-              edgePairs[edgeCount].idx1 := vertexIndex1;
-              edgePairs[edgeCount].idx2 := vertexIndex2;
+              ep.idx1 := vertexIndex1;
+              ep.idx2 := vertexIndex2;
+              edgePairs.PushBackData(ep);
               Inc(edgeCount);
             end;
           end;
@@ -601,7 +588,7 @@ procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
   var DC:TDrawContext;Stage:TEFStages=EFAllStages);
 var
   i: Integer;
-  edgePairs: TEdgePairArray;
+  edgePairs: GDBEdgePairArray;
   edgeCount: Integer;
   tempPoint1, tempPoint2: TzePoint3d;
 begin
@@ -621,18 +608,23 @@ begin
     Representation.Clear;
 
     // Формируем уникальные рёбра через общую процедуру
-    BuildEdgePairs(edgePairs, edgeCount);
+    edgePairs.initnul;
+    try
+      BuildEdgePairs(edgePairs, edgeCount);
 
-    // Отрисовываем рёбра в Representation
-    for i := 0 to edgeCount - 1 do
-    begin
-      if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
-         (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
+      // Отрисовываем рёбра в Representation
+      for i := 0 to edgeCount - 1 do
       begin
-        tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
-        tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
-        Representation.DrawLineWithoutLT(dc, tempPoint1, tempPoint2);
+        if (edgePairs.parray^[i].idx1 > 0) and (edgePairs.parray^[i].idx1 <= VertexArrayInWCS.Count) and
+           (edgePairs.parray^[i].idx2 > 0) and (edgePairs.parray^[i].idx2 <= VertexArrayInWCS.Count) then
+        begin
+          tempPoint1 := VertexArrayInWCS.Items[edgePairs.parray^[i].idx1 - 1];
+          tempPoint2 := VertexArrayInWCS.Items[edgePairs.parray^[i].idx2 - 1];
+          Representation.DrawLineWithoutLT(dc, tempPoint1, tempPoint2);
+        end;
       end;
+    finally
+      edgePairs.done;
     end;
   end;
 
@@ -736,7 +728,7 @@ procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
   const inFrustumState:TInBoundingVolume);
 var
   i: Integer;
-  edgePairs: TEdgePairArray;
+  edgePairs: GDBEdgePairArray;
   edgeCount: Integer;
   tempPoint1, tempPoint2: TzePoint3d;
 begin
@@ -744,19 +736,24 @@ begin
     Это необходимо потому, что при трансформации (перемещении/повороте)
     вершины смещаются правильно, но Representation не перестраивается. }
 
-  { Формируем уникальные рёбра через общую процедуру (как в FormatEntity) }
-  BuildEdgePairs(edgePairs, edgeCount);
+  edgePairs.initnul;
+  try
+    { Формируем уникальные рёбра через общую процедуру (как в FormatEntity) }
+    BuildEdgePairs(edgePairs, edgeCount);
 
-  { Отрисовка всех уникальных рёбер напрямую через drawer }
-  for i := 0 to edgeCount - 1 do
-  begin
-    if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
-       (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
+    { Отрисовка всех уникальных рёбер напрямую через drawer }
+    for i := 0 to edgeCount - 1 do
     begin
-      tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
-      tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
-      DC.drawer.DrawLine3DInModelSpace(tempPoint1, tempPoint2, DC.DrawingContext.matrixs);
+      if (edgePairs.parray^[i].idx1 > 0) and (edgePairs.parray^[i].idx1 <= VertexArrayInWCS.Count) and
+         (edgePairs.parray^[i].idx2 > 0) and (edgePairs.parray^[i].idx2 <= VertexArrayInWCS.Count) then
+      begin
+        tempPoint1 := VertexArrayInWCS.Items[edgePairs.parray^[i].idx1 - 1];
+        tempPoint2 := VertexArrayInWCS.Items[edgePairs.parray^[i].idx2 - 1];
+        DC.drawer.DrawLine3DInModelSpace(tempPoint1, tempPoint2, DC.DrawingContext.matrixs);
+      end;
     end;
+  finally
+    edgePairs.done;
   end;
 end;
 //
