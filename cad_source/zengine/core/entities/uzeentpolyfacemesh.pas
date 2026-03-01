@@ -61,19 +61,27 @@ type
 
   PGDBObjPolyFaceMesh=^GDBObjPolyFaceMesh;
 
+  TEdgePair = record
+    idx1, idx2: Integer;
+  end;
+  TEdgePairArray = array of TEdgePair;
+
   GDBObjPolyFaceMesh=object(GDBObjCurve)
   private
     FVertexCount: Integer;    // Количество вершин в сети
     FFaceCount: Integer;      // Количество граней в сети
     FFaces: GDBFaceArray;     // Вектор индексов граней
     
+    // Вспомогательная процедура для формирования уникальных рёбер
+    procedure BuildEdgePairs(out edgePairs:TEdgePairArray; out edgeCount: Integer);
+    
   public
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
       LW:smallint);
     
     // Основные методы сущности
-    procedure LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
-      var drawing:TDrawingDef;var context:TIODXFLoadContext);virtual;
+    //procedure LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
+    //  var drawing:TDrawingDef;var context:TIODXFLoadContext);virtual;
 
     procedure FormatEntity(var drawing:TDrawingDef;
       var DC:TDrawContext;Stage:TEFStages=EFAllStages);virtual;
@@ -115,632 +123,8 @@ begin
   FFaces.initnul;
 end;
 
-procedure GDBObjPolyFaceMesh.LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
-  var drawing:TDrawingDef;var context:TIODXFLoadContext);
-var
-  s: string;
-  byt: integer;
-  polylineFlags: integer;
-  currentVertex: TzePoint3d;
-  currentFace: TFaceIndices;
-  vertexIndex: Integer;
-  isProcessingVertex: Boolean;
-  isFaceRecord: Boolean;
-  isPolyFaceVertex: Boolean;
-
-  procedure AddCurrentFace;
-  begin
-    if (currentFace.VertexCount >= 3) and
-       ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or
-        (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
-      FFaces.PushBackData(currentFace);
-      inc(FFaceCount);
-      currentFace.VertexCount := 0;
-      currentFace.Vertex1 := 0;
-      currentFace.Vertex2 := 0;
-      currentFace.Vertex3 := 0;
-      currentFace.Vertex4 := 0;
-    end;
-  end;
-
-begin
-  //programlog.LogOutStr('uzeentpolyfacemesh: LoadFromDXF START (старый метод, не должен вызываться)',LM_Info);
-  FVertexCount := 0;
-  FFaceCount := 0;
-  FFaces.initnul;
-  context.GDBVertexLoadCache.Clear;
-
-  polylineFlags := 0;
-  currentVertex := NulVertex;
-  isProcessingVertex := False;
-  isFaceRecord := False;
-  isPolyFaceVertex := False;
-
-  currentFace.VertexCount := 0;
-  currentFace.Vertex1 := 0;
-  currentFace.Vertex2 := 0;
-  currentFace.Vertex3 := 0;
-  currentFace.Vertex4 := 0;
-
-  byt := rdr.ParseInteger;
-  while not rdr.EOF do begin
-    case byt of
-      0:
-      begin
-        s := rdr.ParseString;
-        if s = 'VERTEX' then begin
-          if isFaceRecord then
-            AddCurrentFace;
-          isProcessingVertex := True;
-          isFaceRecord := False;
-          isPolyFaceVertex := False;
-          currentVertex := NulVertex;
-        end
-        else if s = 'SEQEND' then begin
-          if isFaceRecord then
-            AddCurrentFace;
-          system.Break;
-        end;
-      end;
-      10:
-      begin
-        if isProcessingVertex and not isFaceRecord then begin
-          currentVertex.x := rdr.ParseDouble;
-          byt := rdr.ParseInteger;
-          if byt = 20 then begin
-            currentVertex.y := rdr.ParseDouble;
-            byt := rdr.ParseInteger;
-            if byt = 30 then begin
-              currentVertex.z := rdr.ParseDouble;
-              if isPolyFaceVertex then
-                context.GDBVertexLoadCache.PushBackData(currentVertex);
-              byt := rdr.ParseInteger;
-              continue;
-            end
-            else
-              currentVertex.z := 0;
-          end
-          else
-            currentVertex.y := 0;
-        end
-        else
-          rdr.ParseDouble;
-      end;
-      70:
-      begin
-        polylineFlags := rdr.ParseInteger;
-      end;
-      71:
-      begin
-        if isProcessingVertex and isFaceRecord then begin
-          vertexIndex := rdr.ParseInteger;
-          if vertexIndex <> 0 then begin
-            AddCurrentFace;
-            currentFace.Vertex1 := vertexIndex;
-            currentFace.VertexCount := 1;
-          end
-          else
-            rdr.ParseInteger;
-        end
-        else if not isProcessingVertex then begin
-          rdr.ParseInteger;
-        end
-        else
-          rdr.ParseInteger;
-      end;
-      72:
-      begin
-        if isProcessingVertex and isFaceRecord then begin
-          vertexIndex := rdr.ParseInteger;
-          if vertexIndex <> 0 then begin
-            currentFace.Vertex2 := vertexIndex;
-            inc(currentFace.VertexCount);
-          end;
-        end
-        else if not isProcessingVertex then begin
-          rdr.ParseInteger;
-        end
-        else
-          rdr.ParseInteger;
-      end;
-      73:
-      begin
-        if isProcessingVertex and isFaceRecord then begin
-          vertexIndex := rdr.ParseInteger;
-          if vertexIndex <> 0 then begin
-            currentFace.Vertex3 := vertexIndex;
-            inc(currentFace.VertexCount);
-          end;
-        end
-        else
-          rdr.ParseInteger;
-      end;
-      74:
-      begin
-        if isProcessingVertex and isFaceRecord then begin
-          vertexIndex := rdr.ParseInteger;
-          if vertexIndex <> 0 then begin
-            currentFace.Vertex4 := vertexIndex;
-            inc(currentFace.VertexCount);
-          end;
-        end
-        else
-          rdr.ParseInteger;
-      end;
-      100:
-      begin
-        s := rdr.ParseString;
-        if isProcessingVertex then begin
-          if s = 'AcDbPolyFaceMeshVertex' then begin
-            if isFaceRecord then
-              AddCurrentFace;
-            isPolyFaceVertex := True;
-            isFaceRecord := False;
-          end
-          else if s = 'AcDbFaceRecord' then begin
-            if isFaceRecord then
-              AddCurrentFace;
-            isFaceRecord := True;
-            isPolyFaceVertex := False;
-            currentFace.VertexCount := 0;
-            currentFace.Vertex1 := 0;
-            currentFace.Vertex2 := 0;
-            currentFace.Vertex3 := 0;
-            currentFace.Vertex4 := 0;
-          end;
-        end;
-      end;
-      210:
-      begin
-        rdr.ParseDouble;
-      end;
-      220:
-      begin
-        rdr.ParseDouble;
-      end;
-      230:
-      begin
-        rdr.ParseDouble;
-      end;
-      62:
-      begin
-        rdr.ParseInteger;
-      end;
-      8:
-      begin
-        rdr.ParseString;
-      end;
-    else
-      rdr.ParseString;
-    end;
-
-    byt := rdr.ParseInteger;
-  end;
-
-  vertexarrayinocs.SetSize(context.GDBVertexLoadCache.Count);
-  context.GDBVertexLoadCache.copyto(vertexarrayinocs);
-  context.GDBVertexLoadCache.Clear;
-  FVertexCount := vertexarrayinocs.Count;
-end;
-
-procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
-  var DC:TDrawContext;Stage:TEFStages=EFAllStages);
-var
-  i: Integer;
-  face: TFaceIndices;
-  vertexIndex1, vertexIndex2: Integer;
-  absIndex1, absIndex2: Integer;
-  edgeKey: string;
-  j: Integer;
-  // Для отслеживания нарисованных рёбер используем динамический массив строк
-  drawnEdges: array of string;
-  edgeExists: Boolean;
-  edgePairs: array of record
-    idx1, idx2: Integer;
-  end;
-  edgeCount: Integer;
-  tempPoint1, tempPoint2: TzePoint3d;
-  //tempArray: TVectorP3D;
-
-  // Внутренняя функция для проверки, существует ли ребро
-  function EdgeAlreadyDrawn(const key: string): Boolean;
-  var
-    k: Integer;
-  begin
-    for k := 0 to High(drawnEdges) do
-    begin
-      if drawnEdges[k] = key then
-      begin
-        Result := True;
-        Exit;
-      end;
-    end;
-    Result := False;
-  end;
-
-  // Внутренняя функция для добавления ребра в список нарисованных
-  procedure AddEdgeToDrawn(const key: string);
-  var
-    newSize: Integer;
-  begin
-    newSize := system.Length(drawnEdges);
-    system.SetLength(drawnEdges, newSize + 1);
-    drawnEdges[newSize] := key;
-  end;
-
-begin
-  if assigned(EntExtensions) then
-    EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
-
-  // Стадия расчета: только расчеты, необходимые для отображения
-  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then
-  begin
-    FormatWithoutSnapArray;
-    calcbb(dc);
-    CalcActualVisible(dc.DrawingContext.VActuality);
-  end;
-
-  // Стадия отрисовки: создание визуального представления
-  if ((Stage = EFAllStages) or (EFDraw in Stage)) and (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
-    Representation.Clear;
-
-    // Создаем массив для хранения уникальных рёбер
-    edgeCount := 0;
-    system.SetLength(edgePairs, 0);
-    system.SetLength(drawnEdges, 0);
-
-    // Проходим по всем граням и формируем рёбра
-    for i := 0 to FFaces.Count - 1 do
-    begin
-      face := GetFaceVertices(i);
-
-      if face.VertexCount < 3 then
-        Continue; // Пропускаем некорректные грани
-
-      // Определяем индексы вершин с учетом их видимости (знака)
-      case face.VertexCount of
-        3: // Треугольник: v1-v2, v2-v3, v3-v1
-        begin
-          // Ребро 1-2: проверяем знак Vertex1 (видимость ребра из вершины 1)
-          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex1);
-            absIndex2 := abs(face.Vertex2);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              // Нормализуем пару вершин для предотвращения дубликатов
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              // Проверяем, не было ли это ребро уже нарисовано
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                // Увеличиваем размер массива и добавляем новое ребро
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-
-          // Ребро 2-3: проверяем знак Vertex2 (видимость ребра из вершины 2)
-          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex2);
-            absIndex2 := abs(face.Vertex3);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-
-          // Ребро 3-1: проверяем знак Vertex3 (видимость ребра из вершины 3)
-          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex3);
-            absIndex2 := abs(face.Vertex1);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-        end;
-
-        4: // Четырехугольник: v1-v2, v2-v3, v3-v4, v4-v1
-        begin
-          // Ребро 1-2: проверяем знак Vertex1 (видимость ребра из вершины 1)
-          if face.Vertex1 > 0 then  // Ребро видимо, если первый индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex1);
-            absIndex2 := abs(face.Vertex2);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-
-          // Ребро 2-3: проверяем знак Vertex2 (видимость ребра из вершины 2)
-          if face.Vertex2 > 0 then  // Ребро видимо, если второй индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex2);
-            absIndex2 := abs(face.Vertex3);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-
-          // Ребро 3-4: проверяем знак Vertex3 (видимость ребра из вершины 3)
-          if face.Vertex3 > 0 then  // Ребро видимо, если третий индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex3);
-            absIndex2 := abs(face.Vertex4);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-
-          // Ребро 4-1: проверяем знак Vertex4 (видимость ребра из вершины 4)
-          if face.Vertex4 > 0 then  // Ребро видимо, если четвертый индекс положительный
-          begin
-            absIndex1 := abs(face.Vertex4);
-            absIndex2 := abs(face.Vertex1);
-            if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
-            begin
-              if absIndex1 > absIndex2 then
-              begin
-                vertexIndex1 := absIndex2;
-                vertexIndex2 := absIndex1;
-              end
-              else
-              begin
-                vertexIndex1 := absIndex1;
-                vertexIndex2 := absIndex2;
-              end;
-
-              edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
-              if not EdgeAlreadyDrawn(edgeKey) then
-              begin
-                AddEdgeToDrawn(edgeKey);
-
-                system.SetLength(edgePairs, edgeCount + 1);
-                edgePairs[edgeCount].idx1 := vertexIndex1;
-                edgePairs[edgeCount].idx2 := vertexIndex2;
-                Inc(edgeCount);
-              end;
-            end;
-          end;
-        end;
-      end;
-    end;
-
-    // Теперь рисуем все уникальные рёбра
-    for i := 0 to edgeCount - 1 do
-    begin
-      if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
-         (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
-      begin
-        // Получаем координаты вершин (учитываем, что индексация в DXF начинается с 1)
-        tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
-        tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
-
-        // Рисуем линию напрямую через drawer
-        Representation.DrawLineWithoutLT(dc, tempPoint1, tempPoint2);
-      end;
-    end;
-  end;
-
-  if assigned(EntExtensions) then
-    EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);
-end;
-
-procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
-  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
-var
-  i: Integer;
-  face: TFaceIndices;
-  tmpHandle: TDWGHandle;
-begin
-  // Записываем заголовок POLYLINE (без кода 6 - тип линии)
-  dxfStringout(outStream,0,'POLYLINE',IODXFContext.header);
-  IODXFContext.p2h.MyGetOrCreateValue(@self,IODXFContext.handle,tmpHandle);
-  dxfStringout(outStream,5,inttohex(tmpHandle,0),IODXFContext.header);
-  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
-  dxfStringout(outStream,8,vp.layer^.Name,IODXFContext.header);
-  if vp.color<>ClByLayer then
-    dxfStringout(outStream,62,IntToStr(vp.color),IODXFContext.header);
-  if vp.lineweight<>-1 then
-    dxfIntegerout(outStream,370,vp.lineweight);
-  dxfStringout(outStream,100,'AcDbPolyFaceMesh',IODXFContext.header);
-  dxfIntegerout(outStream,66,1); // Следует за POLYLINE
-  dxfvertexout(outStream,10,uzegeometry.NulVertex);
-  dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
-  dxfIntegerout(outStream,71,vertexarrayinocs.Count); // Количество вершин
-  dxfIntegerout(outStream,72,FFaceCount);   // Количество граней
-
-  // Сохраняем вершины полигональной сетки
-  for i := 0 to vertexarrayinocs.Count - 1 do
-  begin
-    // VERTEX для вершины полигональной сетки
-    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
-    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
-    inc(IODXFContext.handle);
-    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
-    dxfStringout(outStream,100,'AcDbVertex',IODXFContext.header);
-    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex',IODXFContext.header);
-    
-    // Координаты вершины
-    dxfDoubleout(outStream,10,vertexarrayinocs.Items[i].x);
-    dxfDoubleout(outStream,20,vertexarrayinocs.Items[i].y);
-    dxfDoubleout(outStream,30,vertexarrayinocs.Items[i].z);
-    
-    // Флаг для вершины полигональной сетки (64 + 128 = 192)
-    dxfIntegerout(outStream,70,192);
-  end;
-
-  // Сохраняем грани (Face Records)
-  for i := 0 to FFaces.Count - 1 do
-  begin
-    face := GetFaceVertices(i);
-    
-    // VERTEX для Face Record
-    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
-    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
-    inc(IODXFContext.handle);
-    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
-    dxfStringout(outStream,100,'AcDbFaceRecord',IODXFContext.header);
-    
-    // Координаты (не используются для Face Record, но должны быть указаны)
-    dxfDoubleout(outStream,10,0.0);
-    dxfDoubleout(outStream,20,0.0);
-    dxfDoubleout(outStream,30,0.0);
-    
-    // Флаг для Face Record (128)
-    dxfIntegerout(outStream,70,128);
-    
-    // Индексы вершин (начинаются с 1, а не с 0)
-    // Сохраняем оригинальные значения, включая отрицательные (для указания видимости ребер)
-    if face.Vertex1 <> 0 then
-      dxfIntegerout(outStream,71,face.Vertex1);
-    if face.Vertex2 <> 0 then
-      dxfIntegerout(outStream,72,face.Vertex2);
-    if face.Vertex3 <> 0 then
-      dxfIntegerout(outStream,73,face.Vertex3);
-    if face.Vertex4 <> 0 then
-      dxfIntegerout(outStream,74,face.Vertex4);
-  end;
-
-  // SEQEND - конец последовательности
-  dxfStringout(outStream,0,'SEQEND',IODXFContext.header);
-  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
-  inc(IODXFContext.handle);
-  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
-
-  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [vertexarrayinocs.Count, FFaceCount], LM_Info);
-end;
-
-procedure GDBObjPolyFaceMesh.SaveToDXFFollow(var outStream:TZctnrVectorBytes;
-  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
-begin
-  // Пустая реализация - PolyFaceMesh не должен сохранять дополнительные вершины через SaveToDXFFollow
-  // Все вершины и грани сохраняются в SaveToDXF
-end;
-
-procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
-  const inFrustumState:TInBoundingVolume);
+procedure GDBObjPolyFaceMesh.BuildEdgePairs(out edgePairs: TEdgePairArray;
+  out edgeCount: Integer);
 var
   i: Integer;
   face: TFaceIndices;
@@ -748,11 +132,6 @@ var
   absIndex1, absIndex2: Integer;
   edgeKey: string;
   drawnEdges: array of string;
-  edgeCount: Integer;
-  tempPoint1, tempPoint2: TzePoint3d;
-  edgePairs: array of record
-    idx1, idx2: Integer;
-  end;
 
   function EdgeAlreadyDrawn(const key: string): Boolean;
   var
@@ -779,17 +158,10 @@ var
   end;
 
 begin
-  { Прямая отрисовка граней из актуальных координат VertexArrayInWCS.
-    Это необходимо потому, что при трансформации (перемещении/повороте)
-    вершины смещаются правильно, но Representation не перестраивается.
-    Поэтому рисуем напрямую, аналогично GDBObjCurve.DrawGeometry,
-    который использует DC.drawer.DrawContour3DInModelSpace. }
-  
   edgeCount := 0;
   system.SetLength(edgePairs, 0);
   system.SetLength(drawnEdges, 0);
 
-  { Формируем уникальные рёбра из всех граней }
   for i := 0 to FFaces.Count - 1 do
   begin
     face := GetFaceVertices(i);
@@ -1015,6 +387,365 @@ begin
       end;
     end;
   end;
+end;
+  {
+procedure GDBObjPolyFaceMesh.LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
+  var drawing:TDrawingDef;var context:TIODXFLoadContext);
+var
+  s: string;
+  byt: integer;
+  polylineFlags: integer;
+  currentVertex: TzePoint3d;
+  currentFace: TFaceIndices;
+  vertexIndex: Integer;
+  isProcessingVertex: Boolean;
+  isFaceRecord: Boolean;
+  isPolyFaceVertex: Boolean;
+
+  procedure AddCurrentFace;
+  begin
+    if (currentFace.VertexCount >= 3) and
+       ((currentFace.Vertex1 <> 0) or (currentFace.Vertex2 <> 0) or
+        (currentFace.Vertex3 <> 0) or (currentFace.Vertex4 <> 0)) then begin
+      FFaces.PushBackData(currentFace);
+      inc(FFaceCount);
+      currentFace.VertexCount := 0;
+      currentFace.Vertex1 := 0;
+      currentFace.Vertex2 := 0;
+      currentFace.Vertex3 := 0;
+      currentFace.Vertex4 := 0;
+    end;
+  end;
+
+begin
+  //programlog.LogOutStr('uzeentpolyfacemesh: LoadFromDXF START (старый метод, не должен вызываться)',LM_Info);
+  FVertexCount := 0;
+  FFaceCount := 0;
+  FFaces.initnul;
+  context.GDBVertexLoadCache.Clear;
+
+  polylineFlags := 0;
+  currentVertex := NulVertex;
+  isProcessingVertex := False;
+  isFaceRecord := False;
+  isPolyFaceVertex := False;
+
+  currentFace.VertexCount := 0;
+  currentFace.Vertex1 := 0;
+  currentFace.Vertex2 := 0;
+  currentFace.Vertex3 := 0;
+  currentFace.Vertex4 := 0;
+
+  byt := rdr.ParseInteger;
+  while not rdr.EOF do begin
+    case byt of
+      0:
+      begin
+        s := rdr.ParseString;
+        if s = 'VERTEX' then begin
+          if isFaceRecord then
+            AddCurrentFace;
+          isProcessingVertex := True;
+          isFaceRecord := False;
+          isPolyFaceVertex := False;
+          currentVertex := NulVertex;
+        end
+        else if s = 'SEQEND' then begin
+          if isFaceRecord then
+            AddCurrentFace;
+          system.Break;
+        end;
+      end;
+      10:
+      begin
+        if isProcessingVertex and not isFaceRecord then begin
+          currentVertex.x := rdr.ParseDouble;
+          byt := rdr.ParseInteger;
+          if byt = 20 then begin
+            currentVertex.y := rdr.ParseDouble;
+            byt := rdr.ParseInteger;
+            if byt = 30 then begin
+              currentVertex.z := rdr.ParseDouble;
+              if isPolyFaceVertex then
+                context.GDBVertexLoadCache.PushBackData(currentVertex);
+              byt := rdr.ParseInteger;
+              continue;
+            end
+            else
+              currentVertex.z := 0;
+          end
+          else
+            currentVertex.y := 0;
+        end
+        else
+          rdr.ParseDouble;
+      end;
+      70:
+      begin
+        polylineFlags := rdr.ParseInteger;
+      end;
+      71:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            AddCurrentFace;
+            currentFace.Vertex1 := vertexIndex;
+            currentFace.VertexCount := 1;
+          end
+          else
+            rdr.ParseInteger;
+        end
+        else if not isProcessingVertex then begin
+          rdr.ParseInteger;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      72:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex2 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else if not isProcessingVertex then begin
+          rdr.ParseInteger;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      73:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex3 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      74:
+      begin
+        if isProcessingVertex and isFaceRecord then begin
+          vertexIndex := rdr.ParseInteger;
+          if vertexIndex <> 0 then begin
+            currentFace.Vertex4 := vertexIndex;
+            inc(currentFace.VertexCount);
+          end;
+        end
+        else
+          rdr.ParseInteger;
+      end;
+      100:
+      begin
+        s := rdr.ParseString;
+        if isProcessingVertex then begin
+          if s = 'AcDbPolyFaceMeshVertex' then begin
+            if isFaceRecord then
+              AddCurrentFace;
+            isPolyFaceVertex := True;
+            isFaceRecord := False;
+          end
+          else if s = 'AcDbFaceRecord' then begin
+            if isFaceRecord then
+              AddCurrentFace;
+            isFaceRecord := True;
+            isPolyFaceVertex := False;
+            currentFace.VertexCount := 0;
+            currentFace.Vertex1 := 0;
+            currentFace.Vertex2 := 0;
+            currentFace.Vertex3 := 0;
+            currentFace.Vertex4 := 0;
+          end;
+        end;
+      end;
+      210:
+      begin
+        rdr.ParseDouble;
+      end;
+      220:
+      begin
+        rdr.ParseDouble;
+      end;
+      230:
+      begin
+        rdr.ParseDouble;
+      end;
+      62:
+      begin
+        rdr.ParseInteger;
+      end;
+      8:
+      begin
+        rdr.ParseString;
+      end;
+    else
+      rdr.ParseString;
+    end;
+
+    byt := rdr.ParseInteger;
+  end;
+
+  vertexarrayinocs.SetSize(context.GDBVertexLoadCache.Count);
+  context.GDBVertexLoadCache.copyto(vertexarrayinocs);
+  context.GDBVertexLoadCache.Clear;
+  FVertexCount := vertexarrayinocs.Count;
+end;
+    }
+procedure GDBObjPolyFaceMesh.FormatEntity(var drawing:TDrawingDef;
+  var DC:TDrawContext;Stage:TEFStages=EFAllStages);
+var
+  i: Integer;
+  edgePairs: TEdgePairArray;
+  edgeCount: Integer;
+  tempPoint1, tempPoint2: TzePoint3d;
+begin
+  if assigned(EntExtensions) then
+    EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
+
+  // Стадия расчета: только расчеты, необходимые для отображения
+  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then
+  begin
+    FormatWithoutSnapArray;
+    calcbb(dc);
+    CalcActualVisible(dc.DrawingContext.VActuality);
+  end;
+
+  // Стадия отрисовки: создание визуального представления
+  if ((Stage = EFAllStages) or (EFDraw in Stage)) and (not (ESTemp in State))and(DCODrawable in DC.Options) then begin
+    Representation.Clear;
+
+    // Формируем уникальные рёбра через общую процедуру
+    BuildEdgePairs(edgePairs, edgeCount);
+
+    // Отрисовываем рёбра в Representation
+    for i := 0 to edgeCount - 1 do
+    begin
+      if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
+         (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
+      begin
+        tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
+        tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
+        Representation.DrawLineWithoutLT(dc, tempPoint1, tempPoint2);
+      end;
+    end;
+  end;
+
+  if assigned(EntExtensions) then
+    EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);
+end;
+
+procedure GDBObjPolyFaceMesh.SaveToDXF(var outStream:TZctnrVectorBytes;
+  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
+var
+  i: Integer;
+  face: TFaceIndices;
+  tmpHandle: TDWGHandle;
+begin
+  // Записываем заголовок POLYLINE (без кода 6 - тип линии)
+  dxfStringout(outStream,0,'POLYLINE',IODXFContext.header);
+  IODXFContext.p2h.MyGetOrCreateValue(@self,IODXFContext.handle,tmpHandle);
+  dxfStringout(outStream,5,inttohex(tmpHandle,0),IODXFContext.header);
+  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+  dxfStringout(outStream,8,vp.layer^.Name,IODXFContext.header);
+  if vp.color<>ClByLayer then
+    dxfStringout(outStream,62,IntToStr(vp.color),IODXFContext.header);
+  if vp.lineweight<>-1 then
+    dxfIntegerout(outStream,370,vp.lineweight);
+  dxfStringout(outStream,100,'AcDbPolyFaceMesh',IODXFContext.header);
+  dxfIntegerout(outStream,66,1); // Следует за POLYLINE
+  dxfvertexout(outStream,10,uzegeometry.NulVertex);
+  dxfIntegerout(outStream,70,64); // Флаг Polyface Mesh
+  dxfIntegerout(outStream,71,vertexarrayinocs.Count); // Количество вершин
+  dxfIntegerout(outStream,72,FFaceCount);   // Количество граней
+
+  // Сохраняем вершины полигональной сетки
+  for i := 0 to vertexarrayinocs.Count - 1 do
+  begin
+    // VERTEX для вершины полигональной сетки
+    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbVertex',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbPolyFaceMeshVertex',IODXFContext.header);
+    
+    // Координаты вершины
+    dxfDoubleout(outStream,10,vertexarrayinocs.Items[i].x);
+    dxfDoubleout(outStream,20,vertexarrayinocs.Items[i].y);
+    dxfDoubleout(outStream,30,vertexarrayinocs.Items[i].z);
+    
+    // Флаг для вершины полигональной сетки (64 + 128 = 192)
+    dxfIntegerout(outStream,70,192);
+  end;
+
+  // Сохраняем грани (Face Records)
+  for i := 0 to FFaces.Count - 1 do
+  begin
+    face := GetFaceVertices(i);
+    
+    // VERTEX для Face Record
+    dxfStringout(outStream,0,'VERTEX',IODXFContext.header);
+    dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
+    inc(IODXFContext.handle);
+    dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+    dxfStringout(outStream,100,'AcDbFaceRecord',IODXFContext.header);
+    
+    // Координаты (не используются для Face Record, но должны быть указаны)
+    dxfDoubleout(outStream,10,0.0);
+    dxfDoubleout(outStream,20,0.0);
+    dxfDoubleout(outStream,30,0.0);
+    
+    // Флаг для Face Record (128)
+    dxfIntegerout(outStream,70,128);
+    
+    // Индексы вершин (начинаются с 1, а не с 0)
+    // Сохраняем оригинальные значения, включая отрицательные (для указания видимости ребер)
+    if face.Vertex1 <> 0 then
+      dxfIntegerout(outStream,71,face.Vertex1);
+    if face.Vertex2 <> 0 then
+      dxfIntegerout(outStream,72,face.Vertex2);
+    if face.Vertex3 <> 0 then
+      dxfIntegerout(outStream,73,face.Vertex3);
+    if face.Vertex4 <> 0 then
+      dxfIntegerout(outStream,74,face.Vertex4);
+  end;
+
+  // SEQEND - конец последовательности
+  dxfStringout(outStream,0,'SEQEND',IODXFContext.header);
+  dxfStringout(outStream,5,inttohex(IODXFContext.handle, 0),IODXFContext.header);
+  inc(IODXFContext.handle);
+  dxfStringout(outStream,100,'AcDbEntity',IODXFContext.header);
+
+  //programlog.LogOutFormatStr('uzeentpolyfacemesh: Сохранение PolyFaceMesh с %d вершинами и %d гранями', [vertexarrayinocs.Count, FFaceCount], LM_Info);
+end;
+
+procedure GDBObjPolyFaceMesh.SaveToDXFFollow(var outStream:TZctnrVectorBytes;
+  var drawing:TDrawingDef;var IODXFContext:TIODXFSaveContext);
+begin
+  // Пустая реализация - PolyFaceMesh не должен сохранять дополнительные вершины через SaveToDXFFollow
+  // Все вершины и грани сохраняются в SaveToDXF
+end;
+
+procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
+  const inFrustumState:TInBoundingVolume);
+var
+  i: Integer;
+  edgePairs: TEdgePairArray;
+  edgeCount: Integer;
+  tempPoint1, tempPoint2: TzePoint3d;
+begin
+  { Прямая отрисовка граней из актуальных координат VertexArrayInWCS.
+    Это необходимо потому, что при трансформации (перемещении/повороте)
+    вершины смещаются правильно, но Representation не перестраивается. }
+
+  { Формируем уникальные рёбра через общую процедуру (как в FormatEntity) }
+  BuildEdgePairs(edgePairs, edgeCount);
 
   { Отрисовка всех уникальных рёбер напрямую через drawer }
   for i := 0 to edgeCount - 1 do
