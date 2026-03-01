@@ -1255,8 +1255,8 @@ begin
 
   // Завершаем измерение времени и выводим результат
   timer.EndMeasure;
-  programlog.LogOutFormatStr('AddFromDXF20XX: Загрузка DXF файла завершена, время загрузки: %d мс', [timer.ElapsedMiliSec], LM_Info);
-  zcUI.TextMessage(Format('Загрузка содержимого DXF файла завершена, время: %d мс', [timer.ElapsedMiliSec]), TMWOHistoryOut);
+  //programlog.LogOutFormatStr('AddFromDXF20XX: Загрузка DXF файла завершена, время загрузки: %d мс', [timer.ElapsedMiliSec], LM_Info);
+  //zcUI.TextMessage(Format('Загрузка содержимого DXF файла завершена, время: %d мс', [timer.ElapsedMiliSec]), TMWOHistoryOut);
 
   lps.EndLongProcess(lph);
 end;
@@ -1327,8 +1327,8 @@ begin
   finally
     // Завершаем измерение общего времени загрузки и выводим результат
     globalTimer.EndMeasure;
-    programlog.LogOutFormatStr('AddFromDXF: Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [AFileName, globalTimer.ElapsedMiliSec], LM_Info);
-    zcUI.TextMessage(Format('Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [ExtractFileName(AFileName), globalTimer.ElapsedMiliSec]), TMWOHistoryOut);
+    //programlog.LogOutFormatStr('AddFromDXF: Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [AFileName, globalTimer.ElapsedMiliSec], LM_Info);
+    //zcUI.TextMessage(Format('Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [ExtractFileName(AFileName), globalTimer.ElapsedMiliSec]), TMWOHistoryOut);
 
     zDebugLn('{D-}end; {AddFromDXF}');
   end;

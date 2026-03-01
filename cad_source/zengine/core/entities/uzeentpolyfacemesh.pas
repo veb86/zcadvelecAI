@@ -741,8 +741,292 @@ end;
 
 procedure GDBObjPolyFaceMesh.DrawGeometry(lw:integer;var DC:TDrawContext;
   const inFrustumState:TInBoundingVolume);
+var
+  i: Integer;
+  face: TFaceIndices;
+  vertexIndex1, vertexIndex2: Integer;
+  absIndex1, absIndex2: Integer;
+  edgeKey: string;
+  drawnEdges: array of string;
+  edgeCount: Integer;
+  tempPoint1, tempPoint2: TzePoint3d;
+  edgePairs: array of record
+    idx1, idx2: Integer;
+  end;
+
+  function EdgeAlreadyDrawn(const key: string): Boolean;
+  var
+    k: Integer;
+  begin
+    for k := 0 to High(drawnEdges) do
+    begin
+      if drawnEdges[k] = key then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+    Result := False;
+  end;
+
+  procedure AddEdgeToDrawn(const key: string);
+  var
+    newSize: Integer;
+  begin
+    newSize := system.Length(drawnEdges);
+    system.SetLength(drawnEdges, newSize + 1);
+    drawnEdges[newSize] := key;
+  end;
+
 begin
-  self.Representation.DrawGeometry(DC,VP.BoundingBox,inFrustumState);
+  { Прямая отрисовка граней из актуальных координат VertexArrayInWCS.
+    Это необходимо потому, что при трансформации (перемещении/повороте)
+    вершины смещаются правильно, но Representation не перестраивается.
+    Поэтому рисуем напрямую, аналогично GDBObjCurve.DrawGeometry,
+    который использует DC.drawer.DrawContour3DInModelSpace. }
+  
+  edgeCount := 0;
+  system.SetLength(edgePairs, 0);
+  system.SetLength(drawnEdges, 0);
+
+  { Формируем уникальные рёбра из всех граней }
+  for i := 0 to FFaces.Count - 1 do
+  begin
+    face := GetFaceVertices(i);
+
+    if face.VertexCount < 3 then
+      Continue;
+
+    case face.VertexCount of
+      3: { Треугольник: v1-v2, v2-v3, v3-v1 }
+      begin
+        { Ребро 1-2 }
+        if face.Vertex1 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex1);
+          absIndex2 := abs(face.Vertex2);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+
+        { Ребро 2-3 }
+        if face.Vertex2 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex2);
+          absIndex2 := abs(face.Vertex3);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+
+        { Ребро 3-1 }
+        if face.Vertex3 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex3);
+          absIndex2 := abs(face.Vertex1);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+      end;
+
+      4: { Четырехугольник: v1-v2, v2-v3, v3-v4, v4-v1 }
+      begin
+        { Ребро 1-2 }
+        if face.Vertex1 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex1);
+          absIndex2 := abs(face.Vertex2);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+
+        { Ребро 2-3 }
+        if face.Vertex2 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex2);
+          absIndex2 := abs(face.Vertex3);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+
+        { Ребро 3-4 }
+        if face.Vertex3 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex3);
+          absIndex2 := abs(face.Vertex4);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+
+        { Ребро 4-1 }
+        if face.Vertex4 > 0 then
+        begin
+          absIndex1 := abs(face.Vertex4);
+          absIndex2 := abs(face.Vertex1);
+          if (absIndex1 <= VertexArrayInWCS.Count) and (absIndex2 <= VertexArrayInWCS.Count) then
+          begin
+            if absIndex1 > absIndex2 then
+            begin
+              vertexIndex1 := absIndex2;
+              vertexIndex2 := absIndex1;
+            end
+            else
+            begin
+              vertexIndex1 := absIndex1;
+              vertexIndex2 := absIndex2;
+            end;
+
+            edgeKey := IntToStr(vertexIndex1) + ',' + IntToStr(vertexIndex2);
+            if not EdgeAlreadyDrawn(edgeKey) then
+            begin
+              AddEdgeToDrawn(edgeKey);
+              system.SetLength(edgePairs, edgeCount + 1);
+              edgePairs[edgeCount].idx1 := vertexIndex1;
+              edgePairs[edgeCount].idx2 := vertexIndex2;
+              Inc(edgeCount);
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+
+  { Отрисовка всех уникальных рёбер напрямую через drawer }
+  for i := 0 to edgeCount - 1 do
+  begin
+    if (edgePairs[i].idx1 > 0) and (edgePairs[i].idx1 <= VertexArrayInWCS.Count) and
+       (edgePairs[i].idx2 > 0) and (edgePairs[i].idx2 <= VertexArrayInWCS.Count) then
+    begin
+      tempPoint1 := VertexArrayInWCS.Items[edgePairs[i].idx1 - 1];
+      tempPoint2 := VertexArrayInWCS.Items[edgePairs[i].idx2 - 1];
+      DC.drawer.DrawLine3DInModelSpace(tempPoint1, tempPoint2, DC.DrawingContext.matrixs);
+    end;
+  end;
 end;
 //
 //function GDBObjPolyFaceMesh.Clone(own:Pointer):PGDBObjEntity;
