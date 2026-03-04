@@ -303,6 +303,7 @@ uses
   uzvipcserver,
   uzvipcintegration,
   //**//
+  uexpsvgcommands,
 
   //**//
   {$ENDIF}
