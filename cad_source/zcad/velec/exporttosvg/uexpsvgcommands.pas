@@ -9,82 +9,84 @@ uses
   Classes, SysUtils,
   uzccommandsabstract, uzccommandsimpl, uzccommandsmanager,
   uzeentity, uzcdrawings, uzcinterface,
-  uzeentblockinsert, uexpsvgblock;
+  uzeentblockinsert, uexpsvgblock, uzeconsts, gzctnrVectorTypes,
+  UGDBSelectedObjArray, Dialogs, FileUtil, uzeTypes;
 
 implementation
 
 // Проверка выделения: строго один блок (как в uzvaddconnection)
 function CheckSingleBlockSelected: PGDBObjBlockInsert;
 var
-  psd: PTSelectedObjDescriptor;
-  count: Integer;
+  psd: PSelectedObjDesc;
+  ir: itrec;
   selectedEntity: PGDBObjEntity;
 begin
   Result := nil;
-  
+
   // Получаем массив выделенных объектов (аналогично uzvaddconnection)
-  count := uzcdrawings.GetCurrentDWG.SelObjArray.Count;
-  
-  if count = 0 then
+  if drawings.GetCurrentDWG^.SelObjArray.Count = 0 then
   begin
-    ZCMsgCallBackInterface.TextMessage('Ошибка: не выделено ни одного объекта', TMsgType.SMWarning);
+    zcUI.TextMessage('Ошибка: не выделено ни одного объекта', TMWOShowError);
     Exit;
   end;
-  
-  if count > 1 then
+
+  if drawings.GetCurrentDWG^.SelObjArray.Count > 1 then
   begin
-    ZCMsgCallBackInterface.TextMessage('Ошибка: выделено более одного объекта. Выберите только один блок.', TMsgType.SMWarning);
+    zcUI.TextMessage('Ошибка: выделено более одного объекта. Выберите только один блок.', TMWOShowError);
     Exit;
   end;
-  
+
   // Получаем первый (и единственный) выделенный объект
-  psd := uzcdrawings.GetCurrentDWG.SelObjArray.GetPDataAsPointer(0);
+  psd := drawings.GetCurrentDWG^.SelObjArray.getDataMutable(0);
   if not Assigned(psd) then Exit;
-  
-  selectedEntity := PGDBObjEntity(psd^.objaddr);
+
+  selectedEntity := psd^.objaddr;
   if not Assigned(selectedEntity) then Exit;
-  
+
   // Проверяем, что это блок
-  if selectedEntity.GetType <> GDBBlockInsertID then
+  if selectedEntity^.GetObjType <> GDBBlockInsertID then
   begin
-    ZCMsgCallBackInterface.TextMessage('Ошибка: выделенный объект не является блоком', TMsgType.SMWarning);
+    zcUI.TextMessage('Ошибка: выделенный объект не является блоком', TMWOShowError);
     Exit;
   end;
-  
+
   Result := PGDBObjBlockInsert(selectedEntity);
 end;
 
-procedure ExportSVGBlock_Command;
+function ExportSVGBlock_Command(const Context: TZCADCommandContext;
+  Operands: TCommandOperands): TCommandResult;
 var
   BlockInsert: PGDBObjBlockInsert;
   Exporter: TBlockSVGExporter;
   SaveDialog: TSaveDialog;
   FileName: string;
 begin
+  Result := 0;
+  
   // 1. Проверка выделения
   BlockInsert := CheckSingleBlockSelected;
   if not Assigned(BlockInsert) then Exit;
-  
+
   // 2. Диалог сохранения
   SaveDialog := TSaveDialog.Create(nil);
   try
     SaveDialog.Filter := 'SVG файлы (*.svg)|*.svg|Все файлы (*.*)|*.*';
     SaveDialog.DefaultExt := 'svg';
     SaveDialog.FileName := 'export.svg';
-    
+
     if not SaveDialog.Execute then Exit;
     FileName := SaveDialog.FileName;
   finally
     SaveDialog.Free;
   end;
-  
+
   // 3. Экспорт
   Exporter := TBlockSVGExporter.Create;
   try
     if Exporter.ExportBlock(BlockInsert, FileName) then
-      ZCMsgCallBackInterface.TextMessage('Экспорт завершен успешно: ' + FileName, TMsgType.SMResult)
+      zcUI.TextMessage('Экспорт завершен успешно: ' + FileName, TMWOShowError)
     else
-      ZCMsgCallBackInterface.TextMessage('Ошибка при сохранении файла', TMsgType.SMError);
+      zcUI.TextMessage('Ошибка при сохранении файла', TMWOShowError);
   finally
     Exporter.Free;
   end;
@@ -92,6 +94,6 @@ end;
 
 initialization
   // Регистрация команды
-  CreateCommandFastObjectPlugin(@ExportSVGBlock_Command, 'ExportSVGBlock', 0, 0);
+  CreateZCADCommand(@ExportSVGBlock_Command, 'ExportSVGBlock', 0, 0);
 
 end.

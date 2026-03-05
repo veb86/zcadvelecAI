@@ -9,7 +9,8 @@ uses
   Classes, SysUtils,
   uzeentity, uzeentblockinsert, uzeentline, uzeentcircle,
   uzeentarc, uzeentpolyline, uzegeometrytypes, uzegeometry,
-  uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings;
+  uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings,
+  uzeblockdef, uzeconsts, uzcinterface;
 
 type
   // Класс для экспорта блока в SVG
@@ -57,7 +58,7 @@ end;
 function TBlockSVGExporter.IsEntityVisible(const Entity: PGDBObjEntity): Boolean;
 begin
   // Проверка видимости слоя
-  if Entity.vp.Layer^._on = False then
+  if Entity^.vp.Layer^._on = False then
     Result := False
   else
     Result := True;
@@ -68,10 +69,10 @@ var
   P1, P2: TSVGPoint;
 begin
   if not IsEntityVisible(Line) then Exit;
-  
-  P1 := FTransformer.Transform(Line.CoordInWCS.lBegin);
-  P2 := FTransformer.Transform(Line.CoordInWCS.lEnd);
-  
+
+  P1 := FTransformer.Transform(Line^.CoordInWCS.lBegin);
+  P2 := FTransformer.Transform(Line^.CoordInWCS.lEnd);
+
   FWriter.AddLine(P1.X, P1.Y, P2.X, P2.Y);
   FGeometry.AddPoint(P1.X, P1.Y);
   FGeometry.AddPoint(P2.X, P2.Y);
@@ -84,9 +85,9 @@ var
 begin
   if not IsEntityVisible(Circle) then Exit;
 
-  Center := FTransformer.Transform(Circle.Center);
+  Center := FTransformer.Transform(Circle^.P_insert_in_WCS);
   // Радиус масштабируем (упрощенно, без учета неравномерного масштаба)
-  Radius := Circle.Radius * FTransformer.Scale;
+  Radius := Circle^.Radius * FTransformer.Scale;
 
   FWriter.AddCircle(Center.X, Center.Y, Radius);
   FGeometry.AddPoint(Center.X - Radius, Center.Y - Radius);
@@ -103,18 +104,18 @@ var
 begin
   if not IsEntityVisible(Arc) then Exit;
 
-  Center := Arc.Center;
-  Radius := Arc.Radius;
-  StartAngle := Arc.StartAngle;
-  EndAngle := Arc.EndAngle;
-  
+  Center := Arc^.P_insert_in_WCS;
+  Radius := Arc^.R;
+  StartAngle := Arc^.StartAngle;
+  EndAngle := Arc^.EndAngle;
+
   // Получаем точки и флаги для SVG
   FTransformer.TransformArc(Center, Radius, StartAngle, EndAngle,
     StartPt, EndPt, LargeArcFlag, SweepFlag);
-    
-  FWriter.AddArcPath(StartPt.X, StartPt.Y, Radius, 
+
+  FWriter.AddArcPath(StartPt.X, StartPt.Y, Radius,
     LargeArcFlag, SweepFlag, EndPt.X, EndPt.Y);
-    
+
   FGeometry.AddPoint(StartPt.X, StartPt.Y);
   FGeometry.AddPoint(EndPt.X, EndPt.Y);
 end;
@@ -127,12 +128,12 @@ var
 begin
   if not IsEntityVisible(PL) then Exit;
 
-  if PL.VertexArrayInWCS.Count < 2 then Exit;
+  if PL^.VertexArrayInWCS.Count < 2 then Exit;
 
-  SetLength(Points, PL.VertexArrayInWCS.Count);
-  for i := 0 to PL.VertexArrayInWCS.Count - 1 do
+  SetLength(Points, PL^.VertexArrayInWCS.Count);
+  for i := 0 to PL^.VertexArrayInWCS.Count - 1 do
   begin
-    Vertex := PL.VertexArrayInWCS.getDataMutable(i);
+    Vertex := PL^.VertexArrayInWCS.getDataMutable(i);
     Points[i] := FTransformer.Transform(Vertex^);
     FGeometry.AddPoint(Points[i].X, Points[i].Y);
   end;
@@ -149,39 +150,39 @@ var
   EntityType: Integer;
 begin
   Result := False;
-  
+
   try
     // Получаем определение блока по имени
-    BlockDef := BlockInsert.BlockDef;
+    BlockDef := BlockInsert^.PDef;
     if not Assigned(BlockDef) then
     begin
-      ZCMsgCallBackInterface.TextMessage('Ошибка: определение блока не найдено', TMsgType.SMError);
+      zcUI.TextMessage('Ошибка: определение блока не найдено', TMWOHistoryOut);
       Exit;
     end;
-    
+
     // Настраиваем трансформер из матрицы вставки
-    FTransformer.SetFromBlockInsert(BlockInsert.Matrix);
-    
+    FTransformer.SetFromBlockInsert(BlockInsert^.objMatrix);
+
     // Перебираем примитивы в определении блока (как в getPointConnector из uzvcom)
     // BlockDef.ObjArray содержит примитивы блока
-    for i := 0 to BlockDef.ObjArray.Count - 1 do
+    for i := 0 to BlockDef^.ObjArray.Count - 1 do
     begin
-      Entity := PGDBObjEntity(BlockDef.ObjArray.getData(i));
+      Entity := PGDBObjEntity(BlockDef^.ObjArray.getData(i));
       if not Assigned(Entity) then Continue;
-      
+
       // Проверяем тип примитива
-      EntityType := Entity.GetType;
-      
+      EntityType := Entity^.GetObjType;
+
       case EntityType of
-        GDBLineID: 
+        GDBLineID:
           ProcessLine(PGDBObjLine(Entity));
-        GDBCircleID: 
+        GDBCircleID:
           ProcessCircle(PGDBObjCircle(Entity));
-        GDBArcID: 
+        GDBArcID:
           ProcessArc(PGDBObjArc(Entity));
-        GDBPolylineID: 
+        GDBPolylineID:
           ProcessPolyline(PGDBObjPolyline(Entity));
-        GDBBlockInsertID: 
+        GDBBlockInsertID:
           begin
             // Вложенные блоки игнорируем согласно ТЗ
             // Можно добавить логирование
@@ -198,15 +199,14 @@ begin
     begin
       // Пустой SVG с комментарием
       FWriter.SetBounds(FGeometry.GetBounds);
-      FWriter.FContent.Add('    <!-- Нет поддерживаемых примитивов для экспорта -->');
     end;
-    
+
     Result := FWriter.SaveToFile(OutputFile);
     
   except
     on E: Exception do
     begin
-      ZCMsgCallBackInterface.TextMessage('Ошибка экспорта: ' + E.Message, TMsgType.SMError);
+      zcUI.TextMessage('Ошибка экспорта: ' + E.Message, TMWOHistoryOut);
       Result := False;
     end;
   end;
