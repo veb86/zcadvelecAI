@@ -8,8 +8,8 @@ interface
 uses
   Classes, SysUtils,
   uzeentity, uzeentblockinsert, uzeentline, uzeentcircle,
-  uzeentarc, uzeentpolyline, uzeentlwpolyline, uzegeometrytypes, uzegeometry,
-  uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings,
+  uzeentarc, uzeentpolyline, uzeentlwpolyline, uzeentdevice, uzegeometrytypes, uzegeometry,
+  uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings, uzeTypes,
   uzeblockdef, uzeconsts, uzcinterface;
 
 type
@@ -26,15 +26,18 @@ type
     procedure ProcessArc(const Arc: PGDBObjArc);
     procedure ProcessPolyline(const PL: PGDBObjPolyline);
     procedure ProcessLWPolyline(const LW: PGDBObjLWPolyline);
+    procedure ProcessDevice(const Dev: PGDBObjDevice);
 
     // Проверка видимости слоя
     function IsEntityVisible(const Entity: PGDBObjEntity): Boolean;
   public
     constructor Create;
     destructor Destroy; override;
-    
+
     // Основной метод экспорта
-    function ExportBlock(const BlockInsert: PGDBObjBlockInsert; 
+    function ExportBlock(const BlockInsert: PGDBObjBlockInsert;
+                        const OutputFile: string): Boolean;
+    function ExportDevice(const Device: PGDBObjDevice;
                         const OutputFile: string): Boolean;
   end;
 
@@ -71,8 +74,8 @@ var
 begin
   if not IsEntityVisible(Line) then Exit;
 
-  P1 := FTransformer.Transform(Line^.CoordInWCS.lBegin);
-  P2 := FTransformer.Transform(Line^.CoordInWCS.lEnd);
+  P1 := FTransformer.Transform(Line^.CoordInOCS.lBegin);
+  P2 := FTransformer.Transform(Line^.CoordInOCS.lEnd);
 
   FWriter.AddLine(P1.X, P1.Y, P2.X, P2.Y);
   FGeometry.AddPoint(P1.X, P1.Y);
@@ -86,7 +89,7 @@ var
 begin
   if not IsEntityVisible(Circle) then Exit;
 
-  Center := FTransformer.Transform(Circle^.P_insert_in_WCS);
+  Center := FTransformer.Transform(Circle^.Local.P_insert);
   // Радиус масштабируем (упрощенно, без учета неравномерного масштаба)
   Radius := Circle^.Radius * FTransformer.Scale;
 
@@ -105,7 +108,7 @@ var
 begin
   if not IsEntityVisible(Arc) then Exit;
 
-  Center := Arc^.P_insert_in_WCS;
+  Center := Arc^.Local.P_insert;
   Radius := Arc^.R;
   StartAngle := Arc^.StartAngle;
   EndAngle := Arc^.EndAngle;
@@ -129,12 +132,12 @@ var
 begin
   if not IsEntityVisible(PL) then Exit;
 
-  if PL^.VertexArrayInWCS.Count < 2 then Exit;
+  if PL^.VertexArrayInOCS.Count < 2 then Exit;
 
-  SetLength(Points, PL^.VertexArrayInWCS.Count);
-  for i := 0 to PL^.VertexArrayInWCS.Count - 1 do
+  SetLength(Points, PL^.VertexArrayInOCS.Count);
+  for i := 0 to PL^.VertexArrayInOCS.Count - 1 do
   begin
-    Vertex := PL^.VertexArrayInWCS.getDataMutable(i);
+    Vertex := PL^.VertexArrayInOCS.getDataMutable(i);
     Points[i] := FTransformer.Transform(Vertex^);
     FGeometry.AddPoint(Points[i].X, Points[i].Y);
   end;
@@ -146,17 +149,20 @@ procedure TBlockSVGExporter.ProcessLWPolyline(const LW: PGDBObjLWPolyline);
 var
   Points: array of TSVGPoint;
   i: Integer;
-  Vertex: PzePoint3d;
+  Vertex2D: TzePoint2d;
+  Vertex3D: TzePoint3d;
 begin
   if not IsEntityVisible(LW) then Exit;
 
-  if LW^.Vertex3D_in_WCS_Array.Count < 2 then Exit;
+  if LW^.Vertex2D_in_OCS_Array.Count < 2 then Exit;
 
-  SetLength(Points, LW^.Vertex3D_in_WCS_Array.Count);
-  for i := 0 to LW^.Vertex3D_in_WCS_Array.Count - 1 do
+  SetLength(Points, LW^.Vertex2D_in_OCS_Array.Count);
+  for i := 0 to LW^.Vertex2D_in_OCS_Array.Count - 1 do
   begin
-    Vertex := LW^.Vertex3D_in_WCS_Array.getDataMutable(i);
-    Points[i] := FTransformer.Transform(Vertex^);
+    Vertex2D := LW^.Vertex2D_in_OCS_Array.getData(i);
+    // Преобразуем 2D точку в 3D (Z=0)
+    Vertex3D := CreateVertex(Vertex2D.x, Vertex2D.y, 0);
+    Points[i] := FTransformer.Transform(Vertex3D);
     FGeometry.AddPoint(Points[i].X, Points[i].Y);
   end;
 
@@ -167,6 +173,60 @@ begin
   begin
     FWriter.AddLine(Points[High(Points)].X, Points[High(Points)].Y,
                     Points[0].X, Points[0].Y);
+  end;
+end;
+
+procedure TBlockSVGExporter.ProcessDevice(const Dev: PGDBObjDevice);
+var
+  BlockDef: PGDBObjBlockdef;
+  Entity: PGDBObjEntity;
+  i: Integer;
+  EntityType: TObjID;
+  OldTransformer: TSVGTransformer;
+begin
+  if not IsEntityVisible(Dev) then Exit;
+
+  // Получаем определение блока устройства
+  BlockDef := Dev^.PDef;
+  if not Assigned(BlockDef) then Exit;
+
+  // Сохраняем текущий трансформер
+  OldTransformer := FTransformer;
+  try
+    // Настраиваем трансформер из матрицы устройства
+    FTransformer := TSVGTransformer.Create;
+    try
+      FTransformer.SetFromBlockInsert(Dev^.objMatrix);
+
+      // Перебираем примитивы в определении блока устройства
+      for i := 0 to BlockDef^.ObjArray.Count - 1 do
+      begin
+        Entity := PGDBObjEntity(BlockDef^.ObjArray.getData(i));
+        if not Assigned(Entity) then Continue;
+
+        // Проверяем тип примитива
+        EntityType := Entity^.GetObjType;
+
+        case EntityType of
+          GDBLineID:
+            ProcessLine(PGDBObjLine(Entity));
+          GDBCircleID:
+            ProcessCircle(PGDBObjCircle(Entity));
+          GDBArcID:
+            ProcessArc(PGDBObjArc(Entity));
+          GDBPolylineID:
+            ProcessPolyline(PGDBObjPolyline(Entity));
+          GDBLWPolylineID:
+            ProcessLWPolyline(PGDBObjLWPolyline(Entity));
+        end;
+      end;
+    finally
+      FTransformer.Free;
+      FTransformer := OldTransformer;
+    end;
+  except
+    FTransformer := OldTransformer;
+    raise;
   end;
 end;
 
@@ -189,8 +249,8 @@ begin
       Exit;
     end;
 
-    // Настраиваем трансформер из матрицы вставки
-    FTransformer.SetFromBlockInsert(BlockInsert^.objMatrix);
+    // Сбрасываем трансформер в identity - экспортируем в локальных координатах блока
+    FTransformer.SetFromBlockInsert(OneMatrix);
 
     // Перебираем примитивы в определении блока (как в getPointConnector из uzvcom)
     // BlockDef.ObjArray содержит примитивы блока
@@ -213,6 +273,8 @@ begin
           ProcessPolyline(PGDBObjPolyline(Entity));
         GDBLWPolylineID:
           ProcessLWPolyline(PGDBObjLWPolyline(Entity));
+        GDBDeviceID:
+          ProcessDevice(PGDBObjDevice(Entity));
         GDBBlockInsertID:
           begin
             // Вложенные блоки игнорируем согласно ТЗ
@@ -233,7 +295,105 @@ begin
     end;
 
     Result := FWriter.SaveToFile(OutputFile);
-    
+
+  except
+    on E: Exception do
+    begin
+      zcUI.TextMessage('Ошибка экспорта: ' + E.Message, TMWOHistoryOut);
+      Result := False;
+    end;
+  end;
+end;
+
+function TBlockSVGExporter.ExportDevice(const Device: PGDBObjDevice;
+  const OutputFile: string): Boolean;
+var
+  BlockDef: PGDBObjBlockdef;
+  Entity: PGDBObjEntity;
+  i: Integer;
+  EntityType: TObjID;
+begin
+  Result := False;
+
+  try
+    // Получаем определение блока устройства
+    BlockDef := Device^.PDef;
+    if not Assigned(BlockDef) then
+    begin
+      zcUI.TextMessage('Ошибка: определение блока устройства не найдено', TMWOHistoryOut);
+      Exit;
+    end;
+
+    // Сбрасываем трансформер в identity - экспортируем в локальных координатах устройства
+    FTransformer.SetFromBlockInsert(OneMatrix);
+
+    // 1. Перебираем примитивы в определении блока устройства
+    for i := 0 to BlockDef^.ObjArray.Count - 1 do
+    begin
+      Entity := PGDBObjEntity(BlockDef^.ObjArray.getData(i));
+      if not Assigned(Entity) then Continue;
+
+      // Проверяем тип примитива
+      EntityType := Entity^.GetObjType;
+
+      case EntityType of
+        GDBLineID:
+          ProcessLine(PGDBObjLine(Entity));
+        GDBCircleID:
+          ProcessCircle(PGDBObjCircle(Entity));
+        GDBArcID:
+          ProcessArc(PGDBObjArc(Entity));
+        GDBPolylineID:
+          ProcessPolyline(PGDBObjPolyline(Entity));
+        GDBLWPolylineID:
+          ProcessLWPolyline(PGDBObjLWPolyline(Entity));
+        GDBDeviceID:
+          // Вложенные устройства игнорируем
+          ;
+        GDBBlockInsertID:
+          begin
+            // Вложенные блоки игнорируем согласно ТЗ
+            // Можно добавить логирование
+          end;
+      else
+        // Другие типы игнорируем
+      end;
+    end;
+
+    // 2. Перебираем переменные объекты устройства (VarObjArray)
+    for i := 0 to Device^.VarObjArray.Count - 1 do
+    begin
+      Entity := PGDBObjEntity(Device^.VarObjArray.getDataMutable(i));
+      if not Assigned(Entity) then Continue;
+
+      // Проверяем тип примитива
+      EntityType := Entity^.GetObjType;
+
+      case EntityType of
+        GDBLineID:
+          ProcessLine(PGDBObjLine(Entity));
+        GDBCircleID:
+          ProcessCircle(PGDBObjCircle(Entity));
+        GDBArcID:
+          ProcessArc(PGDBObjArc(Entity));
+        GDBPolylineID:
+          ProcessPolyline(PGDBObjPolyline(Entity));
+        GDBLWPolylineID:
+          ProcessLWPolyline(PGDBObjLWPolyline(Entity));
+      end;
+    end;
+
+    // Устанавливаем границы и сохраняем
+    if FGeometry.HasGeometry then
+      FWriter.SetBounds(FGeometry.GetBounds)
+    else
+    begin
+      // Пустой SVG с комментарием
+      FWriter.SetBounds(FGeometry.GetBounds);
+    end;
+
+    Result := FWriter.SaveToFile(OutputFile);
+
   except
     on E: Exception do
     begin
