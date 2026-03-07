@@ -70,27 +70,28 @@ var
   AngleDiff: Double;
 begin
   C := Transform(Center);
-  
+
   // Начальная точка дуги
   StartPt.X := C.X + Radius * Cos(StartAngle);
-  StartPt.Y := C.Y + Radius * Sin(StartAngle) * (-1); // Учет flip Y
-  
-  // Конечная точка дуги  
+  StartPt.Y := C.Y - Radius * Sin(StartAngle);
+
+  // Конечная точка дуги
   EndPt.X := C.X + Radius * Cos(EndAngle);
-  EndPt.Y := C.Y + Radius * Sin(EndAngle) * (-1); // Учет flip Y
-  
+  EndPt.Y := C.Y - Radius * Sin(EndAngle);
+
   // Определяем флаги для SVG Path
   AngleDiff := EndAngle - StartAngle;
   // Нормализация угла
   while AngleDiff < 0 do AngleDiff := AngleDiff + 2*Pi;
   while AngleDiff > 2*Pi do AngleDiff := AngleDiff - 2*Pi;
-  
+
   LargeArcFlag := IfThen(Abs(AngleDiff) > Pi, 1, 0);
-  
+
   // В ZCAD и SVG разное направление углов (CW vs CCW)
   // В SVG sweep-flag=1 - по часовой стрелке
   // В ZCAD обычно против часовой от оси X
-  SweepFlag := 1; // Нужно проверить на практике, возможно 0
+  // При инверсии Y направление меняется, поэтому sweep-flag=0
+  SweepFlag := 0;
 end;
 
 end.

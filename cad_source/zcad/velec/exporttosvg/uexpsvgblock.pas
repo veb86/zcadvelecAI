@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils,
   uzeentity, uzeentblockinsert, uzeentline, uzeentcircle,
-  uzeentarc, uzeentpolyline, uzegeometrytypes, uzegeometry,
+  uzeentarc, uzeentpolyline, uzeentlwpolyline, uzegeometrytypes, uzegeometry,
   uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings,
   uzeblockdef, uzeconsts, uzcinterface;
 
@@ -19,13 +19,14 @@ type
     FWriter: TSVGWriter;
     FTransformer: TSVGTransformer;
     FGeometry: TSVGGeometryBuilder;
-    
+
     // Обработка конкретных примитивов
     procedure ProcessLine(const Line: PGDBObjLine);
     procedure ProcessCircle(const Circle: PGDBObjCircle);
     procedure ProcessArc(const Arc: PGDBObjArc);
     procedure ProcessPolyline(const PL: PGDBObjPolyline);
-    
+    procedure ProcessLWPolyline(const LW: PGDBObjLWPolyline);
+
     // Проверка видимости слоя
     function IsEntityVisible(const Entity: PGDBObjEntity): Boolean;
   public
@@ -141,6 +142,34 @@ begin
   FWriter.AddPolyline(Points);
 end;
 
+procedure TBlockSVGExporter.ProcessLWPolyline(const LW: PGDBObjLWPolyline);
+var
+  Points: array of TSVGPoint;
+  i: Integer;
+  Vertex: PzePoint3d;
+begin
+  if not IsEntityVisible(LW) then Exit;
+
+  if LW^.Vertex3D_in_WCS_Array.Count < 2 then Exit;
+
+  SetLength(Points, LW^.Vertex3D_in_WCS_Array.Count);
+  for i := 0 to LW^.Vertex3D_in_WCS_Array.Count - 1 do
+  begin
+    Vertex := LW^.Vertex3D_in_WCS_Array.getDataMutable(i);
+    Points[i] := FTransformer.Transform(Vertex^);
+    FGeometry.AddPoint(Points[i].X, Points[i].Y);
+  end;
+
+  FWriter.AddPolyline(Points);
+  
+  // Если полилиния замкнута, добавляем линию от последней к первой точке
+  if LW^.Closed then
+  begin
+    FWriter.AddLine(Points[High(Points)].X, Points[High(Points)].Y,
+                    Points[0].X, Points[0].Y);
+  end;
+end;
+
 function TBlockSVGExporter.ExportBlock(const BlockInsert: PGDBObjBlockInsert;
   const OutputFile: string): Boolean;
 var
@@ -182,6 +211,8 @@ begin
           ProcessArc(PGDBObjArc(Entity));
         GDBPolylineID:
           ProcessPolyline(PGDBObjPolyline(Entity));
+        GDBLWPolylineID:
+          ProcessLWPolyline(PGDBObjLWPolyline(Entity));
         GDBBlockInsertID:
           begin
             // Вложенные блоки игнорируем согласно ТЗ

@@ -14,8 +14,6 @@ type
   private
     FContent: TStringList;
     FBounds: TSVGRect;
-    procedure WriteHeader;
-    procedure WriteFooter;
   public
     constructor Create;
     destructor Destroy; override;
@@ -69,25 +67,6 @@ begin
   FBounds.MaxY := FBounds.MaxY + 1;
 end;
 
-procedure TSVGWriter.WriteHeader;
-var
-  Width, Height: Double;
-begin
-  Width := FBounds.MaxX - FBounds.MinX;
-  Height := FBounds.MaxY - FBounds.MinY;
-  
-  FContent.Add('<?xml version="1.0" encoding="UTF-8" standalone="no"?>');
-  FContent.Add('<svg xmlns="http://www.w3.org/2000/svg" version="1.1">');
-  FContent.Add(Format('  <g transform="translate(%f, %f)">', 
-    [-FBounds.MinX, -FBounds.MinY]));
-end;
-
-procedure TSVGWriter.WriteFooter;
-begin
-  FContent.Add('  </g>');
-  FContent.Add('</svg>');
-end;
-
 procedure TSVGWriter.AddLine(const X1, Y1, X2, Y2: Double; const Stroke: string);
 begin
   FContent.Add(Format('    <line x1="%f" y1="%f" x2="%f" y2="%f" stroke="%s" />',
@@ -133,12 +112,31 @@ begin
 end;
 
 function TSVGWriter.SaveToFile(const FileName: string): Boolean;
+var
+  TempList: TStringList;
+  i: Integer;
 begin
   try
-    WriteHeader;
-    // Содержимое добавляется между Header и Footer вызывающим кодом
-    WriteFooter;
-    FContent.SaveToFile(FileName);
+    TempList := TStringList.Create;
+    try
+      // Добавляем header
+      TempList.Add('<?xml version="1.0" encoding="UTF-8" standalone="no"?>');
+      TempList.Add('<svg xmlns="http://www.w3.org/2000/svg" xmlns:zcad="https://github.com/zamtmn/zcad" version="1.1">');
+      TempList.Add(Format('  <g transform="translate(%f, %f)">',
+        [-FBounds.MinX, -FBounds.MinY]));
+
+      // Добавляем содержимое
+      for i := 0 to FContent.Count - 1 do
+        TempList.Add(FContent[i]);
+
+      // Добавляем footer
+      TempList.Add('  </g>');
+      TempList.Add('</svg>');
+
+      TempList.SaveToFile(FileName);
+    finally
+      TempList.Free;
+    end;
     Result := True;
   except
     Result := False;
