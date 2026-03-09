@@ -24,7 +24,8 @@ type
     // Примитивы SVG
     procedure AddLine(const X1, Y1, X2, Y2: Double; const Stroke: string = 'black');
     procedure AddCircle(const CX, CY, R: Double; const Stroke: string = 'black'; Fill: string = 'none');
-    
+    procedure AddEllipse(const CX, CY, Rx, Ry, Rotation: Double; const Stroke: string = 'black'; Fill: string = 'none');
+
     // Дуга через Path (A command)
     // rx, ry - радиусы, x-axis-rotation - поворот эллипса,
     // large-arc-flag, sweep-flag, x, y - конечная точка
@@ -91,6 +92,23 @@ begin
     
   FContent.Add(Format('    <path d="%s" stroke="%s" fill="none" />',
     [PathData, Stroke]));
+end;
+
+procedure TSVGWriter.AddEllipse(const CX, CY, Rx, Ry, Rotation: Double; 
+  const Stroke: string; Fill: string);
+var
+  PathData: string;
+begin
+  // Эллипс через path с эллиптической дугой
+  // Рисуем полный эллипс используя две дуги
+  // M - move to center+rx, A - arc to center-rx (первая половина)
+  // A - arc back to start (вторая половина)
+  PathData := Format('M %f %f A %f %f %f 1 1 %f %f A %f %f %f 1 1 %f %f',
+    [CX + Rx, CY, Rx, Ry, Rotation * 180 / Pi, CX - Rx, CY,
+     Rx, Ry, Rotation * 180 / Pi, CX + Rx, CY]);
+
+  FContent.Add(Format('    <path d="%s" stroke="%s" fill="%s" />',
+    [PathData, Stroke, Fill]));
 end;
 
 procedure TSVGWriter.AddPolyline(const Points: array of TSVGPoint; const Stroke: string);

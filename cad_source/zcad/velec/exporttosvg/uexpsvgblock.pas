@@ -8,7 +8,7 @@ interface
 uses
   Classes, SysUtils,
   uzeentity, uzeentblockinsert, uzeentline, uzeentcircle,
-  uzeentarc, uzeentpolyline, uzeentlwpolyline, uzeentdevice, uzegeometrytypes, uzegeometry,
+  uzeentarc, uzeentpolyline, uzeentlwpolyline, uzeentellipse, uzeentdevice, uzegeometrytypes, uzegeometry,
   uexpsvgtypes, uexpsvggeometry, uexpsvgwriter, uzcdrawings, uzeTypes,
   uzeblockdef, uzeconsts, uzcinterface;
 
@@ -24,6 +24,7 @@ type
     procedure ProcessLine(const Line: PGDBObjLine);
     procedure ProcessCircle(const Circle: PGDBObjCircle);
     procedure ProcessArc(const Arc: PGDBObjArc);
+    procedure ProcessEllipse(const Ellipse: PGDBObjEllipse);
     procedure ProcessPolyline(const PL: PGDBObjPolyline);
     procedure ProcessLWPolyline(const LW: PGDBObjLWPolyline);
     procedure ProcessDevice(const Dev: PGDBObjDevice);
@@ -122,6 +123,52 @@ begin
 
   FGeometry.AddPoint(StartPt.X, StartPt.Y);
   FGeometry.AddPoint(EndPt.X, EndPt.Y);
+end;
+
+procedure TBlockSVGExporter.ProcessEllipse(const Ellipse: PGDBObjEllipse);
+var
+  Center: TSVGPoint;
+  MajorRadius, MinorRadius: Double;
+  Rotation: Double;
+  StartPt, EndPt: TSVGPoint;
+  LargeArcFlag, SweepFlag: Integer;
+begin
+  if not IsEntityVisible(Ellipse) then Exit;
+
+  // Центр эллипса в локальных координатах
+  Center := FTransformer.Transform(Ellipse^.Local.P_insert);
+  
+  // Большая полуось (длина вектора MajorAxis)
+  MajorRadius := oneVertexlength(Ellipse^.MajorAxis);
+  // Малая полуось (через Ratio)
+  MinorRadius := MajorRadius * Ellipse^.Ratio;
+  
+  // Угол поворота эллипса (угол большой оси)
+  Rotation := ArcTan(Ellipse^.MajorAxis.y / Ellipse^.MajorAxis.x);
+  
+  // Для эллипса используем упрощенный подход - рисуем как path
+  // SVG эллиптическая дуга требует сложных вычислений, поэтому
+  // экспортируем как эллипс через scale transform
+  
+  // Если это полный эллипс (StartAngle=0, EndAngle=2*Pi)
+  if (Abs(Ellipse^.StartAngle) < 0.0001) and (Abs(Ellipse^.EndAngle - 2*Pi) < 0.0001) then
+  begin
+    FWriter.AddEllipse(Center.X, Center.Y, MajorRadius * FTransformer.Scale, 
+                       MinorRadius * FTransformer.Scale, Rotation);
+  end
+  else
+  begin
+    // Дуга эллипса - используем упрощенный подход через ArcPath
+    FTransformer.TransformArc(Ellipse^.Local.P_insert, MajorRadius, 
+      Ellipse^.StartAngle, Ellipse^.EndAngle,
+      StartPt, EndPt, LargeArcFlag, SweepFlag);
+    
+    FWriter.AddArcPath(StartPt.X, StartPt.Y, MajorRadius * FTransformer.Scale,
+      LargeArcFlag, SweepFlag, EndPt.X, EndPt.Y);
+  end;
+  
+  FGeometry.AddPoint(Center.X - MajorRadius, Center.Y - MinorRadius);
+  FGeometry.AddPoint(Center.X + MajorRadius, Center.Y + MinorRadius);
 end;
 
 procedure TBlockSVGExporter.ProcessPolyline(const PL: PGDBObjPolyline);
@@ -269,6 +316,8 @@ begin
           ProcessCircle(PGDBObjCircle(Entity));
         GDBArcID:
           ProcessArc(PGDBObjArc(Entity));
+        GDBEllipseID:
+          ProcessEllipse(PGDBObjEllipse(Entity));
         GDBPolylineID:
           ProcessPolyline(PGDBObjPolyline(Entity));
         GDBLWPolylineID:
@@ -343,6 +392,8 @@ begin
           ProcessCircle(PGDBObjCircle(Entity));
         GDBArcID:
           ProcessArc(PGDBObjArc(Entity));
+        GDBEllipseID:
+          ProcessEllipse(PGDBObjEllipse(Entity));
         GDBPolylineID:
           ProcessPolyline(PGDBObjPolyline(Entity));
         GDBLWPolylineID:
@@ -376,6 +427,8 @@ begin
           ProcessCircle(PGDBObjCircle(Entity));
         GDBArcID:
           ProcessArc(PGDBObjArc(Entity));
+        GDBEllipseID:
+          ProcessEllipse(PGDBObjEllipse(Entity));
         GDBPolylineID:
           ProcessPolyline(PGDBObjPolyline(Entity));
         GDBLWPolylineID:
