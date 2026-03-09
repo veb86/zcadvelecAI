@@ -298,6 +298,7 @@ uses
   uzvgetentity,
   uzvaccess_command,
   uzvsqlite_command,
+  testarc,
 
   //**IPC Server for remote control**//
   uzvipcserver,
