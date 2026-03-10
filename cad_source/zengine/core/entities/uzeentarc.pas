@@ -25,7 +25,7 @@ uses
   uzeentwithlocalcs,uzecamera,uzestyleslayers,UGDBSelectedObjArray,uzeentity,
   UGDBPoint3DArray,uzctnrVectorBytesStream,uzeTypes,uzegeometrytypes,
   uzeconsts,uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentplain,uzeSnap,
-  Math,uzMVReader,uzCtnrVectorpBaseEntity,uzclog,SysUtils;
+  Math,uzMVReader,uzCtnrVectorpBaseEntity;
 
 type
 
@@ -137,51 +137,67 @@ begin
   processaxis(posr,tv);
 end;
 
-// Трансформация дуги: поворот, зеркализация и масштабирование.
-// При чистом повороте/масштабировании углы в локальной СК не меняются —
-// изменяется только objmatrix. При зеркализации (определитель < 0)
-// дуга меняет направление обхода, поэтому углы нужно инвертировать.
+// GDBObjARC.transform - откорректирована с использованием ИИ кодера
+// GDBObjARC.transform - adjusted using the AI coder
 procedure GDBObjARC.transform;
 var
-  det: double;
-  savedStartAngle, savedEndAngle: double;
-  isMirror: boolean;
+  sav,eav,pins:TzePoint3d;
+  tempAngle:double;
+  cosVal, sinVal:double;
+  det:double;
 begin
-  // Сохраняем углы до трансформации для обработки зеркализации
-  savedStartAngle := StartAngle;
-  savedEndAngle := EndAngle;
-
-  // Вычисляем определитель 3x3 матрицы поворота для определения зеркальности.
-  // Зеркализация меняет знак определителя на отрицательный.
-  // Правило Саррюса: det = a00*a11*a22 + a01*a12*a20 + a02*a10*a21
-  //                      - a02*a11*a20 - a01*a10*a22 - a00*a12*a21
-  det := t_matrix.mtr.v[0].v[0] * t_matrix.mtr.v[1].v[1] * t_matrix.mtr.v[2].v[2]
-       + t_matrix.mtr.v[0].v[1] * t_matrix.mtr.v[1].v[2] * t_matrix.mtr.v[2].v[0]
-       + t_matrix.mtr.v[0].v[2] * t_matrix.mtr.v[1].v[0] * t_matrix.mtr.v[2].v[1]
-       - t_matrix.mtr.v[0].v[2] * t_matrix.mtr.v[1].v[1] * t_matrix.mtr.v[2].v[0]
-       - t_matrix.mtr.v[0].v[1] * t_matrix.mtr.v[1].v[0] * t_matrix.mtr.v[2].v[2]
-       - t_matrix.mtr.v[0].v[0] * t_matrix.mtr.v[1].v[2] * t_matrix.mtr.v[2].v[1];
-  isMirror := det < 0;
-
-  // Применяем базовую трансформацию матрицы объекта и пересчитываем
-  // локальную систему координат (Local.basis, Local.p_insert, R)
-  inherited;
-
-  // При зеркализации дуга меняет направление обхода (против часовой → по часовой).
-  // Чтобы сохранить правильный вид дуги, инвертируем углы относительно нуля.
-  if isMirror then begin
-    StartAngle := 2 * pi - savedEndAngle;
-    if StartAngle >= 2 * pi then
-      StartAngle := StartAngle - 2 * pi;
-    EndAngle := 2 * pi - savedStartAngle;
-    if EndAngle >= 2 * pi then
-      EndAngle := EndAngle - 2 * pi;
-    programlog.LogOutFormatStr(
-      'uzeentarc.transform: зеркализация, StartAngle=%.4f, EndAngle=%.4f',
-      [StartAngle, EndAngle], LM_Info);
+  precalc;
+  
+  // Вычисляем определитель матрицы для определения зеркальности трансформации
+  det := t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[2] +
+         t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0] +
+         t_matrix.mtr.v[0].v[2]*t_matrix.mtr.v[1].v[0]*t_matrix.mtr.v[2].v[1] -
+         t_matrix.mtr.v[0].v[2]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[0] -
+         t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[0]*t_matrix.mtr.v[2].v[1] -
+         t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0];
+  
+  if det < 0 then begin
+    // Зеркальная трансформация - меняем местами начало и конец
+    sav:=q2;
+    eav:=q0;
+  end else begin
+    sav:=q0;
+    eav:=q2;
   end;
+  
+  pins:=P_insert_in_WCS;
+  sav:=VectorTransform3D(sav,t_matrix);
+  eav:=VectorTransform3D(eav,t_matrix);
+  pins:=VectorTransform3D(pins,t_matrix);
+  
+  // Вызываем inherited для обновления objmatrix (трансформация базиса)
+  inherited;
+  
+  // Вычисляем новые векторы направления относительно нового центра
+  sav:=NormalizeVertex(VertexSub(sav,pins));
+  eav:=NormalizeVertex(VertexSub(eav,pins));
 
-  // Пересчитываем опорные точки дуги q0, q1, q2 на основе обновлённых данных
+  // Вычисляем углы относительно глобальной оси X с использованием ArcTan2
+  cosVal := sav.x;
+  sinVal := sav.y;
+  StartAngle := ArcTan2(sinVal, cosVal);
+  if StartAngle < 0 then
+    StartAngle := 2*pi + StartAngle;
+
+  cosVal := eav.x;
+  sinVal := eav.y;
+  EndAngle := ArcTan2(sinVal, cosVal);
+  if EndAngle < 0 then
+    EndAngle := 2*pi + EndAngle;
+
+  // Обновляем центр дуги в Local и objmatrix
+  Local.p_insert := pins;
+  PzePoint3d(@objmatrix.mtr.v[3])^ := pins;
+  
+  // Обновляем P_insert_in_WCS напрямую
+  P_insert_in_WCS := pins;
+  
+  // Пересчитываем точки q0, q1, q2 с новыми углами
   precalc;
 end;
 
@@ -285,18 +301,10 @@ procedure GDBObjARC.CalcObjMatrix;
 var
   m1:TzeTypedMatrix4d;
   v:TzeVector4d;
-  savedPos:TzePoint3d;
 begin
   inherited CalcObjMatrix;
-  
-  // Сохраняем позицию перед масштабированием
-  savedPos := PzePoint3d(@objmatrix.mtr.v[3])^;
-  
   m1:=CreateScaleMatrix(r);
   objmatrix:=matrixmultiply(m1,objmatrix);
-  
-  // Восстанавливаем позицию после масштабирования
-  PzePoint3d(@objmatrix.mtr.v[3])^ := savedPos;
 
   PzePoint3d(@v)^:=local.p_insert;
   v.z:=0;
