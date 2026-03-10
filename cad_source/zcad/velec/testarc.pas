@@ -63,13 +63,13 @@ end;
 function TestArcCommand_com(const Context:TZCADCommandContext;
   operands:TCommandOperands):TCommandResult;
 var
-  pa1, pa2: PGDBObjArc;
+  pa1, pa2, pa3, pa4, pa5: PGDBObjArc;
   dc: TDrawContext;
   centerPoint: TzePoint3d;
   radius: double;
   startAngle, endAngle: double;
-  rotationAngle: double;
-  rotMatrix, mirrorMatrix: TzeTypedMatrix4d;
+  rotationAngle, rotationAngleY, rotationAngleX: double;
+  rotMatrix, mirrorMatrix, dispmatr: TzeTypedMatrix4d;
   q0_before, q1_before, q2_before: TzePoint3d;
   q0_after, q1_after, q2_after: TzePoint3d;
 begin
@@ -85,6 +85,8 @@ begin
   startAngle := 43 * PI / 180;
   endAngle := 184 * PI / 180;
   rotationAngle := 90 * PI / 180; // 90 градусов
+  rotationAngleY := 33 * PI / 180; // 33 градуса для поворота вокруг Y
+  rotationAngleX := 90 * PI / 180; // 90 градусов для поворота вокруг X
   
   LogMessage('');
   LogMessage('Исходные параметры дуги:');
@@ -99,7 +101,7 @@ begin
   // ============================================
   LogMessage('');
   LogMessage('========================================');
-  LogMessage('ТЕСТ 1: ПОВОРОТ ДУГИ НА 90 ГРАДУСОВ');
+  LogMessage('ТЕСТ 1: ПОСЛЕДОВАТЕЛЬНЫЕ ПОВОРОТЫ ДУГИ');
   LogMessage('========================================');
   
   pa1 := AllocEnt(GDBArcID);
@@ -112,43 +114,87 @@ begin
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
   pa1^.FormatEntity(drawings.GetCurrentDWG^, dc);
   
-  q0_before := pa1^.q0;
-  q1_before := pa1^.q1;
-  q2_before := pa1^.q2;
-  
   LogMessage('');
-  LogMessage('ДО ПОВОРОТА:');
+  LogMessage('ИСХОДНОЕ СОСТОЯНИЕ:');
   LogMessage('----------------------------------------');
   LogArcInfo('', pa1);
   
+  // Поворот на 90 градусов
   LogMessage('');
-  LogMessage('ВЫПОЛНЕНИЕ ПОВОРОТА:');
+  LogMessage('ПОВОРОТ НА 90°:');
   LogMessage('----------------------------------------');
+  rotationAngle := 90 * PI / 180;
+  LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngle, AngleToDeg(rotationAngle)]));
+  
+  // Создаем матрицу поворота вокруг центра дуги (как в команде RotateEnts)
+  // Правильный порядок: T(center) * R * T(-center)
+  // Сначала перенос в начало координат, потом поворот, потом перенос обратно
+  dispmatr := CreateTranslationMatrix(CreateVertex(-centerPoint.x, -centerPoint.y, -centerPoint.z));
+  rotMatrix := CreateRotationMatrixZ(rotationAngle);
+  rotMatrix := MatrixMultiply(rotMatrix, dispmatr);
+  dispmatr := CreateTranslationMatrix(CreateVertex(centerPoint.x, centerPoint.y, centerPoint.z));
+  rotMatrix := MatrixMultiply(dispmatr, rotMatrix);
+  
+  LogMessage(Format('   Матрица поворота [0,0]=%.4f, [0,1]=%.4f, [1,0]=%.4f, [1,1]=%.4f', 
+    [rotMatrix.mtr.v[0].v[0], rotMatrix.mtr.v[0].v[1], rotMatrix.mtr.v[1].v[0], rotMatrix.mtr.v[1].v[1]]));
+  LogMessage(Format('   Матрица поворота [3,0]=%.4f, [3,1]=%.4f, [3,2]=%.4f', 
+    [rotMatrix.mtr.v[3].v[0], rotMatrix.mtr.v[3].v[1], rotMatrix.mtr.v[3].v[2]]));
+  
+  LogMessage(Format('   ДО transform: P_insert_in_WCS: %s', [Point3DToStr(pa1^.P_insert_in_WCS)]));
+  LogMessage(Format('   ДО transform: objmatrix.mtr.v[3]: X=%.6f, Y=%.6f, Z=%.6f', 
+    [pa1^.objmatrix.mtr.v[3].v[0], pa1^.objmatrix.mtr.v[3].v[1], pa1^.objmatrix.mtr.v[3].v[2]]));
+  
+  pa1^.transform(rotMatrix);
+  
+  LogMessage(Format('   ПОСЛЕ transform: P_insert_in_WCS: %s', [Point3DToStr(pa1^.P_insert_in_WCS)]));
+  LogMessage(Format('   ПОСЛЕ transform: objmatrix.mtr.v[3]: X=%.6f, Y=%.6f, Z=%.6f', 
+    [pa1^.objmatrix.mtr.v[3].v[0], pa1^.objmatrix.mtr.v[3].v[1], pa1^.objmatrix.mtr.v[3].v[2]]));
+  LogMessage(Format('   ПОСЛЕ transform: Local.p_insert: X=%.6f, Y=%.6f, Z=%.6f', 
+    [pa1^.Local.p_insert.x, pa1^.Local.p_insert.y, pa1^.Local.p_insert.z]));
+  
+  LogArcInfo('   После 90°: ', pa1);
+  
+  // Поворот на 30 градусов
+  LogMessage('');
+  LogMessage('ПОВОРОТ НА 30°:');
+  LogMessage('----------------------------------------');
+  rotationAngle := 30 * PI / 180;
   LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngle, AngleToDeg(rotationAngle)]));
   
   rotMatrix := CreateRotationMatrixZ(rotationAngle);
   pa1^.transform(rotMatrix);
   
-  q0_after := pa1^.q0;
-  q1_after := pa1^.q1;
-  q2_after := pa1^.q2;
+  LogArcInfo('   После 30°: ', pa1);
+  
+  // Поворот на 40 градусов
+  LogMessage('');
+  LogMessage('ПОВОРОТ НА 40°:');
+  LogMessage('----------------------------------------');
+  rotationAngle := 40 * PI / 180;
+  LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngle, AngleToDeg(rotationAngle)]));
+  
+  rotMatrix := CreateRotationMatrixZ(rotationAngle);
+  pa1^.transform(rotMatrix);
   
   LogMessage('');
-  LogMessage('ПОСЛЕ ПОВОРОТА:');
+  LogMessage('ИТОГ ПОСЛЕ ТРЕХ ПОВОРОТОВ (90° + 30° + 40° = 160°):');
   LogMessage('----------------------------------------');
-  LogArcInfo('', pa1);
+  LogArcInfo('   Итог: ', pa1);
   
+  // Проверка: углы в локальной системе координат не меняются при повороте вокруг центра
   LogMessage('');
-  LogMessage('СРАВНЕНИЕ ДО И ПОСЛЕ:');
-  LogMessage('----------------------------------------');
-  LogMessage(Format('   q0 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
-    [q0_after.x - q0_before.x, q0_after.y - q0_before.y, q0_after.z - q0_before.z]));
-  LogMessage(Format('   q1 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
-    [q1_after.x - q1_before.x, q1_after.y - q1_before.y, q1_after.z - q1_before.z]));
-  LogMessage(Format('   q2 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
-    [q2_after.x - q2_before.x, q2_after.y - q2_before.y, q2_after.z - q2_before.z]));
+  LogMessage('   ПРОВЕРКА:');
+  LogMessage('   Примечание: StartAngle и EndAngle хранятся в локальной системе координат дуги');
+  LogMessage('   и не меняются при повороте вокруг центра дуги.');
+  LogMessage(Format('   StartAngle: %.6f (%.2f°) - не изменился', [pa1^.StartAngle, AngleToDeg(pa1^.StartAngle)]));
+  LogMessage(Format('   EndAngle: %.6f (%.2f°) - не изменился', [pa1^.EndAngle, AngleToDeg(pa1^.EndAngle)]));
+  LogMessage('   Углы относительно глобальной системы координат:');
+  LogMessage(Format('   Ожидаемый StartAngle (глобальный): %.6f (%.2f°)', 
+    [startAngle + 160*PI/180, AngleToDeg(startAngle + 160*PI/180)]));
+  LogMessage(Format('   Ожидаемый EndAngle (глобальный): %.6f (%.2f°)', 
+    [endAngle + 160*PI/180, AngleToDeg(endAngle + 160*PI/180)]));
   
-  // Добавляем первую дугу в чертеж со смещением
+  // Добавляем первую дугу в чертеж
   pa1^.Local.p_insert.x := pa1^.P_insert_in_WCS.x - 200;
   pa1^.P_insert_in_WCS.x := pa1^.P_insert_in_WCS.x - 200;
   PzePoint3d(@pa1^.objmatrix.mtr.v[3])^ := pa1^.P_insert_in_WCS;
@@ -208,13 +254,164 @@ begin
     [q1_after.x - q1_before.x, q1_after.y - q1_before.y, q1_after.z - q1_before.z]));
   LogMessage(Format('   q2 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
     [q2_after.x - q2_before.x, q2_after.y - q2_before.y, q2_after.z - q2_before.z]));
-  
+
   // Добавляем вторую дугу в чертеж со смещением
   pa2^.Local.p_insert.x := pa2^.P_insert_in_WCS.x + 200;
   pa2^.P_insert_in_WCS.x := pa2^.P_insert_in_WCS.x + 200;
   PzePoint3d(@pa2^.objmatrix.mtr.v[3])^ := pa2^.P_insert_in_WCS;
   pa2^.precalc;
   zcAddEntToCurrentDrawingWithUndo(pa2);
+
+  // ============================================
+  // ТЕСТ 3: ЗЕРКАЛИРОВАНИЕ ОТНОСИТЕЛЬНО ОСИ Y
+  // ============================================
+  LogMessage('');
+  LogMessage('========================================');
+  LogMessage('ТЕСТ 3: ЗЕРКАЛИРОВАНИЕ ДУГИ ОТНОСИТЕЛЬНО ОСИ Y');
+  LogMessage('========================================');
+
+  pa3 := AllocEnt(GDBArcID);
+  pa3^.init(nil, nil, 0, centerPoint, radius, startAngle, endAngle);
+
+  zcSetEntPropFromCurrentDrawingProp(pa3);
+  pa3^.vp.LineWeight := LnWt200;
+  pa3^.vp.Color := 3; // зеленый
+
+  pa3^.FormatEntity(drawings.GetCurrentDWG^, dc);
+
+  q0_before := pa3^.q0;
+  q1_before := pa3^.q1;
+  q2_before := pa3^.q2;
+
+  LogMessage('');
+  LogMessage('ДО ЗЕРКАЛИРОВАНИЯ:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa3);
+
+  LogMessage('');
+  LogMessage('ВЫПОЛНЕНИЕ ЗЕРКАЛИРОВАНИЯ:');
+  LogMessage('----------------------------------------');
+  LogMessage('   Ось зеркалирования: Y (X -> -X)');
+
+  // Создаем матрицу зеркалирования относительно оси Y
+  mirrorMatrix := CreateScaleMatrix(-1, 1, 1);
+  pa3^.transform(mirrorMatrix);
+
+  q0_after := pa3^.q0;
+  q1_after := pa3^.q1;
+  q2_after := pa3^.q2;
+
+  LogMessage('');
+  LogMessage('ПОСЛЕ ЗЕРКАЛИРОВАНИЯ:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa3);
+
+  LogMessage('');
+  LogMessage('СРАВНЕНИЕ ДО И ПОСЛЕ:');
+  LogMessage('----------------------------------------');
+  LogMessage(Format('   q0 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
+    [q0_after.x - q0_before.x, q0_after.y - q0_before.y, q0_after.z - q0_before.z]));
+  LogMessage(Format('   q1 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
+    [q1_after.x - q1_before.x, q1_after.y - q1_before.y, q1_after.z - q1_before.z]));
+  LogMessage(Format('   q2 смещение: X=%.6f, Y=%.6f, Z=%.6f', 
+    [q2_after.x - q2_before.x, q2_after.y - q2_before.y, q2_after.z - q2_before.z]));
+
+  // Добавляем третью дугу в чертеж со смещением
+  pa3^.Local.p_insert.x := pa3^.P_insert_in_WCS.x - 200;
+  pa3^.P_insert_in_WCS.x := pa3^.P_insert_in_WCS.x - 200;
+  PzePoint3d(@pa3^.objmatrix.mtr.v[3])^ := pa3^.P_insert_in_WCS;
+  pa3^.precalc;
+  zcAddEntToCurrentDrawingWithUndo(pa3);
+
+  // ============================================
+  // ТЕСТ 4: ПОВОРОТ ВОКРУГ ОСИ Y НА 33 ГРАДУСА
+  // ============================================
+  LogMessage('');
+  LogMessage('========================================');
+  LogMessage('ТЕСТ 4: ПОВОРОТ ДУГИ ВОКРУГ ОСИ Y НА 33°');
+  LogMessage('========================================');
+  
+  pa4 := AllocEnt(GDBArcID);
+  pa4^.init(nil, nil, 0, centerPoint, radius, startAngle, endAngle);
+  
+  zcSetEntPropFromCurrentDrawingProp(pa4);
+  pa4^.vp.LineWeight := LnWt200;
+  pa4^.vp.Color := 3; // зеленый
+
+  pa4^.FormatEntity(drawings.GetCurrentDWG^, dc);
+
+  LogMessage('');
+  LogMessage('ДО ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa4);
+
+  LogMessage('');
+  LogMessage('ВЫПОЛНЕНИЕ ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogMessage('   Ось поворота: Y');
+  LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngleY, AngleToDeg(rotationAngleY)]));
+
+  rotMatrix := CreateRotationMatrixY(rotationAngleY);
+  pa4^.transform(rotMatrix);
+
+  LogMessage('');
+  LogMessage('ПОСЛЕ ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa4);
+
+  // Добавляем четвертую дугу в чертеж со смещением
+  pa4^.Local.p_insert.x := pa4^.P_insert_in_WCS.x - 200;
+  pa4^.Local.p_insert.y := pa4^.P_insert_in_WCS.y - 200;
+  pa4^.P_insert_in_WCS.x := pa4^.P_insert_in_WCS.x - 200;
+  pa4^.P_insert_in_WCS.y := pa4^.P_insert_in_WCS.y - 200;
+  PzePoint3d(@pa4^.objmatrix.mtr.v[3])^ := pa4^.P_insert_in_WCS;
+  pa4^.precalc;
+  zcAddEntToCurrentDrawingWithUndo(pa4);
+
+  // ============================================
+  // ТЕСТ 5: ПОВОРОТ ВОКРУГ ОСИ X НА 90 ГРАДУСОВ
+  // ============================================
+  LogMessage('');
+  LogMessage('========================================');
+  LogMessage('ТЕСТ 5: ПОВОРОТ ДУГИ ВОКРУГ ОСИ X НА 90°');
+  LogMessage('========================================');
+
+  pa5 := AllocEnt(GDBArcID);
+  pa5^.init(nil, nil, 0, centerPoint, radius, startAngle, endAngle);
+
+  zcSetEntPropFromCurrentDrawingProp(pa5);
+  pa5^.vp.LineWeight := LnWt200;
+  pa5^.vp.Color := 5; // синий
+  
+  pa5^.FormatEntity(drawings.GetCurrentDWG^, dc);
+
+  LogMessage('');
+  LogMessage('ДО ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa5);
+
+  LogMessage('');
+  LogMessage('ВЫПОЛНЕНИЕ ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogMessage('   Ось поворота: X');
+  LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngleX, AngleToDeg(rotationAngleX)]));
+
+  rotMatrix := CreateRotationMatrixX(rotationAngleX);
+  pa5^.transform(rotMatrix);
+
+  LogMessage('');
+  LogMessage('ПОСЛЕ ПОВОРОТА:');
+  LogMessage('----------------------------------------');
+  LogArcInfo('', pa5);
+
+  // Добавляем пятую дугу в чертеж со смещением
+  pa5^.Local.p_insert.x := pa5^.P_insert_in_WCS.x + 200;
+  pa5^.Local.p_insert.y := pa5^.P_insert_in_WCS.y - 200;
+  pa5^.P_insert_in_WCS.x := pa5^.P_insert_in_WCS.x + 200;
+  pa5^.P_insert_in_WCS.y := pa5^.P_insert_in_WCS.y - 200;
+  PzePoint3d(@pa5^.objmatrix.mtr.v[3])^ := pa5^.P_insert_in_WCS;
+  pa5^.precalc;
+  zcAddEntToCurrentDrawingWithUndo(pa5);
   
   LogMessage('');
   LogMessage('========================================');
@@ -222,8 +419,11 @@ begin
   LogMessage('========================================');
   LogMessage('');
   LogMessage('Результаты:');
-  LogMessage('  - Желтая дуга: повернута на 90° (слева)');
-  LogMessage('  - Красная дуга: зеркалирована относительно оси X (справа)');
+  LogMessage('  - Желтая дуга: повернута на 90° вокруг Z (слева вверху)');
+  LogMessage('  - Красная дуга: зеркалирована относительно оси X (справа вверху)');
+  LogMessage('  - Зеленая дуга: зеркалирована относительно оси Y (слева в центре)');
+  LogMessage('  - Голубая дуга: повернута на 33° вокруг Y (слева внизу)');
+  LogMessage('  - Синяя дуга: повернута на 90° вокруг X (справа внизу)');
   LogMessage('========================================');
   
   Result := cmd_ok;

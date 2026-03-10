@@ -25,7 +25,7 @@ uses
   uzeentwithlocalcs,uzecamera,uzestyleslayers,UGDBSelectedObjArray,uzeentity,
   UGDBPoint3DArray,uzctnrVectorBytesStream,uzeTypes,uzegeometrytypes,
   uzeconsts,uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentplain,uzeSnap,
-  Math,uzMVReader,uzCtnrVectorpBaseEntity;
+  Math,uzMVReader,uzCtnrVectorpBaseEntity,uzcinterface,SysUtils;
 
 type
 
@@ -138,16 +138,33 @@ begin
 end;
 
 // GDBObjARC.transform - откорректирована с использованием ИИ кодера
-// GDBObjARC.transform - adjusted using the AI coder
+// GDBObjARC.transform
+// Полностью переписанная функция трансформации дуги
 procedure GDBObjARC.transform;
 var
   sav,eav,pins:TzePoint3d;
-  tempAngle:double;
   cosVal, sinVal:double;
   det:double;
+  localX, localY:TzePoint3d;
+  isMirror:boolean;
+  startAng, endAng:double;
+  newBasisX, newBasisY, newBasisZ:TzePoint3d;
+  rotMatrix:TzeTypedMatrix4d;
 begin
   precalc;
   
+  // Отладка: состояние ДО трансформации
+  zcUI.TextMessage('=== transform START ===', TMWOHistoryOut);
+  zcUI.TextMessage(Format('Local.p_insert: (%.2f, %.2f, %.2f)', [Local.p_insert.x, Local.p_insert.y, Local.p_insert.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('P_insert_in_WCS: (%.2f, %.2f, %.2f)', [P_insert_in_WCS.x, P_insert_in_WCS.y, P_insert_in_WCS.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('StartAngle: %.6f (%.2f°), EndAngle: %.6f (%.2f°)', [StartAngle, StartAngle*180/PI, EndAngle, EndAngle*180/PI]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('q0: (%.2f, %.2f, %.2f)', [q0.x, q0.y, q0.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('q2: (%.2f, %.2f, %.2f)', [q2.x, q2.y, q2.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('objMatrix[0]: (%.4f, %.4f, %.4f)', [objmatrix.mtr.v[0].v[0], objmatrix.mtr.v[0].v[1], objmatrix.mtr.v[0].v[2]]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('objMatrix[3]: (%.4f, %.4f, %.4f)', [objmatrix.mtr.v[3].v[0], objmatrix.mtr.v[3].v[1], objmatrix.mtr.v[3].v[2]]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('t_matrix[0]: (%.4f, %.4f, %.4f)', [t_matrix.mtr.v[0].v[0], t_matrix.mtr.v[0].v[1], t_matrix.mtr.v[0].v[2]]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('t_matrix[3]: (%.4f, %.4f, %.4f)', [t_matrix.mtr.v[3].v[0], t_matrix.mtr.v[3].v[1], t_matrix.mtr.v[3].v[2]]), TMWOHistoryOut);
+
   // Вычисляем определитель матрицы для определения зеркальности трансформации
   det := t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[2] +
          t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0] +
@@ -155,50 +172,99 @@ begin
          t_matrix.mtr.v[0].v[2]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[0] -
          t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[0]*t_matrix.mtr.v[2].v[1] -
          t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0];
-  
-  if det < 0 then begin
-    // Зеркальная трансформация - меняем местами начало и конец
-    sav:=q2;
-    eav:=q0;
-  end else begin
-    sav:=q0;
-    eav:=q2;
-  end;
-  
-  pins:=P_insert_in_WCS;
+
+  isMirror := det < 0;
+  zcUI.TextMessage(Format('det=%.4f, isMirror=%s', [det, BoolToStr(isMirror, True)]), TMWOHistoryOut);
+
+  // Берем точки начала и конца дуги
+  sav:=q0;
+  eav:=q2;
+
+  // Трансформируем точки и центр (используем Local.p_insert, а не P_insert_in_WCS)
+  pins:=Local.p_insert;
   sav:=VectorTransform3D(sav,t_matrix);
   eav:=VectorTransform3D(eav,t_matrix);
   pins:=VectorTransform3D(pins,t_matrix);
   
-  // Вызываем inherited для обновления objmatrix (трансформация базиса)
-  inherited;
+  zcUI.TextMessage(Format('pins после трансформации: (%.2f, %.2f, %.2f)', [pins.x, pins.y, pins.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('sav после трансформации: (%.2f, %.2f, %.2f)', [sav.x, sav.y, sav.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('eav после трансформации: (%.2f, %.2f, %.2f)', [eav.x, eav.y, eav.z]), TMWOHistoryOut);
+
+  // Создаем матрицу вращения/масштабирования без переноса
+  // Копируем t_matrix, но обнуляем перенос
+  rotMatrix := t_matrix;
+  rotMatrix.mtr.v[3] := NulVector4D;
+
+  // Трансформируем базис локальной системы координат (только вращение/масштабирование)
+  newBasisX := VectorTransform3D(PzePoint3d(@objmatrix.mtr.v[0])^, rotMatrix);
+  newBasisY := VectorTransform3D(PzePoint3d(@objmatrix.mtr.v[1])^, rotMatrix);
+  newBasisZ := VectorTransform3D(PzePoint3d(@objmatrix.mtr.v[2])^, rotMatrix);
   
+  zcUI.TextMessage(Format('newBasisX: (%.4f, %.4f, %.4f)', [newBasisX.x, newBasisX.y, newBasisX.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('newBasisY: (%.4f, %.4f, %.4f)', [newBasisY.x, newBasisY.y, newBasisY.z]), TMWOHistoryOut);
+
+  // Обновляем objmatrix
+  PzePoint3d(@objmatrix.mtr.v[0])^ := newBasisX;
+  PzePoint3d(@objmatrix.mtr.v[1])^ := newBasisY;
+  PzePoint3d(@objmatrix.mtr.v[2])^ := newBasisZ;
+  PzePoint3d(@objmatrix.mtr.v[3])^ := pins;
+
   // Вычисляем новые векторы направления относительно нового центра
   sav:=NormalizeVertex(VertexSub(sav,pins));
   eav:=NormalizeVertex(VertexSub(eav,pins));
-
-  // Вычисляем углы относительно глобальной оси X с использованием ArcTan2
-  cosVal := sav.x;
-  sinVal := sav.y;
-  StartAngle := ArcTan2(sinVal, cosVal);
-  if StartAngle < 0 then
-    StartAngle := 2*pi + StartAngle;
-
-  cosVal := eav.x;
-  sinVal := eav.y;
-  EndAngle := ArcTan2(sinVal, cosVal);
-  if EndAngle < 0 then
-    EndAngle := 2*pi + EndAngle;
-
-  // Обновляем центр дуги в Local и objmatrix
-  Local.p_insert := pins;
-  PzePoint3d(@objmatrix.mtr.v[3])^ := pins;
   
-  // Обновляем P_insert_in_WCS напрямую
+  zcUI.TextMessage(Format('sav normalized: (%.4f, %.4f, %.4f)', [sav.x, sav.y, sav.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('eav normalized: (%.4f, %.4f, %.4f)', [eav.x, eav.y, eav.z]), TMWOHistoryOut);
+
+  // Получаем локальные оси из обновленного objmatrix
+  localX := NormalizeVertex(newBasisX);
+  localY := NormalizeVertex(newBasisY);
+  
+  zcUI.TextMessage(Format('localX: (%.4f, %.4f, %.4f)', [localX.x, localX.y, localX.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('localY: (%.4f, %.4f, %.4f)', [localY.x, localY.y, localY.z]), TMWOHistoryOut);
+
+  // Вычисляем углы относительно новой локальной оси X дуги
+  cosVal := scalardot(sav, localX);
+  sinVal := scalardot(sav, localY);
+  startAng := ArcTan2(sinVal, cosVal);
+  if startAng < 0 then
+    startAng := 2*pi + startAng;
+
+  cosVal := scalardot(eav, localX);
+  sinVal := scalardot(eav, localY);
+  endAng := ArcTan2(sinVal, cosVal);
+  if endAng < 0 then
+    endAng := 2*pi + endAng;
+    
+  zcUI.TextMessage(Format('startAng: %.6f (%.2f°), endAng: %.6f (%.2f°)', [startAng, startAng*180/PI, endAng, endAng*180/PI]), TMWOHistoryOut);
+
+  // При зеркальной трансформации инвертируем направление дуги
+  if isMirror then begin
+    StartAngle := 2*pi - endAng;
+    if StartAngle >= 2*pi then StartAngle := StartAngle - 2*pi;
+    EndAngle := 2*pi - startAng;
+    if EndAngle >= 2*pi then EndAngle := EndAngle - 2*pi;
+  end else begin
+    // Для поворота/масштабирования: используем вычисленные углы
+    StartAngle := startAng;
+    EndAngle := endAng;
+  end;
+
+  // Обновляем центр дуги в Local
+  Local.p_insert := pins;
   P_insert_in_WCS := pins;
   
+  zcUI.TextMessage(Format('Local.p_insert после: (%.2f, %.2f, %.2f)', [Local.p_insert.x, Local.p_insert.y, Local.p_insert.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('StartAngle после: %.6f (%.2f°), EndAngle после: %.6f (%.2f°)', [StartAngle, StartAngle*180/PI, EndAngle, EndAngle*180/PI]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('objMatrix[0] после: (%.4f, %.4f, %.4f)', [objmatrix.mtr.v[0].v[0], objmatrix.mtr.v[0].v[1], objmatrix.mtr.v[0].v[2]]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('objMatrix[3] после: (%.4f, %.4f, %.4f)', [objmatrix.mtr.v[3].v[0], objmatrix.mtr.v[3].v[1], objmatrix.mtr.v[3].v[2]]), TMWOHistoryOut);
+
   // Пересчитываем точки q0, q1, q2 с новыми углами
   precalc;
+
+  zcUI.TextMessage(Format('q0 после precalc: (%.2f, %.2f, %.2f)', [q0.x, q0.y, q0.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('q2 после precalc: (%.2f, %.2f, %.2f)', [q2.x, q2.y, q2.z]), TMWOHistoryOut);
+  zcUI.TextMessage('=== transform END ===', TMWOHistoryOut);
 end;
 
 procedure GDBObjARC.ReCalcFromObjMatrix;
@@ -301,10 +367,18 @@ procedure GDBObjARC.CalcObjMatrix;
 var
   m1:TzeTypedMatrix4d;
   v:TzeVector4d;
+  savedPos:TzePoint3d;
 begin
   inherited CalcObjMatrix;
+  
+  // Сохраняем позицию перед масштабированием
+  savedPos := PzePoint3d(@objmatrix.mtr.v[3])^;
+  
   m1:=CreateScaleMatrix(r);
   objmatrix:=matrixmultiply(m1,objmatrix);
+  
+  // Восстанавливаем позицию после масштабирования
+  PzePoint3d(@objmatrix.mtr.v[3])^ := savedPos;
 
   PzePoint3d(@v)^:=local.p_insert;
   v.z:=0;
