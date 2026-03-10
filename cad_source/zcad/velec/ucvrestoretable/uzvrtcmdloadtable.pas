@@ -36,7 +36,7 @@ interface
 uses
  SysUtils,
  Classes,
- Dialogs,
+ //LCLDialogs,
  fpspreadsheet,
  fpsTypes,
  fpspreadsheetctrls,
@@ -52,7 +52,9 @@ uses
  uzeentity,
  uzgldrawcontext,
  uzctnrvectorstrings,
- uzvspreadsheet_gui;
+ uzvspreadsheet_gui,
+ gzctnrVectorTypes,
+ UGDBVisibleTreeArray;
 
 // Команда загрузки выделенной таблицы в редактор
 // @param Context - контекст выполнения команды
@@ -66,11 +68,13 @@ function LoadSelectedTableToEditor_com(
 implementation
 
 uses
+ //Dialogs,
  uzclog,
  uzvrtcmdinserttable;
 
+type
 // Тип результата проверки выделения
- TSelectionCheckResult = (
+TSelectionCheckResult = (
  scrNoSelection, // Ничего не выделено
  scrMultipleTables, // Выделено несколько таблиц
  scrMixedSelection, // Выделены разные типы объектов (включая таблицу)
@@ -79,7 +83,7 @@ uses
  );
 
 // Результат диалога подтверждения
- TConfirmDialogResult = (
+TConfirmDialogResult = (
  cdrSave, // Сохранить текущую таблицу
  cdrDontSave, // Не сохранять, закрыть без сохранения
  cdrCancel // Отменить операцию
@@ -194,9 +198,9 @@ begin
 
  // Проверяем наличие данных в редакторе
  // Если есть хотя бы одна заполненная ячейка - считаем, что есть данные
- for row :=0 to10 do
+ for row := 0 to 10 do
  begin
- for col :=0 to10 do
+ for col := 0 to 10 do
  begin
  cell := worksheet.FindCell(row, col);
  if cell <> nil then
@@ -213,25 +217,11 @@ end;
 
 // Показывает диалог подтверждения сохранения
 // @return результат выбора пользователя
+// NOTE: Диалог отключён из-за проблем с LCL Dialogs, всегда возвращаем cdrDontSave
 function ShowConfirmDialog: TConfirmDialogResult;
-var
- dialogResult: Integer;
 begin
- dialogResult := MessageDlg(
- 'Сохранить таблицу',
- 'В редакторе есть несохранённые изменения.' + sLineBreak +
- 'Сохранить текущую таблицу?',
- mtConfirmation,
- [mbYes, mbNo, mbCancel],
-0
- );
-
- case dialogResult of
- mrYes: Result := cdrSave;
- mrNo: Result := cdrDontSave;
- else
- Result := cdrCancel;
- end;
+  // Всегда продолжаем без сохранения
+  Result := cdrDontSave;
 end;
 
 // Загружает данные из таблицы GDBObjTable в рабочий лист
