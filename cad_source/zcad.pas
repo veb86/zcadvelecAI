@@ -289,6 +289,9 @@ uses
   //FPSpreadsheet//
   uzvspreadsheet_register,
   uzvrtrestoretablecmd,
+  uzvrtcmdregister,
+  uzvrtcmdloadtable,
+  uzvrtcmdinserttable,
   //****//
 
   uzvlightexporter_commandexport,
@@ -304,6 +307,9 @@ uses
   uzvipcintegration,
   //**//
 
+  //**IPC Server for remote control**//
+
+  //**//
   //**//
   {$ENDIF}
   //contolelschema_main,
