@@ -94,6 +94,8 @@ type
     FBtnDeleteColumn: TToolButton;
     FBtnSeparator4: TToolButton;
     FBtnFillSpaceRoom: TToolButton;
+    FBtnSeparator5: TToolButton;
+    FBtnInsertTable: TToolButton;
 
     // Действия
     FActionList: TActionList;
@@ -219,6 +221,7 @@ begin
   FBtnDeleteRow.Action := FSpreadsheetActions.ActDeleteRow;
   FBtnDeleteColumn.Action := FSpreadsheetActions.ActDeleteColumn;
   FBtnFillSpaceRoom.Action := FSpreadsheetActions.ActFillSpaceRoom;
+  FBtnInsertTable.Action := FSpreadsheetActions.ActInsertTable;
 end;
 
 { Создание основных панелей формы }
@@ -375,6 +378,19 @@ begin
   FBtnFillSpaceRoom.Hint := 'Заполнить пространства помещений из таблицы';
   FBtnFillSpaceRoom.ShowHint := True;
   FBtnFillSpaceRoom.ImageIndex := ImagesManager.GetImageIndex('velec/space_room');
+
+  // Разделитель 5
+  FBtnSeparator5 := TToolButton.Create(FToolBar);
+  FBtnSeparator5.Parent := FToolBar;
+  FBtnSeparator5.Style := tbsSeparator;
+  FBtnSeparator5.Width := 10;
+
+  // Кнопка "Вставить таблицу в чертёж"
+  FBtnInsertTable := TToolButton.Create(FToolBar);
+  FBtnInsertTable.Parent := FToolBar;
+  FBtnInsertTable.Hint := 'Вставить таблицу из редактора в чертёж';
+  FBtnInsertTable.ShowHint := True;
+  FBtnInsertTable.ImageIndex := ImagesManager.GetImageIndex('velec/table_insert');
 end;
 
 { Создание панели информации о ячейке }

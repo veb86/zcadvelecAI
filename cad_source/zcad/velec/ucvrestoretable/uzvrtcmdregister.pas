@@ -32,7 +32,7 @@ unit uzvrtcmdregister;
 interface
 
 uses
- uzvrtcmdinserttable,
+ //uzvrtcmdinserttable,
  uzvrtcmdloadtable;
 
 implementation

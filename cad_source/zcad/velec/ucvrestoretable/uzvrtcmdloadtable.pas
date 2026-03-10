@@ -70,7 +70,7 @@ implementation
 uses
  //Dialogs,
  uzclog,
- uzvrtcmdinserttable;
+ uzvspreadsheet_cmdinserttable;
 
 type
 // Тип результата проверки выделения
@@ -407,8 +407,8 @@ begin
  cdrSave:
  begin
  // Сохраняем текущую таблицу на чертёж
- // Вызываем команду вставки таблицы
- InsertTableFromEditor_com(Context, operands);
+ // Вызываем процедуру вставки таблицы из редактора
+ InsertTableFromEditor_GUI;
  // Продолжаем загрузку новой таблицы
  end;
 

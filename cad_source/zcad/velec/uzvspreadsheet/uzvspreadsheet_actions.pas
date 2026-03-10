@@ -60,6 +60,7 @@ type
     FActDeleteRow: TAction;
     FActDeleteColumn: TAction;
     FActFillSpaceRoom: TAction;
+    FActInsertTable: TAction;
 
     // Флаг автопересчёта
     FAutoCalcEnabled: Boolean;
@@ -81,6 +82,7 @@ type
     procedure OnActDeleteRowExecute(Sender: TObject);
     procedure OnActDeleteColumnExecute(Sender: TObject);
     procedure OnActFillSpaceRoomExecute(Sender: TObject);
+    procedure OnActInsertTableExecute(Sender: TObject);
 
   public
     constructor Create(aActionList: TActionList;
@@ -132,6 +134,9 @@ type
     { Возвращает действие "Заполнить пространства помещений" }
     property ActFillSpaceRoom: TAction read FActFillSpaceRoom;
 
+    { Возвращает действие "Вставить таблицу в чертёж" }
+    property ActInsertTable: TAction read FActInsertTable;
+
     { Возвращает/устанавливает флаг автопересчёта }
     property AutoCalcEnabled: Boolean read FAutoCalcEnabled
       write FAutoCalcEnabled;
@@ -147,6 +152,7 @@ uses
   uzvspreadsheet_cmdundoredo,
   uzvspreadsheet_cmdrowcolumns,
   uzvspreadsheet_cmdfillspaceroom,
+  uzvspreadsheet_cmdinserttable,
   uzvspreadsheet_gui,
   uzclog,
   uzcinterface;
@@ -295,6 +301,14 @@ begin
   FActFillSpaceRoom.Hint := 'Заполнить пространства помещений из таблицы';
   FActFillSpaceRoom.ImageIndex := ImagesManager.GetImageIndex('velec/space_room');
   FActFillSpaceRoom.OnExecute := @OnActFillSpaceRoomExecute;
+
+  // Действие "Вставить таблицу в чертёж"
+  FActInsertTable := TAction.Create(FActionList);
+  FActInsertTable.ActionList := FActionList;
+  FActInsertTable.Caption := 'Вставить таблицу';
+  FActInsertTable.Hint := 'Вставить таблицу из редактора в чертёж';
+  FActInsertTable.ImageIndex := ImagesManager.GetImageIndex('velec/table_insert');
+  FActInsertTable.OnExecute := @OnActInsertTableExecute;
 
   zcUI.TextMessage('Действия электронных таблиц инициализированы', TMWOHistoryOut);
 end;
@@ -534,6 +548,12 @@ begin
   finally
     RoomList.Free;
   end;
+end;
+
+{ Обработчик действия "Вставить таблицу в чертёж" }
+procedure TSpreadsheetActions.OnActInsertTableExecute(Sender: TObject);
+begin
+  InsertTableFromEditor_GUI;
 end;
 
 end.

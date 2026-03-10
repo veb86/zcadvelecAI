@@ -291,7 +291,7 @@ uses
   uzvrtrestoretablecmd,
   uzvrtcmdregister,
   uzvrtcmdloadtable,
-  uzvrtcmdinserttable,
+  //uzvrtcmdinserttable,
   //****//
 
   uzvlightexporter_commandexport,
