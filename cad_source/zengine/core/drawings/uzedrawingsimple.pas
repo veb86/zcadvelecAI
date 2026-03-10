@@ -765,6 +765,7 @@ constructor TSimpleDrawing.init;
 var {tp:GDBTextStyleProp;}
     ts:PTGDBTableStyle;
     cs:TGDBTableCellStyle;
+    i: Integer;
 begin
   DXFCodePage:=TZCCodePage.ZCCPINVALID;
   LastActl.CreateDef;
@@ -1094,7 +1095,24 @@ begin
      cs.cf:=jcc;
      ts.tblformat.PushBackData(cs);
 
-     DrawingExtensions:=TDrawingExtensions.create;
+  // Стиль "spreadsheet" - простой стиль для таблиц из Excel без шапки-блока
+  // Все столбцы одинаковой ширины, все строки одинаковой высоты
+  ts := TableStyleTable.AddStyle('spreadsheet');
+
+  ts.rowheight := 7;        // Высота строки
+  ts.textheight := 3.5;     // Высота текста
+  ts.HeadBlockName := '';   // Без шапки-блока
+
+  // Настраиваем 50 столбцов одинаковой ширины (можно добавить больше при необходимости)
+  for i := 1 to 50 do
+  begin
+    cs.Width := 30;          // Ширина столбца
+    cs.TextWidth := cs.Width - 2;  // Отступы по 1 с каждой стороны
+    cs.cf := jcl;            // Выравнивание по левому краю
+    ts.tblformat.PushBackData(cs);
+  end;
+
+  DrawingExtensions:=TDrawingExtensions.create;
 
 end;
 
