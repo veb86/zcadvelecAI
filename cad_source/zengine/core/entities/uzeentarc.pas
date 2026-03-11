@@ -54,6 +54,7 @@ type
     procedure addcontrolpoints(tdesc:Pointer);virtual;
     procedure remaponecontrolpoint(pdesc:pcontrolpointdesc;
       ProjectProc:GDBProjectProc);virtual;
+    function CalcObjMatrixWithoutOwner:TzeTypedMatrix4d;virtual;
     procedure CalcObjMatrix(pdrawing:PTDrawingDef=nil);virtual;
     procedure precalc;
     procedure FormatEntity(var drawing:TDrawingDef;
@@ -232,9 +233,9 @@ begin
   inherited;
 
   // Центр дуги (Local.P_insert) хранится напрямую в строке переноса ObjMatrix.
-  // В CalcObjMatrixWithoutOwner: ObjMatrix = disp(p_insert) * rot,
-  // в GDBObjARC.CalcObjMatrix масштабируются только строки 0–2 (оси), не строка 3.
-  // Поэтому строка 3 ObjMatrix всегда равна Local.P_insert.
+  // В GDBObjARC.CalcObjMatrixWithoutOwner: ObjMatrix = rot * disp(p_insert),
+  // строка 3 результата равна Local.P_insert (без искажения поворотом).
+  // GDBObjARC.CalcObjMatrix масштабирует только строки 0–2 (оси), не строку 3.
   Local.P_insert := PzePoint3d(@objmatrix.mtr.v[3])^;
 
   // P_insert_in_WCS также обновляем из строки 3 ObjMatrix.
@@ -339,15 +340,44 @@ begin
   dxfDoubleout(outStream,51,endangle*180/pi);
 end;
 
+// Функция строит матрицу объекта без учёта матрицы владельца.
+// Перегружает базовый метод для корректного расположения центра дуги в WCS.
+// Порядок умножения: сначала поворот (rotmatr), затем перенос (dispmatr).
+// В базовом классе порядок обратный (dispmatr * rotmatr), что приводит
+// к ошибочному повороту центра при наклоне оси OZ (после поворота вокруг X или Y).
+// Этот метод аналогичен реализации в GDBObjEllipse.
+function GDBObjARC.CalcObjMatrixWithoutOwner:TzeTypedMatrix4d;
+var
+  rotmatr, dispmatr: TzeTypedMatrix4d;
+begin
+  // Пересчитываем нормализованные оси из текущего oz
+  Local.basis.ox := GetXfFromZ(Local.basis.oz);
+  Local.basis.oy := VectorDot(Local.basis.oz, Local.basis.ox);
+  Local.basis.ox := NormalizeVertex(Local.basis.ox);
+  Local.basis.oy := NormalizeVertex(Local.basis.oy);
+  Local.basis.oz := NormalizeVertex(Local.basis.oz);
+
+  // Матрица поворота из базисных векторов OCS
+  rotmatr  := CreateMatrixFromBasis(Local.basis.ox, Local.basis.oy, Local.basis.oz);
+  // Матрица переноса на центр дуги в WCS
+  dispmatr := CreateTranslationMatrix(Local.p_insert);
+
+  // Порядок: сначала поворот, затем перенос — строка 3 результата = Local.p_insert
+  Result := MatrixMultiply(rotmatr, dispmatr);
+end;
+
 // Процедура строит ObjMatrix для дуги.
-// После вызова inherited (который строит матрицу поворота + переноса),
-// масштабирует строки осей (0–2) на радиус R.
+// Вызывает CalcObjMatrixWithoutOwner (с корректным порядком поворот*перенос),
+// применяет матрицу владельца если она задана, затем масштабирует строки
+// осей (0–2) на радиус R.
 // Строка переноса (3) остаётся нетронутой — она содержит Local.P_insert.
 procedure GDBObjARC.CalcObjMatrix;
 begin
+  // Явно вызываем CalcObjMatrix базового класса, который использует
+  // наш переопределённый CalcObjMatrixWithoutOwner с правильным порядком матриц
   inherited CalcObjMatrix;
   // Масштабируем только строки осей (радиус), не строку переноса!
-  // objmatrix после inherited = disp(p_insert) * rot (Translation * Rotation)
+  // objmatrix после inherited = rot * disp(p_insert): строка 3 = Local.P_insert
   with objmatrix.mtr do begin
     v[0].v[0] := v[0].v[0] * r;
     v[0].v[1] := v[0].v[1] * r;
