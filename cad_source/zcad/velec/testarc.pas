@@ -49,15 +49,46 @@ begin
   Result := angle * 180.0 / PI;
 end;
 
-procedure LogArcInfo(const prefix:string; pa:PGDBObjArc);
+procedure LogMatrix(const prefix:string; const m:TzeTypedMatrix4d);
 begin
+  LogMessage(prefix + ' ObjMatrix:');
+  LogMessage(Format('     [%.6f, %.6f, %.6f, %.6f]', [m.mtr.v[0].v[0], m.mtr.v[0].v[1], m.mtr.v[0].v[2], m.mtr.v[0].v[3]]));
+  LogMessage(Format('     [%.6f, %.6f, %.6f, %.6f]', [m.mtr.v[1].v[0], m.mtr.v[1].v[1], m.mtr.v[1].v[2], m.mtr.v[1].v[3]]));
+  LogMessage(Format('     [%.6f, %.6f, %.6f, %.6f]', [m.mtr.v[2].v[0], m.mtr.v[2].v[1], m.mtr.v[2].v[2], m.mtr.v[2].v[3]]));
+  LogMessage(Format('     [%.6f, %.6f, %.6f, %.6f]', [m.mtr.v[3].v[0], m.mtr.v[3].v[1], m.mtr.v[3].v[2], m.mtr.v[3].v[3]]));
+end;
+
+procedure LogArcInfo(const prefix:string; pa:PGDBObjArc);
+var
+  det: double;
+begin
+  // Вычисляем определитель матрицы 4x4 (для матрицы с последней строкой [0,0,0,1])
+  // определитель равен определителю верхнего левого блока 3x3
+  det := pa^.objmatrix.mtr.v[0].v[0] * (pa^.objmatrix.mtr.v[1].v[1] * pa^.objmatrix.mtr.v[2].v[2] - pa^.objmatrix.mtr.v[1].v[2] * pa^.objmatrix.mtr.v[2].v[1])
+       - pa^.objmatrix.mtr.v[0].v[1] * (pa^.objmatrix.mtr.v[1].v[0] * pa^.objmatrix.mtr.v[2].v[2] - pa^.objmatrix.mtr.v[1].v[2] * pa^.objmatrix.mtr.v[2].v[0])
+       + pa^.objmatrix.mtr.v[0].v[2] * (pa^.objmatrix.mtr.v[1].v[0] * pa^.objmatrix.mtr.v[2].v[1] - pa^.objmatrix.mtr.v[1].v[1] * pa^.objmatrix.mtr.v[2].v[0]);
+
   LogMessage(Format('   %s StartAngle: %.6f (%.2f°)', [prefix, pa^.StartAngle, AngleToDeg(pa^.StartAngle)]));
   LogMessage(Format('   %s EndAngle: %.6f (%.2f°)', [prefix, pa^.EndAngle, AngleToDeg(pa^.EndAngle)]));
   LogMessage(Format('   %s Angle (sweep): %.6f (%.2f°)', [prefix, pa^.angle, AngleToDeg(pa^.angle)]));
   LogMessage(Format('   %s P_insert (центр в WCS): %s', [prefix, Point3DToStr(pa^.P_insert_in_WCS)]));
+  LogMessage(Format('   %s Local.p_insert: X=%.6f, Y=%.6f, Z=%.6f', [prefix, pa^.Local.p_insert.x, pa^.Local.p_insert.y, pa^.Local.p_insert.z]));
   LogMessage(Format('   %s q0 (начальная точка): %s', [prefix, Point3DToStr(pa^.q0)]));
   LogMessage(Format('   %s q1 (средняя точка): %s', [prefix, Point3DToStr(pa^.q1)]));
   LogMessage(Format('   %s q2 (конечная точка): %s', [prefix, Point3DToStr(pa^.q2)]));
+  LogMessage(Format('   %s Radius: %.6f', [prefix, pa^.R]));
+  LogMessage(Format('   %s ObjMatrix determinant: %.6f (зеркало=%s)', [prefix, det, BoolToStr(det < 0, True)]));
+
+  // Вывод матрицы объекта
+  LogMatrix(prefix + ' ', pa^.objmatrix);
+
+  // Вывод локальной СК
+  LogMessage(Format('   %s Local.basis.OX: %s', [prefix, Point3DToStr(pa^.Local.basis.ox)]));
+  LogMessage(Format('   %s Local.basis.OY: %s', [prefix, Point3DToStr(pa^.Local.basis.oy)]));
+  LogMessage(Format('   %s Local.basis.OZ: %s', [prefix, Point3DToStr(pa^.Local.basis.oz)]));
+
+  // Проверка: радиус должен соответствовать масштабу по осям
+  LogMessage(Format('   %s Проверка масштаба: OX.x=%.6f, OY.y=%.6f, R=%.6f', [prefix, pa^.Local.basis.ox.x, pa^.Local.basis.oy.y, pa^.R]));
 end;
 
 function TestArcCommand_com(const Context:TZCADCommandContext;
@@ -109,7 +140,7 @@ begin
   
   zcSetEntPropFromCurrentDrawingProp(pa1);
   pa1^.vp.LineWeight := LnWt200;
-  pa1^.vp.Color := 4; // желтый
+  pa1^.vp.Color := 2; // желтый
   
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
   pa1^.FormatEntity(drawings.GetCurrentDWG^, dc);
@@ -127,13 +158,14 @@ begin
   LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngle, AngleToDeg(rotationAngle)]));
   
   // Создаем матрицу поворота вокруг центра дуги (как в команде RotateEnts)
-  // Правильный порядок: T(center) * R * T(-center)
-  // Сначала перенос в начало координат, потом поворот, потом перенос обратно
-  dispmatr := CreateTranslationMatrix(CreateVertex(-centerPoint.x, -centerPoint.y, -centerPoint.z));
-  rotMatrix := CreateRotationMatrixZ(rotationAngle);
-  rotMatrix := MatrixMultiply(rotMatrix, dispmatr);
+  // В ZCAD матрицы транспонированы (перенос в 4-й строке), векторы умножаются справа: v' = v * M
+  // Порядок умножения: M = T(-center) * R * T(center)
+  // То есть: сначала T(center), потом R, потом T(-center)
   dispmatr := CreateTranslationMatrix(CreateVertex(centerPoint.x, centerPoint.y, centerPoint.z));
-  rotMatrix := MatrixMultiply(dispmatr, rotMatrix);
+  rotMatrix := CreateRotationMatrixZ(rotationAngle);
+  rotMatrix := MatrixMultiply(rotMatrix, dispmatr);  // R * T(center)
+  dispmatr := CreateTranslationMatrix(CreateVertex(-centerPoint.x, -centerPoint.y, -centerPoint.z));
+  rotMatrix := MatrixMultiply(dispmatr, rotMatrix);  // T(-center) * (R * T(center))
   
   LogMessage(Format('   Матрица поворота [0,0]=%.4f, [0,1]=%.4f, [1,0]=%.4f, [1,1]=%.4f', 
     [rotMatrix.mtr.v[0].v[0], rotMatrix.mtr.v[0].v[1], rotMatrix.mtr.v[1].v[0], rotMatrix.mtr.v[1].v[1]]));
@@ -214,7 +246,7 @@ begin
   
   zcSetEntPropFromCurrentDrawingProp(pa2);
   pa2^.vp.LineWeight := LnWt200;
-  pa2^.vp.Color := 2; // красный
+  pa2^.vp.Color := 1; // красный
   
   pa2^.FormatEntity(drawings.GetCurrentDWG^, dc);
   
@@ -336,7 +368,7 @@ begin
   
   zcSetEntPropFromCurrentDrawingProp(pa4);
   pa4^.vp.LineWeight := LnWt200;
-  pa4^.vp.Color := 3; // зеленый
+  pa4^.vp.Color := 4; // голубая
 
   pa4^.FormatEntity(drawings.GetCurrentDWG^, dc);
 

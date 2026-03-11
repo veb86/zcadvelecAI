@@ -1077,6 +1077,7 @@
       <Unit129>
         <Filename Value="zengine/core/entities/uzeenttable.pas"/>
         <IsPartOfProject Value="True"/>
+        <UnitName Value="uzeEntTable"/>
       </Unit129>
       <Unit130>
         <Filename Value="zengine/core/uzeconsts.pas"/>
