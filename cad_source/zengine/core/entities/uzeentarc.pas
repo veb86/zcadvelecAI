@@ -137,67 +137,75 @@ begin
   processaxis(posr,tv);
 end;
 
-// GDBObjARC.transform - откорректирована с использованием ИИ кодера
-// GDBObjARC.transform - adjusted using the AI coder
+// Процедура трансформации дуги: поворот, масштабирование и зеркализация.
+// Углы дуги (StartAngle, EndAngle) измеряются от оси X локальной СК объекта
+// (определяется алгоритмом Arbitrary Axis из DXF). После любого поворота, в том
+// числе вокруг осей X и Y, углы пересчитываются путём проекции новых направлений
+// к точкам начала/конца дуги на оси новой локальной СК.
 procedure GDBObjARC.transform;
 var
-  sav,eav,pins:TzePoint3d;
-  tempAngle:double;
-  cosVal, sinVal:double;
-  det:double;
+  // Мировые координаты точек дуги до трансформации
+  oldStartPoint, oldEndPoint, oldCenter: TzePoint3d;
+  // Мировые координаты точек дуги после трансформации
+  newStartPoint, newEndPoint, newCenter: TzePoint3d;
+  // Оси новой локальной СК (Arbitrary Axis Algorithm)
+  newOcsX, newOcsY: TzePoint3d;
+  // Нормализованные направления от нового центра к точкам дуги
+  dirToStart, dirToEnd: TzePoint3d;
+  // Определитель матрицы трансформации (знак указывает на зеркальность)
+  det: double;
 begin
+  // Шаг 1. Вычисляем текущие 3D-позиции ключевых точек дуги в WCS
   precalc;
-  
-  // Вычисляем определитель матрицы для определения зеркальности трансформации
-  det := t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[2] +
-         t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0] +
-         t_matrix.mtr.v[0].v[2]*t_matrix.mtr.v[1].v[0]*t_matrix.mtr.v[2].v[1] -
-         t_matrix.mtr.v[0].v[2]*t_matrix.mtr.v[1].v[1]*t_matrix.mtr.v[2].v[0] -
-         t_matrix.mtr.v[0].v[1]*t_matrix.mtr.v[1].v[0]*t_matrix.mtr.v[2].v[1] -
-         t_matrix.mtr.v[0].v[0]*t_matrix.mtr.v[1].v[2]*t_matrix.mtr.v[2].v[0];
-  
+  oldCenter    := P_insert_in_WCS;
+  oldStartPoint := q0;
+  oldEndPoint   := q2;
+
+  // Шаг 2. Вычисляем определитель для обнаружения зеркальной трансформации.
+  // При det < 0 матрица содержит отражение — порядок начала и конца дуги меняется
+  det := t_matrix.mtr.v[0].v[0] * t_matrix.mtr.v[1].v[1] * t_matrix.mtr.v[2].v[2]
+       + t_matrix.mtr.v[0].v[1] * t_matrix.mtr.v[1].v[2] * t_matrix.mtr.v[2].v[0]
+       + t_matrix.mtr.v[0].v[2] * t_matrix.mtr.v[1].v[0] * t_matrix.mtr.v[2].v[1]
+       - t_matrix.mtr.v[0].v[2] * t_matrix.mtr.v[1].v[1] * t_matrix.mtr.v[2].v[0]
+       - t_matrix.mtr.v[0].v[1] * t_matrix.mtr.v[1].v[0] * t_matrix.mtr.v[2].v[1]
+       - t_matrix.mtr.v[0].v[0] * t_matrix.mtr.v[1].v[2] * t_matrix.mtr.v[2].v[0];
+
+  // Шаг 3. Переносим точки начала и конца дуги в новые мировые позиции
+  newCenter     := VectorTransform3D(oldCenter, t_matrix);
   if det < 0 then begin
-    // Зеркальная трансформация - меняем местами начало и конец
-    sav:=q2;
-    eav:=q0;
+    // Зеркальная трансформация: меняем местами начало и конец
+    newStartPoint := VectorTransform3D(oldEndPoint, t_matrix);
+    newEndPoint   := VectorTransform3D(oldStartPoint, t_matrix);
   end else begin
-    sav:=q0;
-    eav:=q2;
+    newStartPoint := VectorTransform3D(oldStartPoint, t_matrix);
+    newEndPoint   := VectorTransform3D(oldEndPoint, t_matrix);
   end;
-  
-  pins:=P_insert_in_WCS;
-  sav:=VectorTransform3D(sav,t_matrix);
-  eav:=VectorTransform3D(eav,t_matrix);
-  pins:=VectorTransform3D(pins,t_matrix);
-  
-  // Вызываем inherited для обновления objmatrix (трансформация базиса)
+
+  // Шаг 4. Обновляем objmatrix и Local.basis через базовый класс.
+  // После этого: Local.basis.oz содержит новую нормаль, Local.basis.ox/oy —
+  // нормализованные оси из обновлённой objmatrix, Local.P_insert и R обновлены.
   inherited;
-  
-  // Вычисляем новые векторы направления относительно нового центра
-  sav:=NormalizeVertex(VertexSub(sav,pins));
-  eav:=NormalizeVertex(VertexSub(eav,pins));
 
-  // Вычисляем углы относительно глобальной оси X с использованием ArcTan2
-  cosVal := sav.x;
-  sinVal := sav.y;
-  StartAngle := ArcTan2(sinVal, cosVal);
+  // Шаг 5. Строим канонические оси новой локальной СК (Arbitrary Axis Algorithm).
+  // Алгоритм DXF определяет ось X из нормали oz; углы дуги отсчитываются от неё.
+  newOcsX := GetXfFromZ(Local.basis.oz);
+  newOcsY := NormalizeVertex(VectorDot(Local.basis.oz, newOcsX));
+
+  // Шаг 6. Вычисляем нормализованные направления от нового центра к точкам дуги
+  dirToStart := NormalizeVertex(VertexSub(newStartPoint, newCenter));
+  dirToEnd   := NormalizeVertex(VertexSub(newEndPoint, newCenter));
+
+  // Шаг 7. Проецируем направления на оси локальной СК и вычисляем новые углы.
+  // scalardot — скалярное произведение; оно даёт косинус и синус угла в плоскости дуги
+  StartAngle := ArcTan2(scalardot(dirToStart, newOcsY), scalardot(dirToStart, newOcsX));
   if StartAngle < 0 then
-    StartAngle := 2*pi + StartAngle;
+    StartAngle := 2 * pi + StartAngle;
 
-  cosVal := eav.x;
-  sinVal := eav.y;
-  EndAngle := ArcTan2(sinVal, cosVal);
+  EndAngle := ArcTan2(scalardot(dirToEnd, newOcsY), scalardot(dirToEnd, newOcsX));
   if EndAngle < 0 then
-    EndAngle := 2*pi + EndAngle;
+    EndAngle := 2 * pi + EndAngle;
 
-  // Обновляем центр дуги в Local и objmatrix
-  Local.p_insert := pins;
-  PzePoint3d(@objmatrix.mtr.v[3])^ := pins;
-  
-  // Обновляем P_insert_in_WCS напрямую
-  P_insert_in_WCS := pins;
-  
-  // Пересчитываем точки q0, q1, q2 с новыми углами
+  // Шаг 8. Пересчитываем вспомогательные точки q0, q1, q2 с новыми углами
   precalc;
 end;
 
