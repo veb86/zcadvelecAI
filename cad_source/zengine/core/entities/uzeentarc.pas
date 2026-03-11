@@ -208,76 +208,54 @@ begin
   // Шаг 8. Пересчитываем вспомогательные точки q0, q1, q2 с новыми углами
   precalc;
 
-  // Отладочный вывод для проверки трансформации
-  zcUI.TextMessage(Format('[DEBUG transform] det=%.6f (зеркало=%s)', [det, BoolToStr(det < 0, True)]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] oldCenter: (%.6f, %.6f, %.6f)', [oldCenter.x, oldCenter.y, oldCenter.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newCenter: (%.6f, %.6f, %.6f)', [newCenter.x, newCenter.y, newCenter.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] oldStartPoint: (%.6f, %.6f, %.6f)', [oldStartPoint.x, oldStartPoint.y, oldStartPoint.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] oldEndPoint: (%.6f, %.6f, %.6f)', [oldEndPoint.x, oldEndPoint.y, oldEndPoint.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newStartPoint: (%.6f, %.6f, %.6f)', [newStartPoint.x, newStartPoint.y, newStartPoint.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newEndPoint: (%.6f, %.6f, %.6f)', [newEndPoint.x, newEndPoint.y, newEndPoint.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] StartAngle: %.6f (%.2f°)', [StartAngle, StartAngle*180/Pi]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] EndAngle: %.6f (%.2f°)', [EndAngle, EndAngle*180/Pi]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] R: %.6f', [R]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newOcsX: (%.6f, %.6f, %.6f)', [newOcsX.x, newOcsX.y, newOcsX.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newOcsY: (%.6f, %.6f, %.6f)', [newOcsY.x, newOcsY.y, newOcsY.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] dirToStart: (%.6f, %.6f, %.6f)', [dirToStart.x, dirToStart.y, dirToStart.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] dirToEnd: (%.6f, %.6f, %.6f)', [dirToEnd.x, dirToEnd.y, dirToEnd.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] Local.basis.OX: (%.6f, %.6f, %.6f)', [Local.basis.ox.x, Local.basis.ox.y, Local.basis.ox.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] Local.basis.OY: (%.6f, %.6f, %.6f)', [Local.basis.oy.x, Local.basis.oy.y, Local.basis.oy.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] Local.basis.OZ: (%.6f, %.6f, %.6f)', [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
-  zcUI.TextMessage('[DEBUG transform] ObjMatrix после трансформации:', TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[0].v[0], objmatrix.mtr.v[0].v[1], objmatrix.mtr.v[0].v[2], objmatrix.mtr.v[0].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[1].v[0], objmatrix.mtr.v[1].v[1], objmatrix.mtr.v[1].v[2], objmatrix.mtr.v[1].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[2].v[0], objmatrix.mtr.v[2].v[1], objmatrix.mtr.v[2].v[2], objmatrix.mtr.v[2].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[3].v[0], objmatrix.mtr.v[3].v[1], objmatrix.mtr.v[3].v[2], objmatrix.mtr.v[3].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] q0: (%.6f, %.6f, %.6f)', [q0.x, q0.y, q0.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] q1: (%.6f, %.6f, %.6f)', [q1.x, q1.y, q1.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] q2: (%.6f, %.6f, %.6f)', [q2.x, q2.y, q2.z]), TMWOHistoryOut);
+  {$IFDEF DEBUG_ARC_TRANSFORM}
+  zcUI.TextMessage(Format('[DEBUG transform] det=%.6f (зеркало=%s)',
+    [det, BoolToStr(det < 0, True)]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] oldCenter: (%.6f, %.6f, %.6f)',
+    [oldCenter.x, oldCenter.y, oldCenter.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] newCenter: (%.6f, %.6f, %.6f)',
+    [newCenter.x, newCenter.y, newCenter.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] StartAngle: %.6f (%.2f°)',
+    [StartAngle, StartAngle*180/Pi]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] EndAngle: %.6f (%.2f°)',
+    [EndAngle, EndAngle*180/Pi]), TMWOHistoryOut);
+  {$ENDIF}
 end;
 
+// Процедура восстанавливает поля Local и R из текущей ObjMatrix.
+// Вызывается после трансформации, когда ObjMatrix уже обновлена.
+// ObjMatrix для дуги: строки 0–2 содержат масштабированные оси (радиус R),
+// строка 3 содержит координаты центра дуги (Local.P_insert).
 procedure GDBObjARC.ReCalcFromObjMatrix;
-var
-  ox,oy:TzePoint3d;
-  m:TzeTypedMatrix4d;
-  invM:TzeTypedMatrix4d;
-  tempPoint: TzePoint3d;
 begin
+  // Восстанавливаем нормализованные оси Local.basis из строк ObjMatrix
   inherited;
 
-  ox:=GetXfFromZ(Local.basis.oz);
-  oy:=NormalizeVertex(VectorDot(Local.basis.oz,Local.basis.ox));
-  m:=CreateMatrixFromBasis(ox,oy,Local.basis.oz);
+  // Центр дуги (Local.P_insert) хранится напрямую в строке переноса ObjMatrix.
+  // В CalcObjMatrixWithoutOwner: ObjMatrix = disp(p_insert) * rot,
+  // в GDBObjARC.CalcObjMatrix масштабируются только строки 0–2 (оси), не строка 3.
+  // Поэтому строка 3 ObjMatrix всегда равна Local.P_insert.
+  Local.P_insert := PzePoint3d(@objmatrix.mtr.v[3])^;
 
-  // Строим обратную матрицу поворота (транспонированную)
-  // Для ортогональной матрицы (поворот) inverse = transpose
-  invM := m;
-  // Транспонируем только поворотную часть 3x3
-  invM.mtr.v[0].v[1] := m.mtr.v[1].v[0];
-  invM.mtr.v[0].v[2] := m.mtr.v[2].v[0];
-  invM.mtr.v[1].v[0] := m.mtr.v[0].v[1];
-  invM.mtr.v[1].v[2] := m.mtr.v[2].v[1];
-  invM.mtr.v[2].v[0] := m.mtr.v[0].v[2];
-  invM.mtr.v[2].v[1] := m.mtr.v[1].v[2];
+  // P_insert_in_WCS также обновляем из строки 3 ObjMatrix.
+  // Это эквивалентно VectorTransform3D(nulvertex, objmatrix), но без лишних вычислений.
+  P_insert_in_WCS := Local.P_insert;
 
-  // Преобразуем мировые координаты центра в локальные
-  // objmatrix = Translation * Scale * Rotation
-  // objmatrix.mtr.v[3] = Local.P_insert (не масштабируется!)
-  // Для извлечения Local.P_insert нужно применить обратный поворот к переносу
-  tempPoint := VectorTransform3D(PzePoint3d(@objmatrix.mtr.v[3])^, invM);
-  Local.P_insert := tempPoint;
-
-  // Вычисляем радиус из длины первой оси
+  // Радиус — длина первого вектора-оси в ObjMatrix (масштаб по оси X)
   self.R := oneVertexLength(PzePoint3d(@objmatrix.mtr.v[0])^);
 
+  {$IFDEF DEBUG_ARC_TRANSFORM}
   zcUI.TextMessage('[DEBUG ReCalcFromObjMatrix]', TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OX: (%.6f, %.6f, %.6f)', [Local.basis.ox.x, Local.basis.ox.y, Local.basis.ox.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OY: (%.6f, %.6f, %.6f)', [Local.basis.oy.x, Local.basis.oy.y, Local.basis.oy.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OZ: (%.6f, %.6f, %.6f)', [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  objmatrix.mtr.v[3]: (%.6f, %.6f, %.6f)', [objmatrix.mtr.v[3].v[0], objmatrix.mtr.v[3].v[1], objmatrix.mtr.v[3].v[2]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.P_insert: (%.6f, %.6f, %.6f)', [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  objmatrix.mtr.v[0].x: %.6f', [objmatrix.mtr.v[0].v[0]]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('  Local.basis.OX: (%.6f, %.6f, %.6f)',
+    [Local.basis.ox.x, Local.basis.ox.y, Local.basis.ox.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('  Local.basis.OY: (%.6f, %.6f, %.6f)',
+    [Local.basis.oy.x, Local.basis.oy.y, Local.basis.oy.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('  Local.basis.OZ: (%.6f, %.6f, %.6f)',
+    [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('  Local.P_insert: (%.6f, %.6f, %.6f)',
+    [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z]), TMWOHistoryOut);
   zcUI.TextMessage(Format('  R (вычисленный): %.6f', [self.R]), TMWOHistoryOut);
+  {$ENDIF}
 end;
 
 function GDBObjARC.CalcTrueInFrustum;
@@ -361,15 +339,15 @@ begin
   dxfDoubleout(outStream,51,endangle*180/pi);
 end;
 
+// Процедура строит ObjMatrix для дуги.
+// После вызова inherited (который строит матрицу поворота + переноса),
+// масштабирует строки осей (0–2) на радиус R.
+// Строка переноса (3) остаётся нетронутой — она содержит Local.P_insert.
 procedure GDBObjARC.CalcObjMatrix;
-var
-  m1:TzeTypedMatrix4d;
-  v:TzeVector4d;
 begin
   inherited CalcObjMatrix;
-  // Масштабируем только оси (радиус), не перенос!
-  // objmatrix после inherited = Translation * Rotation
-  // Умножаем первые три строки на радиус
+  // Масштабируем только строки осей (радиус), не строку переноса!
+  // objmatrix после inherited = disp(p_insert) * rot (Translation * Rotation)
   with objmatrix.mtr do begin
     v[0].v[0] := v[0].v[0] * r;
     v[0].v[1] := v[0].v[1] * r;
@@ -387,22 +365,11 @@ begin
     v[2].v[3] := v[2].v[3] * r;
   end;
 
-  PzePoint3d(@v)^:=local.p_insert;
-  v.z:=0;
-  v.w:=1;
-  m1:=objMatrix;
-  MatrixInvert(m1);
-  v:=VectorTransform(v,m1);
-
-  // Отладочный вывод для проверки вычисления матрицы
+  {$IFDEF DEBUG_ARC_TRANSFORM}
   zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] R=%.6f', [r]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] Local.p_insert: (%.6f, %.6f, %.6f)', [Local.p_insert.x, Local.p_insert.y, Local.p_insert.z]), TMWOHistoryOut);
-  zcUI.TextMessage('[DEBUG CalcObjMatrix] ObjMatrix после масштабирования:', TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[0].v[0], objmatrix.mtr.v[0].v[1], objmatrix.mtr.v[0].v[2], objmatrix.mtr.v[0].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[1].v[0], objmatrix.mtr.v[1].v[1], objmatrix.mtr.v[1].v[2], objmatrix.mtr.v[1].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[2].v[0], objmatrix.mtr.v[2].v[1], objmatrix.mtr.v[2].v[2], objmatrix.mtr.v[2].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  [%.6f, %.6f, %.6f, %.6f]', [objmatrix.mtr.v[3].v[0], objmatrix.mtr.v[3].v[1], objmatrix.mtr.v[3].v[2], objmatrix.mtr.v[3].v[3]]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] Вектор v (после инверсии): (%.6f, %.6f, %.6f, %.6f)', [v.x, v.y, v.z, v.w]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] Local.p_insert: (%.6f, %.6f, %.6f)',
+    [Local.p_insert.x, Local.p_insert.y, Local.p_insert.z]), TMWOHistoryOut);
+  {$ENDIF}
 end;
 
 procedure GDBObjARC.precalc;
