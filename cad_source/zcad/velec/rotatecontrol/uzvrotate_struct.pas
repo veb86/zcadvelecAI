@@ -40,9 +40,9 @@ const
   MAX_ROTATION_ANGLE = 360.0;
 
 type
-  {**Состояние вращения для хранения исходных данных объектов}
+  {**Состояние вращения: хранит указатель на объект.
+     Используем дельта-трансформации, поэтому исходная матрица не сохраняется.}
   TRotationState = record
-    OriginalMatrix: TzeTypedMatrix4d;
     EntityPtr: Pointer;
   end;
 

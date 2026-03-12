@@ -35,7 +35,8 @@ uses
   Dialogs,
   uzvrotate_struct,
   uzvrotate_logic,
-  uzcinterface;
+  uzcinterface,
+  uzcutils;
 
 type
   {**Форма управления вращением объектов}
@@ -202,7 +203,7 @@ begin
   ApplyRotation(angleX, angleY, angleZ);
 
   // Запрашиваем перерисовку
-  zcUI.RedrawCurrentWnd;
+  zcRedrawCurrentDrawing;
 end;
 
 {**Обработчик изменения ползунка X}
@@ -242,7 +243,7 @@ begin
     UpdateAngleLabels;
 
     // Запрашиваем перерисовку
-    zcUI.RedrawCurrentWnd;
+    zcRedrawCurrentDrawing;
   finally
     FUpdating := False;
   end;
