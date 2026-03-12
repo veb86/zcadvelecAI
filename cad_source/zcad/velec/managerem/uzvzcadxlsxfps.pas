@@ -36,7 +36,7 @@ uses
   {gzctnrVectorTypes,}LazUTF8,
   uzcinterface,
   comobj, variants, LConvEncoding, strutils,
-  fpsTypes, fpSpreadsheet, fpsUtils, fpsSearch,gvector{, fpsAllFormats},  uzbstrproc;
+  fpsTypes, fpSpreadsheet, fpsUtils, fpsSearch, gvector, fpsAllFormats, uzbstrproc;
 
   //uzvsettingform,
   //LCLIntf, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,

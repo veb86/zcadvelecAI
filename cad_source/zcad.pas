@@ -303,6 +303,7 @@ uses
   uzvsqlite_command,
   testarc,
   testarc2,
+  uzvrotate_main,
 
   //**IPC Server for remote control**//
   uzvipcserver,
