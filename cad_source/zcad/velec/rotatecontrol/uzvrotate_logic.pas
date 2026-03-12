@@ -17,7 +17,9 @@
 }
 {$mode objfpc}{$H+}
 
-{**Модуль логики вращения объектов}
+{**Модуль логики вращения объектов.
+   Использует подход с применением дельта-трансформации для правильной работы
+   с любыми типами объектов, включая дуги. Основан на алгоритме из uzccommand_rotate.}
 unit uzvrotate_logic;
 
 {$INCLUDE zengineconfig.inc}
@@ -25,10 +27,10 @@ unit uzvrotate_logic;
 interface
 uses
   SysUtils,
+  Math,
   uzegeometrytypes,
   uzegeometry,
   uzeentity,
-  uzeentwithmatrix,
   uzcdrawings,
   uzgldrawcontext,
   UGDBSelectedObjArray,
@@ -36,18 +38,20 @@ uses
   uzvrotate_struct,
   uzclog;
 
-{**Инициализировать данные вращения из выделенных объектов
+{**Инициализировать данные вращения из выделенных объектов.
    @return True если инициализация успешна}
 function InitRotationData: Boolean;
 
 {**Освободить данные вращения}
 procedure FreeRotationData;
 
-{**Вычислить центр вращения (геометрический центр bounding box)
+{**Вычислить центр вращения (геометрический центр bounding box).
    @return точка центра вращения}
 function CalculateRotationCenter: TzePoint3d;
 
-{**Применить вращение к выделенным объектам
+{**Применить вращение к выделенным объектам.
+   Использует дельта-трансформацию: вычисляет разницу между текущим и новым
+   вращением, затем применяет её через метод Transform объектов.
    @param AAngleX - угол вращения вокруг оси X в радианах
    @param AAngleY - угол вращения вокруг оси Y в радианах
    @param AAngleZ - угол вращения вокруг оси Z в радианах}
@@ -59,7 +63,7 @@ procedure ResetRotation;
 {**Подтвердить вращение (применить окончательно)}
 procedure CommitRotation;
 
-{**Получить количество выделенных объектов
+{**Получить количество выделенных объектов.
    @return количество объектов}
 function GetSelectedObjectsCount: Integer;
 
@@ -77,28 +81,14 @@ begin
   Result := drawings.GetCurrentDWG^.SelObjArray.Count;
 end;
 
-{**Сохранить исходное состояние объекта
+{**Сохранить указатель на объект.
    @param AEntity - указатель на объект
    @param AIndex - индекс в массиве состояний}
-procedure SaveEntityState(AEntity: PGDBObjEntity; AIndex: Integer);
-var
-  pWithMatrix: PGDBObjWithMatrix;
+procedure SaveEntityPointer(AEntity: PGDBObjEntity; AIndex: Integer);
 begin
   if AEntity = nil then
     Exit;
-
   RotationData.States[AIndex].EntityPtr := AEntity;
-
-  // Если объект поддерживает матрицу, сохраняем её
-  if AEntity^.GetMatrix <> nil then
-  begin
-    pWithMatrix := PGDBObjWithMatrix(AEntity);
-    RotationData.States[AIndex].OriginalMatrix := pWithMatrix^.ObjMatrix;
-  end
-  else
-  begin
-    RotationData.States[AIndex].OriginalMatrix := OneMatrix;
-  end;
 end;
 
 {**Инициализировать данные вращения из выделенных объектов}
@@ -123,10 +113,10 @@ begin
   // Считаем количество объектов
   count := drawings.GetCurrentDWG^.SelObjArray.Count;
 
-  // Выделяем память для массива состояний
+  // Выделяем память для массива указателей на объекты
   SetLength(RotationData.States, count);
 
-  // Сохраняем исходное состояние каждого объекта
+  // Сохраняем указатели на объекты
   i := 0;
   psd := drawings.GetCurrentDWG^.SelObjArray.beginiterate(ir);
 
@@ -135,7 +125,7 @@ begin
     repeat
       if psd^.objaddr <> nil then
       begin
-        SaveEntityState(psd^.objaddr, i);
+        SaveEntityPointer(psd^.objaddr, i);
         Inc(i);
       end;
       psd := drawings.GetCurrentDWG^.SelObjArray.iterate(ir);
@@ -145,7 +135,7 @@ begin
   // Вычисляем центр вращения
   RotationData.Center := CalculateRotationCenter;
 
-  // Обнуляем углы
+  // Начинаем с нулевых углов
   RotationData.AngleX := 0;
   RotationData.AngleY := 0;
   RotationData.AngleZ := 0;
@@ -217,13 +207,15 @@ begin
   end;
 end;
 
-{**Создать комбинированную матрицу вращения
+{**Создать матрицу вращения вокруг точки.
+   Порядок вращения: сначала Z, затем Y, затем X.
+   Алгоритм: сдвиг в центр -> вращение -> сдвиг обратно.
    @param AAngleX - угол вокруг X в радианах
    @param AAngleY - угол вокруг Y в радианах
    @param AAngleZ - угол вокруг Z в радианах
    @param ACenter - центр вращения
    @return комбинированная матрица преобразования}
-function CreateCombinedRotationMatrix(
+function CreateRotationMatrixAroundPoint(
   AAngleX, AAngleY, AAngleZ: Double;
   const ACenter: TzePoint3d
 ): TzeTypedMatrix4d;
@@ -233,12 +225,10 @@ var
   rotX, rotY, rotZ: TzeTypedMatrix4d;
   combined: TzeTypedMatrix4d;
 begin
-  // Матрица сдвига в начало координат
+  // Порядок операций аналогичен uzccommand_rotate.pas
   translateToOrigin := CreateTranslationMatrix(
     CreateVertex(-ACenter.x, -ACenter.y, -ACenter.z)
   );
-
-  // Матрица сдвига обратно
   translateBack := CreateTranslationMatrix(ACenter);
 
   // Матрицы вращения по осям
@@ -256,35 +246,45 @@ begin
   Result := combined;
 end;
 
-{**Применить вращение к выделенным объектам}
+{**Применить вращение к выделенным объектам.
+   Вычисляет дельта-трансформацию от текущего состояния к новому и применяет её.}
 procedure ApplyRotation(AAngleX, AAngleY, AAngleZ: Double);
 var
   i: Integer;
   pEntity: PGDBObjEntity;
-  pWithMatrix: PGDBObjWithMatrix;
-  rotMatrix: TzeTypedMatrix4d;
-  newMatrix: TzeTypedMatrix4d;
+  currentRotMatrix: TzeTypedMatrix4d;
+  newRotMatrix: TzeTypedMatrix4d;
+  deltaMatrix: TzeTypedMatrix4d;
+  inverseCurrentRot: TzeTypedMatrix4d;
   dc: TDrawContext;
 begin
   if Length(RotationData.States) = 0 then
     Exit;
 
-  // Сохраняем текущие углы
-  RotationData.AngleX := AAngleX;
-  RotationData.AngleY := AAngleY;
-  RotationData.AngleZ := AAngleZ;
+  // Создаём матрицу текущего вращения (до изменения)
+  currentRotMatrix := CreateRotationMatrixAroundPoint(
+    RotationData.AngleX,
+    RotationData.AngleY,
+    RotationData.AngleZ,
+    RotationData.Center
+  );
 
-  // Создаём комбинированную матрицу вращения
-  rotMatrix := CreateCombinedRotationMatrix(
+  // Создаём матрицу нового вращения
+  newRotMatrix := CreateRotationMatrixAroundPoint(
     AAngleX,
     AAngleY,
     AAngleZ,
     RotationData.Center
   );
 
+  // Вычисляем дельта-матрицу: инверсия текущего * новое = переход от текущего к новому
+  inverseCurrentRot := currentRotMatrix;
+  MatrixInvert(inverseCurrentRot);
+  deltaMatrix := MatrixMultiply(inverseCurrentRot, newRotMatrix);
+
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
 
-  // Применяем вращение к каждому объекту
+  // Применяем дельта-трансформацию к каждому объекту
   for i := 0 to High(RotationData.States) do
   begin
     pEntity := PGDBObjEntity(RotationData.States[i].EntityPtr);
@@ -292,51 +292,54 @@ begin
     if pEntity = nil then
       Continue;
 
-    // Проверяем, поддерживает ли объект матрицу
-    if pEntity^.GetMatrix <> nil then
-    begin
-      pWithMatrix := PGDBObjWithMatrix(pEntity);
+    // Применяем дельта-вращение через Transform
+    // Это правильно работает для всех типов объектов, включая дуги
+    pEntity^.Transform(deltaMatrix);
 
-      // Применяем матрицу вращения к исходной матрице
-      newMatrix := MatrixMultiply(
-        RotationData.States[i].OriginalMatrix,
-        rotMatrix
-      );
-      pWithMatrix^.ObjMatrix := newMatrix;
-
-      // Пересчитываем объект из матрицы
-      pWithMatrix^.ReCalcFromObjMatrix;
-    end
-    else
-    begin
-      // Для объектов без матрицы используем Transform
-      // Сначала сбрасываем к исходному состоянию (если возможно)
-      // затем применяем новую трансформацию
-      pEntity^.transform(rotMatrix);
-    end;
-
-    // Форматируем объект
+    // Обновляем отображение объекта
     pEntity^.FormatEntity(drawings.GetCurrentDWG^, dc);
   end;
 
-  // Обновляем отображение
-  drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.Free;
+  // Сохраняем новые углы как текущие
+  RotationData.AngleX := AAngleX;
+  RotationData.AngleY := AAngleY;
+  RotationData.AngleZ := AAngleZ;
 end;
 
-{**Сбросить вращение к исходному состоянию}
+{**Сбросить вращение к исходному состоянию.
+   Применяет обратную трансформацию для возврата к начальной позиции.}
 procedure ResetRotation;
 var
   i: Integer;
   pEntity: PGDBObjEntity;
-  pWithMatrix: PGDBObjWithMatrix;
+  currentRotMatrix: TzeTypedMatrix4d;
+  inverseMatrix: TzeTypedMatrix4d;
   dc: TDrawContext;
 begin
   if Length(RotationData.States) = 0 then
     Exit;
 
+  // Если углы уже нулевые, ничего делать не нужно
+  if (Abs(RotationData.AngleX) < 1e-10) and
+     (Abs(RotationData.AngleY) < 1e-10) and
+     (Abs(RotationData.AngleZ) < 1e-10) then
+    Exit;
+
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
 
-  // Восстанавливаем исходное состояние каждого объекта
+  // Создаём матрицу текущего вращения
+  currentRotMatrix := CreateRotationMatrixAroundPoint(
+    RotationData.AngleX,
+    RotationData.AngleY,
+    RotationData.AngleZ,
+    RotationData.Center
+  );
+
+  // Вычисляем обратную матрицу
+  inverseMatrix := currentRotMatrix;
+  MatrixInvert(inverseMatrix);
+
+  // Применяем обратную трансформацию к каждому объекту
   for i := 0 to High(RotationData.States) do
   begin
     pEntity := PGDBObjEntity(RotationData.States[i].EntityPtr);
@@ -344,15 +347,10 @@ begin
     if pEntity = nil then
       Continue;
 
-    // Восстанавливаем матрицу
-    if pEntity^.GetMatrix <> nil then
-    begin
-      pWithMatrix := PGDBObjWithMatrix(pEntity);
-      pWithMatrix^.ObjMatrix := RotationData.States[i].OriginalMatrix;
-      pWithMatrix^.ReCalcFromObjMatrix;
-    end;
+    // Применяем обратное вращение
+    pEntity^.Transform(inverseMatrix);
 
-    // Форматируем объект
+    // Обновляем отображение объекта
     pEntity^.FormatEntity(drawings.GetCurrentDWG^, dc);
   end;
 
@@ -368,7 +366,8 @@ begin
   );
 end;
 
-{**Подтвердить вращение (применить окончательно)}
+{**Подтвердить вращение (применить окончательно).
+   Обновляет отображение и освобождает ресурсы.}
 procedure CommitRotation;
 var
   dc: TDrawContext;
