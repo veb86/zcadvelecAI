@@ -144,6 +144,11 @@ end;
 // (определяется алгоритмом Arbitrary Axis из DXF). После любого поворота, в том
 // числе вокруг осей X и Y, углы пересчитываются путём проекции новых направлений
 // к точкам начала/конца дуги на оси новой локальной СК.
+//
+// ВАЖНО: После трансформации необходимо обновить Local.basis.ox и Local.basis.oy
+// с использованием того же алгоритма Arbitrary Axis, который используется в
+// CalcObjMatrixWithoutOwner. Это гарантирует согласованность между углами,
+// вычисленными здесь, и матрицей объекта, построенной в CalcObjMatrix.
 procedure GDBObjARC.transform;
 var
   // Мировые координаты точек дуги до трансформации
@@ -192,11 +197,20 @@ begin
   newOcsX := GetXfFromZ(Local.basis.oz);
   newOcsY := NormalizeVertex(VectorDot(Local.basis.oz, newOcsX));
 
-  // Шаг 6. Вычисляем нормализованные направления от нового центра к точкам дуги
+  // Шаг 5.1. Обновляем Local.basis.ox и Local.basis.oy для согласованности
+  // с CalcObjMatrixWithoutOwner, который также использует Arbitrary Axis Algorithm.
+  Local.basis.ox := NormalizeVertex(newOcsX);
+  Local.basis.oy := NormalizeVertex(newOcsY);
+
+  // Шаг 6. Используем Local.P_insert (извлечённый из ObjMatrix) как новый центр
+  // для согласованности с дальнейшими вычислениями.
+  newCenter := Local.P_insert;
+
+  // Шаг 7. Вычисляем нормализованные направления от нового центра к точкам дуги
   dirToStart := NormalizeVertex(VertexSub(newStartPoint, newCenter));
   dirToEnd   := NormalizeVertex(VertexSub(newEndPoint, newCenter));
 
-  // Шаг 7. Проецируем направления на оси локальной СК и вычисляем новые углы.
+  // Шаг 8. Проецируем направления на оси локальной СК и вычисляем новые углы.
   // scalardot — скалярное произведение; оно даёт косинус и синус угла в плоскости дуги
   StartAngle := ArcTan2(scalardot(dirToStart, newOcsY), scalardot(dirToStart, newOcsX));
   if StartAngle < 0 then
@@ -206,7 +220,7 @@ begin
   if EndAngle < 0 then
     EndAngle := 2 * pi + EndAngle;
 
-  // Шаг 8. Пересчитываем вспомогательные точки q0, q1, q2 с новыми углами
+  // Шаг 9. Пересчитываем вспомогательные точки q0, q1, q2 с новыми углами
   precalc;
 
   {$IFDEF DEBUG_ARC_TRANSFORM}
@@ -216,6 +230,14 @@ begin
     [oldCenter.x, oldCenter.y, oldCenter.z]), TMWOHistoryOut);
   zcUI.TextMessage(Format('[DEBUG transform] newCenter: (%.6f, %.6f, %.6f)',
     [newCenter.x, newCenter.y, newCenter.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] Local.P_insert: (%.6f, %.6f, %.6f)',
+    [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] Local.basis.oz: (%.6f, %.6f, %.6f)',
+    [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] newOcsX: (%.6f, %.6f, %.6f)',
+    [newOcsX.x, newOcsX.y, newOcsX.z]), TMWOHistoryOut);
+  zcUI.TextMessage(Format('[DEBUG transform] newOcsY: (%.6f, %.6f, %.6f)',
+    [newOcsY.x, newOcsY.y, newOcsY.z]), TMWOHistoryOut);
   zcUI.TextMessage(Format('[DEBUG transform] StartAngle: %.6f (%.2f°)',
     [StartAngle, StartAngle*180/Pi]), TMWOHistoryOut);
   zcUI.TextMessage(Format('[DEBUG transform] EndAngle: %.6f (%.2f°)',
