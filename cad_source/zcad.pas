@@ -89,7 +89,9 @@ uses
 
   {DXF entities}
   uzeent3dface,uzeentsolid,
-  uzeentcircle,uzeentarc,uzeentellipse,
+  uzeentcircle,
+  uzeentarc, //use Ai for GDBObjARC.transform, GDBObjARC.ReCalcFromObjMatrix, GDBObjARC.CalcObjMatrixWithoutOwner:TzeTypedMatrix4d;, GDBObjARC.CalcObjMatrix;
+  uzeentellipse,
   uzeentblockinsert,uzeentdevice,
   uzeentdimaligned,uzeentdimdiametric,uzeentdimension,
   uzeentdimensiongeneric,uzeentdimradial,uzeentdimrotated,
@@ -213,7 +215,7 @@ uses
 
   uzccommand_line2,uzccommand_circle2,//old commands
 
-  uzccommand_scale,uzccommand_rotate,uzccommand_rotateents,uzccommand_erase,
+  uzccommand_scale,uzcCommand_RotateXYZ,uzcCommand_Rotate,uzccommand_rotateents,uzccommand_erase,
   uzccommand_inverseselected,uzccommand_cutclip,
 
   uzccommand_polyed,

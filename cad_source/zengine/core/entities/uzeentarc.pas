@@ -26,7 +26,7 @@ uses
   uzeentwithlocalcs,uzecamera,uzestyleslayers,UGDBSelectedObjArray,uzeentity,
   UGDBPoint3DArray,uzctnrVectorBytesStream,uzeTypes,uzegeometrytypes,
   uzeconsts,uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentplain,uzeSnap,
-  uzMVReader,uzCtnrVectorpBaseEntity,uzcinterface;
+  uzMVReader,uzCtnrVectorpBaseEntity;
 
 type
 
@@ -223,26 +223,6 @@ begin
   // Шаг 9. Пересчитываем вспомогательные точки q0, q1, q2 с новыми углами
   precalc;
 
-  {$IFDEF DEBUG_ARC_TRANSFORM}
-  zcUI.TextMessage(Format('[DEBUG transform] det=%.6f (зеркало=%s)',
-    [det, BoolToStr(det < 0, True)]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] oldCenter: (%.6f, %.6f, %.6f)',
-    [oldCenter.x, oldCenter.y, oldCenter.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newCenter: (%.6f, %.6f, %.6f)',
-    [newCenter.x, newCenter.y, newCenter.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] Local.P_insert: (%.6f, %.6f, %.6f)',
-    [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] Local.basis.oz: (%.6f, %.6f, %.6f)',
-    [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newOcsX: (%.6f, %.6f, %.6f)',
-    [newOcsX.x, newOcsX.y, newOcsX.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] newOcsY: (%.6f, %.6f, %.6f)',
-    [newOcsY.x, newOcsY.y, newOcsY.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] StartAngle: %.6f (%.2f°)',
-    [StartAngle, StartAngle*180/Pi]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG transform] EndAngle: %.6f (%.2f°)',
-    [EndAngle, EndAngle*180/Pi]), TMWOHistoryOut);
-  {$ENDIF}
 end;
 
 // Процедура восстанавливает поля Local и R из текущей ObjMatrix.
@@ -267,18 +247,6 @@ begin
   // Радиус — длина первого вектора-оси в ObjMatrix (масштаб по оси X)
   self.R := oneVertexLength(PzePoint3d(@objmatrix.mtr.v[0])^);
 
-  {$IFDEF DEBUG_ARC_TRANSFORM}
-  zcUI.TextMessage('[DEBUG ReCalcFromObjMatrix]', TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OX: (%.6f, %.6f, %.6f)',
-    [Local.basis.ox.x, Local.basis.ox.y, Local.basis.ox.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OY: (%.6f, %.6f, %.6f)',
-    [Local.basis.oy.x, Local.basis.oy.y, Local.basis.oy.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.basis.OZ: (%.6f, %.6f, %.6f)',
-    [Local.basis.oz.x, Local.basis.oz.y, Local.basis.oz.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  Local.P_insert: (%.6f, %.6f, %.6f)',
-    [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('  R (вычисленный): %.6f', [self.R]), TMWOHistoryOut);
-  {$ENDIF}
 end;
 
 function GDBObjARC.CalcTrueInFrustum;
@@ -417,11 +385,6 @@ begin
     v[2].v[3] := v[2].v[3] * r;
   end;
 
-  {$IFDEF DEBUG_ARC_TRANSFORM}
-  zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] R=%.6f', [r]), TMWOHistoryOut);
-  zcUI.TextMessage(Format('[DEBUG CalcObjMatrix] Local.p_insert: (%.6f, %.6f, %.6f)',
-    [Local.p_insert.x, Local.p_insert.y, Local.p_insert.z]), TMWOHistoryOut);
-  {$ENDIF}
 end;
 
 procedure GDBObjARC.precalc;
