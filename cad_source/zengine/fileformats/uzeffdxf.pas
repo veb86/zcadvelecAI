@@ -335,6 +335,16 @@ begin
       zTraceLn('{D+}[DXF_CONTENTS]AddEntitiesFromDXF.Found primitive %s',[s]);
       pobj := EntInfoData.AllocAndInitEntity(nil);
       PGDBObjEntity(pobj)^.LoadFromDXF(rdr,PExtLoadData,drawing,context);
+      // Фильтрация невидимых примитивов по групповому коду DXF 60.
+      // Если примитив помечен как невидимый (код 60 = 1), он не добавляется в сцену,
+      // не участвует в выборе и не влияет на габаритный контейнер блока.
+      if (PGDBObjEntity(pobj)^.PExtAttrib <> nil) and
+         PGDBObjEntity(pobj)^.PExtAttrib^.DXFInvisible then begin
+        zDebugLn('{I}[DXF_CONTENTS]Пропускаем невидимый примитив (DXF код 60=1): %s',[s]);
+        pobj^.done;
+        Freemem(pointer(pobj));
+        Continue;
+      end;
       if (PGDBObjEntity(pobj)^.vp.Layer=@DefaultErrorLayer)or(PGDBObjEntity(pobj)^.vp.Layer=nil) then
         PGDBObjEntity(pobj)^.vp.Layer:=drawing.LayerTable.GetSystemLayer;
       if (PGDBObjEntity(pobj)^.vp.LineType=nil) then

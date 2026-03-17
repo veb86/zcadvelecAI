@@ -50,6 +50,8 @@ type
     Handle:QWord;
     Upgrade:TEntUpgradeInfo;
     ExtAttrib2:boolean;
+    // Признак невидимости примитива из группового кода DXF 60 (1 = невидим)
+    DXFInvisible:boolean;
   end;
 
   GDBObjEntity=object(GDBObjSubordinated)
@@ -1094,6 +1096,12 @@ begin
     end;
     62:begin
       vp.color:=rdr.ParseInteger;
+      Result:=True;
+    end;
+    60:begin
+      // Групповой код 60: признак видимости примитива.
+      // Значение 1 означает невидимый примитив (скрыт в динамическом блоке).
+      AddExtAttrib^.DXFInvisible := rdr.ParseInteger = 1;
       Result:=True;
     end;
     370:begin
