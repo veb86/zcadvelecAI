@@ -309,6 +309,7 @@ uses
   testarc,
   testarc2,
   uzvrotate_main,
+  uzccommand_align,
 
   //**IPC Server for remote control**//
   uzvipcserver,
