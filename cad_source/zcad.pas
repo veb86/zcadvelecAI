@@ -301,6 +301,7 @@ uses
   uzvconnect_main,
   //uzvelectricalexcelcom,
   uzvgetentity,
+  uzccommand_offset,  // Команда OFFSET — смещение/подобие объектов
   uzvaccess_command,
   uzvsqlite_command,
   testarc,
