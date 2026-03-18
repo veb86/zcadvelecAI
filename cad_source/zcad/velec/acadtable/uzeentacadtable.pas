@@ -32,7 +32,7 @@ interface
 
 uses
   uzgldrawcontext, uzedrawingdef, uzeentityfactory, uzeentcomplex,
-  uzeentline, uzeentmtext, uzeentsubordinated,
+  uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
   uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble;
@@ -199,7 +199,7 @@ end;
 // Инициализирует сущность с нулевыми значениями.
 constructor GDBObjAcadTable.initnul(AOwner: PGDBObjGenericWithSubordinated);
 begin
-  inherited initnul(AOwner);
+  inherited initnul;
   FInsertPoint := NulVertex;
   FRowCount := 0;
   FColCount := 0;
