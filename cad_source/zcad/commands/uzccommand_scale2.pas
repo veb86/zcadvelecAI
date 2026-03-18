@@ -57,7 +57,9 @@ uses
   uzeparsercmdprompt,
   uzegeometry,
   uzcinterface,
-  uzcCommand_MoveEntsByMouse;
+  uzcCommand_MoveEntsByMouse,
+  uzgldrawcontext,
+  uzcdrawings;
 
 resourcestring
   // Подсказки командной строки

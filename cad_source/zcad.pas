@@ -308,8 +308,9 @@ uses
   uzvsqlite_command,
   testarc,
   testarc2,
+  testalign,
   uzvrotate_main,
-  //uzccommand_align,
+  uzccommand_align,
 
   //**IPC Server for remote control**//
   uzvipcserver,
