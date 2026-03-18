@@ -27,7 +27,7 @@ uses
   uzegeometry,uzeentsubordinated,uzeentgenericsubentry,uzeTypes,
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
-  uzeffmanager,uzbLogIntf,uzeLogIntf,
+  uzeffmanager,uzbLogIntf,uzeLogIntf,uzclog,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -71,6 +71,34 @@ begin
     if IgnoredDXFEntsArray[i].UCASEEntName=uname then
       exit(i);
   result:=-1;
+end;
+
+{ Ищет информацию о сущности по DXF-имени.
+  Если сущность зарегистрирована — возвращает её EntInfoData.
+  Если сущность неизвестна, но не в списке игнорируемых — считает её кастомной
+  proxy-сущностью и возвращает EntInfoData прокси-класса (GDBObjAcdProxy).
+  Это обеспечивает отображение кастомных объектов (например, SPDSPOLYMORPHMARK)
+  в виде ограничивающей рамки вместо их полного игнорирования.
+  Возвращает False только если сущность в списке игнорируемых или прокси не зарегистрирован. }
+function FindOrProxyEntInfo(const name:String; var EntInfoData:TEntInfoData):Boolean;
+begin
+  { Сначала ищем сущность в реестре зарегистрированных DXF-сущностей }
+  if DXFName2EntInfoData.MyGetValue(name, EntInfoData) then begin
+    Result := True;
+    Exit;
+  end;
+  { Сущность не зарегистрирована — проверяем, не в списке ли она игнорируемых }
+  if IsIgnoredEntity(name) >= 0 then begin
+    Result := False;
+    Exit;
+  end;
+  { Кастомная неизвестная сущность: загружаем как proxy-объект }
+  if ObjID2EntInfoData.MyGetValue(GDBAcdProxyID, EntInfoData) then begin
+    programlog.LogOutFormatStr(
+      'uzeffdxf: unknown entity "%s" treated as proxy', [name], LM_Info);
+    Result := True;
+  end else
+    Result := False;
 end;
 
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
@@ -309,7 +337,6 @@ procedure addentitiesfromdxf(var rdr:TZMemReader; const exitString: String;owner
 var
   s: String;
   group:integer;
-  objid: Integer;
   pobj,postobj: PGDBObjEntity;
   newowner:PGDBObjSubordinated;
   m4:TzeTypedMatrix4d;
@@ -330,7 +357,7 @@ begin
   while (not rdr.EOF) and (s <> exitString) do begin
     lps.ProgressLongProcess(lph,rdr.CurrentPos);
     s := rdr.ParseString;
-    if (group=0)and(DXFName2EntInfoData.MyGetValue(s,EntInfoData)) then begin
+    if (group=0)and(FindOrProxyEntInfo(s,EntInfoData)) then begin
     if owner <> nil then begin
       zTraceLn('{D+}[DXF_CONTENTS]AddEntitiesFromDXF.Found primitive %s',[s]);
       pobj := EntInfoData.AllocAndInitEntity(nil);
@@ -439,9 +466,9 @@ begin
         ClearExtLoadData(PExtLoadData);
     end else begin
       if group=0 then begin
-         objid:=IsIgnoredEntity(s);
-         if objid>0 then
-         gotodxf(rdr, 0, '');
+        { FindOrProxyEntInfo вернул false: сущность в списке игнорируемых
+          или прокси-класс не зарегистрирован — пропускаем до следующей сущности }
+        gotodxf(rdr, 0, '');
       end else
         if trystrtoint(s,group)then else
           group:=-1;
