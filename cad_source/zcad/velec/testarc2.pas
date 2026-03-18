@@ -28,7 +28,7 @@ uses
   uzclog,
   uzestyleslayers,
   uzcinterface,
-  uzccommand_rotate,
+  uzcCommand_RotateXYZ,
   uzccommand_rotateents;
 
 function TestArc2Command_com(const Context:TZCADCommandContext;
@@ -157,7 +157,7 @@ begin
 
   // Используем команду Rotate_com - она поворачивает вокруг текущего положения курсора (t3dp)
   // Для теста вызываем напрямую метод rotate с матрицей поворота вокруг начала координат
-  pa1^.transform(Rotate_com.CreateRotmatr(rotationAngle));
+  pa1^.transform(RotateZ_com.CreateRotmatr(rotationAngle));
 
   LogMessage('');
   LogMessage('ПОСЛЕ ПОВОРОТА:');
