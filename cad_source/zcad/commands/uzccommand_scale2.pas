@@ -1,0 +1,597 @@
+{
+*****************************************************************************
+*                                                                           *
+*  This file is part of the ZCAD                                            *
+*                                                                           *
+*  See the file COPYING.txt, included in this distribution,                 *
+*  for details about the copyright.                                         *
+*                                                                           *
+*  This program is distributed in the hope that it will be useful,          *
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of           *
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                     *
+*                                                                           *
+*****************************************************************************
+}
+{
+@author(Vladimir Bobrov)
+}
+{
+  Модуль: uzccommand_scale2
+  Назначение: Расширенная команда масштабирования объектов ZCAD (SCALE2).
+  Поддерживаемые режимы:
+    - Scale     — масштабирование по числовому коэффициенту
+    - Reference — масштабирование по опорным точкам (как в AutoCAD)
+    - Copy      — масштабирование с сохранением оригинала
+  Архитектура команды реализована по образцу uzccommand_rotate.pas:
+    - машина состояний (state machine)
+    - пошаговый интерактивный ввод
+    - обработка ключевых слов (Copy, Reference, Points)
+  Зависимости:
+    uzccommand_rotate       — образец архитектуры
+    uzccommand_scale        — базовая математика масштабирования
+    uzegeometry             — операции с матрицами и точками
+    uzccommandsmanager      — менеджер команд
+    uzeparsercmdprompt      — парсер подсказок командной строки
+    uzcutils                — вспомогательные функции (CloneEnts и др.)
+    uzclog                  — логирование
+}
+{$mode delphi}
+unit uzccommand_scale2;
+
+{$INCLUDE zengineconfig.inc}
+
+interface
+
+uses
+  SysUtils,
+  uzbUnitsUtils,
+  gzctnrVectorTypes,
+  uzcLog,
+  uzccommandsabstract,
+  uzccommandsimpl,
+  uzcstrconsts,
+  uzegeometrytypes,
+  uzccommandsmanager,
+  uzeentity,
+  uzcutils,
+  uzeparsercmdprompt,
+  uzegeometry,
+  uzcinterface,
+  uzcCommand_MoveEntsByMouse;
+
+resourcestring
+  // Подсказки командной строки
+  RSCLPScale2BasePoint =
+    'Specify base point or [${"&[C]opy",Keys[c,m],StrId[CLPIdCopy]}, ' +
+    '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
+  RSCLPScale2ScaleFactor =
+    'Specify scale factor or [${"&[C]opy",Keys[c,m],StrId[CLPIdCopy]}, ' +
+    '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
+  RSCLPScale2ScaleFactorMove =
+    'Specify scale factor or [${"&[M]ove",Keys[m,c],StrId[CLPIdMove]}, ' +
+    '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
+  RSCLPScale2ReferenceLength =
+    'Specify reference length or [${"&[P]oints",Keys[p],StrId[CLPIdUser]}]:';
+  RSCLPScale2NewLength =
+    'Specify new length or [${"&[P]oints",Keys[p],StrId[CLPIdUser]}]:';
+  RSCLPScale2FirstRefPoint  = 'Specify first reference point:';
+  RSCLPScale2SecondRefPoint = 'Specify second reference point:';
+  RSCLPScale2FirstNewPoint  = 'Specify first new point:';
+  RSCLPScale2SecondNewPoint = 'Specify second new point:';
+
+implementation
+
+// ---------------------------------------------------------------------------
+//  Константы
+// ---------------------------------------------------------------------------
+
+const
+  // Минимальный коэффициент масштаба (защита от нуля и отрицательных значений)
+  SCALE2_MIN_FACTOR = 1e-10;
+
+// ---------------------------------------------------------------------------
+//  Вспомогательные процедуры
+// ---------------------------------------------------------------------------
+
+{
+  PrintMessage
+  Выводит строку в историю командной строки.
+}
+procedure PrintMessage(const Msg: string);
+begin
+  zcUI.TextMessage(Msg, TMWOHistoryOut);
+end;
+
+{
+  PrintError
+  Выводит сообщение об ошибке в командную строку.
+}
+procedure PrintError(const Msg: string);
+begin
+  zcUI.TextMessage(Msg, TMWOShowError);
+end;
+
+// ---------------------------------------------------------------------------
+//  Математика масштабирования
+// ---------------------------------------------------------------------------
+
+{
+  CalcScaleMatrix
+  Формирует матрицу масштабирования относительно базовой точки.
+  Параметры:
+    basePoint   — базовая точка, относительно которой выполняется масштаб
+    scaleFactor — коэффициент масштабирования (должен быть > 0)
+  Возвращает матрицу трансформации: T(-base) * Scale(k) * T(base)
+}
+function CalcScaleMatrix(
+  const basePoint: TzePoint3d;
+  const scaleFactor: double
+): TzeTypedMatrix4d;
+var
+  translateToOrigin: TzeTypedMatrix4d;
+  scaleMatrix:       TzeTypedMatrix4d;
+  translateBack:     TzeTypedMatrix4d;
+  resultMatrix:      TzeTypedMatrix4d;
+begin
+  // Переносим в начало координат, масштабируем, переносим обратно
+  translateToOrigin := uzegeometry.CreateTranslationMatrix(-basePoint);
+  scaleMatrix       := CreateScaleMatrix(scaleFactor);
+  translateBack     := uzegeometry.CreateTranslationMatrix(basePoint);
+
+  resultMatrix := uzegeometry.MatrixMultiply(translateToOrigin, scaleMatrix);
+  resultMatrix := uzegeometry.MatrixMultiply(resultMatrix, translateBack);
+
+  Result := resultMatrix;
+end;
+
+{
+  CalcReferenceScaleFactor
+  Вычисляет коэффициент масштаба из двух длин (Reference-режим).
+  Формула: scale = newLength / referenceLength
+  Параметры:
+    referenceLength — исходная длина (опорное расстояние)
+    newLength       — новая длина
+  Возвращает коэффициент масштаба или 1.0 при ошибке (деление на ноль).
+}
+function CalcReferenceScaleFactor(
+  const referenceLength, newLength: double
+): double;
+begin
+  if referenceLength < SCALE2_MIN_FACTOR then begin
+    PrintError('Reference length is too small or zero, scale not applied.');
+    Result := 1.0;
+    Exit;
+  end;
+
+  Result := newLength / referenceLength;
+
+  programlog.LogOutFormatStr(
+    'uzccommand_scale2: refLen=%.6f newLen=%.6f scale=%.6f',
+    [referenceLength, newLength, Result],
+    LM_Info
+  );
+end;
+
+// ---------------------------------------------------------------------------
+//  Применение трансформации к объектам
+// ---------------------------------------------------------------------------
+
+{
+  ApplyScaleTransform
+  Применяет матрицу масштабирования к выбранным объектам чертежа.
+  При copyMode=True — перемещает объекты из ConstructRoot в чертёж (копия).
+  При copyMode=False — трансформирует оригинальные объекты с записью в Undo.
+  Параметры:
+    scaleMatrix — матрица трансформации
+    copyMode    — True: оставить оригиналы, False: трансформировать оригиналы
+}
+procedure ApplyScaleTransform(
+  const scaleMatrix: TzeTypedMatrix4d;
+  const copyMode: boolean
+);
+var
+  p:  PGDBObjEntity;
+  ir: itrec;
+  dc: TDrawContext;
+begin
+  dc := drawings.GetCurrentDWG^.CreateDrawingRC;
+
+  if copyMode then begin
+    // Копирование: применяем матрицу к клонам в ConstructRoot, затем
+    // переносим их в основное пространство модели
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix := OneMatrix;
+    p := drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.beginiterate(ir);
+    if p <> nil then
+      repeat
+        p^.transform(scaleMatrix);
+        p := drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.iterate(ir);
+      until p = nil;
+
+    zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('Scale2[Copy]');
+
+    programlog.LogOutFormatStr(
+      'uzccommand_scale2: копирование завершено', [], LM_Info
+    );
+  end else begin
+    // Перемещение: очищаем ConstructRoot, трансформируем оригиналы
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix := OneMatrix;
+    zcFreeEntsInCurrentDrawingConstructRoot;
+    zcTransformSelectedEntsInDrawingWithUndo('Scale2', scaleMatrix);
+
+    drawings.GetCurrentROOT^.FormatAfterEdit(drawings.GetCurrentDWG^, dc);
+
+    programlog.LogOutFormatStr(
+      'uzccommand_scale2: трансформация оригиналов завершена', [], LM_Info
+    );
+  end;
+end;
+
+// ---------------------------------------------------------------------------
+//  Основная функция команды SCALE2
+// ---------------------------------------------------------------------------
+
+{
+  Scale2_com
+  Реализует интерактивную команду SCALE2 с поддержкой трёх режимов:
+    1. Scale     — по числовому коэффициенту
+    2. Reference — по двум расстояниям или парам точек
+    3. Copy      — с сохранением оригинала
+
+  Состояния (state machine):
+    SCMWaitBasePoint   — ожидание базовой точки
+    SCMWaitScaleFactor — ожидание числа или ключевого слова
+    SCMWaitRef0        — первая точка опорного расстояния
+    SCMWaitRef1        — вторая точка опорного расстояния
+    SCMWaitNew0        — первая точка нового расстояния
+    SCMWaitNew1        — вторая точка нового расстояния
+}
+function Scale2_com(
+  const Context: TZCADCommandContext;
+  Operands: TCommandOperands
+): TCommandResult;
+type
+  TScale2CmdMode = (
+    SCMWaitBasePoint,
+    SCMWaitScaleFactor,
+    SCMWaitRef0,
+    SCMWaitRef1,
+    SCMWaitNew0,
+    SCMWaitNew1
+  );
+var
+  BasePnt:         TzePoint3d;
+  InputPnt:        TzePoint3d;
+  Ref0Pnt, Ref1Pnt: TzePoint3d;  // Точки для опорного расстояния
+  New0Pnt, New1Pnt: TzePoint3d;  // Точки для нового расстояния
+  CmdMode:         TScale2CmdMode;
+  CopyMode:        boolean;       // True — режим копирования (оригинал сохраняется)
+  ReferenceMode:   boolean;       // True — режим Reference (масштаб по точкам)
+  RefLength:       double;        // Опорная длина в режиме Reference
+  NewLength:       double;        // Новая длина в режиме Reference
+  ScaleFactor:     double;        // Итоговый коэффициент масштаба
+  scaleMatrix:     TzeTypedMatrix4d;
+  gr:              TzcInteractiveResult;
+
+  clBasePoint:     CMDLinePromptParser.TGeneralParsedText;
+  clScaleFactor:   CMDLinePromptParser.TGeneralParsedText;
+  clScaleFactorMove: CMDLinePromptParser.TGeneralParsedText;
+  clReferenceLength: CMDLinePromptParser.TGeneralParsedText;
+  clNewLength:     CMDLinePromptParser.TGeneralParsedText;
+
+  {
+    SetMode
+    Переключает состояние машины и устанавливает подсказку командной строки.
+  }
+  procedure SetMode(ANewMode: TScale2CmdMode; const AForce: boolean = False);
+  begin
+    if not AForce then
+      if CmdMode = ANewMode then
+        Exit;
+
+    case ANewMode of
+      SCMWaitBasePoint: begin
+        if clBasePoint = nil then
+          clBasePoint := CMDLinePromptParser.GetTokens(RSCLPScale2BasePoint);
+        commandmanager.SetPrompt(clBasePoint);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitScaleFactor: begin
+        // Подсказка зависит от режима Copy (Move/Copy)
+        if CopyMode then begin
+          if clScaleFactorMove = nil then
+            clScaleFactorMove :=
+              CMDLinePromptParser.GetTokens(RSCLPScale2ScaleFactorMove);
+          commandmanager.SetPrompt(clScaleFactorMove);
+        end else begin
+          if clScaleFactor = nil then
+            clScaleFactor :=
+              CMDLinePromptParser.GetTokens(RSCLPScale2ScaleFactor);
+          commandmanager.SetPrompt(clScaleFactor);
+        end;
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitRef0: begin
+        commandmanager.SetPrompt(RSCLPScale2FirstRefPoint);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitRef1: begin
+        commandmanager.SetPrompt(RSCLPScale2SecondRefPoint);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitNew0: begin
+        if clNewLength = nil then
+          clNewLength := CMDLinePromptParser.GetTokens(RSCLPScale2NewLength);
+        commandmanager.SetPrompt(clNewLength);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitNew1: begin
+        commandmanager.SetPrompt(RSCLPScale2FirstNewPoint);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+    end;
+
+    CmdMode := ANewMode;
+  end;
+
+  {
+    DoApplyScale
+    Вычисляет матрицу и применяет масштабирование.
+    После применения клонирует объекты для следующей итерации (Copy-режим).
+  }
+  procedure DoApplyScale(const Factor: double);
+  begin
+    programlog.LogOutFormatStr(
+      'uzccommand_scale2: применяем scale=%.6f copyMode=%d',
+      [Factor, Ord(CopyMode)],
+      LM_Info
+    );
+
+    scaleMatrix := CalcScaleMatrix(BasePnt, Factor);
+    ApplyScaleTransform(scaleMatrix, CopyMode);
+
+    if CopyMode then begin
+      // Клонируем снова для возможности повторного масштабирования
+      CloneEnts;
+      zcRedrawCurrentDrawing;
+      SetMode(SCMWaitScaleFactor, True);
+    end;
+  end;
+
+begin
+  Result := cmd_ok;
+
+  // Инициализация локальных переменных
+  CopyMode      := False;
+  ReferenceMode := False;
+  RefLength     := 0.0;
+  NewLength     := 0.0;
+  ScaleFactor   := 1.0;
+
+  clBasePoint      := nil;
+  clScaleFactor    := nil;
+  clScaleFactorMove := nil;
+  clReferenceLength := nil;
+  clNewLength      := nil;
+
+  programlog.LogOutFormatStr(
+    'uzccommand_scale2: запуск команды SCALE2', [], LM_Info
+  );
+
+  // Проверяем наличие выбранных объектов
+  if CloneEnts = 0 then begin
+    PrintMessage(rscmSelEntBeforeComm);
+    programlog.LogOutFormatStr(
+      'uzccommand_scale2: нет выбранных объектов, команда завершена',
+      [],
+      LM_Info
+    );
+    Result := cmd_ok;
+    Exit;
+  end;
+
+  SetMode(SCMWaitBasePoint, True);
+
+  repeat
+    // Получаем ввод пользователя в зависимости от текущего состояния
+    case CmdMode of
+      SCMWaitBasePoint,
+      SCMWaitRef0,
+      SCMWaitNew1:
+        gr := commandmanager.Get3DPoint('', InputPnt);
+
+      SCMWaitRef1:
+        gr := commandmanager.Get3DPointWithLineFromBase('', Ref0Pnt, InputPnt);
+
+      SCMWaitScaleFactor:
+        gr := commandmanager.Get3DPoint('', InputPnt);
+
+      SCMWaitNew0:
+        gr := commandmanager.Get3DPoint('', InputPnt);
+    else
+      gr := commandmanager.Get3DPoint('', InputPnt);
+    end;
+
+    case gr of
+      // --- Пользователь указал точку ---
+      IRNormal:
+        case CmdMode of
+          SCMWaitBasePoint: begin
+            BasePnt := InputPnt;
+            programlog.LogOutFormatStr(
+              'uzccommand_scale2: базовая точка (%.3f, %.3f, %.3f)',
+              [BasePnt.x, BasePnt.y, BasePnt.z],
+              LM_Info
+            );
+            SetMode(SCMWaitScaleFactor);
+          end;
+
+          SCMWaitScaleFactor: begin
+            // В режиме ввода точки — вычисляем коэффициент по расстоянию
+            // от базовой точки до указанной
+            ScaleFactor := uzegeometry.Vertexlength(BasePnt, InputPnt);
+            if ScaleFactor < SCALE2_MIN_FACTOR then
+              ScaleFactor := 1.0;
+
+            programlog.LogOutFormatStr(
+              'uzccommand_scale2: коэффициент по точке = %.6f',
+              [ScaleFactor],
+              LM_Info
+            );
+            DoApplyScale(ScaleFactor);
+            if not CopyMode then
+              Break;
+          end;
+
+          SCMWaitRef0: begin
+            Ref0Pnt := InputPnt;
+            SetMode(SCMWaitRef1);
+          end;
+
+          SCMWaitRef1: begin
+            Ref1Pnt := InputPnt;
+            RefLength := uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt);
+            programlog.LogOutFormatStr(
+              'uzccommand_scale2: опорная длина по точкам = %.6f',
+              [RefLength],
+              LM_Info
+            );
+            SetMode(SCMWaitNew0);
+          end;
+
+          SCMWaitNew0: begin
+            // Пользователь указал точку вместо числа — переходим к вводу двух точек
+            New0Pnt := InputPnt;
+            SetMode(SCMWaitNew1);
+          end;
+
+          SCMWaitNew1: begin
+            New1Pnt := InputPnt;
+            NewLength := uzegeometry.Vertexlength(New0Pnt, New1Pnt);
+            ScaleFactor := CalcReferenceScaleFactor(RefLength, NewLength);
+            DoApplyScale(ScaleFactor);
+            if not CopyMode then
+              Break;
+            SetMode(SCMWaitBasePoint, True);
+          end;
+        end;
+
+      // --- Пользователь ввёл текст (число или ключевое слово) ---
+      IRInput:
+        case CmdMode of
+          SCMWaitScaleFactor: begin
+            // Пытаемся разобрать введённое число как коэффициент
+            if TryStrToFloat(
+                StringReplace(commandmanager.GetLastInput, ',', '.', []),
+                ScaleFactor) then begin
+              if ScaleFactor < SCALE2_MIN_FACTOR then begin
+                PrintError('Scale factor must be greater than zero.');
+              end else begin
+                DoApplyScale(ScaleFactor);
+                if not CopyMode then
+                  Break;
+              end;
+            end else begin
+              PrintError('Please enter a valid scale factor.');
+            end;
+          end;
+
+          SCMWaitRef0, SCMWaitNew0: begin
+            // Пользователь вводит число вместо точек — используем как длину
+            if TryStrToFloat(
+                StringReplace(commandmanager.GetLastInput, ',', '.', []),
+                RefLength) then begin
+              if CmdMode = SCMWaitRef0 then begin
+                programlog.LogOutFormatStr(
+                  'uzccommand_scale2: опорная длина введена числом = %.6f',
+                  [RefLength],
+                  LM_Info
+                );
+                SetMode(SCMWaitNew0);
+              end else begin
+                // SCMWaitNew0: пользователь ввёл число как новую длину
+                NewLength   := RefLength;
+                ScaleFactor := CalcReferenceScaleFactor(
+                  uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt),
+                  NewLength
+                );
+                DoApplyScale(ScaleFactor);
+                if not CopyMode then
+                  Break;
+                SetMode(SCMWaitBasePoint, True);
+              end;
+            end else begin
+              PrintError('Please enter a valid length.');
+            end;
+          end;
+
+        else
+          PrintError('Try use mouse Luke?');
+        end;
+
+      // --- Пользователь выбрал ключевое слово ---
+      IRId:
+        case commandmanager.GetLastId of
+          CLPIdCopy, CLPIdMove: begin
+            // Переключаем режим: Copy <-> Move
+            CopyMode := not CopyMode;
+            if CopyMode then
+              PrintMessage('Objects will be copied during scaling.')
+            else
+              PrintMessage('Scaling mode: move (original will be changed).');
+            SetMode(CmdMode, True);
+          end;
+
+          CLPIdReference: begin
+            // Переключаемся в режим Reference
+            ReferenceMode := True;
+            if clReferenceLength = nil then
+              clReferenceLength :=
+                CMDLinePromptParser.GetTokens(RSCLPScale2ReferenceLength);
+            commandmanager.SetPrompt(clReferenceLength);
+            commandmanager.ChangeInputMode([IPEmpty], []);
+            CmdMode := SCMWaitRef0;
+          end;
+
+          CLPIdUser: begin
+            // Ключевое слово "Points" — переходим к вводу точек
+            if CmdMode = SCMWaitNew0 then
+              SetMode(SCMWaitNew1)
+            else if CmdMode = SCMWaitRef0 then
+              SetMode(SCMWaitRef0, True);
+          end;
+        end;
+    end;
+
+  until gr = IRCancel;
+
+  // Освобождаем кэш разобранных подсказок
+  clBasePoint.Free;
+  clScaleFactor.Free;
+  clScaleFactorMove.Free;
+  clReferenceLength.Free;
+  clNewLength.Free;
+
+  programlog.LogOutFormatStr(
+    'uzccommand_scale2: команда завершена', [], LM_Info
+  );
+end;
+
+// ---------------------------------------------------------------------------
+//  Инициализация и финализация модуля
+// ---------------------------------------------------------------------------
+
+initialization
+  programlog.LogOutFormatStr('Unit "%s" initialization',
+    [{$INCLUDE %FILE%}], LM_Info, UnitsInitializeLMId);
+  // Регистрируем расширенную команду масштабирования
+  CreateZCADCommand(@Scale2_com, 'Scale2', CADWG, 0);
+
+finalization
+  ProgramLog.LogOutFormatStr('Unit "%s" finalization',
+    [{$INCLUDE %FILE%}], LM_Info, UnitsFinalizeLMId);
+end.
