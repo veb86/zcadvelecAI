@@ -179,6 +179,9 @@ begin
   invertedMatrix := dispmatr;
   uzegeometry.MatrixInvert(invertedMatrix);
 
+  // Создаём контекст отрисовки до начала цикла трансформации
+  dc := drawings.GetCurrentDWG^.CreateDrawingRC;
+
   PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack.PushStartMarker('Align');
   with PushCreateTGMultiObjectChangeCommand(
       @PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
@@ -186,9 +189,13 @@ begin
     pcd := pcoa^.beginiterate(ir);
     if pcd <> nil then
       repeat
-        m := tmethod(@pcd^.sourceEnt^.Transform);
+        // В режиме {$mode delphi} нельзя взять адрес метода через @obj^.Method,
+        // поэтому используем явное присвоение полей tmethod (как в uzcutils.pas)
+        m.Code := pointer(pcd^.sourceEnt^.Transform);
+        m.Data := pcd^.sourceEnt;
         AddMethod(m);
         Dec(pcd^.sourceEnt^.vp.LastCameraPos);
+        pcd^.sourceEnt^.Formatentity(drawings.GetCurrentDWG^, dc);
         pcd := pcoa^.iterate(ir);
       until pcd = nil;
     comit;
@@ -196,7 +203,6 @@ begin
   PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack.PushEndMarker;
 
   // Обновляем отображение после применения трансформации
-  dc := drawings.GetCurrentDWG^.CreateDrawingRC;
   drawings.GetCurrentROOT^.FormatAfterEdit(drawings.GetCurrentDWG^, dc);
 end;
 
