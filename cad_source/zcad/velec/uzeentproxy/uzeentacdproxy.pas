@@ -48,6 +48,8 @@ uses
   uzCtnrVectorpBaseEntity,
   uzbLogIntf,
   uzclog,
+  uzestyleslayers,
+  uzecamera,
   SysUtils;
 
 type

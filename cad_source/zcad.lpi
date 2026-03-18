@@ -1297,10 +1297,6 @@
         <Filename Value="zcad/commands/uzccommand_dataexport.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit180>
-      <Unit181>
-        <Filename Value="zcad/velec/uzeentproxy/uzeentacdproxy.pas"/>
-        <IsPartOfProject Value="True"/>
-      </Unit181>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
