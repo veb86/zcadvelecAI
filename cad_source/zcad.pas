@@ -325,6 +325,7 @@ uses
 
   //uzccomexample2,
   uzventsuperline,
+  uzeentacdproxy,    { Поддержка прокси-объектов ACAD_PROXY_ENTITY }
   //uzccomobjectinspector,
   //uzccomexperimental,
 

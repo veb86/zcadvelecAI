@@ -39,16 +39,16 @@ type
   end;
   TLongProcessIndicator=Procedure(a:integer) of object;
 const
-  IgnoredDXFEntsArray:array [0..1] of DXFEntDesc=(
-    (UCASEEntName:'HATCH'),
-    (UCASEEntName:'ACAD_PROXY_ENTITY')
+  { ACAD_PROXY_ENTITY убран из списка игнорируемых —
+    теперь обрабатывается классом GDBObjAcdProxy (uzeentacdproxy.pas) }
+  IgnoredDXFEntsArray:array [0..0] of DXFEntDesc=(
+    (UCASEEntName:'HATCH')
   );
 
 { todo: вернуть как было после https://gitlab.com/freepascal.org/fpc/source/-/issues/40073
 -     IgnoredDXFEntsArray:array of DXFEntDesc=[
-+     IgnoredDXFEntsArray:array [0..1] of DXFEntDesc=(
-        (UCASEEntName:'HATCH'),
-        (UCASEEntName:'ACAD_PROXY_ENTITY')
++     IgnoredDXFEntsArray:array [0..0] of DXFEntDesc=(
+        (UCASEEntName:'HATCH')
 -     ];
 +     );}
 var

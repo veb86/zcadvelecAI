@@ -65,6 +65,8 @@ const {as_normal=0;
   GDBDiametricDimensionID = 107;
   GDBRadialDimensionID = 108;
   GDBSuperLineID = 109;
+  { Идентификатор прокси-объекта AutoCAD (ACAD_PROXY_ENTITY) }
+  GDBAcdProxyID = 110;
 
   PROJParallel = 1;
   PROJPerspective = 2;
@@ -160,6 +162,8 @@ const {as_normal=0;
   ObjN_GDBObjElLeader='GDBObjElLeader';
   ObjN_GDBObjHatch='GDBObjHatch';
   ObjN_GDBObjPolyFaceMesh='GDBObjPolyFaceMesh';
+  { Наименование типа для прокси-объекта AutoCAD }
+  ObjN_GDBObjAcdProxy='GDBObjAcdProxy';
 
   DevicePrefix='DEVICE_';
   DrawingDeviceBaseUnitName='drawingdevicebase';
