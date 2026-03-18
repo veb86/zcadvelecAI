@@ -65,7 +65,9 @@ const {as_normal=0;
   GDBDiametricDimensionID = 107;
   GDBRadialDimensionID = 108;
   GDBSuperLineID = 109;
-  GDBAcadTableID = 110; {Сущность ACAD_TABLE (таблица AutoCAD из формата DXF)}
+  GDBAcadTableID = 111; {Сущность ACAD_TABLE (таблица AutoCAD из формата DXF)}
+  { Идентификатор прокси-объекта AutoCAD (ACAD_PROXY_ENTITY) }
+  GDBAcdProxyID = 110;
 
   PROJParallel = 1;
   PROJPerspective = 2;
@@ -162,6 +164,8 @@ const {as_normal=0;
   ObjN_GDBObjHatch='GDBObjHatch';
   ObjN_GDBObjPolyFaceMesh='GDBObjPolyFaceMesh';
   ObjN_GDBObjAcadTable='GDBObjAcadTable';
+  { Наименование типа для прокси-объекта AutoCAD }
+  ObjN_GDBObjAcdProxy='GDBObjAcdProxy';
 
   DevicePrefix='DEVICE_';
   DrawingDeviceBaseUnitName='drawingdevicebase';
