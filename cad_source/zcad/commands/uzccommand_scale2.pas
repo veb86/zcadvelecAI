@@ -113,6 +113,25 @@ begin
   zcUI.TextMessage(Msg, TMWOShowError);
 end;
 
+{
+  LogMessage
+  Выводит отладочное сообщение в историю командной строки.
+  Используется для отладки команды SCALE2.
+}
+procedure LogMessage(const msg: string);
+begin
+  zcUI.TextMessage(msg, TMWOHistoryOut);
+end;
+
+{
+  Point3DToStr
+  Преобразует точку 3D в строку для отладочного вывода.
+}
+function Point3DToStr(const p: TzePoint3d): string;
+begin
+  Result := Format('X=%.6f, Y=%.6f, Z=%.6f', [p.x, p.y, p.z]);
+end;
+
 // ---------------------------------------------------------------------------
 //  Математика масштабирования
 // ---------------------------------------------------------------------------
@@ -135,6 +154,11 @@ var
   translateBack:     TzeTypedMatrix4d;
   resultMatrix:      TzeTypedMatrix4d;
 begin
+  LogMessage('');
+  LogMessage('[SCALE2 DEBUG] CalcScaleMatrix:');
+  LogMessage('  BasePoint: ' + Point3DToStr(basePoint));
+  LogMessage('  ScaleFactor: ' + FloatToStrF(scaleFactor, ffFixed, 15, 6));
+
   // Переносим в начало координат, масштабируем, переносим обратно
   translateToOrigin := uzegeometry.CreateTranslationMatrix(-basePoint);
   scaleMatrix       := CreateScaleMatrix(scaleFactor);
@@ -144,6 +168,8 @@ begin
   resultMatrix := uzegeometry.MatrixMultiply(resultMatrix, translateBack);
 
   Result := resultMatrix;
+
+  LogMessage('  Matrix created successfully');
 end;
 
 {
@@ -159,13 +185,21 @@ function CalcReferenceScaleFactor(
   const referenceLength, newLength: double
 ): double;
 begin
+  LogMessage('');
+  LogMessage('[SCALE2 DEBUG] CalcReferenceScaleFactor:');
+  LogMessage('  ReferenceLength: ' + FloatToStrF(referenceLength, ffFixed, 15, 6));
+  LogMessage('  NewLength: ' + FloatToStrF(newLength, ffFixed, 15, 6));
+
   if referenceLength < SCALE2_MIN_FACTOR then begin
+    LogMessage('  ERROR: Reference length is too small or zero!');
     PrintError('Reference length is too small or zero, scale not applied.');
     Result := 1.0;
     Exit;
   end;
 
   Result := newLength / referenceLength;
+
+  LogMessage('  Calculated ScaleFactor: ' + FloatToStrF(Result, ffFixed, 15, 6));
 
   programlog.LogOutFormatStr(
     'uzccommand_scale2: refLen=%.6f newLen=%.6f scale=%.6f',
@@ -196,9 +230,14 @@ var
   ir: itrec;
   dc: TDrawContext;
 begin
+  LogMessage('');
+  LogMessage('[SCALE2 DEBUG] ApplyScaleTransform:');
+  LogMessage('  CopyMode: ' + BoolToStr(copyMode, True));
+
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
 
   if copyMode then begin
+    LogMessage('  Mode: COPY - cloning objects to ConstructRoot');
     // Копирование: применяем матрицу к клонам в ConstructRoot, затем
     // переносим их в основное пространство модели
     drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix := OneMatrix;
@@ -211,10 +250,12 @@ begin
 
     zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('Scale2[Copy]');
 
+    LogMessage('  Copy operation completed');
     programlog.LogOutFormatStr(
       'uzccommand_scale2: копирование завершено', [], LM_Info
     );
   end else begin
+    LogMessage('  Mode: MOVE - transforming original objects');
     // Перемещение: очищаем ConstructRoot, трансформируем оригиналы
     drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix := OneMatrix;
     zcFreeEntsInCurrentDrawingConstructRoot;
@@ -222,6 +263,7 @@ begin
 
     drawings.GetCurrentROOT^.FormatAfterEdit(drawings.GetCurrentDWG^, dc);
 
+    LogMessage('  Transform operation completed');
     programlog.LogOutFormatStr(
       'uzccommand_scale2: трансформация оригиналов завершена', [], LM_Info
     );
@@ -347,6 +389,11 @@ var
   }
   procedure DoApplyScale(const Factor: double);
   begin
+    LogMessage('');
+    LogMessage('[SCALE2 DEBUG] DoApplyScale:');
+    LogMessage('  Factor: ' + FloatToStrF(Factor, ffFixed, 15, 6));
+    LogMessage('  CopyMode: ' + BoolToStr(CopyMode, True));
+
     programlog.LogOutFormatStr(
       'uzccommand_scale2: применяем scale=%.6f copyMode=%d',
       [Factor, Ord(CopyMode)],
@@ -358,6 +405,7 @@ var
 
     if CopyMode then begin
       // Клонируем снова для возможности повторного масштабирования
+      LogMessage('  CopyMode enabled: cloning objects for next iteration');
       CloneEnts;
       zcRedrawCurrentDrawing;
       SetMode(SCMWaitScaleFactor, True);
@@ -380,12 +428,18 @@ begin
   clReferenceLength := nil;
   clNewLength      := nil;
 
+  LogMessage('');
+  LogMessage('========================================');
+  LogMessage('[SCALE2 DEBUG] ЗАПУСК КОМАНДЫ SCALE2');
+  LogMessage('========================================');
+
   programlog.LogOutFormatStr(
     'uzccommand_scale2: запуск команды SCALE2', [], LM_Info
   );
 
   // Проверяем наличие выбранных объектов
   if CloneEnts = 0 then begin
+    LogMessage('[SCALE2 DEBUG] Нет выбранных объектов');
     PrintMessage(rscmSelEntBeforeComm);
     programlog.LogOutFormatStr(
       'uzccommand_scale2: нет выбранных объектов, команда завершена',
@@ -396,24 +450,45 @@ begin
     Exit;
   end;
 
+  LogMessage('[SCALE2 DEBUG] Объекты клонированы для работы');
+
   SetMode(SCMWaitBasePoint, True);
 
   repeat
     // Получаем ввод пользователя в зависимости от текущего состояния
+    LogMessage('');
+    LogMessage('[SCALE2 DEBUG] Текущее состояние: ' + Ord(CmdMode).ToString);
     case CmdMode of
-      SCMWaitBasePoint,
-      SCMWaitRef0,
-      SCMWaitNew1:
-        gr := commandmanager.Get3DPoint('', InputPnt);
-
-      SCMWaitRef1:
-        gr := commandmanager.Get3DPointWithLineFromBase('', Ref0Pnt, InputPnt);
-
+      SCMWaitBasePoint:
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание базовой точки');
+          gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
       SCMWaitScaleFactor:
-        gr := commandmanager.Get3DPoint('', InputPnt);
-
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание коэффициента масштабирования или точки');
+          gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
+      SCMWaitRef0:
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание первой опорной точки');
+          gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
+      SCMWaitRef1:
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание второй опорной точки');
+          gr := commandmanager.Get3DPointWithLineFromBase('', Ref0Pnt, InputPnt);
+        end;
       SCMWaitNew0:
-        gr := commandmanager.Get3DPoint('', InputPnt);
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание первой точки новой длины или числа');
+          gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
+      SCMWaitNew1:
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание второй точки новой длины');
+          gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
     else
       gr := commandmanager.Get3DPoint('', InputPnt);
     end;
@@ -421,155 +496,196 @@ begin
     case gr of
       // --- Пользователь указал точку ---
       IRNormal:
-        case CmdMode of
-          SCMWaitBasePoint: begin
-            BasePnt := InputPnt;
-            programlog.LogOutFormatStr(
-              'uzccommand_scale2: базовая точка (%.3f, %.3f, %.3f)',
-              [BasePnt.x, BasePnt.y, BasePnt.z],
-              LM_Info
-            );
-            SetMode(SCMWaitScaleFactor);
-          end;
+        begin
+          LogMessage('[SCALE2 DEBUG] IRNormal: пользователь указал точку');
+          LogMessage('  InputPoint: ' + Point3DToStr(InputPnt));
+          case CmdMode of
+            SCMWaitBasePoint: begin
+              BasePnt := InputPnt;
+              LogMessage('[SCALE2 DEBUG] Базовая точка установлена: ' + Point3DToStr(BasePnt));
+              programlog.LogOutFormatStr(
+                'uzccommand_scale2: базовая точка (%.3f, %.3f, %.3f)',
+                [BasePnt.x, BasePnt.y, BasePnt.z],
+                LM_Info
+              );
+              SetMode(SCMWaitScaleFactor);
+            end;
 
-          SCMWaitScaleFactor: begin
-            // В режиме ввода точки — вычисляем коэффициент по расстоянию
-            // от базовой точки до указанной
-            ScaleFactor := uzegeometry.Vertexlength(BasePnt, InputPnt);
-            if ScaleFactor < SCALE2_MIN_FACTOR then
-              ScaleFactor := 1.0;
+            SCMWaitScaleFactor: begin
+              // В режиме ввода точки — вычисляем коэффициент по расстоянию
+              // от базовой точки до указанной
+              ScaleFactor := uzegeometry.Vertexlength(BasePnt, InputPnt);
+              LogMessage('[SCALE2 DEBUG] Расстояние от базовой точки до указанной: ' + FloatToStrF(ScaleFactor, ffFixed, 15, 6));
+              if ScaleFactor < SCALE2_MIN_FACTOR then begin
+                LogMessage('[SCALE2 DEBUG] Расстояние слишком мало, используем коэффициент 1.0');
+                ScaleFactor := 1.0;
+              end;
 
-            programlog.LogOutFormatStr(
-              'uzccommand_scale2: коэффициент по точке = %.6f',
-              [ScaleFactor],
-              LM_Info
-            );
-            DoApplyScale(ScaleFactor);
-            if not CopyMode then
-              Break;
-          end;
+              programlog.LogOutFormatStr(
+                'uzccommand_scale2: коэффициент по точке = %.6f',
+                [ScaleFactor],
+                LM_Info
+              );
+              DoApplyScale(ScaleFactor);
+              if not CopyMode then
+                Break;
+            end;
 
-          SCMWaitRef0: begin
-            Ref0Pnt := InputPnt;
-            SetMode(SCMWaitRef1);
-          end;
+            SCMWaitRef0: begin
+              Ref0Pnt := InputPnt;
+              LogMessage('[SCALE2 DEBUG] Первая опорная точка: ' + Point3DToStr(Ref0Pnt));
+              SetMode(SCMWaitRef1);
+            end;
 
-          SCMWaitRef1: begin
-            Ref1Pnt := InputPnt;
-            RefLength := uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt);
-            programlog.LogOutFormatStr(
-              'uzccommand_scale2: опорная длина по точкам = %.6f',
-              [RefLength],
-              LM_Info
-            );
-            SetMode(SCMWaitNew0);
-          end;
+            SCMWaitRef1: begin
+              Ref1Pnt := InputPnt;
+              RefLength := uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt);
+              LogMessage('[SCALE2 DEBUG] Вторая опорная точка: ' + Point3DToStr(Ref1Pnt));
+              LogMessage('[SCALE2 DEBUG] Опорная длина: ' + FloatToStrF(RefLength, ffFixed, 15, 6));
+              programlog.LogOutFormatStr(
+                'uzccommand_scale2: опорная длина по точкам = %.6f',
+                [RefLength],
+                LM_Info
+              );
+              SetMode(SCMWaitNew0);
+            end;
 
-          SCMWaitNew0: begin
-            // Пользователь указал точку вместо числа — переходим к вводу двух точек
-            New0Pnt := InputPnt;
-            SetMode(SCMWaitNew1);
-          end;
+            SCMWaitNew0: begin
+              // Пользователь указал точку вместо числа — переходим к вводу двух точек
+              New0Pnt := InputPnt;
+              LogMessage('[SCALE2 DEBUG] Первая точка новой длины: ' + Point3DToStr(New0Pnt));
+              SetMode(SCMWaitNew1);
+            end;
 
-          SCMWaitNew1: begin
-            New1Pnt := InputPnt;
-            NewLength := uzegeometry.Vertexlength(New0Pnt, New1Pnt);
-            ScaleFactor := CalcReferenceScaleFactor(RefLength, NewLength);
-            DoApplyScale(ScaleFactor);
-            if not CopyMode then
-              Break;
-            SetMode(SCMWaitBasePoint, True);
+            SCMWaitNew1: begin
+              New1Pnt := InputPnt;
+              NewLength := uzegeometry.Vertexlength(New0Pnt, New1Pnt);
+              LogMessage('[SCALE2 DEBUG] Вторая точка новой длины: ' + Point3DToStr(New1Pnt));
+              LogMessage('[SCALE2 DEBUG] Новая длина: ' + FloatToStrF(NewLength, ffFixed, 15, 6));
+              ScaleFactor := CalcReferenceScaleFactor(RefLength, NewLength);
+              DoApplyScale(ScaleFactor);
+              if not CopyMode then
+                Break;
+              SetMode(SCMWaitBasePoint, True);
+            end;
           end;
         end;
 
       // --- Пользователь ввёл текст (число или ключевое слово) ---
       IRInput:
-        case CmdMode of
-          SCMWaitScaleFactor: begin
-            // Пытаемся разобрать введённое число как коэффициент
-            if TryStrToFloat(
-                StringReplace(commandmanager.GetLastInput, ',', '.', []),
-                ScaleFactor) then begin
-              if ScaleFactor < SCALE2_MIN_FACTOR then begin
-                PrintError('Scale factor must be greater than zero.');
+        begin
+          LogMessage('[SCALE2 DEBUG] IRInput: пользователь ввёл текст');
+          LogMessage('  InputText: ' + commandmanager.GetLastInput);
+          case CmdMode of
+            SCMWaitScaleFactor: begin
+              // Пытаемся разобрать введённое число как коэффициент
+              if TryStrToFloat(
+                  StringReplace(commandmanager.GetLastInput, ',', '.', []),
+                  ScaleFactor) then begin
+                LogMessage('[SCALE2 DEBUG] Распознан коэффициент масштабирования: ' + FloatToStrF(ScaleFactor, ffFixed, 15, 6));
+                if ScaleFactor < SCALE2_MIN_FACTOR then begin
+                  LogMessage('[SCALE2 DEBUG] Коэффициент слишком мал, ошибка');
+                  PrintError('Scale factor must be greater than zero.');
+                end else begin
+                  DoApplyScale(ScaleFactor);
+                  if not CopyMode then
+                    Break;
+                end;
               end else begin
-                DoApplyScale(ScaleFactor);
-                if not CopyMode then
-                  Break;
+                LogMessage('[SCALE2 DEBUG] Не удалось распознать коэффициент');
+                PrintError('Please enter a valid scale factor.');
               end;
-            end else begin
-              PrintError('Please enter a valid scale factor.');
             end;
-          end;
 
-          SCMWaitRef0, SCMWaitNew0: begin
-            // Пользователь вводит число вместо точек — используем как длину
-            if TryStrToFloat(
-                StringReplace(commandmanager.GetLastInput, ',', '.', []),
-                RefLength) then begin
-              if CmdMode = SCMWaitRef0 then begin
-                programlog.LogOutFormatStr(
-                  'uzccommand_scale2: опорная длина введена числом = %.6f',
-                  [RefLength],
-                  LM_Info
-                );
-                SetMode(SCMWaitNew0);
+            SCMWaitRef0, SCMWaitNew0: begin
+              // Пользователь вводит число вместо точек — используем как длину
+              if TryStrToFloat(
+                  StringReplace(commandmanager.GetLastInput, ',', '.', []),
+                  RefLength) then begin
+                if CmdMode = SCMWaitRef0 then begin
+                  LogMessage('[SCALE2 DEBUG] Распознана опорная длина (число): ' + FloatToStrF(RefLength, ffFixed, 15, 6));
+                  programlog.LogOutFormatStr(
+                    'uzccommand_scale2: опорная длина введена числом = %.6f',
+                    [RefLength],
+                    LM_Info
+                  );
+                  SetMode(SCMWaitNew0);
+                end else begin
+                  // SCMWaitNew0: пользователь ввёл число как новую длину
+                  NewLength   := RefLength;
+                  LogMessage('[SCALE2 DEBUG] Распознана новая длина (число): ' + FloatToStrF(NewLength, ffFixed, 15, 6));
+                  ScaleFactor := CalcReferenceScaleFactor(
+                    uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt),
+                    NewLength
+                  );
+                  DoApplyScale(ScaleFactor);
+                  if not CopyMode then
+                    Break;
+                  SetMode(SCMWaitBasePoint, True);
+                end;
               end else begin
-                // SCMWaitNew0: пользователь ввёл число как новую длину
-                NewLength   := RefLength;
-                ScaleFactor := CalcReferenceScaleFactor(
-                  uzegeometry.Vertexlength(Ref0Pnt, Ref1Pnt),
-                  NewLength
-                );
-                DoApplyScale(ScaleFactor);
-                if not CopyMode then
-                  Break;
-                SetMode(SCMWaitBasePoint, True);
+                LogMessage('[SCALE2 DEBUG] Не удалось распознать длину');
+                PrintError('Please enter a valid length.');
               end;
-            end else begin
-              PrintError('Please enter a valid length.');
             end;
-          end;
 
-        else
-          PrintError('Try use mouse Luke?');
+          else
+            LogMessage('[SCALE2 DEBUG] Неожиданный ввод в текущем состоянии');
+            PrintError('Try use mouse Luke?');
+          end;
         end;
 
       // --- Пользователь выбрал ключевое слово ---
       IRId:
-        case commandmanager.GetLastId of
-          CLPIdCopy, CLPIdMove: begin
-            // Переключаем режим: Copy <-> Move
-            CopyMode := not CopyMode;
-            if CopyMode then
-              PrintMessage('Objects will be copied during scaling.')
-            else
-              PrintMessage('Scaling mode: move (original will be changed).');
-            SetMode(CmdMode, True);
-          end;
+        begin
+          LogMessage('[SCALE2 DEBUG] IRId: пользователь выбрал ключевое слово');
+          LogMessage('  KeyWord ID: ' + IntToStr(commandmanager.GetLastId));
+          case commandmanager.GetLastId of
+            CLPIdCopy, CLPIdMove: begin
+              // Переключаем режим: Copy <-> Move
+              CopyMode := not CopyMode;
+              LogMessage('[SCALE2 DEBUG] Переключение CopyMode: ' + BoolToStr(CopyMode, True));
+              if CopyMode then
+                PrintMessage('Objects will be copied during scaling.')
+              else
+                PrintMessage('Scaling mode: move (original will be changed).');
+              SetMode(CmdMode, True);
+            end;
 
-          CLPIdReference: begin
-            // Переключаемся в режим Reference
-            ReferenceMode := True;
-            if clReferenceLength = nil then
-              clReferenceLength :=
-                CMDLinePromptParser.GetTokens(RSCLPScale2ReferenceLength);
-            commandmanager.SetPrompt(clReferenceLength);
-            commandmanager.ChangeInputMode([IPEmpty], []);
-            CmdMode := SCMWaitRef0;
-          end;
+            CLPIdReference: begin
+              // Переключаемся в режим Reference
+              LogMessage('[SCALE2 DEBUG] Переключение в режим Reference');
+              ReferenceMode := True;
+              if clReferenceLength = nil then
+                clReferenceLength :=
+                  CMDLinePromptParser.GetTokens(RSCLPScale2ReferenceLength);
+              commandmanager.SetPrompt(clReferenceLength);
+              commandmanager.ChangeInputMode([IPEmpty], []);
+              CmdMode := SCMWaitRef0;
+            end;
 
-          CLPIdUser: begin
-            // Ключевое слово "Points" — переходим к вводу точек
-            if CmdMode = SCMWaitNew0 then
-              SetMode(SCMWaitNew1)
-            else if CmdMode = SCMWaitRef0 then
-              SetMode(SCMWaitRef0, True);
+            CLPIdUser: begin
+              // Ключевое слово "Points" — переходим к вводу точек
+              LogMessage('[SCALE2 DEBUG] Ключевое слово Points (CLPIdUser)');
+              if CmdMode = SCMWaitNew0 then begin
+                LogMessage('[SCALE2 DEBUG] Переход к вводу точек для новой длины');
+                SetMode(SCMWaitNew1);
+              end else if CmdMode = SCMWaitRef0 then begin
+                LogMessage('[SCALE2 DEBUG] Переход к вводу точек для опорной длины');
+                SetMode(SCMWaitRef0, True);
+              end;
+            end;
+          else
+            LogMessage('[SCALE2 DEBUG] Неизвестное ключевое слово');
           end;
         end;
     end;
 
   until gr = IRCancel;
+
+  LogMessage('');
+  LogMessage('[SCALE2 DEBUG] Команда завершена (IRCancel)');
+  LogMessage('========================================');
 
   // Освобождаем кэш разобранных подсказок
   clBasePoint.Free;

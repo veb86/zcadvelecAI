@@ -309,6 +309,7 @@ uses
   testarc,
   testarc2,
   testalign,
+  testscale2,
   uzvrotate_main,
   uzccommand_align,
 
