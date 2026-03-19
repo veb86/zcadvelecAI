@@ -313,37 +313,61 @@ var
   p1: TzePoint3d;
   inputStr: string;
 
+  procedure LogMessage(const msg: string);
+  begin
+    zcUI.TextMessage(msg, TMWOHistoryOut);
+  end;
+
   // Устанавливает текущее состояние диалога и обновляет подсказку командной строки
   procedure SetAlignCmdMode(ANewMode: TAlignCmdMode);
   begin
     CmdMode := ANewMode;
     case ANewMode of
       ACMWaitSrc1: begin
+        LogMessage('ALIGN: Укажите первую исходную точку');
         commandmanager.ChangeInputMode([], [IPEmpty]);
         commandmanager.SetPrompt(RSCLPAlignSrc1);
       end;
       ACMWaitDst1: begin
+        LogMessage(Format('ALIGN: Первая исходная точка = (%.3f, %.3f, %.3f)',
+          [srcPoint1.x, srcPoint1.y, srcPoint1.z]));
+        LogMessage('ALIGN: Укажите первую целевую точку');
         commandmanager.ChangeInputMode([], [IPEmpty]);
         commandmanager.SetPrompt(RSCLPAlignDst1);
       end;
       ACMWaitSrc2: begin
+        LogMessage(Format('ALIGN: Первая целевая точка = (%.3f, %.3f, %.3f)',
+          [dstPoint1.x, dstPoint1.y, dstPoint1.z]));
+        LogMessage('ALIGN: Укажите вторую исходную точку');
         commandmanager.ChangeInputMode([], [IPEmpty]);
         commandmanager.SetPrompt(RSCLPAlignSrc2);
       end;
       ACMWaitDst2: begin
+        LogMessage(Format('ALIGN: Вторая исходная точка = (%.3f, %.3f, %.3f)',
+          [srcPoint2.x, srcPoint2.y, srcPoint2.z]));
+        LogMessage('ALIGN: Укажите вторую целевую точку');
         commandmanager.ChangeInputMode([], [IPEmpty]);
         commandmanager.SetPrompt(RSCLPAlignDst2);
       end;
       ACMWaitSrc3: begin
+        LogMessage(Format('ALIGN: Вторая целевая точка = (%.3f, %.3f, %.3f)',
+          [dstPoint2.x, dstPoint2.y, dstPoint2.z]));
+        LogMessage('ALIGN: Укажите третью исходную точку или нажмите Enter для пропуска');
         // Разрешаем пустой ввод (Enter) для пропуска третьей пары точек
         commandmanager.ChangeInputMode([IPEmpty], []);
         commandmanager.SetPrompt(RSCLPAlignSrc3);
       end;
       ACMWaitDst3: begin
+        LogMessage(Format('ALIGN: Третья исходная точка = (%.3f, %.3f, %.3f)',
+          [p1.x, p1.y, p1.z]));
+        LogMessage('ALIGN: Укажите третью целевую точку');
         commandmanager.ChangeInputMode([], [IPEmpty]);
         commandmanager.SetPrompt(RSCLPAlignDst3);
       end;
       ACMWaitScale: begin
+        if CmdMode <> ACMWaitDst3 then
+          LogMessage('ALIGN: Третья пара точек пропущена');
+        LogMessage('ALIGN: Масштабировать объекты? [Yes/No]');
         // Разрешаем пустой ввод (Enter = No по умолчанию)
         commandmanager.ChangeInputMode([IPEmpty], []);
         // Инициализируем кэш разобранной строки меню при первом вызове
@@ -358,11 +382,38 @@ var
   procedure ApplyAndFinish;
   var
     dispmatr: TzeTypedMatrix4d;
+    srcLen, dstLen, scaleValue: double;
   begin
+    // Вычисляем длины векторов для отладки
+    srcLen := uzegeometry.Vertexlength(srcPoint1, srcPoint2);
+    dstLen := uzegeometry.Vertexlength(dstPoint1, dstPoint2);
+
+    LogMessage('');
+    LogMessage('ALIGN: === ВЫЧИСЛЕНИЕ ТРАНСФОРМАЦИИ ===');
+    LogMessage(Format('ALIGN: Src1=(%.3f,%.3f,%.3f), Dst1=(%.3f,%.3f,%.3f)',
+      [srcPoint1.x, srcPoint1.y, srcPoint1.z, dstPoint1.x, dstPoint1.y, dstPoint1.z]));
+    LogMessage(Format('ALIGN: Src2=(%.3f,%.3f,%.3f), Dst2=(%.3f,%.3f,%.3f)',
+      [srcPoint2.x, srcPoint2.y, srcPoint2.z, dstPoint2.x, dstPoint2.y, dstPoint2.z]));
+    LogMessage(Format('ALIGN: Длина исходного вектора: %.6f', [srcLen]));
+    LogMessage(Format('ALIGN: Длина целевого вектора: %.6f', [dstLen]));
+
+    if srcLen > ALIGN_MIN_DISTANCE then begin
+      scaleValue := dstLen / srcLen;
+      LogMessage(Format('ALIGN: Коэффициент масштабирования: %.6f', [scaleValue]));
+    end
+    else
+      LogMessage('ALIGN: Предупреждение - нулевая длина исходного вектора!');
+
+    LogMessage(Format('ALIGN: Масштабирование: %s', [BoolToStr(applyScale, True)]));
+    LogMessage('ALIGN: ================================');
+    LogMessage('');
+
     dispmatr := CalcAlignMatrix(
       srcPoint1, dstPoint1, srcPoint2, dstPoint2, applyScale
     );
     ApplyTransformToObjects(pcoa, dispmatr);
+
+    LogMessage('ALIGN: Трансформация применена');
     programlog.LogOutFormatStr(
       'uzccommand_align: трансформация применена к %d объектам',
       [objectCount], LM_Info
@@ -374,6 +425,10 @@ begin
   pcoa := nil;
   applyScale := False;
 
+  LogMessage('========================================');
+  LogMessage('ALIGN: Запуск команды ALIGN');
+  LogMessage('========================================');
+
   programlog.LogOutFormatStr(
     'uzccommand_align: запуск команды ALIGN', [], LM_Info
   );
@@ -381,6 +436,7 @@ begin
   // Проверяем наличие выбранных объектов
   objectCount := CollectSelectedObjects(pcoa);
   if objectCount = 0 then begin
+    LogMessage('ALIGN: Ошибка - нет выбранных объектов');
     zcUI.TextMessage(rscmSelEntBeforeComm, TMWOHistoryOut);
     programlog.LogOutFormatStr(
       'uzccommand_align: нет выбранных объектов, команда завершена', [], LM_Info
@@ -388,6 +444,7 @@ begin
     Exit;
   end;
 
+  LogMessage(Format('ALIGN: Выбрано объектов: %d', [objectCount]));
   programlog.LogOutFormatStr(
     'uzccommand_align: выбрано объектов: %d', [objectCount], LM_Info
   );
@@ -405,6 +462,7 @@ begin
           case CmdMode of
             ACMWaitSrc1: begin
               srcPoint1 := p1;
+              LogMessage(Format('ALIGN: Введена src1 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
               programlog.LogOutFormatStr(
                 'uzccommand_align: src1=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
               );
@@ -412,6 +470,7 @@ begin
             end;
             ACMWaitDst1: begin
               dstPoint1 := p1;
+              LogMessage(Format('ALIGN: Введена dst1 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
               programlog.LogOutFormatStr(
                 'uzccommand_align: dst1=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
               );
@@ -419,6 +478,7 @@ begin
             end;
             ACMWaitSrc2: begin
               srcPoint2 := p1;
+              LogMessage(Format('ALIGN: Введена src2 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
               programlog.LogOutFormatStr(
                 'uzccommand_align: src2=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
               );
@@ -426,6 +486,7 @@ begin
             end;
             ACMWaitDst2: begin
               dstPoint2 := p1;
+              LogMessage(Format('ALIGN: Введена dst2 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
               programlog.LogOutFormatStr(
                 'uzccommand_align: dst2=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
               );
@@ -451,6 +512,7 @@ begin
         IRInput:
           // Пустой ввод Enter при IPEmpty: пропустить третью пару точек
           if CmdMode = ACMWaitSrc3 then begin
+            LogMessage('ALIGN: Третья пара точек пропущена (Enter)');
             programlog.LogOutFormatStr(
               'uzccommand_align: третья пара пропущена', [], LM_Info
             );
@@ -461,8 +523,10 @@ begin
     until (gr = IRCancel) or (CmdMode = ACMWaitScale);
 
     // Прерываем если пользователь отменил до достижения шага масштабирования
-    if gr = IRCancel then
+    if gr = IRCancel then begin
+      LogMessage('ALIGN: Команда отменена пользователем');
       Exit;
+    end;
 
     // Цикл ожидания ответа о масштабировании [Yes/No]
     repeat
@@ -472,6 +536,7 @@ begin
         IRNormal, IRInput: begin
           // Пустой ввод (Enter) = No по умолчанию
           applyScale := False;
+          LogMessage('ALIGN: Масштабирование: No (по умолчанию, Enter)');
           programlog.LogOutFormatStr(
             'uzccommand_align: масштабирование=No (по умолчанию)', [], LM_Info
           );
@@ -483,6 +548,7 @@ begin
             CLPIdUser1: begin
               // Пользователь нажал [Y]es
               applyScale := True;
+              LogMessage('ALIGN: Масштабирование: Yes (клавиша Y)');
               programlog.LogOutFormatStr(
                 'uzccommand_align: масштабирование=Yes', [], LM_Info
               );
@@ -492,6 +558,7 @@ begin
             CLPIdUser2: begin
               // Пользователь нажал [N]o
               applyScale := False;
+              LogMessage('ALIGN: Масштабирование: No (клавиша N)');
               programlog.LogOutFormatStr(
                 'uzccommand_align: масштабирование=No', [], LM_Info
               );
@@ -505,6 +572,13 @@ begin
   finally
     // Освобождаем ресурсы независимо от пути завершения
     FreeObjectsList(pcoa);
+    if Result = cmd_ok then begin
+      LogMessage('ALIGN: Команда завершена успешно');
+      LogMessage('========================================');
+    end
+    else begin
+      LogMessage('ALIGN: Команда завершена с ошибкой');
+    end;
   end;
 end;
 
