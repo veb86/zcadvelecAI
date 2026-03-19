@@ -68,8 +68,7 @@ resourcestring
     'Specify scale factor or [${"&[C]opy",Keys[c,m],StrId[CLPIdCopy]}, ' +
     '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
   RSCLPScale2ScaleFactorMove =
-    'Specify scale factor or [${"&[M]ove",Keys[m,c],StrId[CLPIdMove]}, ' +
-    '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
+    'Specify scale factor or [${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
   RSCLPScale2ReferenceLength =
     'Specify reference length or [${"&[P]oints",Keys[p],StrId[CLPIdUser]}]:';
   RSCLPScale2NewLength =
@@ -669,7 +668,7 @@ begin
           LogMessage('[SCALE2 DEBUG] IRId: пользователь выбрал ключевое слово');
           LogMessage('  KeyWord ID: ' + IntToStr(commandmanager.GetLastId));
           case commandmanager.GetLastId of
-            CLPIdCopy, CLPIdMove: begin
+            CLPIdCopy: begin
               // Переключаем режим: Copy <-> Move
               CopyMode := not CopyMode;
               LogMessage('[SCALE2 DEBUG] Переключение CopyMode: ' + BoolToStr(CopyMode, True));
