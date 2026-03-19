@@ -197,37 +197,64 @@ var
   byt: Integer;
   pt:  TzePoint3d;
   bbInitialized: Boolean;
+  vertexCount: Integer;
 begin
   bbInitialized := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
+  vertexCount   := 0;
+
+  programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF START', [], LM_Info);
 
   byt := rdr.ParseInteger;
   while byt <> 0 do begin
+    programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF read code=%d', [byt], LM_Info);
     { Общие свойства: слой, цвет, линия и прочее }
     if not LoadFromDXFObjShared(rdr, byt, ptu, drawing, context) then begin
       { Вершины из кода 10 (X) — группы 10..39 задают точки объекта.
         Используем их для построения ограничивающего параллелепипеда. }
-      if dxfLoadGroupCodeVertex(rdr, 10, byt, pt) then
-        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized)
-      else if dxfLoadGroupCodeVertex(rdr, 11, byt, pt) then
-        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized)
-      else if dxfLoadGroupCodeVertex(rdr, 12, byt, pt) then
-        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized)
-      else if dxfLoadGroupCodeVertex(rdr, 13, byt, pt) then
-        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized)
-      else
+      if dxfLoadGroupCodeVertex(rdr, 10, byt, pt) then begin
+        Inc(vertexCount);
+        programlog.LogOutFormatStr(
+          'uzeentacdproxy: LoadFromDXF vertex code 10 processed #%d pt=(%.2f;%.2f;%.2f)',
+          [vertexCount, pt.x, pt.y, pt.z], LM_Info);
+        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized);
+      end
+      else if dxfLoadGroupCodeVertex(rdr, 11, byt, pt) then begin
+        Inc(vertexCount);
+        programlog.LogOutFormatStr(
+          'uzeentacdproxy: LoadFromDXF vertex code 11 processed #%d pt=(%.2f;%.2f;%.2f)',
+          [vertexCount, pt.x, pt.y, pt.z], LM_Info);
+        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized);
+      end
+      else if dxfLoadGroupCodeVertex(rdr, 12, byt, pt) then begin
+        Inc(vertexCount);
+        programlog.LogOutFormatStr(
+          'uzeentacdproxy: LoadFromDXF vertex code 12 processed #%d pt=(%.2f;%.2f;%.2f)',
+          [vertexCount, pt.x, pt.y, pt.z], LM_Info);
+        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized);
+      end
+      else if dxfLoadGroupCodeVertex(rdr, 13, byt, pt) then begin
+        Inc(vertexCount);
+        programlog.LogOutFormatStr(
+          'uzeentacdproxy: LoadFromDXF vertex code 13 processed #%d pt=(%.2f;%.2f;%.2f)',
+          [vertexCount, pt.x, pt.y, pt.z], LM_Info);
+        ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized);
+      end
+      else begin
         { Любые другие коды — пропускаем значение }
+        programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF skip code=%d', [byt], LM_Info);
         rdr.ParseString;
+      end;
     end;
     byt := rdr.ParseInteger;
   end;
 
   FBBoxLoaded := bbInitialized;
   programlog.LogOutFormatStr(
-    'uzeentacdproxy: LoadFromDXF BBoxLoaded=%d Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
-    [Ord(FBBoxLoaded),
+    'uzeentacdproxy: LoadFromDXF END vertexCount=%d BBoxLoaded=%d Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
+    [vertexCount, Ord(FBBoxLoaded),
      FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
      FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z],
     LM_Info);
