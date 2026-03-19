@@ -63,9 +63,7 @@ uses
 
 resourcestring
   // Подсказки командной строки
-  RSCLPScale2BasePoint =
-    'Specify base point or [${"&[C]opy",Keys[c,m],StrId[CLPIdCopy]}, ' +
-    '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
+  RSCLPScale2BasePoint = 'Specify base point:';
   RSCLPScale2ScaleFactor =
     'Specify scale factor or [${"&[C]opy",Keys[c,m],StrId[CLPIdCopy]}, ' +
     '${"&[R]eference",Keys[r],StrId[CLPIdReference]}]';
@@ -656,12 +654,7 @@ begin
               // Переключаемся в режим Reference
               LogMessage('[SCALE2 DEBUG] Переключение в режим Reference');
               ReferenceMode := True;
-              if clReferenceLength = nil then
-                clReferenceLength :=
-                  CMDLinePromptParser.GetTokens(RSCLPScale2ReferenceLength);
-              commandmanager.SetPrompt(clReferenceLength);
-              commandmanager.ChangeInputMode([IPEmpty], []);
-              CmdMode := SCMWaitRef0;
+              SetMode(SCMWaitRef0);
             end;
 
             CLPIdUser: begin
