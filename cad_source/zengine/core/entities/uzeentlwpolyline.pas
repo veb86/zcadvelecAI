@@ -516,7 +516,7 @@ var
 begin
   hlGDBWord:=0;
   numv:=0;
-      programlog.LogOutStr('GDBObjLWpolyline: Внутри LoadFromDXF', LM_Info);
+      //programlog.LogOutStr('GDBObjLWpolyline: Внутри LoadFromDXF', LM_Info);
   globalwidth:=0;
   widthload:=False;
   closed:=False;
@@ -657,7 +657,7 @@ begin
   createpoint;
   CalcWidthSegment;
   Square:=CalcSquare;
-    programlog.LogOutStr('GDBObjLWpolyline: Внутри formatEntity', LM_Info);
+    //programlog.LogOutStr('GDBObjLWpolyline: Внутри formatEntity', LM_Info);
   calcbb(dc);
   if assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);

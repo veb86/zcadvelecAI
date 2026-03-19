@@ -215,7 +215,7 @@ uses
 
   uzccommand_line2,uzccommand_circle2,//old commands
 
-  uzccommand_scale,uzcCommand_RotateXYZ,uzcCommand_Rotate,uzccommand_rotateents,uzccommand_erase,
+  uzccommand_scale,uzccommand_scale2,uzcCommand_RotateXYZ,uzcCommand_Rotate,uzccommand_rotateents,uzccommand_erase,
   uzccommand_inverseselected,uzccommand_cutclip,
 
   uzccommand_polyed,
@@ -288,6 +288,9 @@ uses
   uzCVCommand_SpaceAddPoly,
   uzvcommand_spaceshowhide, //команда показ спрятать
   //****//
+  {Сущность ACAD_TABLE — таблица AutoCAD из формата DXF (этап 1: чтение и отображение)}
+  uzeentacadtable,
+  //****//
   //FPSpreadsheet//
   uzvspreadsheet_register,
   uzvrtrestoretablecmd,
@@ -306,7 +309,10 @@ uses
   uzvsqlite_command,
   testarc,
   testarc2,
+  testalign,
+  testscale2,
   uzvrotate_main,
+  uzccommand_align,
 
   //**IPC Server for remote control**//
   uzvipcserver,
@@ -325,6 +331,7 @@ uses
 
   //uzccomexample2,
   uzventsuperline,
+  uzeentacdproxy,    { Поддержка прокси-объектов ACAD_PROXY_ENTITY }
   //uzccomobjectinspector,
   //uzccomexperimental,
 
