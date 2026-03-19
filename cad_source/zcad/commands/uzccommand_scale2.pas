@@ -284,8 +284,9 @@ end;
     SCMWaitScaleFactor — ожидание числа или ключевого слова
     SCMWaitRef0        — первая точка опорного расстояния
     SCMWaitRef1        — вторая точка опорного расстояния
-    SCMWaitNew0        — первая точка нового расстояния
-    SCMWaitNew1        — вторая точка нового расстояния
+    SCMWaitNew0        — ожидание новой длины (число или точка от базовой)
+    SCMWaitNew1        — первая точка нового расстояния (режим Points)
+    SCMWaitNew2        — вторая точка нового расстояния
 }
 function Scale2_com(
   const Context: TZCADCommandContext;
@@ -298,7 +299,8 @@ type
     SCMWaitRef0,
     SCMWaitRef1,
     SCMWaitNew0,
-    SCMWaitNew1
+    SCMWaitNew1,
+    SCMWaitNew2
   );
 var
   BasePnt:         TzePoint3d;
@@ -373,6 +375,11 @@ var
 
       SCMWaitNew1: begin
         commandmanager.SetPrompt(RSCLPScale2FirstNewPoint);
+        commandmanager.ChangeInputMode([IPEmpty], []);
+      end;
+
+      SCMWaitNew2: begin
+        commandmanager.SetPrompt(RSCLPScale2SecondNewPoint);
         commandmanager.ChangeInputMode([IPEmpty], []);
       end;
     end;
@@ -479,13 +486,18 @@ begin
         end;
       SCMWaitNew0:
         begin
-          LogMessage('[SCALE2 DEBUG] Ожидание первой точки новой длины или числа');
+          LogMessage('[SCALE2 DEBUG] Ожидание новой длины (число или точка)');
           gr := commandmanager.Get3DPoint('', InputPnt);
         end;
       SCMWaitNew1:
         begin
-          LogMessage('[SCALE2 DEBUG] Ожидание второй точки новой длины');
+          LogMessage('[SCALE2 DEBUG] Ожидание первой точки новой длины');
           gr := commandmanager.Get3DPoint('', InputPnt);
+        end;
+      SCMWaitNew2:
+        begin
+          LogMessage('[SCALE2 DEBUG] Ожидание второй точки новой длины');
+          gr := commandmanager.Get3DPointWithLineFromBase('', New0Pnt, InputPnt);
         end;
     else
       gr := commandmanager.Get3DPoint('', InputPnt);
@@ -549,13 +561,31 @@ begin
             end;
 
             SCMWaitNew0: begin
-              // Пользователь указал точку вместо числа — переходим к вводу двух точек
-              New0Pnt := InputPnt;
-              LogMessage('[SCALE2 DEBUG] Первая точка новой длины: ' + Point3DToStr(New0Pnt));
-              SetMode(SCMWaitNew1);
+              // Пользователь указал точку — вычисляем новую длину как расстояние
+              // от базовой точки до указанной точки
+              NewLength := uzegeometry.Vertexlength(BasePnt, InputPnt);
+              LogMessage('[SCALE2 DEBUG] Новая длина по точке от базовой точки: ' + FloatToStrF(NewLength, ffFixed, 15, 6));
+              programlog.LogOutFormatStr(
+                'uzccommand_scale2: новая длина по точке = %.6f',
+                [NewLength],
+                LM_Info
+              );
+              ScaleFactor := CalcReferenceScaleFactor(RefLength, NewLength);
+              DoApplyScale(ScaleFactor);
+              if not CopyMode then
+                Break;
+              SetMode(SCMWaitBasePoint, True);
             end;
 
             SCMWaitNew1: begin
+              // Пользователь указал первую точку новой длины (режим Points)
+              New0Pnt := InputPnt;
+              LogMessage('[SCALE2 DEBUG] Первая точка новой длины: ' + Point3DToStr(New0Pnt));
+              SetMode(SCMWaitNew2);
+            end;
+
+            SCMWaitNew2: begin
+              // Пользователь указал вторую точку новой длины
               New1Pnt := InputPnt;
               NewLength := uzegeometry.Vertexlength(New0Pnt, New1Pnt);
               LogMessage('[SCALE2 DEBUG] Вторая точка новой длины: ' + Point3DToStr(New1Pnt));
