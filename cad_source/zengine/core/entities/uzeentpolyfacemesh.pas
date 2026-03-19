@@ -440,6 +440,14 @@ begin
         else if s = 'SEQEND' then begin
           if isFaceRecord then
             AddCurrentFace;
+          { Пропускаем данные SEQEND-записи: читаем коды и значения до следующего
+            кода группы 0, соблюдая контракт LoadFromDXF — поток должен стоять
+            на имени следующей сущности (значение кода 0), а сам код 0 — прочитан. }
+          byt := rdr.ParseInteger;
+          while byt <> 0 do begin
+            rdr.SkipString;
+            byt := rdr.ParseInteger;
+          end;
           system.Break;
         end;
       end;
