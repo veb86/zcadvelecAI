@@ -50,7 +50,8 @@ resourcestring
   RSCLPAlignDst1       = 'Укажите первую целевую точку:';
   RSCLPAlignSrc2       = 'Укажите вторую исходную точку:';
   RSCLPAlignDst2       = 'Укажите вторую целевую точку:';
-  RSCLPAlignSrc3       = 'Укажите третью исходную точку или нажмите Enter для пропуска:';
+  // Интерактивный запрос третьей точки с кнопкой [Enter] для пропуска
+  RSCLPAlignSrc3       = 'Укажите третью исходную точку или ${"[Отменить]",Keys[VK_RETURN],StrId[CLPIdUser1]}:';
   RSCLPAlignDst3       = 'Укажите третью целевую точку:';
   // Интерактивное меню выбора масштабирования с клавишами [Y] и [N]
   RSCLPAlignScaleYesNo =
@@ -71,6 +72,8 @@ const
 var
   // Кэш разобранной строки меню масштабирования (инициализируется при первом вызове)
   clScaleYesNo: CMDLinePromptParser.TGeneralParsedText = nil;
+  // Кэш разобранной строки запроса третьей точки (инициализируется при первом вызове)
+  clSrc3: CMDLinePromptParser.TGeneralParsedText = nil;
 
 { --- Вычисление матрицы трансформации ALIGN --- }
 
@@ -608,9 +611,12 @@ var
         LogMessage(Format('ALIGN: Вторая целевая точка = (%.3f, %.3f, %.3f)',
           [dstPoint2.x, dstPoint2.y, dstPoint2.z]));
         LogMessage('ALIGN: Укажите третью исходную точку или нажмите Enter для пропуска');
-        // Разрешаем пустой ввод (Enter) для пропуска третьей пары точек
-        commandmanager.ChangeInputMode([IPEmpty], []);
-        commandmanager.SetPrompt(RSCLPAlignSrc3);
+        // Разрешаем ввод кнопки [Отменить] (Enter) для пропуска третьей пары точек
+        commandmanager.ChangeInputMode([], [IPEmpty]);
+        // Инициализируем кэш разобранной строки при первом вызове
+        if clSrc3 = nil then
+          clSrc3 := CMDLinePromptParser.GetTokens(RSCLPAlignSrc3);
+        commandmanager.SetPrompt(clSrc3);
       end;
       ACMWaitDst3: begin
         LogMessage(Format('ALIGN: Третья исходная точка = (%.3f, %.3f, %.3f)',
@@ -778,9 +784,9 @@ begin
             end;
           end;
 
-        IRInput:
-          // Пустой ввод Enter при IPEmpty: пропустить третью пару точек
-          if CmdMode = ACMWaitSrc3 then begin
+        IRId:
+          // Нажатие кнопки [Отменить] (Enter) для пропуска третьей пары точек
+          if (CmdMode = ACMWaitSrc3) and (commandmanager.GetLastId = CLPIdUser1) then begin
             LogMessage('ALIGN: Третья пара точек пропущена (Enter)');
             programlog.LogOutFormatStr(
               'uzccommand_align: третья пара пропущена', [], LM_Info
@@ -861,4 +867,5 @@ finalization
   ProgramLog.LogOutFormatStr('Unit "%s" finalization', [{$INCLUDE %FILE%}],
     LM_Info, UnitsFinalizeLMId);
   clScaleYesNo.Free;
+  clSrc3.Free;
 end.
