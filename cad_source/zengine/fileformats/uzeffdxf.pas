@@ -358,7 +358,9 @@ begin
     lps.ProgressLongProcess(lph,rdr.CurrentPos);
     s := rdr.ParseString;
     //if (group=0)and(DXFName2EntInfoData.MyGetValue(s,EntInfoData)) then begin
-    if (group=0)and(FindOrProxyEntInfo(s,EntInfoData)) then begin
+    { exitString (например ENDBLK, ENDSEC) — структурный маркер DXF, не сущность.
+      Его не нужно ни загружать, ни пропускать через gotodxf — цикл завершится сам. }
+    if (group=0)and(s <> exitString)and(FindOrProxyEntInfo(s,EntInfoData)) then begin
     if owner <> nil then begin
       zTraceLn('{D+}[DXF_CONTENTS]AddEntitiesFromDXF.Found primitive %s',[s]);
       pobj := EntInfoData.AllocAndInitEntity(nil);
@@ -466,9 +468,11 @@ begin
       if Assigned(ClearExtLoadData) then
         ClearExtLoadData(PExtLoadData);
     end else begin
-      if group=0 then begin
+      if (group=0)and(s <> exitString) then begin
         { FindOrProxyEntInfo вернул false: сущность в списке игнорируемых
-          или прокси-класс не зарегистрирован — пропускаем до следующей сущности }
+          или прокси-класс не зарегистрирован — пропускаем до следующей сущности.
+          exitString не пропускаем через gotodxf: данные после него должны остаться
+          нетронутыми для корректного завершения загрузки блока. }
         gotodxf(rdr, 0, '');
       end else
         if trystrtoint(s,group)then else
