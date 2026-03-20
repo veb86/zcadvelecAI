@@ -50,13 +50,17 @@ uses
   uzclog,
   uzestyleslayers,
   uzecamera,
-  SysUtils;
+  SysUtils,
+  Classes,
+  Math,
+  uzeentproxyparser;
 
 type
   PGDBObjAcdProxy = ^GDBObjAcdProxy;
 
   { Прокси-объект AutoCAD (ACAD_PROXY_ENTITY).
     Этап 1: отображается как габаритная рамка.
+    Этап 2: отображает геометрию из универсального парсера (ACIS/Display Mesh).
     Хранит точки минимума (LBN) и максимума (RTF) из DXF-данных объекта. }
   GDBObjAcdProxy = object(GDBObj3d)
   private
@@ -66,10 +70,15 @@ type
     FBBoxMaxInOCS: TzePoint3d;
     { Флаг: данные габаритной рамки успешно загружены }
     FBBoxLoaded: Boolean;
+    { Данные меша из универсального парсера }
+    FMeshData: TProxyMeshData;
 
     { Отрисовывает одно ребро габаритной рамки }
     procedure DrawBBoxEdge(var DC: TDrawContext;
       const ptFrom, ptTo: TzePoint3d);
+    
+    { Отрисовывает меш прокси-объекта }
+    procedure DrawProxyMesh(var DC: TDrawContext);
 
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
@@ -143,8 +152,143 @@ function AllocAcdProxy: Pointer;
 { Выделяет и инициализирует новый прокси-объект }
 function AllocAndInitAcdProxy(
   owner: PGDBObjGenericWithSubordinated): PGDBObjAcdProxy;
-
 implementation
+{ Преобразует hex-строку в байтовый буфер }
+function HexStringToBytes(const hexStr: string; var buffer: array of Byte): Integer;
+var
+  i, j: Integer;
+  valInt: Integer;
+  code: Integer;
+  hexPair: string;
+begin
+  Result := 0;
+  i := 1;
+  while i <= Length(hexStr) - 1 do begin
+    if Result >= Length(buffer) then
+      Exit;
+    hexPair := '$' + Copy(hexStr, i, 2);
+    Val(hexPair, valInt, code);
+    if code = 0 then begin
+      buffer[Result] := Byte(valInt);
+      Inc(Result);
+    end;
+    Inc(i, 2);
+  end;
+end;
+
+{ Извлекает 64-bit double из буфера (little-endian) }
+function ReadDoubleFromBuffer(const buffer: array of Byte; offset: Integer): Double;
+begin
+  Move(buffer[offset], Result, SizeOf(Double));
+end;
+
+{ Парсит бинарные данные ACAD_PROXY_ENTITY для извлечения Bounding Box.
+
+  Структура данных для SPDSPOLYMORPHMARK (круг + текст):
+  - Заголовок ~20-29 байт
+  - Данные включают параметры круга: centerX, centerY, centerZ, radius
+  - BBox вычисляется из параметров круга: (centerX-radius, centerY-radius) - (centerX+radius, centerY+radius)
+
+  Алгоритм:
+  1. Ищем структуру из 4 double: centerX, centerY, centerZ(=0), radius
+  2. Вычисляем BBox из этих параметров }
+function ParseProxyBBox(const hexData: string; var bbMin, bbMax: TzePoint3d): Boolean;
+var
+  buffer: array[0..16384] of Byte;
+  bytesLen: Integer;
+  i: Integer;
+  centerX, centerY, centerZ, radius: Double;
+  found: Boolean;
+  val: Double;
+begin
+  Result := False;
+  bytesLen := HexStringToBytes(hexData, buffer);
+  if bytesLen < 50 then
+    Exit;
+
+  { Ищем структуру круга: centerX, centerY, centerZ(=0), radius
+    Эти значения идут последовательно с шагом 8 байт }
+  found := False;
+  for i := 20 to bytesLen - 32 do begin
+    centerX := ReadDoubleFromBuffer(buffer, i);
+    centerY := ReadDoubleFromBuffer(buffer, i + 8);
+    centerZ := ReadDoubleFromBuffer(buffer, i + 16);
+    radius := ReadDoubleFromBuffer(buffer, i + 24);
+
+    { Проверяем, что это похоже на параметры круга:
+      - centerX и centerY должны быть "большими" координатами (> 100)
+      - centerZ близко к 0
+      - radius положительный и разумного размера (10-10000) }
+    if (Abs(centerX) > 100) and (Abs(centerX) < 1e7) and
+       (Abs(centerY) > 100) and (Abs(centerY) < 1e7) and
+       (Abs(centerZ) < 1e-3) and
+       (radius > 10) and (radius < 10000) then begin
+      found := True;
+      Break;
+    end;
+  end;
+
+  if found then begin
+    { Вычисляем BBox из параметров круга }
+    bbMin.x := centerX - radius;
+    bbMin.y := centerY - radius;
+    bbMin.z := centerZ;
+    bbMax.x := centerX + radius;
+    bbMax.y := centerY + radius;
+    bbMax.z := centerZ;
+
+    Result := True;
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: ParseProxyBBox CIRCLE FOUND centerX=%.4f centerY=%.4f radius=%.4f',
+      [centerX, centerY, radius], LM_Info);
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: ParseProxyBBox Min=(%.4f;%.4f;%.4f) Max=(%.4f;%.4f;%.4f)',
+      [bbMin.x, bbMin.y, bbMin.z, bbMax.x, bbMax.y, bbMax.z], LM_Info);
+  end else begin
+    { Если круг не найден, пытаемся найти BBox сканированием всех double }
+    programlog.LogOutFormatStr('uzeentacdproxy: ParseProxyBBox circle not found, trying generic scan', [], LM_Info);
+
+    { Инициализируем значения }
+    bbMin.x := 1e30; bbMin.y := 1e30; bbMin.z := 1e30;
+    bbMax.x := -1e30; bbMax.y := -1e30; bbMax.z := -1e30;
+    found := False;
+
+    { Сканируем все double значения в буфере }
+    for i := 20 to bytesLen - 8 do begin
+      val := ReadDoubleFromBuffer(buffer, i);
+
+      { Проверяем, что значение разумное }
+      if not (IsNan(val) or IsInfinite(val)) and (Abs(val) < 1e9) then begin
+        { Игнорируем очень маленькие значения }
+        if Abs(val) > 1e-6 then begin
+          if val < bbMin.x then bbMin.x := val;
+          if val > bbMax.x then bbMax.x := val;
+          if val < bbMin.y then bbMin.y := val;
+          if val > bbMax.y then bbMax.y := val;
+          if val < bbMin.z then bbMin.z := val;
+          if val > bbMax.z then bbMax.z := val;
+          found := True;
+        end;
+      end;
+    end;
+
+    if found then begin
+      { Для 2D объектов устанавливаем Z=0 }
+      if Abs(bbMax.z - bbMin.z) < 1e-6 then begin
+        bbMin.z := 0.0;
+        bbMax.z := 0.0;
+      end;
+
+      Result := True;
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: ParseProxyBBox (generic) Min=(%.4f;%.4f;%.4f) Max=(%.4f;%.4f;%.4f)',
+        [bbMin.x, bbMin.y, bbMin.z, bbMax.x, bbMax.y, bbMax.z], LM_Info);
+    end else begin
+      programlog.LogOutFormatStr('uzeentacdproxy: ParseProxyBBox failed - no valid values found', [], LM_Info);
+    end;
+  end;
+end;
+
 
 { --- Вспомогательные процедуры --- }
 
@@ -176,6 +320,7 @@ begin
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
+  FMeshData     := nil;
 end;
 
 constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
@@ -184,11 +329,13 @@ begin
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
+  FMeshData     := nil;
 end;
 
 { Загружает прокси-объект из DXF.
+  Использует универсальный парсер (TProxyObjectParser) для извлечения геометрии.
+  Поддерживает ACIS SAT и Display Mesh форматы.
   Читает базовые свойства (слой, цвет) через LoadFromDXFObjShared.
-  Все вершины из кодов 10–39 используются для построения габаритной рамки.
   Неизвестные коды пропускаются. }
 procedure GDBObjAcdProxy.LoadFromDXF(var rdr: TZMemReader;
   ptu: PExtensionData; var drawing: TDrawingDef;
@@ -198,12 +345,17 @@ var
   pt:  TzePoint3d;
   bbInitialized: Boolean;
   vertexCount: Integer;
+  hexData: string;
+  firstHexProcessed: Boolean;
+  parser: TProxyObjectParser;
+  parseResult: TProxyParseResult;
 begin
   bbInitialized := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
   vertexCount   := 0;
+  firstHexProcessed := False;
 
   programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF START', [], LM_Info);
 
@@ -242,6 +394,54 @@ begin
           [vertexCount, pt.x, pt.y, pt.z], LM_Info);
         ExpandBBox(FBBoxMinInOCS, FBBoxMaxInOCS, pt, bbInitialized);
       end
+      { Код 92 - размер бинарных данных }
+      else if byt = 92 then begin
+        programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF skip code=92 (binary size=%d)', [rdr.ParseInteger], LM_Info);
+      end
+      { Код 310 - бинарные данные прокси-объекта (hex-строка) }
+      else if byt = 310 then begin
+        hexData := rdr.ParseString;
+        { Обрабатываем первую hex-строку через универсальный парсер }
+        if not firstHexProcessed then begin
+          { Создаем и инициализируем парсер }
+          parser := TProxyObjectParser.Create;
+          try
+            if parser.InitFromHex(hexData) then begin
+              parseResult := parser.Parse;
+              
+              if parseResult.Valid then begin
+                { Сохраняем BBox из парсера }
+                FBBoxMinInOCS := parseResult.BBoxMin;
+                FBBoxMaxInOCS := parseResult.BBoxMax;
+                bbInitialized := True;
+                FBBoxLoaded := True;
+                
+                { Сохраняем меш для отрисовки }
+                FMeshData := parser.GetMeshForDisplay;
+                
+                programlog.LogOutFormatStr(
+                  'uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER Success - GeometryType=%d Vertices=%d Faces=%d BBox Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
+                  [Ord(parseResult.GeometryType), 
+                   IfThen(Assigned(FMeshData), FMeshData.VertexCount, 0),
+                   IfThen(Assigned(FMeshData), FMeshData.FaceCount, 0),
+                   FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
+                   FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z],
+                  LM_Info);
+              end else begin
+                programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER failed - no valid geometry', [], LM_Info);
+              end;
+            end else begin
+              programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER init failed', [], LM_Info);
+            end;
+          finally
+            parser.Free;
+          end;
+          
+          firstHexProcessed := True;
+        end else begin
+          programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF skip code=310 (continuation)', [], LM_Info);
+        end;
+      end
       else begin
         { Любые другие коды — пропускаем значение }
         programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF skip code=%d', [byt], LM_Info);
@@ -251,13 +451,23 @@ begin
     byt := rdr.ParseInteger;
   end;
 
-  FBBoxLoaded := bbInitialized;
-  programlog.LogOutFormatStr(
-    'uzeentacdproxy: LoadFromDXF END vertexCount=%d BBoxLoaded=%d Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
-    [vertexCount, Ord(FBBoxLoaded),
-     FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
-     FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z],
-    LM_Info);
+  { Fallback: если парсер не сработал, пробуем старый метод }
+  if not FBBoxLoaded and (vertexCount > 0) then begin
+    FBBoxLoaded := bbInitialized;
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: LoadFromDXF END (fallback) vertexCount=%d BBoxLoaded=%d Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
+      [vertexCount, Ord(FBBoxLoaded),
+       FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
+       FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z],
+      LM_Info);
+  end else begin
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: LoadFromDXF END vertexCount=%d BBoxLoaded=%d Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
+      [vertexCount, Ord(FBBoxLoaded),
+       FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
+       FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z],
+      LM_Info);
+  end;
 end;
 
 { Сохраняет прокси-объект в DXF.
@@ -282,9 +492,42 @@ begin
   Representation.DrawLineWithoutLT(DC, ptFrom, ptTo);
 end;
 
+{ Отрисовывает меш прокси-объекта в Representation }
+procedure GDBObjAcdProxy.DrawProxyMesh(var DC: TDrawContext);
+var
+  i: Integer;
+  v1, v2, v3: TzePoint3d;
+  face: TProxyFace;
+begin
+  if FMeshData = nil then
+    Exit;
+  
+  { Рисуем треугольники меша }
+  for i := 0 to FMeshData.FaceCount - 1 do begin
+    face := FMeshData.Faces[i];
+    if face.VertexCount = 3 then begin
+      v1.x := FMeshData.Vertices[face.VertexIndices[0]].X;
+      v1.y := FMeshData.Vertices[face.VertexIndices[0]].Y;
+      v1.z := FMeshData.Vertices[face.VertexIndices[0]].Z;
+      v2.x := FMeshData.Vertices[face.VertexIndices[1]].X;
+      v2.y := FMeshData.Vertices[face.VertexIndices[1]].Y;
+      v2.z := FMeshData.Vertices[face.VertexIndices[1]].Z;
+      v3.x := FMeshData.Vertices[face.VertexIndices[2]].X;
+      v3.y := FMeshData.Vertices[face.VertexIndices[2]].Y;
+      v3.z := FMeshData.Vertices[face.VertexIndices[2]].Z;
+
+      Representation.DrawLineWithoutLT(DC, v1, v2);
+      Representation.DrawLineWithoutLT(DC, v2, v3);
+      Representation.DrawLineWithoutLT(DC, v3, v1);
+    end;
+  end;
+end;
+
 { Рассчитывает визуальное представление прокси-объекта.
   На этапе EFCalcEntityCS: пересчитываем BB из хранимых точек OCS.
-  На этапе EFDraw: рисуем 12 рёбер габаритной рамки в Representation. }
+  На этапе EFDraw:
+    - Если есть меш из универсального парсера → рисуем геометрию
+    - Иначе → рисуем 12 рёбер габаритной рамки (fallback) }
 procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
 var
@@ -317,7 +560,13 @@ begin
   then begin
     Representation.Clear;
 
-    if FBBoxLoaded then begin
+    { Приоритет 1: Рисуем меш из универсального парсера }
+    if (FMeshData <> nil) and (FMeshData.FaceCount > 0) then begin
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing MESH (Faces=%d)', [FMeshData.FaceCount], LM_Info);
+      DrawProxyMesh(DC);
+    end
+    { Приоритет 2: Fallback - рисуем BBox }
+    else if FBBoxLoaded then begin
       bbMin := FBBoxMinInOCS;
       bbMax := FBBoxMaxInOCS;
 
@@ -348,6 +597,8 @@ begin
       DrawBBoxEdge(DC, v100, v101);
       DrawBBoxEdge(DC, v110, v111);
       DrawBBoxEdge(DC, v010, v011);
+      
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing BBOX (fallback)', [], LM_Info);
     end;
   end;
 
@@ -480,6 +731,7 @@ end;
 
 destructor GDBObjAcdProxy.done;
 begin
+  FMeshData.Free;
   inherited;
 end;
 
