@@ -83,19 +83,22 @@ type
     FBBoxMinInOCS: TzePoint3d;
     FBBoxMaxInOCS: TzePoint3d;
     FBBoxLoaded: Boolean;
-    
+
     { Виртуальные сущности }
     FVirtualEntities: array of PGDBObjEntity;
     FEntityCount: Integer;
-    
+
+    { Слой по умолчанию для сущностей }
+    FDefaultLayer: PGDBLayerProp;
+
     { Отрисовка виртуальных сущностей }
-    procedure DrawVirtualEntities(var DC: TDrawContext);
-    
+    procedure DrawVirtualEntities(var DC: TDrawContext; var drawing: TDrawingDef);
+
     { Вычисление BBox из виртуальных сущностей }
     procedure CalcBBoxFromEntities;
-    
+
     { Конвертация результата парсинга в сущность ZCAD }
-    function ConvertResultToEntity(const CmdResult: TProxyCommandResult): PGDBObjEntity;
+    function ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
     
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
@@ -179,17 +182,13 @@ end;
 function AllocAndInitPolylineProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjPolyline;
 begin
   GetMem(Pointer(Result), SizeOf(GDBObjPolyline));
-  Result^.initnul;
-  if owner <> nil then
-    Result^.bp.ListPos.Owner := owner;
+  Result^.initnul(owner);
 end;
 
 function AllocAndInitTextProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjText;
 begin
   GetMem(Pointer(Result), SizeOf(GDBObjText));
-  Result^.initnul;
-  if owner <> nil then
-    Result^.bp.ListPos.Owner := owner;
+  Result^.initnul(owner);
 end;
 
 function AllocAndInitEllipseProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjEllipse;
@@ -209,6 +208,7 @@ begin
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded := False;
   FEntityCount := 0;
+  FDefaultLayer := layeraddres;
   SetLength(FVirtualEntities, 0);
 end;
 
@@ -239,7 +239,7 @@ begin
 end;
 
 { Конвертация результата парсинга в сущность ZCAD }
-function GDBObjAcdProxy.ConvertResultToEntity(const CmdResult: TProxyCommandResult): PGDBObjEntity;
+function GDBObjAcdProxy.ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
 var
   Circle: PGDBObjCircle;
   Arc: PGDBObjArc;
@@ -302,19 +302,23 @@ begin
       begin
         Ellipse := AllocAndInitEllipseProxy(nil);
         Ellipse^.Local.p_insert := CmdResult.EllipticArcData.Center;
-        Ellipse^.MajorAxis := CmdResult.EllipticArcData.MajorAxisLength * VectorNormalize(CmdResult.EllipticArcData.MajorAxisDirection);
+        // Умножаем вектор направления на длину большой оси
+        with VectorNormalize(CmdResult.EllipticArcData.MajorAxisDirection) do begin
+          Ellipse^.MajorAxis.x := CmdResult.EllipticArcData.MajorAxisLength * x;
+          Ellipse^.MajorAxis.y := CmdResult.EllipticArcData.MajorAxisLength * y;
+          Ellipse^.MajorAxis.z := CmdResult.EllipticArcData.MajorAxisLength * z;
+        end;
         Ellipse^.Ratio := CmdResult.EllipticArcData.MinorAxisLength / CmdResult.EllipticArcData.MajorAxisLength;
         Ellipse^.StartAngle := CmdResult.EllipticArcData.StartParam;
         Ellipse^.EndAngle := CmdResult.EllipticArcData.EndParam;
         Result := PGDBObjEntity(Ellipse);
       end;
   end;
-  
+
   // Применяем атрибуты (слой, цвет)
   if Result <> nil then begin
-    Result^.SetLayer(FState.Layer);
-    if FState.Color <> -1 then
-      Result^.SetColor(FState.Color);
+    Result^.vp.Layer := FDefaultLayer;
+    // Цвет пока не применяем, так как FState недоступен
   end;
 end;
 
@@ -330,8 +334,6 @@ var
   Entity: PGDBObjEntity;
   byt: Integer;
 begin
-  inherited LoadFromDXF(rdr, ptu, drawing, context);
-  
   programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF START', [], LM_Info);
   
   // Читаем коды DXF
@@ -356,7 +358,7 @@ begin
                   
                   if CmdResult.Valid then begin
                     // Конвертируем в сущность ZCAD
-                    Entity := ConvertResultToEntity(CmdResult);
+                    Entity := ConvertResultToEntity(CmdResult, drawing);
                     
                     if Entity <> nil then begin
                       // Добавляем в массив виртуальных сущностей
@@ -447,7 +449,7 @@ begin
 end;
 
 { Отрисовка виртуальных сущностей }
-procedure GDBObjAcdProxy.DrawVirtualEntities(var DC: TDrawContext);
+procedure GDBObjAcdProxy.DrawVirtualEntities(var DC: TDrawContext; var drawing: TDrawingDef);
 var
   I: Integer;
   Entity: PGDBObjEntity;
@@ -455,7 +457,7 @@ begin
   for I := 0 to FEntityCount - 1 do begin
     Entity := FVirtualEntities[I];
     if Entity <> nil then
-      Entity^.FormatEntity(DC.DrawingContext.DrawingDef, DC, EFDraw);
+      Entity^.FormatEntity(drawing, DC, [EFDraw]);
   end;
 end;
 
@@ -484,17 +486,17 @@ begin
     and (DCODrawable in DC.Options)
   then begin
     Representation.Clear;
-    
+
     // Рисуем виртуальные сущности
     if FEntityCount > 0 then begin
       programlog.LogOutFormatStr(
         'uzeentacdproxy: FormatEntity drawing %d virtual entities',
         [FEntityCount], LM_Info);
-      
-      DrawVirtualEntities(DC);
+
+      DrawVirtualEntities(DC, drawing);
     end;
   end;
-  
+
   if assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
 end;
@@ -503,8 +505,7 @@ end;
 procedure GDBObjAcdProxy.DrawGeometry(lw: integer; var DC: TDrawContext;
   const inFrustumState: TInBoundingVolume);
 begin
-  if FEntityCount > 0 then
-    DrawVirtualEntities(DC);
+  // Отрисовка выполняется через FormatEntity
 end;
 
 { Вычисляет попадание во фрустум }
@@ -553,22 +554,22 @@ var
   I: Integer;
 begin
   GetMem(Pointer(newProxy), SizeOf(GDBObjAcdProxy));
-  newProxy^.init(own, vp.LayerProp, LW);
-  
+  newProxy^.init(own, vp.Layer, vp.LineWeight);
+
   // Копируем BBox
   newProxy^.FBBoxMinInOCS := FBBoxMinInOCS;
   newProxy^.FBBoxMaxInOCS := FBBoxMaxInOCS;
   newProxy^.FBBoxLoaded := FBBoxLoaded;
-  
+
   // Копируем виртуальные сущности
   SetLength(newProxy^.FVirtualEntities, FEntityCount);
   newProxy^.FEntityCount := FEntityCount;
-  
+
   for I := 0 to FEntityCount - 1 do begin
     if FVirtualEntities[I] <> nil then
       newProxy^.FVirtualEntities[I] := FVirtualEntities[I]^.Clone(nil);
   end;
-  
+
   Result := PGDBObjEntity(newProxy);
 end;
 

@@ -272,6 +272,8 @@ type
 
 { Вспомогательные функции }
 function VectorIsClose(const V1, V2: TzePoint3d; const Epsilon: Double = 1e-14): Boolean; inline;
+function VectorNormalize(const V: TzePoint3d): TzePoint3d; inline;
+function CrossProduct(const V1, V2: TzePoint3d): TzePoint3d; inline;
 function HexToBytes(const HexStr: string): TBytes;
 function BytesToHex(const Bytes: TBytes): string;
 function DefaultEncoding: TEncoding;
@@ -323,6 +325,31 @@ begin
   Result := (Abs(V1.x - V2.x) <= Epsilon) and
             (Abs(V1.y - V2.y) <= Epsilon) and
             (Abs(V1.z - V2.z) <= Epsilon);
+end;
+
+{ === VectorNormalize === }
+
+function VectorNormalize(const V: TzePoint3d): TzePoint3d;
+var
+  Len: Double;
+begin
+  Len := Sqrt(V.x * V.x + V.y * V.y + V.z * V.z);
+  if Len > 0 then begin
+    Result.x := V.x / Len;
+    Result.y := V.y / Len;
+    Result.z := V.z / Len;
+  end else begin
+    Result := V;
+  end;
+end;
+
+{ === CrossProduct === }
+
+function CrossProduct(const V1, V2: TzePoint3d): TzePoint3d;
+begin
+  Result.x := V1.y * V2.z - V1.z * V2.y;
+  Result.y := V1.z * V2.x - V1.x * V2.z;
+  Result.z := V1.x * V2.y - V1.y * V2.x;
 end;
 
 { === Вспомогательные функции === }
@@ -935,7 +962,7 @@ begin
     Result.EllipticArcData.StartParam := FStream.ReadDouble;
     Result.EllipticArcData.EndParam := FStream.ReadDouble;
     // Направление большой оси вычисляем из extrusion
-    if Result.EllipticArcData.Extrusion.IsClose(PROXY_Z_AXIS, 1e-9) then
+    if VectorIsClose(Result.EllipticArcData.Extrusion, PROXY_Z_AXIS, 1e-9) then
       Result.EllipticArcData.MajorAxisDirection := PROXY_X_AXIS
     else
       Result.EllipticArcData.MajorAxisDirection := VectorNormalize(CrossProduct(Result.EllipticArcData.Extrusion, PROXY_Y_AXIS));
