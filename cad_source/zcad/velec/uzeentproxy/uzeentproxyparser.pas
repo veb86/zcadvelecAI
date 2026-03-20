@@ -39,11 +39,30 @@ uses
   Classes,
   uzeTypes,
   uzeGeometryTypes,
+  uzegeometry,
   uzeentproxytypes;
+
+const
+  { Базовые оси координат (локальные константы для совместимости) }
+  PROXY_X_AXIS: TzePoint3d = (x: 1.0; y: 0.0; z: 0.0);
+  PROXY_Y_AXIS: TzePoint3d = (x: 0.0; y: 1.0; z: 0.0);
+  PROXY_Z_AXIS: TzePoint3d = (x: 0.0; y: 0.0; z: 1.0);
 
 type
   { Исключение парсера }
   EProxyGraphicError = class(Exception);
+
+  { OCS - Object Coordinate System (локальная реализация для парсера) }
+  TzeOCS = class
+  private
+    FXAxis: TzePoint3d;
+    FYAxis: TzePoint3d;
+    FZAxis: TzePoint3d;
+  public
+    constructor Create(const Normal: TzePoint3d);
+    destructor Destroy; override;
+    function FromWCS(const Point: TzePoint3d): TzePoint3d;
+  end;
 
   { Поток байтов для чтения (аналог ByteStream из ezdxf) }
   TProxyByteStream = class
@@ -97,18 +116,19 @@ type
     FStream: TProxyByteStream;
     FState: TProxyGraphicState;
     FCommandSize: Integer;
-    
+    FEncoding: TEncoding;
+
     { Преобразование координат }
     function TransformPoint(const Point: TzePoint3d): TzePoint3d;
     function TransformToOCS(const Point: TzePoint3d; const Normal: TzePoint3d): TzePoint3d;
-    
+
     { Вспомогательные функции }
     function NormalizeAngle(Angle: Double): Double;
-    
+
   public
-    constructor Create(const Stream: TProxyByteStream; const State: TProxyGraphicState; CommandSize: Integer);
+    constructor Create(const Stream: TProxyByteStream; const State: TProxyGraphicState; CommandSize: Integer; Encoding: TEncoding);
     destructor Destroy; override;
-    
+
     { Парсинг команды - переопределяется в потомках }
     function Parse: TProxyCommandResult; virtual; abstract;
   end;
@@ -179,6 +199,7 @@ type
     FBuffer: TBytes;
     FStream: TProxyByteStream;
     FState: TProxyGraphicState;
+    FCommandSize: Integer;
     FResults: array of TProxyCommandResult;
     FResultCount: Integer;
     FEncoding: TEncoding;
@@ -250,6 +271,7 @@ type
   end;
 
 { Вспомогательные функции }
+function VectorIsClose(const V1, V2: TzePoint3d; const Epsilon: Double = 1e-14): Boolean; inline;
 function HexToBytes(const HexStr: string): TBytes;
 function BytesToHex(const Bytes: TBytes): string;
 function DefaultEncoding: TEncoding;
@@ -261,6 +283,47 @@ uses
   Math,
   uzeentity,
   uzeconsts;
+
+{ === TzeOCS === }
+
+constructor TzeOCS.Create(const Normal: TzePoint3d);
+var
+  ax: TzePoint3d;
+begin
+  inherited Create;
+  FZAxis := NormalizeVertex(Normal);
+
+  { Вычисляем оси X и Y используя произвольную ось }
+  if Abs(FZAxis.x) < 0.9 then
+    ax := PROXY_X_AXIS
+  else
+    ax := PROXY_Y_AXIS;
+
+  FXAxis := NormalizeVertex(ax * FZAxis.z - FZAxis * ax.z);
+  FYAxis := NormalizeVertex(FZAxis * FXAxis.x - FXAxis * FZAxis.x);
+end;
+
+destructor TzeOCS.Destroy;
+begin
+  inherited Destroy;
+end;
+
+function TzeOCS.FromWCS(const Point: TzePoint3d): TzePoint3d;
+begin
+  { Преобразование точки из WCS в OCS }
+  Result.x := scalardot(Point, FXAxis);
+  Result.y := scalardot(Point, FYAxis);
+  Result.z := scalardot(Point, FZAxis);
+end;
+
+{ === VectorIsClose === }
+
+function VectorIsClose(const V1, V2: TzePoint3d; const Epsilon: Double): Boolean;
+begin
+  Result := (Abs(V1.x - V2.x) <= Epsilon) and
+            (Abs(V1.y - V2.y) <= Epsilon) and
+            (Abs(V1.z - V2.z) <= Epsilon);
+end;
 
 { === Вспомогательные функции === }
 
@@ -515,12 +578,13 @@ end;
 
 { === TProxyCommandParser === }
 
-constructor TProxyCommandParser.Create(const Stream: TProxyByteStream; const State: TProxyGraphicState; CommandSize: Integer);
+constructor TProxyCommandParser.Create(const Stream: TProxyByteStream; const State: TProxyGraphicState; CommandSize: Integer; Encoding: TEncoding);
 begin
   inherited Create;
   FStream := Stream;
   FState := State;
   FCommandSize := CommandSize;
+  FEncoding := Encoding;
 end;
 
 destructor TProxyCommandParser.Destroy;
@@ -539,7 +603,7 @@ function TProxyCommandParser.TransformToOCS(const Point: TzePoint3d; const Norma
 var
   OCS: TzeOCS;
 begin
-  if not Normal.IsClose(Z_AXIS, 1e-9) then begin
+  if not VectorIsClose(Normal, PROXY_Z_AXIS, 1e-9) then begin
     OCS := TzeOCS.Create(Normal);
     try
       Result := OCS.FromWCS(Point);
@@ -861,17 +925,21 @@ end;
 function TProxyEllipticArcParser.Parse: TProxyCommandResult;
 begin
   InitCommandResult(Result);
-  
+
   try
-    // Формат: Center + Extrusion + MajorLength + MinorLength + StartParam + EndParam + Angle
+    // Формат: Center + Extrusion + MajorLength + MinorLength + StartParam + EndParam
     Result.EllipticArcData.Center := FStream.ReadVertex;
     Result.EllipticArcData.Extrusion := FStream.ReadVector;
     Result.EllipticArcData.MajorAxisLength := FStream.ReadDouble;
     Result.EllipticArcData.MinorAxisLength := FStream.ReadDouble;
     Result.EllipticArcData.StartParam := FStream.ReadDouble;
     Result.EllipticArcData.EndParam := FStream.ReadDouble;
-    Result.EllipticArcData.MajorAxisAngle := FStream.ReadDouble;
-    
+    // Направление большой оси вычисляем из extrusion
+    if Result.EllipticArcData.Extrusion.IsClose(PROXY_Z_AXIS, 1e-9) then
+      Result.EllipticArcData.MajorAxisDirection := PROXY_X_AXIS
+    else
+      Result.EllipticArcData.MajorAxisDirection := VectorNormalize(CrossProduct(Result.EllipticArcData.Extrusion, PROXY_Y_AXIS));
+
     Result.PrimitiveType := pptEllipse;
     Result.Valid := True;
   except
@@ -945,7 +1013,10 @@ begin
     
     if Size < PROXY_COMMAND_HEADER_SIZE then
       raise EProxyGraphicError.CreateFmt('Invalid command size: %d', [Size]);
-    
+
+    // Сохраняем размер команды для использования в парсерах
+    FCommandSize := Size;
+
     // Преобразуем в enum
     try
       OpCode := TProxyGraphicCommand(OpCodeVal);
@@ -992,7 +1063,7 @@ var
   Parser: TProxyCircleParser;
   CmdResult: TProxyCommandResult;
 begin
-  Parser := TProxyCircleParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyCircleParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     CmdResult := Parser.Parse;
     AddResult(CmdResult);
@@ -1005,7 +1076,7 @@ procedure TProxyGraphicParser.HandleCircle3P;
 var
   Parser: TProxyCircle3PParser;
 begin
-  Parser := TProxyCircle3PParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyCircle3PParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1017,7 +1088,7 @@ procedure TProxyGraphicParser.HandleArc;
 var
   Parser: TProxyArcParser;
 begin
-  Parser := TProxyArcParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyArcParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1029,7 +1100,7 @@ procedure TProxyGraphicParser.HandleArc3P;
 var
   Parser: TProxyArc3PParser;
 begin
-  Parser := TProxyArc3PParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyArc3PParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1041,7 +1112,7 @@ procedure TProxyGraphicParser.HandlePolyline;
 var
   Parser: TProxyPolylineParser;
 begin
-  Parser := TProxyPolylineParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyPolylineParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1053,7 +1124,7 @@ procedure TProxyGraphicParser.HandlePolygon;
 var
   Parser: TProxyPolygonParser;
 begin
-  Parser := TProxyPolygonParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyPolygonParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1065,7 +1136,7 @@ procedure TProxyGraphicParser.HandleText;
 var
   Parser: TProxyTextParser;
 begin
-  Parser := TProxyTextParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyTextParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1077,7 +1148,7 @@ procedure TProxyGraphicParser.HandleText2;
 var
   Parser: TProxyText2Parser;
 begin
-  Parser := TProxyText2Parser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyText2Parser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1089,7 +1160,7 @@ procedure TProxyGraphicParser.HandleUnicodeText;
 var
   Parser: TProxyUnicodeTextParser;
 begin
-  Parser := TProxyUnicodeTextParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyUnicodeTextParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally
@@ -1106,7 +1177,7 @@ procedure TProxyGraphicParser.HandleEllipticArc;
 var
   Parser: TProxyEllipticArcParser;
 begin
-  Parser := TProxyEllipticArcParser.Create(FStream, FState, FCommandSize);
+  Parser := TProxyEllipticArcParser.Create(FStream, FState, FCommandSize, FEncoding);
   try
     AddResult(Parser.Parse);
   finally

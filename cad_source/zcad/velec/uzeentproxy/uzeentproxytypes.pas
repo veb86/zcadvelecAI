@@ -172,9 +172,9 @@ type
     Extrusion: TzePoint3d;
     MajorAxisLength: Double;
     MinorAxisLength: Double;
+    MajorAxisDirection: TzePoint3d;  // Направление большой оси
     StartParam: Double;
     EndParam: Double;
-    MajorAxisAngle: Double;
   end;
 
   { Данные меша }
@@ -238,6 +238,11 @@ const
   { Минимальный размер заголовка }
   PROXY_HEADER_SIZE = 8;  // 2 × Int32
   PROXY_COMMAND_HEADER_SIZE = 8;  // 2 × Int32
+
+{ Инициализация результата парсинга }
+procedure InitCommandResult(var Result: TProxyCommandResult);
+{ Инициализация состояния по умолчанию }
+procedure InitProxyState(var State: TProxyGraphicState);
 
 implementation
 

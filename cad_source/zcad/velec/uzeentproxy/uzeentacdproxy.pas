@@ -141,10 +141,10 @@ type
     { Публичные методы для доступа к виртуальным сущностям }
     function GetVirtualEntity(Index: Integer): PGDBObjEntity;
     function GetVirtualEntityCount: Integer;
-    
+
     { Взрывает прокси-объект (заменяет виртуальными сущностями) }
-    procedure ExplodeToVirtualEntities(TargetLayout: PGDBLayout);
-    
+    // procedure ExplodeToVirtualEntities(TargetLayout: PGDBLayout); // TODO: реализовать, когда PGDBLayout будет определён
+
     { Создаёт новый инициализированный экземпляр прокси-объекта }
     class function CreateInstance: PGDBObjAcdProxy; static;
   end;
@@ -156,6 +156,49 @@ function AllocAcdProxy: Pointer;
 function AllocAndInitAcdProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjAcdProxy;
 
 implementation
+
+{ === Локальные функции создания сущностей === }
+{ Создаём сущности напрямую, т.к. Alloc* функции не экспортированы }
+
+function AllocAndInitCircleProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjCircle;
+begin
+  GetMem(Pointer(Result), SizeOf(GDBObjCircle));
+  Result^.initnul;
+  if owner <> nil then
+    Result^.bp.ListPos.Owner := owner;
+end;
+
+function AllocAndInitArcProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjArc;
+begin
+  GetMem(Pointer(Result), SizeOf(GDBObjArc));
+  Result^.initnul;
+  if owner <> nil then
+    Result^.bp.ListPos.Owner := owner;
+end;
+
+function AllocAndInitPolylineProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjPolyline;
+begin
+  GetMem(Pointer(Result), SizeOf(GDBObjPolyline));
+  Result^.initnul;
+  if owner <> nil then
+    Result^.bp.ListPos.Owner := owner;
+end;
+
+function AllocAndInitTextProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjText;
+begin
+  GetMem(Pointer(Result), SizeOf(GDBObjText));
+  Result^.initnul;
+  if owner <> nil then
+    Result^.bp.ListPos.Owner := owner;
+end;
+
+function AllocAndInitEllipseProxy(owner: PGDBObjGenericWithSubordinated): PGDBObjEllipse;
+begin
+  GetMem(Pointer(Result), SizeOf(GDBObjEllipse));
+  Result^.initnul;
+  if owner <> nil then
+    Result^.bp.ListPos.Owner := owner;
+end;
 
 { === GDBObjAcdProxy === }
 
@@ -213,55 +256,56 @@ begin
   case CmdResult.PrimitiveType of
     pptCircle:
       begin
-        Circle := AllocAndInitCircle(nil, nil, 0);
-        Circle^.Center := CmdResult.CircleData.Center;
+        Circle := AllocAndInitCircleProxy(nil);
+        Circle^.Local.p_insert := CmdResult.CircleData.Center;
         Circle^.Radius := CmdResult.CircleData.Radius;
         Result := PGDBObjEntity(Circle);
       end;
-    
+
     pptArc:
       begin
-        Arc := AllocAndInitArc(nil, nil, 0);
-        Arc^.Center := CmdResult.ArcData.Center;
-        Arc^.Radius := CmdResult.ArcData.Radius;
+        Arc := AllocAndInitArcProxy(nil);
+        Arc^.Local.p_insert := CmdResult.ArcData.Center;
+        Arc^.R := CmdResult.ArcData.Radius;
         // Вычисляем углы из start vector и sweep angle
         Arc^.StartAngle := RadToDeg(ArcTan2(CmdResult.ArcData.StartVector.Y, CmdResult.ArcData.StartVector.X));
         Arc^.EndAngle := Arc^.StartAngle + RadToDeg(CmdResult.ArcData.SweepAngle);
         Result := PGDBObjEntity(Arc);
       end;
-    
+
     pptPolyline, pptPolygon:
       begin
-        Polyline := AllocAndInitPolyline(nil, nil, 0);
+        Polyline := AllocAndInitPolylineProxy(nil);
         if CmdResult.PrimitiveType = pptPolygon then
           Polyline^.Closed := True
         else
           Polyline^.Closed := CmdResult.PolylineData.Closed;
-        
+
         // Добавляем вершины
         for I := 0 to High(CmdResult.PolylineData.Vertices) do
           Polyline^.AddVertex(CmdResult.PolylineData.Vertices[I]);
-        
+
         Result := PGDBObjEntity(Polyline);
       end;
-    
+
     pptText:
       begin
-        TextEntity := AllocAndInitText(nil, nil, 0);
-        TextEntity^.Insert := CmdResult.TextData.Insert;
-        TextEntity^.Text := CmdResult.TextData.Text;
-        TextEntity^.Height := CmdResult.TextData.Height;
-        TextEntity^.Rotation := RadToDeg(ArcTan2(CmdResult.TextData.Direction.Y, CmdResult.TextData.Direction.X));
+        TextEntity := AllocAndInitTextProxy(nil);
+        TextEntity^.P_drawInOCS := CmdResult.TextData.Insert;
+        TextEntity^.Content := CmdResult.TextData.Text;
+        TextEntity^.obj_height := CmdResult.TextData.Height;
+        TextEntity^.setrot(RadToDeg(ArcTan2(CmdResult.TextData.Direction.Y, CmdResult.TextData.Direction.X)));
         Result := PGDBObjEntity(TextEntity);
       end;
-    
+
     pptEllipse:
       begin
-        Ellipse := AllocAndInitEllipse(nil, nil, 0);
-        Ellipse^.Center := CmdResult.EllipticArcData.Center;
-        Ellipse^.MajorAxisLength := CmdResult.EllipticArcData.MajorAxisLength;
-        Ellipse^.MinorAxisLength := CmdResult.EllipticArcData.MinorAxisLength;
-        Ellipse^.Rotation := CmdResult.EllipticArcData.MajorAxisAngle;
+        Ellipse := AllocAndInitEllipseProxy(nil);
+        Ellipse^.Local.p_insert := CmdResult.EllipticArcData.Center;
+        Ellipse^.MajorAxis := CmdResult.EllipticArcData.MajorAxisLength * VectorNormalize(CmdResult.EllipticArcData.MajorAxisDirection);
+        Ellipse^.Ratio := CmdResult.EllipticArcData.MinorAxisLength / CmdResult.EllipticArcData.MajorAxisLength;
+        Ellipse^.StartAngle := CmdResult.EllipticArcData.StartParam;
+        Ellipse^.EndAngle := CmdResult.EllipticArcData.EndParam;
         Result := PGDBObjEntity(Ellipse);
       end;
   end;
@@ -529,23 +573,23 @@ begin
 end;
 
 { Взрывает прокси-объект }
-procedure GDBObjAcdProxy.ExplodeToVirtualEntities(TargetLayout: PGDBLayout);
-var
-  I: Integer;
-begin
-  if TargetLayout = nil then
-    Exit;
-  
-  // Добавляем виртуальные сущности в layout
-  for I := 0 to FEntityCount - 1 do begin
-    if FVirtualEntities[I] <> nil then begin
-      TargetLayout.AddEntity(FVirtualEntities[I]);
-      FVirtualEntities[I] := nil; // Передали владение
-    end;
-  end;
-  
-  FEntityCount := 0;
-end;
+// procedure GDBObjAcdProxy.ExplodeToVirtualEntities(TargetLayout: PGDBLayout);
+// var
+//   I: Integer;
+// begin
+//   if TargetLayout = nil then
+//     Exit;
+//
+//   // Добавляем виртуальные сущности в layout
+//   for I := 0 to FEntityCount - 1 do begin
+//     if FVirtualEntities[I] <> nil then begin
+//       TargetLayout.AddEntity(FVirtualEntities[I]);
+//       FVirtualEntities[I] := nil; // Передали владение
+//     end;
+//   end;
+//
+//   FEntityCount := 0;
+// end;
 
 function GDBObjAcdProxy.GetVirtualEntity(Index: Integer): PGDBObjEntity;
 begin
