@@ -37,6 +37,7 @@ interface
 uses
   SysUtils,
   Classes,
+  uzcLog,
   uzeTypes,
   uzeGeometryTypes,
   uzegeometry,
@@ -283,6 +284,7 @@ implementation
 
 uses
   Math,
+  TypInfo,
   uzeentity,
   uzeconsts;
 
@@ -998,16 +1000,24 @@ end;
 
 function TProxyGraphicParser.InitFromHex(const HexData: string): Boolean;
 begin
+  programlog.LogOutFormatStr('uzeentproxyparser: InitFromHex - HexData length: %d', [Length(HexData)], LM_Info);
+  programlog.LogOutFormatStr('uzeentproxyparser: InitFromHex - HexData preview: %s...', [Copy(HexData, 1, 64)], LM_Info);
   Result := InitFromBytes(HexToBytes(HexData));
+  if Result then
+    programlog.LogOutFormatStr('uzeentproxyparser: InitFromHex - SUCCESS', [], LM_Info)
+  else
+    programlog.LogOutFormatStr('uzeentproxyparser: InitFromHex - FAILED', [], LM_Info);
 end;
 
 function TProxyGraphicParser.InitFromBytes(const Data: TBytes): Boolean;
 begin
+  programlog.LogOutFormatStr('uzeentproxyparser: InitFromBytes - Data length: %d bytes', [Length(Data)], LM_Info);
   Clear;
   FBuffer := Copy(Data, 0, Length(Data));
   FStream := TProxyByteStream.Create(FBuffer);
   FEncoding := GetEncoding;
   Result := Length(Data) >= PROXY_HEADER_SIZE;
+  programlog.LogOutFormatStr('uzeentproxyparser: InitFromBytes - Result: %s', [BoolToStr(Result, True)], LM_Info);
 end;
 
 function TProxyGraphicParser.ParseHeader(out Header: TProxyGraphicHeader): Boolean;
@@ -1032,12 +1042,14 @@ var
   OpCode: TProxyGraphicCommand;
 begin
   Result := False;
-  
+
   try
     // Читаем заголовок команды
     Size := FStream.ReadInt32;
     OpCodeVal := FStream.ReadInt32;
     
+    programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Size=%d, OpCode=%d', [Size, OpCodeVal], LM_Info);
+
     if Size < PROXY_COMMAND_HEADER_SIZE then
       raise EProxyGraphicError.CreateFmt('Invalid command size: %d', [Size]);
 
@@ -1047,22 +1059,65 @@ begin
     // Преобразуем в enum
     try
       OpCode := TProxyGraphicCommand(OpCodeVal);
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - OpCode enum: %s', [GetEnumName(TypeInfo(TProxyGraphicCommand), Ord(OpCode))], LM_Info);
     except
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Invalid OpCode, using pgcExtents', [], LM_Info);
       OpCode := pgcExtents;
     end;
-    
+
     // Обрабатываем команду
+    programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Handling command...', [], LM_Info);
     case OpCode of
-      pgcCircle: HandleCircle;
-      pgcCircle3P: HandleCircle3P;
-      pgcCircularArc: HandleArc;
-      pgcCircularArc3P: HandleArc3P;
-      pgcPolyline: HandlePolyline;
-      pgcPolygon: HandlePolygon;
-      pgcText: HandleText;
-      pgcText2: HandleText2;
-      pgcUnicodeText, pgcUnicodeText2: HandleUnicodeText;
-      pgcEllipticArc: HandleEllipticArc;
+      pgcCircle:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - CIRCLE', [], LM_Info);
+          HandleCircle;
+        end;
+      pgcCircle3P:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - CIRCLE3P', [], LM_Info);
+          HandleCircle3P;
+        end;
+      pgcCircularArc:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - ARC', [], LM_Info);
+          HandleArc;
+        end;
+      pgcCircularArc3P:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - ARC3P', [], LM_Info);
+          HandleArc3P;
+        end;
+      pgcPolyline:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - POLYLINE', [], LM_Info);
+          HandlePolyline;
+        end;
+      pgcPolygon:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - POLYGON', [], LM_Info);
+          HandlePolygon;
+        end;
+      pgcText:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - TEXT', [], LM_Info);
+          HandleText;
+        end;
+      pgcText2:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - TEXT2', [], LM_Info);
+          HandleText2;
+        end;
+      pgcUnicodeText, pgcUnicodeText2:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - UNICODETEXT', [], LM_Info);
+          HandleUnicodeText;
+        end;
+      pgcEllipticArc:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - ELLIPTICARC', [], LM_Info);
+          HandleEllipticArc;
+        end;
       pgcAttributeColor: HandleSetColor;
       pgcAttributeLayer: HandleSetLayer;
       pgcAttributeLinetype: HandleSetLinetype;
@@ -1075,13 +1130,19 @@ begin
       pgcPopMatrix: HandlePopMatrix;
       pgcExtents: HandleExtents;
     else
-      // Неизвестная команда - пропускаем
-      FStream.Skip(Size - PROXY_COMMAND_HEADER_SIZE);
+      begin
+        programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - UNKNOWN OpCode %d, skipping %d bytes', [OpCodeVal, Size - PROXY_COMMAND_HEADER_SIZE], LM_Info);
+        // Неизвестная команда - пропускаем
+        FStream.Skip(Size - PROXY_COMMAND_HEADER_SIZE);
+      end;
     end;
-    
+
     Result := True;
   except
-    Result := False;
+    on E: Exception do begin
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - EXCEPTION: %s', [E.Message], LM_Info);
+      Result := False;
+    end;
   end;
 end;
 
@@ -1315,20 +1376,42 @@ var
 begin
   Result := False;
   
+  programlog.LogOutFormatStr('uzeentproxyparser: Parse - START', [], LM_Info);
+
   try
     // Читаем заголовок
-    if not ParseHeader(Header) then
+    programlog.LogOutFormatStr('uzeentproxyparser: Parse - Reading header...', [], LM_Info);
+    if not ParseHeader(Header) then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - ParseHeader failed', [], LM_Info);
       Exit;
-    
-    // Читаем команды
-    for I := 0 to Header.CommandCount - 1 do begin
-      if not ParseCommand then
-        Break;
     end;
     
+    programlog.LogOutFormatStr('uzeentproxyparser: Parse - Header parsed, CommandCount=%d', [Header.CommandCount], LM_Info);
+
+    // Читаем команды
+    for I := 0 to Header.CommandCount - 1 do begin
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - Processing command %d of %d...', [I + 1, Header.CommandCount], LM_Info);
+      
+      if not ParseCommand then begin
+        programlog.LogOutFormatStr('uzeentproxyparser: Parse - ParseCommand failed at command %d', [I + 1], LM_Info);
+        Break;
+      end;
+      
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - Command %d processed, results so far: %d', [I + 1, FResultCount], LM_Info);
+    end;
+
     Result := FResultCount > 0;
+
+    if Result then
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - SUCCESS, Results=%d', [FResultCount], LM_Info)
+    else
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - No results parsed', [], LM_Info);
+
   except
-    Result := False;
+    on E: Exception do begin
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - EXCEPTION: %s', [E.Message], LM_Info);
+      Result := False;
+    end;
   end;
 end;
 
