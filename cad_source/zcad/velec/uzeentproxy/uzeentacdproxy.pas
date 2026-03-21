@@ -60,14 +60,22 @@ uses
   uzeenttext,
   uzeentellipse,
   UGDBSelectedObjArray,
-  uzesnap;
+  uzesnap,
+  uzegeomentitiestree,
+  UGDBVisibleTreeArray;
 
 type
   PGDBObjAcdProxy = ^GDBObjAcdProxy;
 
   { Прокси-объект AutoCAD (ACAD_PROXY_ENTITY).
     Отображает прокси-графику через парсинг AcGiWorldDraw команд.
-    Поддерживает: круги, дуги, полилинии, текст и другие примитивы. }
+    Поддерживает: круги, дуги, полилинии, текст и другие примитивы.
+    
+    Архитектура "виртуальный блок":
+    - FProxyParser хранит бинарные данные и результаты парсинга
+    - FVirtualEntities содержит сущности ZCAD (круги, дуги, текст и т.д.)
+    - При отрисовке делегирует форматирование виртуальным сущностям
+    }
   GDBObjAcdProxy = object(GDBObj3d)
   private
     { Координата минимального угла габаритной рамки в OCS }
@@ -79,6 +87,9 @@ type
 
     { Парсер прокси-графики }
     FProxyParser: TProxyGraphicParser;
+    
+    { Массив виртуальных сущностей (круги, дуги, текст и т.д.) }
+    FVirtualEntities: PGDBObjEntityTreeArray;
 
     { Отрисовывает одно ребро габаритной рамки }
     procedure DrawBBoxEdge(var DC: TDrawContext;
@@ -87,9 +98,9 @@ type
     { Конвертирует результат парсинга в сущность ZCAD }
     function ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
 
-    { Отрисовывает виртуальные сущности из парсера }
-    procedure DrawVirtualEntities(var drawing: TDrawingDef; var DC: TDrawContext);
-
+    { Создаёт виртуальные сущности из результатов парсинга }
+    procedure CreateVirtualEntities(var drawing: TDrawingDef);
+    
     { Вычисляет BBox из результатов парсинга прокси-графики }
     function CalcBBoxFromParserResults(
       const Parser: TProxyGraphicParser;
@@ -98,6 +109,7 @@ type
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
     constructor initnul(owner: PGDBObjGenericWithSubordinated);
+    destructor done; virtual;
 
     { Загружает данные объекта из DXF-потока }
     procedure LoadFromDXF(var rdr: TZMemReader; ptu: PExtensionData;
@@ -157,8 +169,6 @@ type
 
     { Создаёт новый инициализированный экземпляр прокси-объекта }
     class function CreateInstance: PGDBObjAcdProxy; static;
-
-    destructor done; virtual;
   end;
 
 { Выделяет память для нового прокси-объекта без инициализации }
@@ -201,6 +211,35 @@ begin
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
   FProxyParser := nil;
+  FVirtualEntities := nil;
+end;
+
+constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
+begin
+  inherited initnul(owner);
+  FBBoxMinInOCS := NulVertex;
+  FBBoxMaxInOCS := NulVertex;
+  FBBoxLoaded   := False;
+  FProxyParser := nil;
+  FVirtualEntities := nil;
+end;
+
+destructor GDBObjAcdProxy.done;
+begin
+  { Освобождаем виртуальные сущности }
+  if FVirtualEntities <> nil then begin
+    FVirtualEntities^.done;
+    FreeMem(Pointer(FVirtualEntities));
+    FVirtualEntities := nil;
+  end;
+  
+  { Освобождаем парсер }
+  if FProxyParser <> nil then begin
+    FProxyParser.Free;
+    FProxyParser := nil;
+  end;
+  
+  inherited done;
 end;
 
 { Вычисляет BBox из результатов парсинга прокси-графики }
@@ -306,15 +345,6 @@ begin
   Result := Initialized;
 end;
 
-constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
-begin
-  inherited initnul(owner);
-  FBBoxMinInOCS := NulVertex;
-  FBBoxMaxInOCS := NulVertex;
-  FBBoxLoaded   := False;
-  FProxyParser := nil;
-end;
-
 { Загружает прокси-объект из DXF.
   1. Читает бинарные данные из кода 310 (hex-строка)
   2. Парсит через TProxyGraphicParser (AcGiWorldDraw формат)
@@ -381,6 +411,9 @@ begin
         if FProxyParser.Parse then begin
           programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER Success - Results=%d', [FProxyParser.ResultCount], LM_Info);
 
+          { Создаём виртуальные сущности }
+          CreateVirtualEntities(drawing);
+          
           { Вычисляем BBox из результатов парсинга }
           if FProxyParser.HasValidResults then begin
             FBBoxLoaded := CalcBBoxFromParserResults(FProxyParser, FBBoxMinInOCS, FBBoxMaxInOCS);
@@ -587,147 +620,43 @@ begin
   end;
 end;
 
-{ Отрисовывает виртуальные сущности из парсера }
-procedure GDBObjAcdProxy.DrawVirtualEntities(var drawing: TDrawingDef; var DC: TDrawContext);
+{ Создаёт виртуальные сущности из результатов парсинга }
+procedure GDBObjAcdProxy.CreateVirtualEntities(var drawing: TDrawingDef);
 var
-  I, J, SegCount: Integer;
+  I: Integer;
   CmdResult: TProxyCommandResult;
-  Pt1, Pt2, Center, StartVec, EndVec: TzePoint3d;
-  Radius, Angle, StartAngle, EndAngle, SweepAngle: Double;
   Entity: PGDBObjEntity;
-  CircleObj: PGDBObjCircle;
-  ArcObj: PGDBObjArc;
-  PolylineObj: PGDBObjPolyline;
 begin
   if FProxyParser = nil then
     Exit;
 
-  programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - START, Results=%d', [FProxyParser.ResultCount], LM_Info);
+  programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - START, Results=%d', [FProxyParser.ResultCount], LM_Info);
+
+  { Создаём массив виртуальных сущностей }
+  GetMem(Pointer(FVirtualEntities), SizeOf(GDBObjEntityTreeArray));
+  FVirtualEntities^.initnul;
 
   for I := 0 to FProxyParser.ResultCount - 1 do begin
     CmdResult := FProxyParser.GetResult(I);
-    if CmdResult.Valid then begin
-      programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Processing primitive %d: Type=%d', [I, Ord(CmdResult.PrimitiveType)], LM_Info);
+    if not CmdResult.Valid then
+      Continue;
       
-      case CmdResult.PrimitiveType of
-        // Полилинии и полигоны — создаём сущность
-        pptPolyline, pptPolygon:
-          begin
-            if Length(CmdResult.PolylineData.Vertices) >= 2 then begin
-              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating POLYLINE with %d vertices', [Length(CmdResult.PolylineData.Vertices)], LM_Info);
-              PolylineObj := GDBObjPolyline.CreateInstance;
-              PolylineObj^.initnul(nil);
-              PolylineObj^.vp.Color := vp.Color;
-              PolylineObj^.vp.Layer := vp.Layer;
-              
-              for J := 0 to High(CmdResult.PolylineData.Vertices) do begin
-                PolylineObj^.AddVertex(CmdResult.PolylineData.Vertices[J]);
-              end;
-              
-              if CmdResult.PrimitiveType = pptPolygon then
-                PolylineObj^.closed := True
-              else
-                PolylineObj^.closed := CmdResult.PolylineData.Closed;
-              
-              PolylineObj^.CalcObjMatrix(@drawing);
-              PolylineObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
-              PolylineObj^.done;
-              FreeMem(Pointer(PolylineObj));
-            end;
-          end;
-
-        // Круги — создаём сущность GDBObjCircle
-        pptCircle:
-          begin
-            Center := CmdResult.CircleData.Center;
-            Radius := CmdResult.CircleData.Radius;
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating CIRCLE: Center=(%.2f,%.2f,%.2f) Radius=%.2f', 
-              [Center.x, Center.y, Center.z, Radius], LM_Info);
-            
-            CircleObj := GDBObjCircle.CreateInstance;
-            CircleObj^.initnul;
-            CircleObj^.vp.Color := vp.Color;
-            CircleObj^.vp.Layer := vp.Layer;
-            CircleObj^.Local.p_insert := Center;
-            CircleObj^.Radius := Radius;
-            CircleObj^.CalcObjMatrix(@drawing);
-            CircleObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
-            CircleObj^.done;
-            FreeMem(Pointer(CircleObj));
-          end;
-
-        // Дуги — создаём сущность GDBObjArc
-        pptArc:
-          begin
-            Center := CmdResult.ArcData.Center;
-            Radius := CmdResult.ArcData.Radius;
-            StartVec := CmdResult.ArcData.StartVector;
-            SweepAngle := CmdResult.ArcData.SweepAngle;
-            
-            StartAngle := ArcTan2(StartVec.y, StartVec.x);
-            EndAngle := StartAngle + SweepAngle;
-            
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating ARC: Center=(%.2f,%.2f,%.2f) Radius=%.2f SweepAngle=%.2f', 
-              [Center.x, Center.y, Center.z, Radius, SweepAngle], LM_Info);
-            
-            ArcObj := GDBObjArc.CreateInstance;
-            ArcObj^.initnul;
-            ArcObj^.vp.Color := vp.Color;
-            ArcObj^.vp.Layer := vp.Layer;
-            ArcObj^.Local.p_insert := Center;
-            ArcObj^.R := Radius;
-            ArcObj^.StartAngle := StartAngle;
-            ArcObj^.EndAngle := EndAngle;
-            ArcObj^.CalcObjMatrix(@drawing);
-            ArcObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
-            ArcObj^.done;
-            FreeMem(Pointer(ArcObj));
-          end;
-
-        // Эллипсы — создаём сущность GDBObjEllipse
-        pptEllipse:
-          begin
-            Center := CmdResult.EllipticArcData.Center;
-            Radius := CmdResult.EllipticArcData.MajorAxisLength;
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating ELLIPSE: Center=(%.2f,%.2f,%.2f) MajorAxis=%.2f', 
-              [Center.x, Center.y, Center.z, Radius], LM_Info);
-            
-            // Создаём эллипс через GDBObjEllipse
-            Entity := ConvertResultToEntity(CmdResult, drawing);
-            if Entity <> nil then begin
-              Entity^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
-              Entity^.done;
-              FreeMem(Pointer(Entity));
-            end;
-          end;
-
-        // Остальные примитивы (текст и т.д.) отрисовываем через сущности
-        else
-          begin
-            // Пропускаем тексты с пустой строкой
-            if (CmdResult.PrimitiveType = pptText) and (CmdResult.TextData.Text = '') then begin
-              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Skipping EMPTY TEXT', [], LM_Info);
-              Continue;
-            end;
-            
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing primitive type %d via Entity', [Ord(CmdResult.PrimitiveType)], LM_Info);
-            Entity := ConvertResultToEntity(CmdResult, drawing);
-            if Entity <> nil then begin
-              Entity^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
-              Entity^.done;
-              FreeMem(Pointer(Entity));
-            end;
-          end;
-      end;
+    programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - Processing primitive %d: Type=%d', [I, Ord(CmdResult.PrimitiveType)], LM_Info);
+    
+    { Конвертируем результат парсинга в сущность ZCAD }
+    Entity := ConvertResultToEntity(CmdResult, drawing);
+    if Entity <> nil then begin
+      programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - Created entity type %d', [Ord(CmdResult.PrimitiveType)], LM_Info);
+      FVirtualEntities^.AddPEntity(Entity^);
     end;
   end;
   
-  programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - END', [], LM_Info);
+  programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - END, Entities created=%d', [FVirtualEntities^.Count], LM_Info);
 end;
 
 { Рассчитывает визуальное представление прокси-объекта.
   Приоритеты:
-  1. Если есть парсер с результатами → рисуем виртуальные сущности (круги, дуги, текст)
+  1. Если есть виртуальные сущности → рисуем их
   2. Иначе → рисуем габаритную рамку (fallback) }
 procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
@@ -736,7 +665,8 @@ var
   v000, v100, v010, v110: TzePoint3d; { нижние 4 вершины }
   v001, v101, v011, v111: TzePoint3d; { верхние 4 вершины }
   bbMin, bbMax: TzePoint3d;
-  hasVirtualGeometry: Boolean;
+  I: Integer;
+  Entity: PGDBObjEntity;
 begin
   if assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
@@ -762,12 +692,19 @@ begin
   then begin
     Representation.Clear;
 
-    { Приоритет 1: Виртуальные сущности из парсера }
-    hasVirtualGeometry := (FProxyParser <> nil) and (FProxyParser.ResultCount > 0) and FProxyParser.HasValidResults;
-
-    if hasVirtualGeometry then begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing VIRTUAL ENTITIES (Results=%d)', [FProxyParser.ResultCount], LM_Info);
-      DrawVirtualEntities(drawing, DC);
+    { Приоритет 1: Отрисовка виртуальных сущностей }
+    if (FVirtualEntities <> nil) and (FVirtualEntities^.Count > 0) then begin
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing VIRTUAL ENTITIES (Count=%d)', [FVirtualEntities^.Count], LM_Info);
+      
+      { Отрисовываем каждую виртуальную сущность }
+      for I := 0 to FVirtualEntities^.Count - 1 do begin
+        Entity := PGDBObjEntity(FVirtualEntities^.getDataMutable(I));
+        if Entity <> nil then begin
+          Entity^.FormatEntity(drawing, DC, Stage);
+        end;
+      end;
+      
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity VIRTUAL ENTITIES complete', [], LM_Info);
     end
     { Приоритет 2: Габаритная рамка (fallback) }
     else if FBBoxLoaded then begin
@@ -931,24 +868,35 @@ begin
   Result := newProxy;
 end;
 
-{ Прокси-объект не имеет редактируемых контрольных точек на этапе 1 }
+{ Прокси-объект делегирует контрольные точки виртуальным сущностям }
 procedure GDBObjAcdProxy.addcontrolpoints(tdesc: Pointer);
 var
+  I: Integer;
+  Entity: PGDBObjEntity;
   CenterPoint: TzePoint3d;
   pdesc: controlpointdesc;
 begin
-  { Добавляем контрольную точку в центре объекта для выделения }
-  if FBBoxLoaded then begin
+  { Если есть виртуальные сущности — делегируем им }
+  if (FVirtualEntities <> nil) and (FVirtualEntities^.Count > 0) then begin
+    for I := 0 to FVirtualEntities^.Count - 1 do begin
+      Entity := PGDBObjEntity(FVirtualEntities^.getDataMutable(I));
+      if Entity <> nil then begin
+        Entity^.addcontrolpoints(tdesc);
+      end;
+    end;
+  end
+  { Иначе добавляем точку в центре BBox (fallback) }
+  else if FBBoxLoaded then begin
+    { Инициализируем массив контрольных точек (1 точка) }
+    PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
+    
+    { Создаём контрольную точку }
     CenterPoint := CreateVertex(
       (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2,
       (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2,
       (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2
     );
     
-    { Инициализируем массив контрольных точек (1 точка) }
-    PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
-    
-    { Создаём контрольную точку }
     pdesc.selected := False;
     pdesc.PDrawable := nil;
     pdesc.vertexnum := 0;
@@ -988,12 +936,6 @@ procedure GDBObjAcdProxy.getoutbound(var DC: TDrawContext);
 begin
   vp.BoundingBox.LBN := FBBoxMinInOCS;
   vp.BoundingBox.RTF := FBBoxMaxInOCS;
-end;
-
-destructor GDBObjAcdProxy.done;
-begin
-  FProxyParser.Free;
-  inherited;
 end;
 
 class function GDBObjAcdProxy.CreateInstance: PGDBObjAcdProxy;
