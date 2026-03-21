@@ -62,6 +62,7 @@ uses
   UGDBSelectedObjArray,
   uzesnap,
   uzegeomentitiestree,
+  gzctnrVectorTypes,
   UGDBVisibleTreeArray;
 
 type
@@ -88,8 +89,9 @@ type
     { Парсер прокси-графики }
     FProxyParser: TProxyGraphicParser;
     
-    { Массив виртуальных сущностей (круги, дуги, текст и т.д.) }
-    FVirtualEntities: PGDBObjEntityTreeArray;
+    { Кэш результатов парсинга для отрисовки }
+    FResultCount: Integer;
+    FResults: array of TProxyCommandResult;
 
     { Отрисовывает одно ребро габаритной рамки }
     procedure DrawBBoxEdge(var DC: TDrawContext;
@@ -98,9 +100,6 @@ type
     { Конвертирует результат парсинга в сущность ZCAD }
     function ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
 
-    { Создаёт виртуальные сущности из результатов парсинга }
-    procedure CreateVirtualEntities(var drawing: TDrawingDef);
-    
     { Вычисляет BBox из результатов парсинга прокси-графики }
     function CalcBBoxFromParserResults(
       const Parser: TProxyGraphicParser;
@@ -211,7 +210,8 @@ begin
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
   FProxyParser := nil;
-  FVirtualEntities := nil;
+  FResultCount := 0;
+  SetLength(FResults, 0);
 end;
 
 constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
@@ -221,17 +221,15 @@ begin
   FBBoxMaxInOCS := NulVertex;
   FBBoxLoaded   := False;
   FProxyParser := nil;
-  FVirtualEntities := nil;
+  FResultCount := 0;
+  SetLength(FResults, 0);
 end;
 
 destructor GDBObjAcdProxy.done;
 begin
-  { Освобождаем виртуальные сущности }
-  if FVirtualEntities <> nil then begin
-    FVirtualEntities^.done;
-    FreeMem(Pointer(FVirtualEntities));
-    FVirtualEntities := nil;
-  end;
+  { Освобождаем кэш результатов }
+  FResultCount := 0;
+  FResults := nil;
   
   { Освобождаем парсер }
   if FProxyParser <> nil then begin
@@ -354,7 +352,7 @@ procedure GDBObjAcdProxy.LoadFromDXF(var rdr: TZMemReader;
   ptu: PExtensionData; var drawing: TDrawingDef;
   var context: TIODXFLoadContext);
 var
-  byt: Integer;
+  byt,I: Integer;
   hexData: string;
   proxyData: TBytes;
   bbInitialized: Boolean;
@@ -411,9 +409,12 @@ begin
         if FProxyParser.Parse then begin
           programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER Success - Results=%d', [FProxyParser.ResultCount], LM_Info);
 
-          { Создаём виртуальные сущности }
-          CreateVirtualEntities(drawing);
-          
+          { Кэшируем результаты парсинга для отрисовки }
+          FResultCount := FProxyParser.ResultCount;
+          SetLength(FResults, FResultCount);
+          for I := 0 to FResultCount - 1 do
+            FResults[I] := FProxyParser.GetResult(I);
+
           { Вычисляем BBox из результатов парсинга }
           if FProxyParser.HasValidResults then begin
             FBBoxLoaded := CalcBBoxFromParserResults(FProxyParser, FBBoxMinInOCS, FBBoxMaxInOCS);
@@ -620,40 +621,6 @@ begin
   end;
 end;
 
-{ Создаёт виртуальные сущности из результатов парсинга }
-procedure GDBObjAcdProxy.CreateVirtualEntities(var drawing: TDrawingDef);
-var
-  I: Integer;
-  CmdResult: TProxyCommandResult;
-  Entity: PGDBObjEntity;
-begin
-  if FProxyParser = nil then
-    Exit;
-
-  programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - START, Results=%d', [FProxyParser.ResultCount], LM_Info);
-
-  { Создаём массив виртуальных сущностей }
-  GetMem(Pointer(FVirtualEntities), SizeOf(GDBObjEntityTreeArray));
-  FVirtualEntities^.initnul;
-
-  for I := 0 to FProxyParser.ResultCount - 1 do begin
-    CmdResult := FProxyParser.GetResult(I);
-    if not CmdResult.Valid then
-      Continue;
-      
-    programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - Processing primitive %d: Type=%d', [I, Ord(CmdResult.PrimitiveType)], LM_Info);
-    
-    { Конвертируем результат парсинга в сущность ZCAD }
-    Entity := ConvertResultToEntity(CmdResult, drawing);
-    if Entity <> nil then begin
-      programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - Created entity type %d', [Ord(CmdResult.PrimitiveType)], LM_Info);
-      FVirtualEntities^.AddPEntity(Entity^);
-    end;
-  end;
-  
-  programlog.LogOutFormatStr('uzeentacdproxy: CreateVirtualEntities - END, Entities created=%d', [FVirtualEntities^.Count], LM_Info);
-end;
-
 { Рассчитывает визуальное представление прокси-объекта.
   Приоритеты:
   1. Если есть виртуальные сущности → рисуем их
@@ -692,18 +659,23 @@ begin
   then begin
     Representation.Clear;
 
-    { Приоритет 1: Отрисовка виртуальных сущностей }
-    if (FVirtualEntities <> nil) and (FVirtualEntities^.Count > 0) then begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing VIRTUAL ENTITIES (Count=%d)', [FVirtualEntities^.Count], LM_Info);
-      
-      { Отрисовываем каждую виртуальную сущность }
-      for I := 0 to FVirtualEntities^.Count - 1 do begin
-        Entity := PGDBObjEntity(FVirtualEntities^.getDataMutable(I));
-        if Entity <> nil then begin
-          Entity^.FormatEntity(drawing, DC, Stage);
+    { Приоритет 1: Отрисовка виртуальных сущностей из кэша результатов }
+    if FResultCount > 0 then begin
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing VIRTUAL ENTITIES (Count=%d)', [FResultCount], LM_Info);
+
+      { Создаём и отрисовываем сущности из кэшированных результатов }
+      for I := 0 to FResultCount - 1 do begin
+        if FResults[I].Valid then begin
+          Entity := ConvertResultToEntity(FResults[I], drawing);
+          if Entity <> nil then begin
+            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Drawing entity type %d', [Ord(FResults[I].PrimitiveType)], LM_Info);
+            Entity^.FormatEntity(drawing, DC, Stage);
+            Entity^.done;
+            FreeMem(Pointer(Entity));
+          end;
         end;
       end;
-      
+
       programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity VIRTUAL ENTITIES complete', [], LM_Info);
     end
     { Приоритет 2: Габаритная рамка (fallback) }
@@ -871,22 +843,15 @@ end;
 { Прокси-объект делегирует контрольные точки виртуальным сущностям }
 procedure GDBObjAcdProxy.addcontrolpoints(tdesc: Pointer);
 var
-  I: Integer;
-  Entity: PGDBObjEntity;
   CenterPoint: TzePoint3d;
   pdesc: controlpointdesc;
 begin
-  { Если есть виртуальные сущности — делегируем им }
-  if (FVirtualEntities <> nil) and (FVirtualEntities^.Count > 0) then begin
-    for I := 0 to FVirtualEntities^.Count - 1 do begin
-      Entity := PGDBObjEntity(FVirtualEntities^.getDataMutable(I));
-      if Entity <> nil then begin
-        Entity^.addcontrolpoints(tdesc);
-      end;
-    end;
-  end
-  { Иначе добавляем точку в центре BBox (fallback) }
-  else if FBBoxLoaded then begin
+  { Если есть кэшированные результаты — создаём сущности и делегируем им }
+  { Примечание: для упрощения пока используем fallback с точкой в центре }
+  { TODO: реализовать полноценное делегирование сущностям }
+  
+  { Добавляем точку в центре BBox }
+  if FBBoxLoaded then begin
     { Инициализируем массив контрольных точек (1 точка) }
     PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
     
