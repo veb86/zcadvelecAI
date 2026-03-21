@@ -595,6 +595,9 @@ var
   Pt1, Pt2, Center, StartVec, EndVec: TzePoint3d;
   Radius, Angle, StartAngle, EndAngle, SweepAngle: Double;
   Entity: PGDBObjEntity;
+  CircleObj: PGDBObjCircle;
+  ArcObj: PGDBObjArc;
+  PolylineObj: PGDBObjPolyline;
 begin
   if FProxyParser = nil then
     Exit;
@@ -607,96 +610,94 @@ begin
       programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Processing primitive %d: Type=%d', [I, Ord(CmdResult.PrimitiveType)], LM_Info);
       
       case CmdResult.PrimitiveType of
-        // Полилинии и полигоны отрисовываем напрямую через линии
+        // Полилинии и полигоны — создаём сущность
         pptPolyline, pptPolygon:
           begin
             if Length(CmdResult.PolylineData.Vertices) >= 2 then begin
-              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing POLYLINE with %d vertices', [Length(CmdResult.PolylineData.Vertices)], LM_Info);
-              for J := 0 to High(CmdResult.PolylineData.Vertices) - 1 do begin
-                Pt1 := CmdResult.PolylineData.Vertices[J];
-                Pt2 := CmdResult.PolylineData.Vertices[J + 1];
-                Representation.DrawLineWithoutLT(DC, Pt1, Pt2);
+              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating POLYLINE with %d vertices', [Length(CmdResult.PolylineData.Vertices)], LM_Info);
+              PolylineObj := GDBObjPolyline.CreateInstance;
+              PolylineObj^.initnul(nil);
+              PolylineObj^.vp.Color := vp.Color;
+              PolylineObj^.vp.Layer := vp.Layer;
+              
+              for J := 0 to High(CmdResult.PolylineData.Vertices) do begin
+                PolylineObj^.AddVertex(CmdResult.PolylineData.Vertices[J]);
               end;
-              // Замыкаем если полигон или флаг closed установлен
-              if (CmdResult.PrimitiveType = pptPolygon) or CmdResult.PolylineData.Closed then begin
-                Pt1 := CmdResult.PolylineData.Vertices[High(CmdResult.PolylineData.Vertices)];
-                Pt2 := CmdResult.PolylineData.Vertices[0];
-                Representation.DrawLineWithoutLT(DC, Pt1, Pt2);
-              end;
+              
+              if CmdResult.PrimitiveType = pptPolygon then
+                PolylineObj^.closed := True
+              else
+                PolylineObj^.closed := CmdResult.PolylineData.Closed;
+              
+              PolylineObj^.CalcObjMatrix(@drawing);
+              PolylineObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
+              PolylineObj^.done;
+              FreeMem(Pointer(PolylineObj));
             end;
           end;
 
-        // Круги тесселируем на сегменты (32 сегмента для качества)
+        // Круги — создаём сущность GDBObjCircle
         pptCircle:
           begin
             Center := CmdResult.CircleData.Center;
             Radius := CmdResult.CircleData.Radius;
-            SegCount := 32;
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing CIRCLE: Center=(%.2f,%.2f,%.2f) Radius=%.2f', 
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating CIRCLE: Center=(%.2f,%.2f,%.2f) Radius=%.2f', 
               [Center.x, Center.y, Center.z, Radius], LM_Info);
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Circle will be drawn with %d segments', [SegCount], LM_Info);
-            for J := 0 to SegCount - 1 do begin
-              StartAngle := (J / SegCount) * 2 * Pi;
-              EndAngle := ((J + 1) / SegCount) * 2 * Pi;
-              StartVec := CreateVertex(Center.x + Radius * Cos(StartAngle),
-                                       Center.y + Radius * Sin(StartAngle),
-                                       Center.z);
-              EndVec := CreateVertex(Center.x + Radius * Cos(EndAngle),
-                                     Center.y + Radius * Sin(EndAngle),
-                                     Center.z);
-              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
-            end;
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Circle drawing COMPLETE', [], LM_Info);
+            
+            CircleObj := GDBObjCircle.CreateInstance;
+            CircleObj^.initnul;
+            CircleObj^.vp.Color := vp.Color;
+            CircleObj^.vp.Layer := vp.Layer;
+            CircleObj^.Local.p_insert := Center;
+            CircleObj^.Radius := Radius;
+            CircleObj^.CalcObjMatrix(@drawing);
+            CircleObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
+            CircleObj^.done;
+            FreeMem(Pointer(CircleObj));
           end;
 
-        // Дуги тесселируем на сегменты
+        // Дуги — создаём сущность GDBObjArc
         pptArc:
           begin
             Center := CmdResult.ArcData.Center;
             Radius := CmdResult.ArcData.Radius;
             StartVec := CmdResult.ArcData.StartVector;
             SweepAngle := CmdResult.ArcData.SweepAngle;
-
-            // Вычисляем начальный угол из StartVector
+            
             StartAngle := ArcTan2(StartVec.y, StartVec.x);
             EndAngle := StartAngle + SweepAngle;
-
-            // Тесселируем на сегменты (минимум 8, или больше для больших дуг)
-            SegCount := Max(8, Round(Abs(SweepAngle) / Pi * 16));
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing ARC: Center=(%.2f,%.2f,%.2f) Radius=%.2f SweepAngle=%.2f', 
+            
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating ARC: Center=(%.2f,%.2f,%.2f) Radius=%.2f SweepAngle=%.2f', 
               [Center.x, Center.y, Center.z, Radius, SweepAngle], LM_Info);
-            for J := 0 to SegCount - 1 do begin
-              Angle := StartAngle + (J / SegCount) * SweepAngle;
-              StartVec := CreateVertex(Center.x + Radius * Cos(Angle),
-                                       Center.y + Radius * Sin(Angle),
-                                       Center.z);
-              Angle := StartAngle + ((J + 1) / SegCount) * SweepAngle;
-              EndVec := CreateVertex(Center.x + Radius * Cos(Angle),
-                                     Center.y + Radius * Sin(Angle),
-                                     Center.z);
-              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
-            end;
+            
+            ArcObj := GDBObjArc.CreateInstance;
+            ArcObj^.initnul;
+            ArcObj^.vp.Color := vp.Color;
+            ArcObj^.vp.Layer := vp.Layer;
+            ArcObj^.Local.p_insert := Center;
+            ArcObj^.R := Radius;
+            ArcObj^.StartAngle := StartAngle;
+            ArcObj^.EndAngle := EndAngle;
+            ArcObj^.CalcObjMatrix(@drawing);
+            ArcObj^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
+            ArcObj^.done;
+            FreeMem(Pointer(ArcObj));
           end;
 
-        // Эллипсы тесселируем на сегменты
+        // Эллипсы — создаём сущность GDBObjEllipse
         pptEllipse:
           begin
             Center := CmdResult.EllipticArcData.Center;
-            // Для простоты рисуем как круг (TODO: полноценный эллипс)
             Radius := CmdResult.EllipticArcData.MajorAxisLength;
-            SegCount := 32;
-            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing ELLIPSE: Center=(%.2f,%.2f,%.2f) MajorAxis=%.2f', 
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Creating ELLIPSE: Center=(%.2f,%.2f,%.2f) MajorAxis=%.2f', 
               [Center.x, Center.y, Center.z, Radius], LM_Info);
-            for J := 0 to SegCount - 1 do begin
-              StartAngle := (J / SegCount) * 2 * Pi;
-              EndAngle := ((J + 1) / SegCount) * 2 * Pi;
-              StartVec := CreateVertex(Center.x + Radius * Cos(StartAngle),
-                                       Center.y + Radius * Sin(StartAngle),
-                                       Center.z);
-              EndVec := CreateVertex(Center.x + Radius * Cos(EndAngle),
-                                     Center.y + Radius * Sin(EndAngle),
-                                     Center.z);
-              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
+            
+            // Создаём эллипс через GDBObjEllipse
+            Entity := ConvertResultToEntity(CmdResult, drawing);
+            if Entity <> nil then begin
+              Entity^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
+              Entity^.done;
+              FreeMem(Pointer(Entity));
             end;
           end;
 
@@ -712,7 +713,7 @@ begin
             programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing primitive type %d via Entity', [Ord(CmdResult.PrimitiveType)], LM_Info);
             Entity := ConvertResultToEntity(CmdResult, drawing);
             if Entity <> nil then begin
-              Entity^.FormatEntity(drawing, DC, [EFDraw]);
+              Entity^.FormatEntity(drawing, DC, [EFCalcEntityCS, EFDraw]);
               Entity^.done;
               FreeMem(Pointer(Entity));
             end;
