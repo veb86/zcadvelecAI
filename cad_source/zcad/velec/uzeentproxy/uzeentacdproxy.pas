@@ -63,6 +63,7 @@ uses
   uzesnap,
   uzegeomentitiestree,
   gzctnrVectorTypes,
+  UGDBPoint3DArray,
   UGDBVisibleTreeArray;
 
 type
@@ -88,10 +89,14 @@ type
 
     { Парсер прокси-графики }
     FProxyParser: TProxyGraphicParser;
-    
+
     { Кэш результатов парсинга для отрисовки }
     FResultCount: Integer;
     FResults: array of TProxyCommandResult;
+    
+    { Тесселированные вершины круга для отрисовки }
+    FCircleVertices: GDBPoint3DArray;
+    FCircleLoaded: Boolean;
 
     { Отрисовывает одно ребро габаритной рамки }
     procedure DrawBBoxEdge(var DC: TDrawContext;
@@ -99,6 +104,12 @@ type
 
     { Конвертирует результат парсинга в сущность ZCAD }
     function ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
+
+    { Рисует круг из результата парсинга через тесселяцию }
+    procedure DrawCircleFromResult(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef; var DC: TDrawContext);
+
+    { Тесселирует круг и сохраняет вершины }
+    procedure TessellateCircle(const CmdResult: TProxyCommandResult; out Vertices: GDBPoint3DArray);
 
     { Вычисляет BBox из результатов парсинга прокси-графики }
     function CalcBBoxFromParserResults(
@@ -212,6 +223,8 @@ begin
   FProxyParser := nil;
   FResultCount := 0;
   SetLength(FResults, 0);
+  FCircleVertices.init(0);
+  FCircleLoaded := False;
 end;
 
 constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
@@ -223,6 +236,8 @@ begin
   FProxyParser := nil;
   FResultCount := 0;
   SetLength(FResults, 0);
+  FCircleVertices.init(0);
+  FCircleLoaded := False;
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -230,6 +245,10 @@ begin
   { Освобождаем кэш результатов }
   FResultCount := 0;
   FResults := nil;
+  
+  { Освобождаем вершины круга }
+  FCircleVertices.done;
+  FCircleLoaded := False;
   
   { Освобождаем парсер }
   if FProxyParser <> nil then begin
@@ -414,7 +433,14 @@ begin
           SetLength(FResults, FResultCount);
           for I := 0 to FResultCount - 1 do
             FResults[I] := FProxyParser.GetResult(I);
-
+          
+          { Тесселируем круг и сохраняем вершины для отрисовки }
+          if FResultCount > 0 then begin
+            TessellateCircle(FResults[0], FCircleVertices);
+            FCircleLoaded := (FCircleVertices.Count > 0);
+            programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF Circle tessellated, vertices=%d', [FCircleVertices.Count], LM_Info);
+          end;
+          
           { Вычисляем BBox из результатов парсинга }
           if FProxyParser.HasValidResults then begin
             FBBoxLoaded := CalcBBoxFromParserResults(FProxyParser, FBBoxMinInOCS, FBBoxMaxInOCS);
@@ -477,6 +503,64 @@ procedure GDBObjAcdProxy.DrawBBoxEdge(var DC: TDrawContext;
   const ptFrom, ptTo: TzePoint3d);
 begin
   Representation.DrawLineWithoutLT(DC, ptFrom, ptTo);
+end;
+
+{ Рисует круг из результата парсинга через тесселяцию }
+procedure GDBObjAcdProxy.DrawCircleFromResult(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef; var DC: TDrawContext);
+var
+  I, SegCount: Integer;
+  Angle: Double;
+  Pt, PrevPt: TzePoint3d;
+begin
+  programlog.LogOutFormatStr('uzeentacdproxy: DrawCircleFromResult - Center=(%.2f,%.2f,%.2f) Radius=%.2f', 
+    [CmdResult.CircleData.Center.x, CmdResult.CircleData.Center.y, CmdResult.CircleData.Center.z, CmdResult.CircleData.Radius], LM_Info);
+  
+  { Тесселируем круг на сегменты и рисуем каждый сегмент отдельно }
+  SegCount := 64;
+  
+  { Рисуем сегменты круга напрямую через drawer }
+  PrevPt := CreateVertex(
+    CmdResult.CircleData.Center.x + CmdResult.CircleData.Radius,
+    CmdResult.CircleData.Center.y,
+    CmdResult.CircleData.Center.z
+  );
+  
+  for I := 1 to SegCount do begin
+    Angle := (I / SegCount) * 2 * Pi;
+    Pt := CreateVertex(
+      CmdResult.CircleData.Center.x + CmdResult.CircleData.Radius * Cos(Angle),
+      CmdResult.CircleData.Center.y + CmdResult.CircleData.Radius * Sin(Angle),
+      CmdResult.CircleData.Center.z
+    );
+    
+    { Рисуем сегмент напрямую через drawer }
+    DC.drawer.DrawLine3DInModelSpace(PrevPt, Pt, DC.DrawingContext.matrixs);
+    
+    PrevPt := Pt;
+  end;
+  
+  programlog.LogOutFormatStr('uzeentacdproxy: DrawCircleFromResult - Drew %d segments', [SegCount], LM_Info);
+end;
+
+{ Тесселирует круг и сохраняет вершины }
+procedure GDBObjAcdProxy.TessellateCircle(const CmdResult: TProxyCommandResult; out Vertices: GDBPoint3DArray);
+var
+  I, SegCount: Integer;
+  Angle: Double;
+  Pt: TzePoint3d;
+begin
+  SegCount := 64;
+  Vertices.init(SegCount);
+  
+  for I := 0 to SegCount - 1 do begin
+    Angle := (I / SegCount) * 2 * Pi;
+    Pt := CreateVertex(
+      CmdResult.CircleData.Center.x + CmdResult.CircleData.Radius * Cos(Angle),
+      CmdResult.CircleData.Center.y + CmdResult.CircleData.Radius * Sin(Angle),
+      CmdResult.CircleData.Center.z
+    );
+    Vertices.PushBackData(Pt);
+  end;
 end;
 
 { Конвертирует результат парсинга TProxyCommandResult в сущность ZCAD }
@@ -663,15 +747,28 @@ begin
     if FResultCount > 0 then begin
       programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity drawing VIRTUAL ENTITIES (Count=%d)', [FResultCount], LM_Info);
 
-      { Создаём и отрисовываем сущности из кэшированных результатов }
+      { Отрисовываем каждый результат напрямую }
       for I := 0 to FResultCount - 1 do begin
         if FResults[I].Valid then begin
-          Entity := ConvertResultToEntity(FResults[I], drawing);
-          if Entity <> nil then begin
-            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Drawing entity type %d', [Ord(FResults[I].PrimitiveType)], LM_Info);
-            Entity^.FormatEntity(drawing, DC, Stage);
-            Entity^.done;
-            FreeMem(Pointer(Entity));
+          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Processing result %d, Type=%d', [I, Ord(FResults[I].PrimitiveType)], LM_Info);
+          case FResults[I].PrimitiveType of
+            pptCircle:
+              begin
+                programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Drawing CIRCLE via tesselation', [], LM_Info);
+                { Рисуем круг через тесселяцию }
+                DrawCircleFromResult(FResults[I], drawing, DC);
+              end;
+            else
+              begin
+                { Остальные примитивы через сущности }
+                Entity := ConvertResultToEntity(FResults[I], drawing);
+                if Entity <> nil then begin
+                  programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Drawing entity type %d', [Ord(FResults[I].PrimitiveType)], LM_Info);
+                  Entity^.FormatEntity(drawing, DC, Stage);
+                  Entity^.done;
+                  FreeMem(Pointer(Entity));
+                end;
+              end;
           end;
         end;
       end;
@@ -727,7 +824,22 @@ var
   v000, v100, v010, v110: TzePoint3d;
   v001, v101, v011, v111: TzePoint3d;
   bbMin, bbMax: TzePoint3d;
+  I: Integer;
+  Pt1, Pt2: TzePoint3d;
 begin
+  { Рисуем круг если есть тесселированные вершины }
+  if FCircleLoaded and (FCircleVertices.Count > 0) then begin
+    for I := 0 to FCircleVertices.Count - 1 do begin
+      Pt1 := FCircleVertices.getData(I);
+      if I < FCircleVertices.Count - 1 then
+        Pt2 := FCircleVertices.getData(I + 1)
+      else
+        Pt2 := FCircleVertices.getData(0);  // Замыкаем круг
+      
+      DC.drawer.DrawLine3DInModelSpace(Pt1, Pt2, DC.DrawingContext.matrixs);
+    end;
+  end;
+  
   if not FBBoxLoaded then
     Exit;
 
