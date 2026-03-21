@@ -223,9 +223,11 @@ type
     procedure HandleUnicodeText;
     procedure HandleUnicodeText2;
     procedure HandleEllipticArc;
+    procedure HandleShell;
     procedure HandleSetColor;
     procedure HandleSetLayer;
     procedure HandleSetLinetype;
+    procedure HandleSetMarker;
     procedure HandleSetFill;
     procedure HandleSetTrueColor;
     procedure HandleSetLineWeight;
@@ -550,23 +552,35 @@ end;
 
 function TProxyByteStream.ReadPaddedUnicodeString: string;
 var
-  Len, PaddedLen: Integer;
+  Len: Integer;
   WBytes: TBytes;
 begin
-  Len := ReadInt32;
-  PaddedLen := ReadInt32;
-  
+  // Читаем UTF-16 строку с нулевым терминатором (как в AcGiWorldDraw)
+  // Формат: последовательность WORD (2 байта) до нулевого WORD
+  Len := 0;
+  while (FIndex + Len * 2 + 1 < FLength) and
+        ((FData[FIndex + Len * 2] <> 0) or (FData[FIndex + Len * 2 + 1] <> 0)) do
+    Inc(Len);
+
   if Len > 0 then begin
     SetLength(WBytes, Len * 2);
     Move(FData[FIndex], WBytes[0], Len * 2);
-    Result := TEncoding.Unicode.GetString(WBytes);
+    try
+      Result := TEncoding.Unicode.GetString(WBytes);
+    except
+      Result := '';
+    end;
     Inc(FIndex, Len * 2);
   end else
     Result := '';
+
+  // Пропускаем нулевой терминатор (2 байта)
+  if FIndex + 1 < FLength then
+    Inc(FIndex, 2);
   
-  // Пропускаем паддинг
-  if PaddedLen > Len * 2 then
-    Skip(PaddedLen - Len * 2);
+  // Выравниваем по 4 байтам (паддинг до границы DWORD)
+  if (FIndex mod 4) <> 0 then
+    Skip(4 - (FIndex mod 4));
 end;
 
 function TProxyByteStream.ReadStruct(const Format: string): TArray<Double>;
@@ -928,7 +942,7 @@ end;
 function TProxyUnicodeTextParser.Parse: TProxyCommandResult;
 begin
   InitCommandResult(Result);
-  
+
   try
     // Формат: как Text, но текст в UTF-16
     Result.TextData.Insert := FStream.ReadVertex;
@@ -937,8 +951,14 @@ begin
     Result.TextData.Height := FStream.ReadDouble;
     Result.TextData.WidthFactor := FStream.ReadDouble;
     Result.TextData.ObliqueAngle := FStream.ReadDouble;
-    Result.TextData.Text := FStream.ReadPaddedUnicodeString;
     
+    // Читаем текст с обработкой ошибок
+    try
+      Result.TextData.Text := FStream.ReadPaddedUnicodeString;
+    except
+      Result.TextData.Text := '[Unicode decode error]';
+    end;
+
     Result.PrimitiveType := pptText;
     Result.Valid := True;
   except
@@ -1044,14 +1064,34 @@ begin
   Result := False;
 
   try
+    // Проверка на конец потока
+    if FStream.EndOfStream then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - End of stream', [], LM_Info);
+      Exit;
+    end;
+    
+    // Проверка: осталось ли достаточно байт для заголовка команды
+    if FStream.RemainingBytes < PROXY_COMMAND_HEADER_SIZE then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Not enough bytes for header (remaining=%d)', [FStream.RemainingBytes], LM_Info);
+      Exit;
+    end;
+
     // Читаем заголовок команды
     Size := FStream.ReadInt32;
     OpCodeVal := FStream.ReadInt32;
-    
+
     programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Size=%d, OpCode=%d', [Size, OpCodeVal], LM_Info);
 
-    if Size < PROXY_COMMAND_HEADER_SIZE then
-      raise EProxyGraphicError.CreateFmt('Invalid command size: %d', [Size]);
+    if Size < PROXY_COMMAND_HEADER_SIZE then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Invalid command size %d, skipping', [Size], LM_Info);
+      Exit;
+    end;
+    
+    // Проверка: не выходит ли размер за пределы потока
+    if Size > FStream.RemainingBytes + PROXY_COMMAND_HEADER_SIZE then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Command size %d exceeds stream, truncating', [Size], LM_Info);
+      Size := FStream.RemainingBytes + PROXY_COMMAND_HEADER_SIZE;
+    end;
 
     // Сохраняем размер команды для использования в парсерах
     FCommandSize := Size;
@@ -1061,8 +1101,11 @@ begin
       OpCode := TProxyGraphicCommand(OpCodeVal);
       programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - OpCode enum: %s', [GetEnumName(TypeInfo(TProxyGraphicCommand), Ord(OpCode))], LM_Info);
     except
-      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Invalid OpCode, using pgcExtents', [], LM_Info);
-      OpCode := pgcExtents;
+      programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - Invalid OpCode %d, skipping', [OpCodeVal], LM_Info);
+      // Пропускаем команду с неизвестным OpCode
+      FStream.Skip(Size - PROXY_COMMAND_HEADER_SIZE);
+      Result := True;
+      Exit;
     end;
 
     // Обрабатываем команду
@@ -1108,19 +1151,30 @@ begin
           programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - TEXT2', [], LM_Info);
           HandleText2;
         end;
-      pgcUnicodeText, pgcUnicodeText2:
+      pgcUnicodeText:
         begin
           programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - UNICODETEXT', [], LM_Info);
           HandleUnicodeText;
+        end;
+      pgcUnicodeText2:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - UNICODETEXT2', [], LM_Info);
+          HandleUnicodeText2;
         end;
       pgcEllipticArc:
         begin
           programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - ELLIPTICARC', [], LM_Info);
           HandleEllipticArc;
         end;
+      pgcShell:
+        begin
+          programlog.LogOutFormatStr('uzeentproxyparser: ParseCommand - SHELL (skipping)', [], LM_Info);
+          HandleShell;
+        end;
       pgcAttributeColor: HandleSetColor;
       pgcAttributeLayer: HandleSetLayer;
       pgcAttributeLinetype: HandleSetLinetype;
+      pgcAttributeMarker: HandleSetMarker;
       pgcAttributeFill: HandleSetFill;
       pgcAttributeTrueColor: HandleSetTrueColor;
       pgcAttributeLineWeight: HandleSetLineWeight;
@@ -1257,8 +1311,17 @@ begin
 end;
 
 procedure TProxyGraphicParser.HandleUnicodeText2;
+var
+  Parser: TProxyUnicodeTextParser;
+  StartPos, EndPos: Integer;
 begin
-  HandleUnicodeText;
+  // UnicodeText2 имеет расширенный формат - пока просто пропускаем команду
+  // TODO: реализовать полноценный парсер UnicodeText2
+  StartPos := FStream.Index;
+  // Пропускаем все данные команды
+  FStream.Skip(FCommandSize - PROXY_COMMAND_HEADER_SIZE);
+  EndPos := FStream.Index;
+  programlog.LogOutFormatStr('uzeentproxyparser: HandleUnicodeText2 - SKIPPED %d bytes', [EndPos - StartPos], LM_Info);
 end;
 
 procedure TProxyGraphicParser.HandleEllipticArc;
@@ -1271,6 +1334,18 @@ begin
   finally
     Parser.Free;
   end;
+end;
+
+procedure TProxyGraphicParser.HandleShell;
+var
+  StartPos, EndPos: Integer;
+begin
+  // Shell имеет сложную структуру - пропускаем команду
+  // TODO: реализовать полноценный парсер Shell
+  StartPos := FStream.Index;
+  FStream.Skip(FCommandSize - PROXY_COMMAND_HEADER_SIZE);
+  EndPos := FStream.Index;
+  programlog.LogOutFormatStr('uzeentproxyparser: HandleShell - SKIPPED %d bytes', [EndPos - StartPos], LM_Info);
 end;
 
 procedure TProxyGraphicParser.HandleSetColor;
@@ -1301,6 +1376,12 @@ begin
     FState.Linetype := 'BYLAYER'
   else
     FState.Linetype := Format('Linetype_%d', [LTIndex]);
+end;
+
+procedure TProxyGraphicParser.HandleSetMarker;
+begin
+  // Пропускаем Marker ID (используется для выделения объектов)
+  FStream.ReadUInt32;
 end;
 
 procedure TProxyGraphicParser.HandleSetFill;
@@ -1373,30 +1454,40 @@ function TProxyGraphicParser.Parse: Boolean;
 var
   Header: TProxyGraphicHeader;
   I: Integer;
+  BytesRemaining: Integer;
 begin
   Result := False;
-  
+
   programlog.LogOutFormatStr('uzeentproxyparser: Parse - START', [], LM_Info);
 
   try
+    // Проверка: есть ли данные для парсинга
+    if FStream = nil then begin
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - FStream is nil', [], LM_Info);
+      Exit;
+    end;
+    
+    BytesRemaining := FStream.RemainingBytes;
+    programlog.LogOutFormatStr('uzeentproxyparser: Parse - Stream bytes remaining: %d', [BytesRemaining], LM_Info);
+
     // Читаем заголовок
     programlog.LogOutFormatStr('uzeentproxyparser: Parse - Reading header...', [], LM_Info);
     if not ParseHeader(Header) then begin
       programlog.LogOutFormatStr('uzeentproxyparser: Parse - ParseHeader failed', [], LM_Info);
       Exit;
     end;
-    
+
     programlog.LogOutFormatStr('uzeentproxyparser: Parse - Header parsed, CommandCount=%d', [Header.CommandCount], LM_Info);
 
     // Читаем команды
     for I := 0 to Header.CommandCount - 1 do begin
-      programlog.LogOutFormatStr('uzeentproxyparser: Parse - Processing command %d of %d...', [I + 1, Header.CommandCount], LM_Info);
-      
+      programlog.LogOutFormatStr('uzeentproxyparser: Parse - Processing command %d of %d (bytes remaining: %d)...', [I + 1, Header.CommandCount, FStream.RemainingBytes], LM_Info);
+
       if not ParseCommand then begin
         programlog.LogOutFormatStr('uzeentproxyparser: Parse - ParseCommand failed at command %d', [I + 1], LM_Info);
         Break;
       end;
-      
+
       programlog.LogOutFormatStr('uzeentproxyparser: Parse - Command %d processed, results so far: %d', [I + 1, FResultCount], LM_Info);
     end;
 
@@ -1410,6 +1501,7 @@ begin
   except
     on E: Exception do begin
       programlog.LogOutFormatStr('uzeentproxyparser: Parse - EXCEPTION: %s', [E.Message], LM_Info);
+      //programlog.LogOutFormatStr('uzeentproxyparser: Parse - EXCEPTION StackTrace: %s', [GetExceptionBackTrace(E, True)], LM_Info);
       Result := False;
     end;
   end;

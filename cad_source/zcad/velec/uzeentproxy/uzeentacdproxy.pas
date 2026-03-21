@@ -58,7 +58,9 @@ uses
   uzeentarc,
   uzeentpolyline,
   uzeenttext,
-  uzeentellipse;
+  uzeentellipse,
+  UGDBSelectedObjArray,
+  uzesnap;
 
 type
   PGDBObjAcdProxy = ^GDBObjAcdProxy;
@@ -83,10 +85,15 @@ type
       const ptFrom, ptTo: TzePoint3d);
 
     { Конвертирует результат парсинга в сущность ZCAD }
-    function ConvertResultToEntity(const CmdResult: TProxyCommandResult): PGDBObjEntity;
+    function ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
 
     { Отрисовывает виртуальные сущности из парсера }
     procedure DrawVirtualEntities(var drawing: TDrawingDef; var DC: TDrawContext);
+
+    { Вычисляет BBox из результатов парсинга прокси-графики }
+    function CalcBBoxFromParserResults(
+      const Parser: TProxyGraphicParser;
+      out MinPt, MaxPt: TzePoint3d): Boolean;
 
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
@@ -196,6 +203,109 @@ begin
   FProxyParser := nil;
 end;
 
+{ Вычисляет BBox из результатов парсинга прокси-графики }
+function GDBObjAcdProxy.CalcBBoxFromParserResults(
+  const Parser: TProxyGraphicParser;
+  out MinPt, MaxPt: TzePoint3d): Boolean;
+var
+  I, J: Integer;
+  CmdResult: TProxyCommandResult;
+  Pt: TzePoint3d;
+  Initialized: Boolean;
+  
+  procedure ExpandBBox(const P: TzePoint3d);
+  begin
+    if not Initialized then begin
+      MinPt := P;
+      MaxPt := P;
+      Initialized := True;
+    end else begin
+      if P.x < MinPt.x then MinPt.x := P.x;
+      if P.y < MinPt.y then MinPt.y := P.y;
+      if P.z < MinPt.z then MinPt.z := P.z;
+      if P.x > MaxPt.x then MaxPt.x := P.x;
+      if P.y > MaxPt.y then MaxPt.y := P.y;
+      if P.z > MaxPt.z then MaxPt.z := P.z;
+    end;
+  end;
+  
+begin
+  Result := False;
+  Initialized := False;
+  MinPt := NulVertex;
+  MaxPt := NulVertex;
+  
+  if Parser = nil then
+    Exit;
+  
+  for I := 0 to Parser.ResultCount - 1 do begin
+    CmdResult := Parser.GetResult(I);
+    if not CmdResult.Valid then
+      Continue;
+      
+    case CmdResult.PrimitiveType of
+      pptCircle:
+        begin
+          // Круг: центр ± радиус
+          ExpandBBox(CreateVertex(
+            CmdResult.CircleData.Center.x - CmdResult.CircleData.Radius,
+            CmdResult.CircleData.Center.y - CmdResult.CircleData.Radius,
+            CmdResult.CircleData.Center.z));
+          ExpandBBox(CreateVertex(
+            CmdResult.CircleData.Center.x + CmdResult.CircleData.Radius,
+            CmdResult.CircleData.Center.y + CmdResult.CircleData.Radius,
+            CmdResult.CircleData.Center.z));
+        end;
+        
+      pptArc:
+        begin
+          // Дуга: центр ± радиус (упрощённо, как круг)
+          ExpandBBox(CreateVertex(
+            CmdResult.ArcData.Center.x - CmdResult.ArcData.Radius,
+            CmdResult.ArcData.Center.y - CmdResult.ArcData.Radius,
+            CmdResult.ArcData.Center.z));
+          ExpandBBox(CreateVertex(
+            CmdResult.ArcData.Center.x + CmdResult.ArcData.Radius,
+            CmdResult.ArcData.Center.y + CmdResult.ArcData.Radius,
+            CmdResult.ArcData.Center.z));
+        end;
+        
+      pptPolyline, pptPolygon:
+        begin
+          // Полилиния: все вершины
+          for J := 0 to High(CmdResult.PolylineData.Vertices) do begin
+            ExpandBBox(CmdResult.PolylineData.Vertices[J]);
+          end;
+        end;
+        
+      pptEllipse:
+        begin
+          // Эллипс: центр ± большая ось
+          ExpandBBox(CreateVertex(
+            CmdResult.EllipticArcData.Center.x - CmdResult.EllipticArcData.MajorAxisLength,
+            CmdResult.EllipticArcData.Center.y - CmdResult.EllipticArcData.MajorAxisLength,
+            CmdResult.EllipticArcData.Center.z));
+          ExpandBBox(CreateVertex(
+            CmdResult.EllipticArcData.Center.x + CmdResult.EllipticArcData.MajorAxisLength,
+            CmdResult.EllipticArcData.Center.y + CmdResult.EllipticArcData.MajorAxisLength,
+            CmdResult.EllipticArcData.Center.z));
+        end;
+        
+      pptText:
+        begin
+          // Текст: позиция + примерный размер
+          ExpandBBox(CmdResult.TextData.Insert);
+          ExpandBBox(CreateVertex(
+            CmdResult.TextData.Insert.x + CmdResult.TextData.Height * Length(CmdResult.TextData.Text),
+            CmdResult.TextData.Insert.y + CmdResult.TextData.Height,
+            CmdResult.TextData.Insert.z));
+        end;
+    end;
+  end;
+  
+  Result := Initialized;
+end;
+
 constructor GDBObjAcdProxy.initnul(owner: PGDBObjGenericWithSubordinated);
 begin
   inherited initnul(owner);
@@ -262,18 +372,22 @@ begin
   { Парсим бинарные данные через TProxyGraphicParser }
   if Length(hexData) > 0 then begin
     programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF parsing proxy graphic, hex length=%d', [Length(hexData)], LM_Info);
-    
+    programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF hex preview: %s...', [Copy(hexData, 1, 64)], LM_Info);
+
     FProxyParser := TProxyGraphicParser.Create;
     try
       if FProxyParser.InitFromHex(hexData) then begin
+        programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF calling Parse...', [], LM_Info);
         if FProxyParser.Parse then begin
           programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF UNIVERSAL PARSER Success - Results=%d', [FProxyParser.ResultCount], LM_Info);
-          
+
           { Вычисляем BBox из результатов парсинга }
           if FProxyParser.HasValidResults then begin
-            // BBox вычисляется из геометрии примитивов
-            // Для fallback используем упрощённый подход
-            FBBoxLoaded := True;
+            FBBoxLoaded := CalcBBoxFromParserResults(FProxyParser, FBBoxMinInOCS, FBBoxMaxInOCS);
+            if FBBoxLoaded then begin
+              programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF BBox calculated from parser: Min=(%.2f;%.2f;%.2f) Max=(%.2f;%.2f;%.2f)',
+                [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z], LM_Info);
+            end;
           end;
         end
         else begin
@@ -286,6 +400,7 @@ begin
     except
       on E: Exception do begin
         programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF EXCEPTION: %s', [E.Message], LM_Info);
+        //programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF EXCEPTION StackTrace: %s', [GetExceptionBackTrace(E, True)], LM_Info);
         FProxyParser.Free;
         FProxyParser := nil;
       end;
@@ -331,7 +446,7 @@ begin
 end;
 
 { Конвертирует результат парсинга TProxyCommandResult в сущность ZCAD }
-function GDBObjAcdProxy.ConvertResultToEntity(const CmdResult: TProxyCommandResult): PGDBObjEntity;
+function GDBObjAcdProxy.ConvertResultToEntity(const CmdResult: TProxyCommandResult; var drawing: TDrawingDef): PGDBObjEntity;
 var
   circleObj: PGDBObjCircle;
   arcObj: PGDBObjArc;
@@ -360,6 +475,8 @@ begin
         if not VectorIsClose(CmdResult.CircleData.Normal, PROXY_Z_AXIS) then begin
           // TODO: установить локальную СК по Normal
         end;
+        // Вычисляем матрицу объекта для отрисовки
+        circleObj^.CalcObjMatrix(@drawing);
         Result := circleObj;
       end;
 
@@ -379,6 +496,8 @@ begin
 
         arcObj^.StartAngle := startAngle;
         arcObj^.EndAngle := endAngle;
+        // Вычисляем матрицу объекта для отрисовки
+        arcObj^.CalcObjMatrix(@drawing);
         Result := arcObj;
       end;
 
@@ -400,6 +519,8 @@ begin
         else
           polylineObj^.closed := CmdResult.PolylineData.Closed;
 
+        // Вычисляем матрицу объекта для отрисовки
+        polylineObj^.CalcObjMatrix(@drawing);
         Result := polylineObj;
       end;
 
@@ -426,6 +547,8 @@ begin
         textObj^.Local.basis.oz := CmdResult.TextData.Normal;
         textObj^.Local.basis.oz := NormalizeVertex(textObj^.Local.basis.oz);
 
+        // Вычисляем матрицу объекта для отрисовки
+        textObj^.CalcObjMatrix(@drawing);
         Result := textObj;
       end;
 
@@ -453,6 +576,8 @@ begin
         ellipseObj^.StartAngle := CmdResult.EllipticArcData.StartParam;
         ellipseObj^.EndAngle := CmdResult.EllipticArcData.EndParam;
 
+        // Вычисляем матрицу объекта для отрисовки
+        ellipseObj^.CalcObjMatrix(@drawing);
         Result := ellipseObj;
       end;
 
@@ -465,26 +590,138 @@ end;
 { Отрисовывает виртуальные сущности из парсера }
 procedure GDBObjAcdProxy.DrawVirtualEntities(var drawing: TDrawingDef; var DC: TDrawContext);
 var
-  I: Integer;
+  I, J, SegCount: Integer;
   CmdResult: TProxyCommandResult;
+  Pt1, Pt2, Center, StartVec, EndVec: TzePoint3d;
+  Radius, Angle, StartAngle, EndAngle, SweepAngle: Double;
   Entity: PGDBObjEntity;
 begin
   if FProxyParser = nil then
     Exit;
 
+  programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - START, Results=%d', [FProxyParser.ResultCount], LM_Info);
+
   for I := 0 to FProxyParser.ResultCount - 1 do begin
     CmdResult := FProxyParser.GetResult(I);
     if CmdResult.Valid then begin
-      Entity := ConvertResultToEntity(CmdResult);
-      if Entity <> nil then begin
-        // Отрисовываем сущность
-        Entity^.FormatEntity(drawing, DC, [EFDraw]);
-        // Освобождаем (временная сущность)
-        Entity^.done;
-        FreeMem(Pointer(Entity));
+      programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Processing primitive %d: Type=%d', [I, Ord(CmdResult.PrimitiveType)], LM_Info);
+      
+      case CmdResult.PrimitiveType of
+        // Полилинии и полигоны отрисовываем напрямую через линии
+        pptPolyline, pptPolygon:
+          begin
+            if Length(CmdResult.PolylineData.Vertices) >= 2 then begin
+              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing POLYLINE with %d vertices', [Length(CmdResult.PolylineData.Vertices)], LM_Info);
+              for J := 0 to High(CmdResult.PolylineData.Vertices) - 1 do begin
+                Pt1 := CmdResult.PolylineData.Vertices[J];
+                Pt2 := CmdResult.PolylineData.Vertices[J + 1];
+                Representation.DrawLineWithoutLT(DC, Pt1, Pt2);
+              end;
+              // Замыкаем если полигон или флаг closed установлен
+              if (CmdResult.PrimitiveType = pptPolygon) or CmdResult.PolylineData.Closed then begin
+                Pt1 := CmdResult.PolylineData.Vertices[High(CmdResult.PolylineData.Vertices)];
+                Pt2 := CmdResult.PolylineData.Vertices[0];
+                Representation.DrawLineWithoutLT(DC, Pt1, Pt2);
+              end;
+            end;
+          end;
+
+        // Круги тесселируем на сегменты (32 сегмента для качества)
+        pptCircle:
+          begin
+            Center := CmdResult.CircleData.Center;
+            Radius := CmdResult.CircleData.Radius;
+            SegCount := 32;
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing CIRCLE: Center=(%.2f,%.2f,%.2f) Radius=%.2f', 
+              [Center.x, Center.y, Center.z, Radius], LM_Info);
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Circle will be drawn with %d segments', [SegCount], LM_Info);
+            for J := 0 to SegCount - 1 do begin
+              StartAngle := (J / SegCount) * 2 * Pi;
+              EndAngle := ((J + 1) / SegCount) * 2 * Pi;
+              StartVec := CreateVertex(Center.x + Radius * Cos(StartAngle),
+                                       Center.y + Radius * Sin(StartAngle),
+                                       Center.z);
+              EndVec := CreateVertex(Center.x + Radius * Cos(EndAngle),
+                                     Center.y + Radius * Sin(EndAngle),
+                                     Center.z);
+              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
+            end;
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Circle drawing COMPLETE', [], LM_Info);
+          end;
+
+        // Дуги тесселируем на сегменты
+        pptArc:
+          begin
+            Center := CmdResult.ArcData.Center;
+            Radius := CmdResult.ArcData.Radius;
+            StartVec := CmdResult.ArcData.StartVector;
+            SweepAngle := CmdResult.ArcData.SweepAngle;
+
+            // Вычисляем начальный угол из StartVector
+            StartAngle := ArcTan2(StartVec.y, StartVec.x);
+            EndAngle := StartAngle + SweepAngle;
+
+            // Тесселируем на сегменты (минимум 8, или больше для больших дуг)
+            SegCount := Max(8, Round(Abs(SweepAngle) / Pi * 16));
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing ARC: Center=(%.2f,%.2f,%.2f) Radius=%.2f SweepAngle=%.2f', 
+              [Center.x, Center.y, Center.z, Radius, SweepAngle], LM_Info);
+            for J := 0 to SegCount - 1 do begin
+              Angle := StartAngle + (J / SegCount) * SweepAngle;
+              StartVec := CreateVertex(Center.x + Radius * Cos(Angle),
+                                       Center.y + Radius * Sin(Angle),
+                                       Center.z);
+              Angle := StartAngle + ((J + 1) / SegCount) * SweepAngle;
+              EndVec := CreateVertex(Center.x + Radius * Cos(Angle),
+                                     Center.y + Radius * Sin(Angle),
+                                     Center.z);
+              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
+            end;
+          end;
+
+        // Эллипсы тесселируем на сегменты
+        pptEllipse:
+          begin
+            Center := CmdResult.EllipticArcData.Center;
+            // Для простоты рисуем как круг (TODO: полноценный эллипс)
+            Radius := CmdResult.EllipticArcData.MajorAxisLength;
+            SegCount := 32;
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing ELLIPSE: Center=(%.2f,%.2f,%.2f) MajorAxis=%.2f', 
+              [Center.x, Center.y, Center.z, Radius], LM_Info);
+            for J := 0 to SegCount - 1 do begin
+              StartAngle := (J / SegCount) * 2 * Pi;
+              EndAngle := ((J + 1) / SegCount) * 2 * Pi;
+              StartVec := CreateVertex(Center.x + Radius * Cos(StartAngle),
+                                       Center.y + Radius * Sin(StartAngle),
+                                       Center.z);
+              EndVec := CreateVertex(Center.x + Radius * Cos(EndAngle),
+                                     Center.y + Radius * Sin(EndAngle),
+                                     Center.z);
+              Representation.DrawLineWithoutLT(DC, StartVec, EndVec);
+            end;
+          end;
+
+        // Остальные примитивы (текст и т.д.) отрисовываем через сущности
+        else
+          begin
+            // Пропускаем тексты с пустой строкой
+            if (CmdResult.PrimitiveType = pptText) and (CmdResult.TextData.Text = '') then begin
+              programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Skipping EMPTY TEXT', [], LM_Info);
+              Continue;
+            end;
+            
+            programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - Drawing primitive type %d via Entity', [Ord(CmdResult.PrimitiveType)], LM_Info);
+            Entity := ConvertResultToEntity(CmdResult, drawing);
+            if Entity <> nil then begin
+              Entity^.FormatEntity(drawing, DC, [EFDraw]);
+              Entity^.done;
+              FreeMem(Pointer(Entity));
+            end;
+          end;
       end;
     end;
   end;
+  
+  programlog.LogOutFormatStr('uzeentacdproxy: DrawVirtualEntities - END', [], LM_Info);
 end;
 
 { Рассчитывает визуальное представление прокси-объекта.
@@ -637,14 +874,16 @@ begin
   FBBoxLoaded   := src^.FBBoxLoaded;
 
   { Трансформируем виртуальные сущности если есть парсер }
+  { Примечание: для трансформации не нужна полная инициализация, 
+    т.к. мы сразу вызываем TransformAt }
+  { Пока пропускаем трансформацию виртуальных сущностей }
+  {
   if src^.FProxyParser <> nil then begin
-    { Копируем парсер }
     FProxyParser := TProxyGraphicParser.Create;
-    { Применим трансформацию к каждой сущности }
     for I := 0 to src^.FProxyParser.ResultCount - 1 do begin
       CmdResult := src^.FProxyParser.GetResult(I);
       if CmdResult.Valid then begin
-        Entity := ConvertResultToEntity(CmdResult);
+        Entity := ConvertResultToEntity(CmdResult, drawing);
         if Entity <> nil then begin
           Entity^.TransformAt(@self, t_matrix);
           Entity^.done;
@@ -653,6 +892,7 @@ begin
       end;
     end;
   end;
+  }
 end;
 
 function GDBObjAcdProxy.GetObjTypeName: string;
@@ -692,8 +932,32 @@ end;
 
 { Прокси-объект не имеет редактируемых контрольных точек на этапе 1 }
 procedure GDBObjAcdProxy.addcontrolpoints(tdesc: Pointer);
+var
+  CenterPoint: TzePoint3d;
+  pdesc: controlpointdesc;
 begin
-  { Контрольные точки не добавляются — объект не редактируется }
+  { Добавляем контрольную точку в центре объекта для выделения }
+  if FBBoxLoaded then begin
+    CenterPoint := CreateVertex(
+      (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2,
+      (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2,
+      (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2
+    );
+    
+    { Инициализируем массив контрольных точек (1 точка) }
+    PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
+    
+    { Создаём контрольную точку }
+    pdesc.selected := False;
+    pdesc.PDrawable := nil;
+    pdesc.vertexnum := 0;
+    pdesc.attr := [CPA_Strech];
+    pdesc.worldcoord := CenterPoint;
+    pdesc.pointtype := os_midle;
+    
+    { Добавляем точку в массив }
+    PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(pdesc);
+  end;
 end;
 
 procedure GDBObjAcdProxy.rtsave(refp: Pointer);
