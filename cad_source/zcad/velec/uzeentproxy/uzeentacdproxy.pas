@@ -374,40 +374,43 @@ begin
         if ParseResult.CircleCount > 0 then
         begin
           programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Successfully parsed %d circles', [ParseResult.CircleCount], LM_Info);
-          
-          { Обновляем BBox из результата парсинга }
-          if ParseResult.BBoxLoaded then
-          begin
-            FBBoxMinInOCS := ParseResult.BBoxMin;
-            FBBoxMaxInOCS := ParseResult.BBoxMax;
-            FBBoxLoaded := True;
-            vp.BoundingBox.LBN := FBBoxMinInOCS;
-            vp.BoundingBox.RTF := FBBoxMaxInOCS;
-            
-            { Устанавливаем центр для контрольной точки }
-            FCenterPoint := ParseResult.CenterPoint;
-            FHasCenterPoint := True;
-            
-            { Копируем вершины круга для отрисовки }
-            if ParseResult.HasCircleVertices then
-            begin
-              FCircleVertices.init(ParseResult.CircleVertices.Count);
-              // Копируем через итератор
-              pV2 := ParseResult.CircleVertices.beginiterate(ir2);
-              while pV2 <> nil do
-              begin
-                FCircleVertices.PushBackData(pV2^);
-                pV2 := ParseResult.CircleVertices.iterate(ir2);
-              end;
-              FHasCircleVertices := True;
-            end;
-            
-            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox updated from proxy data', [], LM_Info);
-          end;
         end
         else
         begin
           programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No circles found in proxy data', [], LM_Warning);
+        end;
+        
+        { Обновляем BBox из результата парсинга ВСЕГДА }
+        if ParseResult.BBoxLoaded then
+        begin
+          FBBoxMinInOCS := ParseResult.BBoxMin;
+          FBBoxMaxInOCS := ParseResult.BBoxMax;
+          FBBoxLoaded := True;
+          vp.BoundingBox.LBN := FBBoxMinInOCS;
+          vp.BoundingBox.RTF := FBBoxMaxInOCS;
+          
+          { Устанавливаем центр BBox для контрольной точки }
+          FCenterPoint.x := (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2;
+          FCenterPoint.y := (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2;
+          FCenterPoint.z := (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2;
+          FHasCenterPoint := True;
+          
+          { Копируем вершины круга для отрисовки }
+          if ParseResult.HasCircleVertices then
+          begin
+            FCircleVertices.init(ParseResult.CircleVertices.Count);
+            // Копируем через итератор
+            pV2 := ParseResult.CircleVertices.beginiterate(ir2);
+            while pV2 <> nil do
+            begin
+              FCircleVertices.PushBackData(pV2^);
+              pV2 := ParseResult.CircleVertices.iterate(ir2);
+            end;
+            FHasCircleVertices := True;
+          end;
+          
+          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox updated from proxy data, Center=(%.3f,%.3f,%.3f)', 
+            [FCenterPoint.x, FCenterPoint.y, FCenterPoint.z], LM_Info);
         end;
       finally
         ProxyParser.Free;

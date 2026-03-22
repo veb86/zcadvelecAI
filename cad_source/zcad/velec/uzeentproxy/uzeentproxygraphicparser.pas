@@ -369,6 +369,18 @@ begin
     
     programlog.LogOutFormatStr('uzeentproxygraphicparser: Extents - Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
       [MinPt.x, MinPt.y, MinPt.z, MaxPt.x, MaxPt.y, MaxPt.z], LM_Info);
+    
+    { Сохраняем BBox из Extents }
+    if not FResult.BBoxLoaded then
+    begin
+      FResult.BBoxMin := MinPt;
+      FResult.BBoxMax := MaxPt;
+      FResult.BBoxLoaded := True;
+      { Центр BBox для контрольной точки }
+      FResult.CenterPoint.x := (MinPt.x + MaxPt.x) / 2;
+      FResult.CenterPoint.y := (MinPt.y + MaxPt.y) / 2;
+      FResult.CenterPoint.z := (MinPt.z + MaxPt.z) / 2;
+    end;
   except
     on E: Exception do
     begin
