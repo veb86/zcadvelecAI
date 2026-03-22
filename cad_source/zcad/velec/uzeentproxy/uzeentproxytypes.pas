@@ -26,7 +26,10 @@ interface
 
 uses
   uzeTypes,
-  uzeGeometryTypes;
+  uzeGeometryTypes,
+  SysUtils,
+  uzeentity,
+  uzedrawingdef;
 
 type
   { OPCODE команд Proxy Graphic (AcGiWorldDraw формат)
@@ -173,6 +176,7 @@ type
     MajorAxisLength: Double;
     MinorAxisLength: Double;
     MajorAxisDirection: TzePoint3d;  // Направление большой оси
+    MajorAxisAngle: Double;          // Угол направления большой оси (в радианах)
     StartParam: Double;
     EndParam: Double;
   end;
