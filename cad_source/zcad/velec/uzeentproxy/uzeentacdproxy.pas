@@ -315,13 +315,8 @@ end;
 procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
 var
-  Parser: IProxyPrimitiveParser;
-  Entity: PGDBObjEntity;
-  Stream: TObject;
-  DefaultState: TProxyGraphicState;
   ProxyParser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
-  I: Integer;
   ir2: itrec;
   pV2: PzePoint3d;
 begin
@@ -395,11 +390,10 @@ begin
           FCenterPoint.z := (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2;
           FHasCenterPoint := True;
           
-          { Копируем вершины круга для отрисовки }
+          { Сохраняем вершины круга для отрисовки }
           if ParseResult.HasCircleVertices then
           begin
             FCircleVertices.init(ParseResult.CircleVertices.Count);
-            // Копируем через итератор
             pV2 := ParseResult.CircleVertices.beginiterate(ir2);
             while pV2 <> nil do
             begin
@@ -421,14 +415,7 @@ begin
       programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No proxy data to parse', [], LM_Warning);
     end;
     
-    { Отрисовываем круги если вершины загружены }
-    if FHasCircleVertices and (FCircleVertices.Count > 0) then
-    begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Drawing %d circle vertices, vp.Color=%d, vp.Layer=%s', 
-        [FCircleVertices.Count, vp.Color, vp.Layer^.Name], LM_Info);
-      { Отрисовываем круг через Representation с правильными свойствами }
-      Representation.DrawPolyLineWithLT(DC, FCircleVertices, vp, True, False);
-    end;
+    { Круги будут отрисованы в DrawGeometry }
   end;
 
   if assigned(EntExtensions) then

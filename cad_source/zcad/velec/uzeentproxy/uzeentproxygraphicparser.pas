@@ -49,7 +49,8 @@ uses
   uzgldrawcontext,
   uzeTypes,
   gzctnrVectorTypes,
-  gzctnrVector;
+  gzctnrVector,
+  uzeentproxyparsercircle;
 
 type
   { Результат парсинга Proxy Graphic }
@@ -202,90 +203,48 @@ end;
 
 procedure TProxyGraphicParser.HandleCircle(CommandSize: Integer);
 var
-  Center: TzePoint3d;
-  Radius: Double;
-  Normal: TzePoint3d;
-  I, SegCount: Integer;
-  Angle: Double;
-  Pt: TzePoint3d;
-  VertexArray: GDBPoint3DArray;
+  CircleParseResult: TProxyCircleParseResult;
   ir: itrec;
   pV: PzePoint3d;
 begin
-  try
-    // Формат: Center (3d) + Radius (d) + Normal (3d)
-    Center := FStream.ReadVertex;
-    Radius := FStream.ReadDouble;
-    Normal := FStream.ReadVector;
-    
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Circle - Center=(%.3f,%.3f,%.3f) Radius=%.3f', 
-      [Center.x, Center.y, Center.z, Radius], LM_Info);
-    
-    if Radius > 0 then
+  { Вызываем автономный парсер круга из uzeentproxyparsercircle.pas }
+  TProxyCircleParser.ParseAndDraw(FStream, FDC, CircleParseResult);
+  
+  { Если круг успешно распаршен, обновляем BBox и сохраняем вершины результата }
+  if CircleParseResult.Valid and CircleParseResult.HasBBox then
+  begin
+    if not FResult.BBoxLoaded then
     begin
-      // Тесселируем круг в вершины
-      SegCount := 64;
-      VertexArray.init(SegCount);
-      
-      for I := 0 to SegCount - 1 do
-      begin
-        Angle := (I / SegCount) * 2 * Pi;
-        Pt := CreateVertex(
-          Center.x + Radius * Cos(Angle),
-          Center.y + Radius * Sin(Angle),
-          Center.z
-        );
-        VertexArray.PushBackData(Pt);
-      end;
-      
-      // Сохраняем вершины в результат для последующей отрисовки
-      if not FResult.HasCircleVertices then
-      begin
-        FResult.CircleVertices.init(SegCount);
-        // Копируем вершины из VertexArray в FResult.CircleVertices через итератор
-        pV := VertexArray.beginiterate(ir);
-        while pV <> nil do
-        begin
-          FResult.CircleVertices.PushBackData(pV^);
-          pV := VertexArray.iterate(ir);
-        end;
-        FResult.HasCircleVertices := True;
-      end;
-      
-      // Обновляем BBox
-      if not FResult.BBoxLoaded then
-      begin
-        FResult.BBoxMin := CreateVertex(Center.x - Radius, Center.y - Radius, Center.z);
-        FResult.BBoxMax := CreateVertex(Center.x + Radius, Center.y + Radius, Center.z);
-        FResult.BBoxLoaded := True;
-        FResult.CenterPoint := Center;  // Сохраняем центр первого круга
-      end
-      else
-      begin
-        // Расширяем BBox
-        if Center.x - Radius < FResult.BBoxMin.x then FResult.BBoxMin.x := Center.x - Radius;
-        if Center.y - Radius < FResult.BBoxMin.y then FResult.BBoxMin.y := Center.y - Radius;
-        if Center.z - Radius < FResult.BBoxMin.z then FResult.BBoxMin.z := Center.z - Radius;
-        if Center.x + Radius > FResult.BBoxMax.x then FResult.BBoxMax.x := Center.x + Radius;
-        if Center.y + Radius > FResult.BBoxMax.y then FResult.BBoxMax.y := Center.y + Radius;
-        if Center.z + Radius > FResult.BBoxMax.z then FResult.BBoxMax.z := Center.z + Radius;
-      end;
-      
-      VertexArray.done;
-      
-      Inc(FResult.CircleCount);
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: Circle drawn successfully', [], LM_Info);
+      FResult.BBoxMin := CircleParseResult.BBoxMin;
+      FResult.BBoxMax := CircleParseResult.BBoxMax;
+      FResult.BBoxLoaded := True;
+      FResult.CenterPoint := CircleParseResult.Center;
     end
     else
     begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: Circle has zero radius, skipping', [], LM_Warning);
+      { Расширяем BBox }
+      if CircleParseResult.BBoxMin.x < FResult.BBoxMin.x then FResult.BBoxMin.x := CircleParseResult.BBoxMin.x;
+      if CircleParseResult.BBoxMin.y < FResult.BBoxMin.y then FResult.BBoxMin.y := CircleParseResult.BBoxMin.y;
+      if CircleParseResult.BBoxMin.z < FResult.BBoxMin.z then FResult.BBoxMin.z := CircleParseResult.BBoxMin.z;
+      if CircleParseResult.BBoxMax.x > FResult.BBoxMax.x then FResult.BBoxMax.x := CircleParseResult.BBoxMax.x;
+      if CircleParseResult.BBoxMax.y > FResult.BBoxMax.y then FResult.BBoxMax.y := CircleParseResult.BBoxMax.y;
+      if CircleParseResult.BBoxMax.z > FResult.BBoxMax.z then FResult.BBoxMax.z := CircleParseResult.BBoxMax.z;
     end;
-  except
-    on E: Exception do
+    
+    { Сохраняем вершины круга для отрисовки }
+    if CircleParseResult.HasCircleVertices and not FResult.HasCircleVertices then
     begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: HandleCircle error: %s', [E.Message], LM_Error);
-      SkipCommand(CommandSize);
+      FResult.CircleVertices.init(CircleParseResult.CircleVertices.Count);
+      pV := CircleParseResult.CircleVertices.beginiterate(ir);
+      while pV <> nil do
+      begin
+        FResult.CircleVertices.PushBackData(pV^);
+        pV := CircleParseResult.CircleVertices.iterate(ir);
+      end;
+      FResult.HasCircleVertices := True;
     end;
+    
+    Inc(FResult.CircleCount);
   end;
 end;
 

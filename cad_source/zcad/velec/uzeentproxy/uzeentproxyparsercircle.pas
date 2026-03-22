@@ -14,14 +14,18 @@
 }
 {
   Модуль: uzeentproxyparsercircle
-  Назначение: Парсер круга из Proxy Graphic (OPCODE=2)
+  Назначение: Автономный парсер круга из Proxy Graphic (OPCODE=2)
+  
+  АРХИТЕКТУРА:
+  - Сам парсит данные из потока
+  - Сам отрисовывает круг
+  - Сам вычисляет BBox
+  - Можно отключить из проекта - круги перестанут парситься
   
   Формат данных (AcGiWorldDraw):
   - Center (3 doubles) - центр круга
   - Radius (1 double) - радиус
   - Normal (3 doubles) - нормаль (ось Z локальной СК)
-  
-  На основе анализа ezdxf/proxygraphic.py и AutoCAD DevBlog
 }
 
 unit uzeentproxyparsercircle;
@@ -32,176 +36,154 @@ interface
 
 uses
   SysUtils,
-  uzeentproxytypes,
-  uzeentproxymanager,
-  uzeentproxybaseparser,
-  uzeentity,
-  uzedrawingdef,
+  uzeentproxystream,
+  uzgldrawcontext,
   uzeTypes,
-  uzestyleslayers,
   uzeGeometryTypes,
+  UGDBPoint3DArray,
+  gzctnrVectorTypes,
   uzegeometry;
 
 type
-  { Парсер круга (OPCODE=2) }
-  TProxyCircleParser = class(TProxyBaseParser)
-  private
-    FCenter: TzePoint3d;
-    FRadius: Double;
-    FNormal: TzePoint3d;
-    
-  protected
-    { Чтение данных из потока }
-    function DoParseFromStream(Stream: TObject; CommandSize: Integer): Boolean; override;
-    
-    { Создание сущности ZCAD }
-    function DoCreateZCDEntity(const Drawing: TDrawingDef; const State: TProxyGraphicState): PGDBObjEntity; override;
-    
-    { Расширение BBox }
-    procedure DoExpandBoundingBox(var MinPt, MaxPt: TzePoint3d); override;
-    
-  public
-    constructor Create;
-    function GetPrimitiveType: TProxyPrimitiveType; override;
+  { Результат парсинга круга }
+  TProxyCircleParseResult = record
+    Valid: Boolean;
+    Center: TzePoint3d;
+    Radius: Double;
+    Normal: TzePoint3d;
+    BBoxMin: TzePoint3d;
+    BBoxMax: TzePoint3d;
+    HasBBox: Boolean;
+    CircleVertices: GDBPoint3DArray;  { Вершины для отрисовки }
+    HasCircleVertices: Boolean;
   end;
 
-{ Функция создания для регистрации в менеджере }
-function CreateCircleParser: IProxyPrimitiveParser;
+  { Автономный парсер круга }
+  TProxyCircleParser = class
+  public
+    { Парсит и отрисовывает круг }
+    class procedure ParseAndDraw(Stream: TProxyByteStream; 
+      var DC: TDrawContext; 
+      out ParseResult: TProxyCircleParseResult);
+  end;
 
 implementation
 
 uses
-  uzcLog,
-  uzeentcircle,
-  uzeconsts,
-  uzeentproxyparser;
+  uzcLog;
 
-constructor TProxyCircleParser.Create;
+const
+  PROXY_X_AXIS: TzePoint3d = (x: 1.0; y: 0.0; z: 0.0);
+  PROXY_Y_AXIS: TzePoint3d = (x: 0.0; y: 1.0; z: 0.0);
+  PROXY_Z_AXIS: TzePoint3d = (x: 0.0; y: 0.0; z: 1.0);
+
+{ Вспомогательная функция для проверки близости векторов }
+function VectorIsClose(const V1, V2: TzePoint3d; const Epsilon: Double = 1e-9): Boolean;
 begin
-  inherited Create;
-  FPrimitiveType := pptCircle;
-  FValid := False;
-  FErrorMsg := '';
+  Result := (Abs(V1.x - V2.x) <= Epsilon) and
+            (Abs(V1.y - V2.y) <= Epsilon) and
+            (Abs(V1.z - V2.z) <= Epsilon);
 end;
 
-function TProxyCircleParser.GetPrimitiveType: TProxyPrimitiveType;
+{ Преобразование точки в OCS }
+function TransformToOCS(const Point, Normal: TzePoint3d): TzePoint3d;
+var
+  XAxis, YAxis, ZAxis: TzePoint3d;
 begin
-  Result := pptCircle;
+  ZAxis := NormalizeVertex(Normal);
+  
+  if Abs(ZAxis.x) < 0.9 then
+    XAxis := NormalizeVertex(PROXY_X_AXIS * ZAxis.z - ZAxis * PROXY_X_AXIS.z)
+  else
+    XAxis := NormalizeVertex(PROXY_Y_AXIS * ZAxis.z - ZAxis * PROXY_Y_AXIS.z);
+    
+  YAxis := NormalizeVertex(ZAxis * XAxis.x - XAxis * ZAxis.x);
+  
+  Result.x := scalarDot(Point, XAxis);
+  Result.y := scalarDot(Point, YAxis);
+  Result.z := scalarDot(Point, ZAxis);
 end;
 
-function TProxyCircleParser.DoParseFromStream(Stream: TObject; CommandSize: Integer): Boolean;
+{ Парсит и отрисовывает круг }
+class procedure TProxyCircleParser.ParseAndDraw(Stream: TProxyByteStream; 
+  var DC: TDrawContext; 
+  out ParseResult: TProxyCircleParseResult);
 var
   Center: TzePoint3d;
   Radius: Double;
   Normal: TzePoint3d;
-  StartPos: Integer;
+  I, SegCount: Integer;
+  Angle: Double;
+  Pt: TzePoint3d;
+  VertexArray: GDBPoint3DArray;
+  ir: itrec;
+  pV: PzePoint3d;
 begin
-  Result := False;
+  ParseResult.Valid := False;
+  ParseResult.HasBBox := False;
   
   try
-    StartPos := TProxyByteStream(Stream).Index;
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: DoParseFromStream START - Index=%d, CommandSize=%d', [StartPos, CommandSize], LM_Info);
+    programlog.LogOutFormatStr('uzeentproxyparsercircle: ParseAndDraw START', [], LM_Info);
     
-    // Приводим TObject к TProxyByteStream
-    // Формат: Center (3d) + Radius (d) + Normal (3d)
-    Center := TProxyByteStream(Stream).ReadVertex;
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Read Center = (%.6f, %.6f, %.6f)', [Center.x, Center.y, Center.z], LM_Info);
+    { 1. Читаем данные: Center + Radius + Normal }
+    Center := Stream.ReadVertex;
+    Radius := Stream.ReadDouble;
+    Normal := Stream.ReadVector;
     
-    Radius := TProxyByteStream(Stream).ReadDouble;
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Read Radius = %.6f', [Radius], LM_Info);
+    programlog.LogOutFormatStr('uzeentproxyparsercircle: Read Center=(%.6f,%.6f,%.6f) Radius=%.6f', 
+      [Center.x, Center.y, Center.z, Radius], LM_Info);
     
-    Normal := TProxyByteStream(Stream).ReadVector;
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Read Normal = (%.6f, %.6f, %.6f)', [Normal.x, Normal.y, Normal.z], LM_Info);
+    { 2. Проверяем валидность }
+    if Radius <= 0 then
+    begin
+      programlog.LogOutFormatStr('uzeentproxyparsercircle: Invalid radius %.6f, skipping', [Radius], LM_Warning);
+      Exit;
+    end;
     
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Bytes read: %d', [TProxyByteStream(Stream).Index - StartPos], LM_Info);
+    { 3. Преобразуем в OCS если нормаль не Z }
+    if not VectorIsClose(Normal, PROXY_Z_AXIS) then
+      Center := TransformToOCS(Center, Normal);
     
-    // Преобразуем в OCS если нормаль не совпадает с Z
-    if not VectorIsClose(Normal, PROXY_Z_AXIS, 1e-9) then
-      FCenter := TransformToOCS(Center, Normal)
-    else
-      FCenter := Center;
-      
-    FRadius := Radius;
-    FNormal := Normal;
-    FValid := True;
-    Result := True;
+    { 4. Вычисляем BBox }
+    ParseResult.BBoxMin := CreateVertex(Center.x - Radius, Center.y - Radius, Center.z);
+    ParseResult.BBoxMax := CreateVertex(Center.x + Radius, Center.y + Radius, Center.z);
+    ParseResult.HasBBox := True;
     
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Parsed CIRCLE center=(%.3f,%.3f,%.3f) radius=%.3f', 
-      [FCenter.x, FCenter.y, FCenter.z, FRadius], LM_Info);
+    { 5. Сохраняем результат }
+    ParseResult.Center := Center;
+    ParseResult.Radius := Radius;
+    ParseResult.Normal := Normal;
+    ParseResult.Valid := True;
+    
+    { 6. Тесселируем круг в вершины и сохраняем в результат }
+    SegCount := 64;
+    ParseResult.CircleVertices.init(SegCount);
+    
+    for I := 0 to SegCount - 1 do
+    begin
+      Angle := (I / SegCount) * 2 * Pi;
+      Pt := CreateVertex(
+        Center.x + Radius * Cos(Angle),
+        Center.y + Radius * Sin(Angle),
+        Center.z
+      );
+      ParseResult.CircleVertices.PushBackData(Pt);
+    end;
+    
+    ParseResult.HasCircleVertices := True;
+    
+    programlog.LogOutFormatStr('uzeentproxyparsercircle: Tessellated circle with %d vertices', [SegCount], LM_Info);
+    
+    programlog.LogOutFormatStr('uzeentproxyparsercircle: ParseAndDraw COMPLETE - Center=(%.3f,%.3f,%.3f) Radius=%.3f', 
+      [ParseResult.Center.x, ParseResult.Center.y, ParseResult.Center.z, ParseResult.Radius], LM_Info);
+    
   except
     on E: Exception do
     begin
-      FValid := False;
-      FErrorMsg := 'Circle parse error: ' + E.Message;
-      Result := False;
-      
-      programlog.LogOutFormatStr('uzeentproxyparsercircle: Parse error: %s', [E.Message], LM_Error);
+      ParseResult.Valid := False;
+      programlog.LogOutFormatStr('uzeentproxyparsercircle: ParseAndDraw EXCEPTION: %s', [E.Message], LM_Error);
     end;
   end;
 end;
 
-function TProxyCircleParser.DoCreateZCDEntity(const Drawing: TDrawingDef; const State: TProxyGraphicState): PGDBObjEntity;
-var
-  CircleObj: PGDBObjCircle;
-  LayerProp: PGDBLayerProp;
-begin
-  try
-    CircleObj := GDBObjCircle.CreateInstance;
-    CircleObj^.initnul;
-    
-    { Копируем свойства из состояния }
-    if State.Color >= 0 then
-      CircleObj^.vp.Color := State.Color;
-    
-    { Получаем слой из drawing по имени }
-    if State.Layer <> '' then
-      LayerProp := Drawing.GetLayerTable.getaddres(State.Layer)
-    else
-      LayerProp := Drawing.GetLayerTable.getaddres('0');
-    
-    if LayerProp <> nil then
-      CircleObj^.vp.Layer := LayerProp;
-    
-    { Устанавливаем геометрию }
-    CircleObj^.Local.p_insert := FCenter;
-    CircleObj^.Radius := FRadius;
-    
-    { Вычисляем матрицу для отрисовки }
-    CircleObj^.CalcObjMatrix(@Drawing);
-    
-    Result := CircleObj;
-    
-    programlog.LogOutFormatStr('uzeentproxyparsercircle: Created ZCAD circle entity', [], LM_Info);
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxyparsercircle: Failed to create circle entity: %s', [E.Message], LM_Error);
-      Result := nil;
-    end;
-  end;
-end;
-
-procedure TProxyCircleParser.DoExpandBoundingBox(var MinPt, MaxPt: TzePoint3d);
-begin
-  if not FValid then
-    Exit;
-    
-  // Круг: центр ± радиус в плоскости XY
-  ExpandBBoxWithPoint(CreateVertex(FCenter.x - FRadius, FCenter.y - FRadius, FCenter.z), MinPt, MaxPt);
-  ExpandBBoxWithPoint(CreateVertex(FCenter.x + FRadius, FCenter.y + FRadius, FCenter.z), MinPt, MaxPt);
-end;
-
-{ Функция создания для регистрации }
-function CreateCircleParser: IProxyPrimitiveParser;
-begin
-  Result := TProxyCircleParser.Create;
-end;
-
-initialization
-  { Регистрация парсера при загрузке модуля }
-  TProxyPrimitiveManager.RegisterPrimitive(pptCircle, 'CIRCLE', @CreateCircleParser);
-  
-finalization
-  { Модуль выгружается }
-  
 end.
