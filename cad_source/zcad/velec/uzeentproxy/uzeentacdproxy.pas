@@ -65,11 +65,15 @@ uses
   uzeentproxygraphicparser,
   uzeentproxybaseparser,
   uzeentproxyparsercircle,
+  uzeentproxyparsertext,
+  uzeenttext,
   UGDBSelectedObjArray,
   uzesnap,
   uzegeomentitiestree,
   gzctnrVectorTypes,
   gzctnrVector,
+  uzeentabstracttext,
+  //uzedrawingdef,
   UGDBPoint3DArray,
   UGDBVisibleTreeArray;
 
@@ -103,6 +107,12 @@ type
     { Вершины круга для отрисовки }
     FCircleVertices: GDBPoint3DArray;
     FHasCircleVertices: Boolean;
+    
+    { Данные текста для отрисовки }
+    FTextInsert: TzePoint3d;
+    FTextHeight: Double;
+    FTextContent: string;
+    FHasText: Boolean;
 
     { Отрисовывает одно ребро габаритной рамки }
     procedure DrawBBoxEdge(var DC: TDrawContext;
@@ -231,6 +241,8 @@ begin
   FHasCenterPoint := False;
   FHasCircleVertices := False;
   FCircleVertices.init(0);
+  FHasText := False;
+  FTextContent := '';
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -242,6 +254,8 @@ begin
   FHasCenterPoint := False;
   FHasCircleVertices := False;
   FCircleVertices.init(0);
+  FHasText := False;
+  FTextContent := '';
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -289,8 +303,8 @@ begin
       FProxyDataBytes[I] := Lo(StrToIntDef('$' + Copy(ProxyDataHex, I * 2 + 1, 2), 0));
     end;
 
-    { Сохраняем данные для последующего парсинга }
-    FBBoxLoaded := True;
+    { Данные загружены, но BBox будет вычислен после парсинга }
+    FBBoxLoaded := False;
 
     programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF - Loaded proxy data (%d bytes)', [Len], LM_Info);
   end else begin
@@ -349,7 +363,7 @@ begin
     
     programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Using NEW modular architecture', [], LM_Info);
     
-    if FBBoxLoaded and (Length(FProxyDataBytes) > 0) then
+    if Length(FProxyDataBytes) > 0 then
     begin
       programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Using NEW ProxyGraphicParser', [], LM_Info);
       programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Proxy data length: %d bytes', [Length(FProxyDataBytes)], LM_Info);
@@ -378,9 +392,32 @@ begin
         { Обновляем BBox из результата парсинга ВСЕГДА }
         if ParseResult.BBoxLoaded then
         begin
-          FBBoxMinInOCS := ParseResult.BBoxMin;
-          FBBoxMaxInOCS := ParseResult.BBoxMax;
-          FBBoxLoaded := True;
+          { Расширяем BBox от всех примитивов }
+          if not FBBoxLoaded then
+          begin
+            FBBoxMinInOCS := ParseResult.BBoxMin;
+            FBBoxMaxInOCS := ParseResult.BBoxMax;
+            FBBoxLoaded := True;
+            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox initialized from primitive: Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
+              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z], LM_Info);
+          end
+          else
+          begin
+            { Расширяем существующий BBox }
+            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Expanding BBox: Old Min=(%.3f,%.3f,%.3f) New Min=(%.3f,%.3f,%.3f)', 
+              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, ParseResult.BBoxMin.x, ParseResult.BBoxMin.y, ParseResult.BBoxMin.z], LM_Info);
+            
+            if ParseResult.BBoxMin.x < FBBoxMinInOCS.x then FBBoxMinInOCS.x := ParseResult.BBoxMin.x;
+            if ParseResult.BBoxMin.y < FBBoxMinInOCS.y then FBBoxMinInOCS.y := ParseResult.BBoxMin.y;
+            if ParseResult.BBoxMin.z < FBBoxMinInOCS.z then FBBoxMinInOCS.z := ParseResult.BBoxMin.z;
+            if ParseResult.BBoxMax.x > FBBoxMaxInOCS.x then FBBoxMaxInOCS.x := ParseResult.BBoxMax.x;
+            if ParseResult.BBoxMax.y > FBBoxMaxInOCS.y then FBBoxMaxInOCS.y := ParseResult.BBoxMax.y;
+            if ParseResult.BBoxMax.z > FBBoxMaxInOCS.z then FBBoxMaxInOCS.z := ParseResult.BBoxMax.z;
+            
+            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox expanded: New Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
+              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z], LM_Info);
+          end;
+          
           vp.BoundingBox.LBN := FBBoxMinInOCS;
           vp.BoundingBox.RTF := FBBoxMaxInOCS;
           
@@ -403,8 +440,21 @@ begin
             FHasCircleVertices := True;
           end;
           
+          { Сохраняем данные текста для отрисовки }
+          if ParseResult.HasText then
+          begin
+            FTextInsert := ParseResult.TextInsert;
+            FTextHeight := ParseResult.TextHeight;
+            FTextContent := ParseResult.TextContent;
+            FHasText := True;
+          end;
+          
           programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox updated from proxy data, Center=(%.3f,%.3f,%.3f)', 
             [FCenterPoint.x, FCenterPoint.y, FCenterPoint.z], LM_Info);
+        end
+        else
+        begin
+          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No BBox from parser', [], LM_Warning);
         end;
       finally
         ProxyParser.Free;
@@ -412,7 +462,7 @@ begin
     end
     else
     begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No proxy data to parse', [], LM_Warning);
+      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No proxy data to parse (Length=%d)', [Length(FProxyDataBytes)], LM_Warning);
     end;
     
     { Круги будут отрисованы в DrawGeometry }
@@ -430,6 +480,7 @@ var
   v000, v100, v010, v110: TzePoint3d;
   v001, v101, v011, v111: TzePoint3d;
   bbMin, bbMax: TzePoint3d;
+  TextObj: PGDBObjText;
 begin
   if not FBBoxLoaded then
     Exit;
@@ -470,6 +521,31 @@ begin
   begin
     programlog.LogOutFormatStr('uzeentacdproxy: DrawGeometry - Drawing %d circle vertices', [FCircleVertices.Count], LM_Info);
     DC.drawer.DrawContour3DInModelSpace(FCircleVertices, DC.DrawingContext.matrixs, True);
+  end;
+  
+  { Рисуем текст если есть }
+  if FHasText and (FTextContent <> '') then
+  begin
+    programlog.LogOutFormatStr('uzeentacdproxy: DrawGeometry - Drawing text "%s" at (%.3f,%.3f,%.3f)', 
+      [FTextContent, FTextInsert.x, FTextInsert.y, FTextInsert.z], LM_Info);
+    
+    { Создаем сущность текста }
+
+    TextObj := GDBObjText.CreateInstance;
+    TextObj^.initnul(nil);
+    TextObj^.Local.p_insert := FTextInsert;
+    TextObj^.Content := FTextContent;
+    TextObj^.obj_height := FTextHeight;
+    TextObj^.textprop.size := FTextHeight;
+    TextObj^.textprop.wfactor := 1.0;
+    TextObj^.textprop.oblique := 0.0;
+    TextObj^.textprop.justify := jstl; { Left baseline }
+
+    { Вычисляем матрицу и отрисовываем }
+    TextObj^.CalcObjMatrix(nil);
+    TextObj^.FormatEntity(DC.DrawingContext.DrawingDef^, DC, EFDraw);
+    TextObj^.done;
+    FreeMem(Pointer(TextObj));
   end;
   
   { Рисуем контрольную точку в центре }

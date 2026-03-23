@@ -50,7 +50,8 @@ uses
   uzeTypes,
   gzctnrVectorTypes,
   gzctnrVector,
-  uzeentproxyparsercircle;
+  uzeentproxyparsercircle,
+  uzeentproxyparsertext;
 
 type
   { Результат парсинга Proxy Graphic }
@@ -64,6 +65,11 @@ type
     CenterPoint: TzePoint3d;  // Центр первого круга для контрольной точки
     CircleVertices: GDBPoint3DArray;  // Вершины круга для отрисовки
     HasCircleVertices: Boolean;
+    { Данные текста для отрисовки }
+    TextInsert: TzePoint3d;
+    TextHeight: Double;
+    TextContent: string;
+    HasText: Boolean;
   end;
 
   { Парсер Proxy Graphic }
@@ -85,6 +91,7 @@ type
     
     { Обработчики команд }
     procedure HandleCircle(CommandSize: Integer);
+    procedure HandleText(CommandSize: Integer);
     procedure HandleArc(CommandSize: Integer);
     procedure HandlePolyline(CommandSize: Integer);
     procedure HandleSetColor(CommandSize: Integer);
@@ -182,6 +189,8 @@ begin
       2: HandleCircle(CommandSize);       // Круг
       4: HandleArc(CommandSize);          // Дуга
       6: HandlePolyline(CommandSize);     // Полилиния
+      10: HandleText(CommandSize);        // Текст (ANSI)
+      38: HandleText(CommandSize);        // Текст (Unicode v2)
       14: HandleSetColor(CommandSize);    // Цвет
       16: HandleSetLayer(CommandSize);    // Слой
       29, 30: HandlePushMatrix(CommandSize); // PushTransform
@@ -208,7 +217,7 @@ var
   pV: PzePoint3d;
 begin
   { Вызываем автономный парсер круга из uzeentproxyparsercircle.pas }
-  TProxyCircleParser.ParseAndDraw(FStream, FDC, CircleParseResult);
+  TProxyCircleParser.ParseAndDraw(FStream, FDrawing, FDC, CircleParseResult);
   
   { Если круг успешно распаршен, обновляем BBox и сохраняем вершины результата }
   if CircleParseResult.Valid and CircleParseResult.HasBBox then
@@ -253,6 +262,46 @@ begin
   // TODO: Реализовать парсинг дуги
   programlog.LogOutFormatStr('uzeentproxygraphicparser: Arc command not implemented yet', [], LM_Warning);
   SkipCommand(CommandSize);
+end;
+
+procedure TProxyGraphicParser.HandleText(CommandSize: Integer);
+var
+  TextParseResult: TProxyTextParseResult;
+begin
+  { Вызываем автономный парсер текста из uzeentproxyparsertext.pas }
+  { Для OpCode=10 используем ParseAndDraw, для OpCode=38 - ParseUnicodeText2 }
+  TProxyTextParser.ParseUnicodeText2(FStream, FDrawing, FDC, TextParseResult);
+  
+  { Если текст успешно распаршен, обновляем BBox и сохраняем данные для отрисовки }
+  if TextParseResult.Valid and TextParseResult.HasBBox then
+  begin
+    if not FResult.BBoxLoaded then
+    begin
+      FResult.BBoxMin := TextParseResult.BBoxMin;
+      FResult.BBoxMax := TextParseResult.BBoxMax;
+      FResult.BBoxLoaded := True;
+      FResult.CenterPoint := TextParseResult.Insert;
+    end
+    else
+    begin
+      { Расширяем BBox }
+      if TextParseResult.BBoxMin.x < FResult.BBoxMin.x then FResult.BBoxMin.x := TextParseResult.BBoxMin.x;
+      if TextParseResult.BBoxMin.y < FResult.BBoxMin.y then FResult.BBoxMin.y := TextParseResult.BBoxMin.y;
+      if TextParseResult.BBoxMin.z < FResult.BBoxMin.z then FResult.BBoxMin.z := TextParseResult.BBoxMin.z;
+      if TextParseResult.BBoxMax.x > FResult.BBoxMax.x then FResult.BBoxMax.x := TextParseResult.BBoxMax.x;
+      if TextParseResult.BBoxMax.y > FResult.BBoxMax.y then FResult.BBoxMax.y := TextParseResult.BBoxMax.y;
+      if TextParseResult.BBoxMax.z > FResult.BBoxMax.z then FResult.BBoxMax.z := TextParseResult.BBoxMax.z;
+    end;
+    
+    { Сохраняем данные текста для отрисовки }
+    FResult.TextInsert := TextParseResult.Insert;
+    FResult.TextHeight := TextParseResult.Height;
+    FResult.TextContent := TextParseResult.Text;
+    FResult.HasText := True;
+    
+    Inc(FResult.EntityCount);
+    programlog.LogOutFormatStr('uzeentproxygraphicparser: Text parsed successfully: "%s"', [TextParseResult.Text], LM_Info);
+  end;
 end;
 
 procedure TProxyGraphicParser.HandlePolyline(CommandSize: Integer);

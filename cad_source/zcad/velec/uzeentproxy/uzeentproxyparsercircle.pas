@@ -41,6 +41,7 @@ uses
   uzeTypes,
   uzeGeometryTypes,
   UGDBPoint3DArray,
+  uzedrawingdef,
   gzctnrVectorTypes,
   uzegeometry;
 
@@ -63,6 +64,7 @@ type
   public
     { Парсит и отрисовывает круг }
     class procedure ParseAndDraw(Stream: TProxyByteStream; 
+      var Drawing: TDrawingDef;
       var DC: TDrawContext; 
       out ParseResult: TProxyCircleParseResult);
   end;
@@ -106,6 +108,7 @@ end;
 
 { Парсит и отрисовывает круг }
 class procedure TProxyCircleParser.ParseAndDraw(Stream: TProxyByteStream; 
+  var Drawing: TDrawingDef;
   var DC: TDrawContext; 
   out ParseResult: TProxyCircleParseResult);
 var
@@ -173,7 +176,6 @@ begin
     ParseResult.HasCircleVertices := True;
     
     programlog.LogOutFormatStr('uzeentproxyparsercircle: Tessellated circle with %d vertices', [SegCount], LM_Info);
-    
     programlog.LogOutFormatStr('uzeentproxyparsercircle: ParseAndDraw COMPLETE - Center=(%.3f,%.3f,%.3f) Radius=%.3f', 
       [ParseResult.Center.x, ParseResult.Center.y, ParseResult.Center.z, ParseResult.Radius], LM_Info);
     
