@@ -13,7 +13,7 @@
 *****************************************************************************
 }
 {
-@author(Vladimir Bobrov)
+@author(Vladimir Bobrov) use AI
 }
 {$mode delphi}
 
@@ -643,36 +643,7 @@ var
   procedure ApplyAndFinish;
   var
     dispmatr: TzeTypedMatrix4d;
-    srcLen, dstLen, scaleValue: double;
   begin
-    // Вычисляем длины векторов для отладки
-    srcLen := uzegeometry.Vertexlength(srcPoint1, srcPoint2);
-    dstLen := uzegeometry.Vertexlength(dstPoint1, dstPoint2);
-
-    LogMessage('');
-    LogMessage('ALIGN: === ВЫЧИСЛЕНИЕ ТРАНСФОРМАЦИИ ===');
-    LogMessage(Format('ALIGN: Src1=(%.3f,%.3f,%.3f), Dst1=(%.3f,%.3f,%.3f)',
-      [srcPoint1.x, srcPoint1.y, srcPoint1.z, dstPoint1.x, dstPoint1.y, dstPoint1.z]));
-    LogMessage(Format('ALIGN: Src2=(%.3f,%.3f,%.3f), Dst2=(%.3f,%.3f,%.3f)',
-      [srcPoint2.x, srcPoint2.y, srcPoint2.z, dstPoint2.x, dstPoint2.y, dstPoint2.z]));
-    if hasPoint3 then
-      LogMessage(Format('ALIGN: Src3=(%.3f,%.3f,%.3f), Dst3=(%.3f,%.3f,%.3f)',
-        [srcPoint3.x, srcPoint3.y, srcPoint3.z, dstPoint3.x, dstPoint3.y, dstPoint3.z]));
-    LogMessage(Format('ALIGN: Длина исходного вектора: %.6f', [srcLen]));
-    LogMessage(Format('ALIGN: Длина целевого вектора: %.6f', [dstLen]));
-
-    if srcLen > ALIGN_MIN_DISTANCE then begin
-      scaleValue := dstLen / srcLen;
-      LogMessage(Format('ALIGN: Коэффициент масштабирования: %.6f', [scaleValue]));
-    end
-    else
-      LogMessage('ALIGN: Предупреждение - нулевая длина исходного вектора!');
-
-    LogMessage(Format('ALIGN: Масштабирование: %s', [BoolToStr(applyScale, True)]));
-    LogMessage(Format('ALIGN: Третья пара точек: %s', [BoolToStr(hasPoint3, True)]));
-    LogMessage('ALIGN: ================================');
-    LogMessage('');
-
     if hasPoint3 then
       dispmatr := CalcAlignMatrix3Point(
         srcPoint1, dstPoint1, srcPoint2, dstPoint2, srcPoint3, dstPoint3, applyScale
@@ -683,11 +654,6 @@ var
       );
     ApplyTransformToObjects(pcoa, dispmatr);
 
-    LogMessage('ALIGN: Трансформация применена');
-    programlog.LogOutFormatStr(
-      'uzccommand_align: трансформация применена к %d объектам',
-      [objectCount], LM_Info
-    );
   end;
 
 begin
@@ -698,7 +664,7 @@ begin
 
   LogMessage('========================================');
   LogMessage('ALIGN: Запуск команды ALIGN');
-  LogMessage('========================================');
+  //LogMessage('========================================');
 
   programlog.LogOutFormatStr(
     'uzccommand_align: запуск команды ALIGN', [], LM_Info
@@ -733,53 +699,29 @@ begin
           case CmdMode of
             ACMWaitSrc1: begin
               srcPoint1 := p1;
-              LogMessage(Format('ALIGN: Введена src1 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: src1=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
-              );
               SetAlignCmdMode(ACMWaitDst1);
             end;
             ACMWaitDst1: begin
               dstPoint1 := p1;
-              LogMessage(Format('ALIGN: Введена dst1 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: dst1=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
-              );
               SetAlignCmdMode(ACMWaitSrc2);
             end;
             ACMWaitSrc2: begin
               srcPoint2 := p1;
-              LogMessage(Format('ALIGN: Введена src2 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: src2=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
-              );
               SetAlignCmdMode(ACMWaitDst2);
             end;
             ACMWaitDst2: begin
               dstPoint2 := p1;
-              LogMessage(Format('ALIGN: Введена dst2 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: dst2=(%.3f,%.3f)', [p1.x, p1.y], LM_Info
-              );
               SetAlignCmdMode(ACMWaitSrc3);
             end;
             ACMWaitSrc3: begin
               // Третья исходная точка — сохраняем и переходим к ожиданию целевой
               srcPoint3 := p1;
-              LogMessage(Format('ALIGN: Введена src3 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: src3=(%.3f,%.3f,%.3f)', [p1.x, p1.y, p1.z], LM_Info
-              );
               SetAlignCmdMode(ACMWaitDst3);
             end;
             ACMWaitDst3: begin
               // Третья пара принята — используется для вращения вокруг оси dst1→dst2
               dstPoint3 := p1;
               hasPoint3 := True;
-              LogMessage(Format('ALIGN: Введена dst3 = (%.3f, %.3f, %.3f)', [p1.x, p1.y, p1.z]));
-              programlog.LogOutFormatStr(
-                'uzccommand_align: dst3=(%.3f,%.3f,%.3f)', [p1.x, p1.y, p1.z], LM_Info
-              );
               SetAlignCmdMode(ACMWaitScale);
             end;
           end;
@@ -787,10 +729,6 @@ begin
         IRId:
           // Нажатие кнопки [Отменить] (Enter) для пропуска третьей пары точек
           if (CmdMode = ACMWaitSrc3) and (commandmanager.GetLastId = CLPIdUser1) then begin
-            LogMessage('ALIGN: Третья пара точек пропущена (Enter)');
-            programlog.LogOutFormatStr(
-              'uzccommand_align: третья пара пропущена', [], LM_Info
-            );
             SetAlignCmdMode(ACMWaitScale);
           end;
 
