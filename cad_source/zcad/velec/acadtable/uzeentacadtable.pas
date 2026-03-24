@@ -85,7 +85,8 @@ type
     // Возвращает текст ячейки (строка rowIdx, столбец colIdx)
     function GetCellText(RowIdx, ColIdx: Integer): String;
     // Строит визуальное представление в ConstObjArray
-    procedure BuildVisualRepresentation(var ADrawing: TDrawingDef);
+    procedure BuildVisualRepresentation(var ADrawing: TDrawingDef;
+      var ADC: TDrawContext);
     // Добавляет ячейку в массив текстов по её линейному индексу
     procedure SetCellTextByIndex(CellIdx: Integer; const AText: String);
 
@@ -419,10 +420,10 @@ end;
 // Горизонтальные линии — разделители строк (FRowCount + 1 линия).
 // Вертикальные линии — разделители столбцов (FColCount + 1 линия).
 // Текст добавляется только для непустых ячеек.
-// Примечание: FormatEntity НЕ вызывается здесь, он вызывается в BuildGeometry
-// после применения трансформации.
+// Каждая созданная сущность форматируется через FormatEntity.
 procedure GDBObjAcadTable.BuildVisualRepresentation(
-  var ADrawing: TDrawingDef);
+  var ADrawing: TDrawingDef;
+  var ADC: TDrawContext);
 var
   RowIdx, ColIdx: Integer;
   CurrentY, CurrentX: Double;
@@ -461,6 +462,7 @@ begin
     PLine^.CoordInOCS.lEnd.y := -CurrentY;
     PLine^.CoordInOCS.lEnd.z := 0;
     CopyVPto(PLine^);
+    PLine^.FormatEntity(ADrawing, ADC);
 
     if RowIdx < FRowCount then
       CurrentY := CurrentY + GetRowHeight(RowIdx);
@@ -478,6 +480,7 @@ begin
     PLine^.CoordInOCS.lEnd.y := -TotalHeight;
     PLine^.CoordInOCS.lEnd.z := 0;
     CopyVPto(PLine^);
+    PLine^.FormatEntity(ADrawing, ADC);
 
     if ColIdx < FColCount then
       CurrentX := CurrentX + GetColWidth(ColIdx);
@@ -503,7 +506,6 @@ begin
         PMText^.linespacef := 1;
         PMText^.Width := ColW * 0.9;
         PMText^.textprop.justify := jstl;
-        // Смещение текста от левого верхнего угла ячейки
         PMText^.Local.P_insert.x :=
           CurrentX + CAcadTableDefaultTextHeight * 0.5;
         PMText^.Local.P_insert.y :=
@@ -512,6 +514,7 @@ begin
         PMText^.TXTStyle :=
           pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
         CopyVPto(PMText^);
+        PMText^.FormatEntity(ADrawing, ADC);
       end;
 
       CurrentX := CurrentX + ColW;
@@ -534,6 +537,7 @@ var
   m4: TzeTypedMatrix4d;
   ir: itrec;
   pv: PGDBObjEntity;
+  DC: TDrawContext;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildGeometry START built=%d rows=%d cols=%d Insert=(%.2f,%.2f)',
@@ -541,13 +545,15 @@ begin
 
   if not FGeometryBuilt then
   begin
+    DC := ADrawing.CreateDrawingRC;
+
     // Сохраняем матрицу таблицы
     m4 := getmatrix^;
     // Временно устанавливаем единичную матрицу для построения геометрии
     objmatrix := onematrix;
 
     // Строим визуальное представление (линии и текст) в локальных координатах
-    BuildVisualRepresentation(ADrawing);
+    BuildVisualRepresentation(ADrawing, DC);
 
     // Применяем трансформацию таблицы ко всем созданным объектам
     pv := ConstObjArray.beginiterate(ir);
