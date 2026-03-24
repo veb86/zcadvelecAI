@@ -543,7 +543,7 @@ begin
 
     { Вычисляем матрицу и отрисовываем }
     TextObj^.CalcObjMatrix(nil);
-    TextObj^.FormatEntity(DC.DrawingContext.DrawingDef^, DC, EFDraw);
+    //TextObj^.FormatEntity(DC.DrawingContext.DrawingDef^, DC, EFDraw);
     TextObj^.done;
     FreeMem(Pointer(TextObj));
   end;

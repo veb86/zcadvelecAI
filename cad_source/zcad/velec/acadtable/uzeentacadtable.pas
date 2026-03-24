@@ -34,7 +34,7 @@ uses
   uzgldrawcontext, uzedrawingdef, uzeentityfactory, uzeentcomplex,
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
-  uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
+  uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,gzctnrVectorTypes,
   uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble;
 
 const
@@ -232,12 +232,71 @@ var
   CellText: String;
   DoubleVal: Double;
   CellIndex: Integer;
+  SubclassMarker: String;
+  RowHeightsRead, ColWidthsRead: Boolean;
+  InCellData: Boolean;
+  CellTextRead: Boolean;
 begin
   programlog.LogOutStr('uzeentacadtable: LoadFromDXF START', LM_Info);
 
   CellIndex := 0;
   GroupCode := ARdr.ParseInteger;
+  RowHeightsRead := False;
+  ColWidthsRead := False;
+  InCellData := False;
+  CellTextRead := False;
 
+  // Пропускаем до первого 100
+  while (GroupCode <> 0) and (GroupCode <> 100) do
+  begin
+    ARdr.SkipString;
+    GroupCode := ARdr.ParseInteger;
+  end;
+
+  // Читаем первый маркер подкласса (AcDbEntity)
+  if GroupCode = 100 then
+  begin
+    SubclassMarker := ARdr.ParseString;
+    GroupCode := ARdr.ParseInteger;
+  end;
+
+  // Пропускаем AcDbEntity до AcDbBlockReference
+  while (GroupCode <> 0) and (GroupCode <> 100) do
+  begin
+    if not LoadFromDXFObjShared(ARdr, GroupCode, APtu, ADrawing, AContext) then
+      ARdr.SkipString;
+    GroupCode := ARdr.ParseInteger;
+  end;
+
+  // Читаем AcDbBlockReference
+  if GroupCode = 100 then
+  begin
+    SubclassMarker := ARdr.ParseString;
+    GroupCode := ARdr.ParseInteger;
+    
+    // Читаем данные AcDbBlockReference (включая точку вставки)
+    while (GroupCode <> 0) and (GroupCode <> 100) do
+    begin
+      case GroupCode of
+        10: FInsertPoint.x := ARdr.ParseDouble;
+        20: FInsertPoint.y := ARdr.ParseDouble;
+        30: FInsertPoint.z := ARdr.ParseDouble;
+      else
+        if not LoadFromDXFObjShared(ARdr, GroupCode, APtu, ADrawing, AContext) then
+          ARdr.SkipString;
+      end;
+      GroupCode := ARdr.ParseInteger;
+    end;
+  end;
+
+  // Читаем AcDbTable (настоящие данные таблицы)
+  if GroupCode = 100 then
+  begin
+    SubclassMarker := ARdr.ParseString;
+    GroupCode := ARdr.ParseInteger;
+  end;
+
+  // Теперь читаем данные таблицы
   while GroupCode <> 0 do
   begin
     // Пробуем общую обработку (хэндл, слой, цвет и т.д.)
@@ -249,20 +308,30 @@ begin
         20: FInsertPoint.y := ARdr.ParseDouble;
         30: FInsertPoint.z := ARdr.ParseDouble;
 
-        // Количество строк
+        // Количество строк — читаем ТОЛЬКО первый раз (до высот строк)
         91:
         begin
-          FRowCount := ARdr.ParseInteger;
-          if (FRowCount < 0) or (FRowCount > CAcadTableMaxDimension) then
-            FRowCount := 0;
+          if not RowHeightsRead then
+          begin
+            FRowCount := ARdr.ParseInteger;
+            if (FRowCount < 0) or (FRowCount > CAcadTableMaxDimension) then
+              FRowCount := 0;
+          end
+          else
+            ARdr.SkipString; // Это флаг override ячейки
         end;
 
-        // Количество столбцов
+        // Количество столбцов — читаем ТОЛЬКО первый раз (до высот строк)
         92:
         begin
-          FColCount := ARdr.ParseInteger;
-          if (FColCount < 0) or (FColCount > CAcadTableMaxDimension) then
-            FColCount := 0;
+          if not RowHeightsRead then
+          begin
+            FColCount := ARdr.ParseInteger;
+            if (FColCount < 0) or (FColCount > CAcadTableMaxDimension) then
+              FColCount := 0;
+          end
+          else
+            ARdr.SkipString; // Это флаг override ячейки
         end;
 
         // Высота строки (повторяется FRowCount раз)
@@ -272,6 +341,7 @@ begin
           if DoubleVal <= 0 then
             DoubleVal := CAcadTableDefaultRowHeight;
           FRowHeights.PushBackData(DoubleVal);
+          RowHeightsRead := True;
         end;
 
         // Ширина столбца (повторяется FColCount раз)
@@ -281,15 +351,50 @@ begin
           if DoubleVal <= 0 then
             DoubleVal := CAcadTableDefaultColWidth;
           FColWidths.PushBackData(DoubleVal);
+          ColWidthsRead := True;
         end;
 
-        // Текст ячейки
+        // Начало данных ячейки — код 171 (тип ячейки)
+        171:
+        begin
+          InCellData := True;
+          CellTextRead := False;
+          ARdr.SkipString;
+        end;
+
+        // Текст ячейки — код 302 (DXF 2007+) — приоритет
+        302:
+        begin
+          if InCellData and not CellTextRead then
+          begin
+            dxfLoadString(ARdr, CellText, AContext.Header);
+            SetCellTextByIndex(CellIndex, CellText);
+            Inc(CellIndex);
+            CellTextRead := True;
+          end
+          else
+            ARdr.SkipString;
+        end;
+
+        // Текст ячейки (старый формат, код 1) — читаем только если 302 не было
         1:
         begin
-          dxfLoadString(ARdr, CellText, AContext.Header);
-          SetCellTextByIndex(CellIndex, CellText);
-          Inc(CellIndex);
+          if InCellData and not CellTextRead then
+          begin
+            dxfLoadString(ARdr, CellText, AContext.Header);
+            SetCellTextByIndex(CellIndex, CellText);
+            Inc(CellIndex);
+            CellTextRead := True;
+          end
+          else
+            ARdr.SkipString;
         end;
+
+        // Пропускаем служебные коды ячеек
+        11, 21, 31, 90, 93, 94, 95, 96, 170, 172, 173, 174, 175, 176, 177, 178,
+        145, 300, 301, 304, 274, 275, 276, 278, 279, 280, 281, 283, 284, 285, 286,
+        288, 289, 63, 64, 65, 66, 68, 69, 70, 40, 41, 342, 343, 344, 340:
+          ARdr.SkipString;
 
       else
         // Неизвестный код — пропускаем значение
@@ -314,6 +419,8 @@ end;
 // Горизонтальные линии — разделители строк (FRowCount + 1 линия).
 // Вертикальные линии — разделители столбцов (FColCount + 1 линия).
 // Текст добавляется только для непустых ячеек.
+// Примечание: FormatEntity НЕ вызывается здесь, он вызывается в BuildGeometry
+// после применения трансформации.
 procedure GDBObjAcadTable.BuildVisualRepresentation(
   var ADrawing: TDrawingDef);
 var
@@ -324,10 +431,11 @@ var
   PLine: PGDBObjLine;
   PMText: PGDBObjMText;
   CellStr: String;
-  DC: TDrawContext;
 begin
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation START rows=%d cols=%d',
+    [FRowCount, FColCount], LM_Info);
   ConstObjArray.Free;
-  DC := ADrawing.CreateDrawingRC;
 
   // Пустая таблица — ничего не рисуем
   if (FRowCount <= 0) or (FColCount <= 0) then
@@ -353,7 +461,6 @@ begin
     PLine^.CoordInOCS.lEnd.y := -CurrentY;
     PLine^.CoordInOCS.lEnd.z := 0;
     CopyVPto(PLine^);
-    PLine^.FormatEntity(ADrawing, DC);
 
     if RowIdx < FRowCount then
       CurrentY := CurrentY + GetRowHeight(RowIdx);
@@ -371,7 +478,6 @@ begin
     PLine^.CoordInOCS.lEnd.y := -TotalHeight;
     PLine^.CoordInOCS.lEnd.z := 0;
     CopyVPto(PLine^);
-    PLine^.FormatEntity(ADrawing, DC);
 
     if ColIdx < FColCount then
       CurrentX := CurrentX + GetColWidth(ColIdx);
@@ -401,12 +507,11 @@ begin
         PMText^.Local.P_insert.x :=
           CurrentX + CAcadTableDefaultTextHeight * 0.5;
         PMText^.Local.P_insert.y :=
-          -(CurrentY + RowH * 0.25);
+          -(CurrentY + RowH * 0.5);
         PMText^.Local.P_insert.z := 0;
         PMText^.TXTStyle :=
           pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
         CopyVPto(PMText^);
-        PMText^.FormatEntity(ADrawing, DC);
       end;
 
       CurrentX := CurrentX + ColW;
@@ -425,12 +530,42 @@ end;
 
 // Строит геометрию таблицы. Вызывается после добавления в чертёж.
 procedure GDBObjAcadTable.BuildGeometry(var ADrawing: TDrawingDef);
+var
+  m4: TzeTypedMatrix4d;
+  ir: itrec;
+  pv: PGDBObjEntity;
 begin
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildGeometry START built=%d rows=%d cols=%d Insert=(%.2f,%.2f)',
+    [Ord(FGeometryBuilt), FRowCount, FColCount, FInsertPoint.x, FInsertPoint.y], LM_Info);
+
   if not FGeometryBuilt then
   begin
+    // Сохраняем матрицу таблицы
+    m4 := getmatrix^;
+    // Временно устанавливаем единичную матрицу для построения геометрии
+    objmatrix := onematrix;
+
+    // Строим визуальное представление (линии и текст) в локальных координатах
     BuildVisualRepresentation(ADrawing);
+
+    // Применяем трансформацию таблицы ко всем созданным объектам
+    pv := ConstObjArray.beginiterate(ir);
+    if pv <> nil then
+    begin
+      repeat
+        // Применяем трансформацию матрицы таблицы к объекту
+        pv^.transform(m4);
+        pv := ConstObjArray.iterate(ir);
+      until pv = nil;
+    end;
+
     FGeometryBuilt := True;
+    // Восстанавливаем матрицу таблицы
+    objmatrix := m4;
   end;
+
+  // Строим дерево отрисовки из ConstObjArray
   inherited BuildGeometry(ADrawing);
 end;
 
@@ -438,6 +573,9 @@ end;
 procedure GDBObjAcadTable.FormatEntity(var ADrawing: TDrawingDef;
   var ADC: TDrawContext; AStage: TEFStages = EFAllStages);
 begin
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: FormatEntity CalcCS=%d Draw=%d',
+    [Ord(EFCalcEntityCS in AStage), Ord(EFDraw in AStage)], LM_Info);
   if EFCalcEntityCS in AStage then
   begin
     if Assigned(EntExtensions) then
@@ -448,7 +586,7 @@ begin
   CalcActualVisible(ADC.DrawingContext.VActuality);
   if EFDraw in AStage then
   begin
-    FGeometryBuilt := False;
+    // Строим геометрию только один раз (при первой отрисовке)
     BuildGeometry(ADrawing);
     if Assigned(EntExtensions) then
       EntExtensions.RunOnAfterEntityFormat(@Self, ADrawing, ADC);
