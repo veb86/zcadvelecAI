@@ -35,7 +35,7 @@ uses
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,gzctnrVectorTypes,
-  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble;
+  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble, uzepalette;
 
 const
   // Высота строки по умолчанию (в единицах чертежа)
@@ -89,6 +89,11 @@ type
       var ADC: TDrawContext);
     // Добавляет ячейку в массив текстов по её линейному индексу
     procedure SetCellTextByIndex(CellIdx: Integer; const AText: String);
+    // Вычисляет bounding box таблицы на основе её размеров
+    procedure getoutbound(var DC: TDrawContext);
+    // Рисует геометрию таблицы
+    procedure DrawGeometry(lw: Integer; var DC: TDrawContext;
+      const inFrustumState: TInBoundingVolume);
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -237,6 +242,7 @@ var
   RowHeightsRead, ColWidthsRead: Boolean;
   InCellData: Boolean;
   CellTextRead: Boolean;
+  RowHeightCount, ColWidthCount: Integer;
 begin
   programlog.LogOutStr('uzeentacadtable: LoadFromDXF START', LM_Info);
 
@@ -246,6 +252,8 @@ begin
   ColWidthsRead := False;
   InCellData := False;
   CellTextRead := False;
+  RowHeightCount := 0;
+  ColWidthCount := 0;
 
   // Пропускаем до первого 100
   while (GroupCode <> 0) and (GroupCode <> 100) do
@@ -274,7 +282,7 @@ begin
   begin
     SubclassMarker := ARdr.ParseString;
     GroupCode := ARdr.ParseInteger;
-    
+
     // Читаем данные AcDbBlockReference (включая точку вставки)
     while (GroupCode <> 0) and (GroupCode <> 100) do
     begin
@@ -317,6 +325,9 @@ begin
             FRowCount := ARdr.ParseInteger;
             if (FRowCount < 0) or (FRowCount > CAcadTableMaxDimension) then
               FRowCount := 0;
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF RowCount=%d',
+              [FRowCount], LM_Info);
           end
           else
             ARdr.SkipString; // Это флаг override ячейки
@@ -330,6 +341,9 @@ begin
             FColCount := ARdr.ParseInteger;
             if (FColCount < 0) or (FColCount > CAcadTableMaxDimension) then
               FColCount := 0;
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF ColCount=%d',
+              [FColCount], LM_Info);
           end
           else
             ARdr.SkipString; // Это флаг override ячейки
@@ -343,6 +357,10 @@ begin
             DoubleVal := CAcadTableDefaultRowHeight;
           FRowHeights.PushBackData(DoubleVal);
           RowHeightsRead := True;
+          Inc(RowHeightCount);
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: LoadFromDXF RowHeight[%d]=%.2f',
+            [RowHeightCount - 1, DoubleVal], LM_Info);
         end;
 
         // Ширина столбца (повторяется FColCount раз)
@@ -353,6 +371,10 @@ begin
             DoubleVal := CAcadTableDefaultColWidth;
           FColWidths.PushBackData(DoubleVal);
           ColWidthsRead := True;
+          Inc(ColWidthCount);
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: LoadFromDXF ColWidth[%d]=%.2f',
+            [ColWidthCount - 1, DoubleVal], LM_Info);
         end;
 
         // Начало данных ячейки — код 171 (тип ячейки)
@@ -370,6 +392,9 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
+              [CellIndex, CellText], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
@@ -384,6 +409,9 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
+              [CellIndex, CellText], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
@@ -410,8 +438,8 @@ begin
   Local.P_insert := FInsertPoint;
 
   programlog.LogOutFormatStr(
-    'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d',
-    [FRowCount, FColCount, Length(FCellTexts)], LM_Info);
+    'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d row_heights=%d col_widths=%d',
+    [FRowCount, FColCount, Length(FCellTexts), FRowHeights.Count, FColWidths.Count], LM_Info);
 end;
 
 // --- Построение визуального представления ---
@@ -432,11 +460,18 @@ var
   PLine: PGDBObjLine;
   PMText: PGDBObjMText;
   CellStr: String;
+  LineCount, TextCount: Integer;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation START rows=%d cols=%d',
     [FRowCount, FColCount], LM_Info);
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation ConstObjArray before clear=%d',
+    [ConstObjArray.Count], LM_Info);
   ConstObjArray.Free;
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation ConstObjArray after clear=%d',
+    [ConstObjArray.Count], LM_Info);
 
   // Пустая таблица — ничего не рисуем
   if (FRowCount <= 0) or (FColCount <= 0) then
@@ -449,6 +484,12 @@ begin
 
   TotalWidth := GetTotalWidth;
   TotalHeight := GetTotalHeight;
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation TotalWidth=%.2f TotalHeight=%.2f',
+    [TotalWidth, TotalHeight], LM_Info);
+
+  LineCount := 0;
+  TextCount := 0;
 
   // --- Горизонтальные линии (верхняя, разделители, нижняя) ---
   CurrentY := 0;
@@ -461,15 +502,24 @@ begin
     PLine^.CoordInOCS.lEnd.x := TotalWidth;
     PLine^.CoordInOCS.lEnd.y := -CurrentY;
     PLine^.CoordInOCS.lEnd.z := 0;
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildVisualRepresentation HLine[%d] from(%.2f,%.2f) to(%.2f,%.2f)',
+      [RowIdx, PLine^.CoordInOCS.lBegin.x, PLine^.CoordInOCS.lBegin.y,
+       PLine^.CoordInOCS.lEnd.x, PLine^.CoordInOCS.lEnd.y], LM_Info);
     CopyVPto(PLine^);
     PLine^.FormatEntity(ADrawing, ADC);
+    Inc(LineCount);
 
     if RowIdx < FRowCount then
       CurrentY := CurrentY + GetRowHeight(RowIdx);
   end;
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation created %d horizontal lines',
+    [LineCount], LM_Info);
 
   // --- Вертикальные линии (левая, разделители, правая) ---
   CurrentX := 0;
+  LineCount := 0;
   for ColIdx := 0 to FColCount do
   begin
     pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
@@ -479,15 +529,24 @@ begin
     PLine^.CoordInOCS.lEnd.x := CurrentX;
     PLine^.CoordInOCS.lEnd.y := -TotalHeight;
     PLine^.CoordInOCS.lEnd.z := 0;
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildVisualRepresentation VLine[%d] from(%.2f,%.2f) to(%.2f,%.2f)',
+      [ColIdx, PLine^.CoordInOCS.lBegin.x, PLine^.CoordInOCS.lBegin.y,
+       PLine^.CoordInOCS.lEnd.x, PLine^.CoordInOCS.lEnd.y], LM_Info);
     CopyVPto(PLine^);
     PLine^.FormatEntity(ADrawing, ADC);
+    Inc(LineCount);
 
     if ColIdx < FColCount then
       CurrentX := CurrentX + GetColWidth(ColIdx);
   end;
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation created %d vertical lines',
+    [LineCount], LM_Info);
 
   // --- Текст ячеек ---
   CurrentY := 0;
+  TextCount := 0;
   for RowIdx := 0 to FRowCount - 1 do
   begin
     RowH := GetRowHeight(RowIdx);
@@ -497,6 +556,10 @@ begin
     begin
       ColW := GetColWidth(ColIdx);
       CellStr := GetCellText(RowIdx, ColIdx);
+
+      programlog.LogOutFormatStr(
+        'uzeentacadtable: BuildVisualRepresentation Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f',
+        [RowIdx, ColIdx, CellStr, ColW, RowH], LM_Info);
 
       if CellStr <> '' then
       begin
@@ -513,8 +576,13 @@ begin
         PMText^.Local.P_insert.z := 0;
         PMText^.TXTStyle :=
           pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
+        programlog.LogOutFormatStr(
+          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) text="%s"',
+          [RowIdx, ColIdx, PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
+           PMText^.Template], LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
+        Inc(TextCount);
       end;
 
       CurrentX := CurrentX + ColW;
@@ -522,11 +590,93 @@ begin
 
     CurrentY := CurrentY + RowH;
   end;
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BuildVisualRepresentation created %d text objects',
+    [TextCount], LM_Info);
 
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation OK ' +
-    'rows=%d cols=%d W=%.2f H=%.2f',
-    [FRowCount, FColCount, TotalWidth, TotalHeight], LM_Info);
+    'rows=%d cols=%d W=%.2f H=%.2f TotalObj=%d',
+    [FRowCount, FColCount, TotalWidth, TotalHeight, ConstObjArray.Count], LM_Info);
+end;
+
+// Вычисляет bounding box таблицы на основе её размеров.
+// Вызывается до BuildGeometry, когда ConstObjArray ещё пуст.
+procedure GDBObjAcadTable.getoutbound(var DC: TDrawContext);
+var
+  TotalWidth, TotalHeight: Double;
+  MinX, MinY, MaxX, MaxY: Double;
+begin
+  if (FRowCount <= 0) or (FColCount <= 0) then
+  begin
+    // Пустая таблица — минимальный bounding box
+    vp.BoundingBox.LBN := VertexAdd(Local.P_insert, CreateVertex(-0.01, -0.01, 0));
+    vp.BoundingBox.RTF := VertexAdd(Local.P_insert, CreateVertex(0.01, 0.01, 0));
+    Exit;
+  end;
+
+  TotalWidth := GetTotalWidth;
+  TotalHeight := GetTotalHeight;
+
+  // Таблица строится от (0,0) до (TotalWidth, -TotalHeight) в локальных координатах
+  // Затем применяется трансформация (Local.P_insert)
+  MinX := Local.P_insert.x;
+  MaxX := Local.P_insert.x + TotalWidth;
+  MinY := Local.P_insert.y - TotalHeight;
+  MaxY := Local.P_insert.y;
+
+  vp.BoundingBox.LBN := CreateVertex(MinX, MinY, Local.P_insert.z);
+  vp.BoundingBox.RTF := CreateVertex(MaxX, MaxY, Local.P_insert.z);
+
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: getoutbound BB=(%.2f,%.2f)-(%.2f,%.2f) W=%.2f H=%.2f',
+    [MinX, MinY, MaxX, MaxY, TotalWidth, TotalHeight], LM_Info);
+end;
+
+// Рисует геометрию таблицы — рисует все объекты из ConstObjArray.
+procedure GDBObjAcadTable.DrawGeometry(lw: Integer; var DC: TDrawContext;
+  const inFrustumState: TInBoundingVolume);
+var
+  oldlw: SmallInt;
+  oldColor: TGDBPaletteColor;
+  pobj: PGDBObjEntity;
+  ir: itrec;
+begin
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: DrawGeometry START ConstObjArray.Count=%d inFrustum=%d',
+    [ConstObjArray.Count, Ord(inFrustumState)], LM_Info);
+
+  if ConstObjArray.Count = 0 then
+  begin
+    programlog.LogOutStr('uzeentacadtable: DrawGeometry — пусто, выход', LM_Info);
+    Exit;
+  end;
+
+  oldlw := DC.OwnerLineWeight;
+  oldColor := DC.OwnerColor;
+  DC.OwnerLineWeight := Self.GetLineWeight;
+  case vp.Color of
+    ClByBlock: ;
+    ClByLayer:
+      DC.OwnerColor := vp.Layer^.color;
+    else
+      DC.OwnerColor := vp.Color;
+  end;
+
+  // Рисуем все объекты из ConstObjArray напрямую
+  pobj := ConstObjArray.beginiterate(ir);
+  if pobj <> nil then
+  begin
+    repeat
+      pobj^.DrawGeometry(lw, DC, inFrustumState);
+      pobj := ConstObjArray.iterate(ir);
+    until pobj = nil;
+  end;
+
+  DC.OwnerLineWeight := oldlw;
+  DC.OwnerColor := oldColor;
+
+  programlog.LogOutStr('uzeentacadtable: DrawGeometry END', LM_Info);
 end;
 
 // --- Методы сущности ---
@@ -538,6 +688,7 @@ var
   ir: itrec;
   pv: PGDBObjEntity;
   DC: TDrawContext;
+  ObjCount: Integer;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildGeometry START built=%d rows=%d cols=%d Insert=(%.2f,%.2f)',
@@ -546,33 +697,95 @@ begin
   if not FGeometryBuilt then
   begin
     DC := ADrawing.CreateDrawingRC;
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildGeometry created DC, ConstObjArray count before=%d',
+      [ConstObjArray.Count], LM_Info);
 
     // Сохраняем матрицу таблицы
     m4 := getmatrix^;
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildGeometry saved matrix, objmatrix set to identity',
+      [], LM_Info);
+
     // Временно устанавливаем единичную матрицу для построения геометрии
     objmatrix := onematrix;
 
     // Строим визуальное представление (линии и текст) в локальных координатах
     BuildVisualRepresentation(ADrawing, DC);
 
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildGeometry after BuildVisualRepresentation ConstObjArray count=%d',
+      [ConstObjArray.Count], LM_Info);
+
     // Применяем трансформацию таблицы ко всем созданным объектам
     pv := ConstObjArray.beginiterate(ir);
+    ObjCount := 0;
     if pv <> nil then
     begin
       repeat
         // Применяем трансформацию матрицы таблицы к объекту
+        // Для разных типов объектов - разные координаты
+        if pv^.GetObjType = GDBLineID then
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: BuildGeometry transform Line before=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)',
+            [PGDBObjLine(pv)^.CoordInOCS.lBegin.x, PGDBObjLine(pv)^.CoordInOCS.lBegin.y, PGDBObjLine(pv)^.CoordInOCS.lBegin.z,
+             PGDBObjLine(pv)^.CoordInOCS.lEnd.x, PGDBObjLine(pv)^.CoordInOCS.lEnd.y, PGDBObjLine(pv)^.CoordInOCS.lEnd.z], LM_Info);
+        end
+        else if pv^.GetObjType = GDBMTextID then
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: BuildGeometry transform MText before=(%.2f,%.2f,%.2f)',
+            [PGDBObjMText(pv)^.Local.P_insert.x, PGDBObjMText(pv)^.Local.P_insert.y, PGDBObjMText(pv)^.Local.P_insert.z], LM_Info);
+        end;
         pv^.transform(m4);
+        if pv^.GetObjType = GDBLineID then
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: BuildGeometry transform Line after=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)',
+            [PGDBObjLine(pv)^.CoordInOCS.lBegin.x, PGDBObjLine(pv)^.CoordInOCS.lBegin.y, PGDBObjLine(pv)^.CoordInOCS.lBegin.z,
+             PGDBObjLine(pv)^.CoordInOCS.lEnd.x, PGDBObjLine(pv)^.CoordInOCS.lEnd.y, PGDBObjLine(pv)^.CoordInOCS.lEnd.z], LM_Info);
+        end
+        else if pv^.GetObjType = GDBMTextID then
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: BuildGeometry transform MText after=(%.2f,%.2f,%.2f)',
+            [PGDBObjMText(pv)^.Local.P_insert.x, PGDBObjMText(pv)^.Local.P_insert.y, PGDBObjMText(pv)^.Local.P_insert.z], LM_Info);
+        end;
+        Inc(ObjCount);
         pv := ConstObjArray.iterate(ir);
       until pv = nil;
     end;
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildGeometry transformed %d objects',
+      [ObjCount], LM_Info);
 
     FGeometryBuilt := True;
     // Восстанавливаем матрицу таблицы
     objmatrix := m4;
+
+    programlog.LogOutStr(
+      'uzeentacadtable: BuildGeometry building ObjTree',
+      LM_Info);
+    // Строим дерево отрисовки из ConstObjArray вручную
+    // inherited BuildGeometry не работает, т.к. объекты добавлены через PushBackData
+    // а не через AddPEntity, и не были добавлены в ObjTree
+    ConstObjArray.ObjTree.ClearSub;
+    ConstObjArray.ObjTree.maketreefrom(ConstObjArray, vp.BoundingBox, nil);
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: BuildGeometry END ObjTree.NodeCount=%d',
+      [ConstObjArray.ObjTree.nul.Count], LM_Info);
+  end
+  else
+  begin
+    programlog.LogOutStr(
+      'uzeentacadtable: BuildGeometry SKIPPED - already built',
+      LM_Info);
   end;
 
-  // Строим дерево отрисовки из ConstObjArray
-  inherited BuildGeometry(ADrawing);
+  programlog.LogOutStr(
+    'uzeentacadtable: BuildGeometry END',
+    LM_Info);
 end;
 
 // Форматирует сущность для отображения (расчёт матриц и отрисовка).
@@ -580,23 +793,42 @@ procedure GDBObjAcadTable.FormatEntity(var ADrawing: TDrawingDef;
   var ADC: TDrawContext; AStage: TEFStages = EFAllStages);
 begin
   programlog.LogOutFormatStr(
-    'uzeentacadtable: FormatEntity CalcCS=%d Draw=%d',
-    [Ord(EFCalcEntityCS in AStage), Ord(EFDraw in AStage)], LM_Info);
+    'uzeentacadtable: FormatEntity START CalcCS=%d Draw=%d rows=%d cols=%d Visible=%d',
+    [Ord(EFCalcEntityCS in AStage), Ord(EFDraw in AStage), FRowCount, FColCount, Ord(Visible)], LM_Info);
   if EFCalcEntityCS in AStage then
   begin
     if Assigned(EntExtensions) then
       EntExtensions.RunOnBeforeEntityFormat(@Self, ADrawing, ADC);
     CalcObjMatrix;
-    CalcBB(ADC);
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: FormatEntity after CalcObjMatrix Local=(%.2f,%.2f,%.2f)',
+      [Local.P_insert.x, Local.P_insert.y, Local.P_insert.z], LM_Info);
+    // Вычисляем bounding box вручную до BuildGeometry (ConstObjArray ещё пуст)
+    getoutbound(ADC);
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: FormatEntity after getoutbound BB=(%.2f,%.2f)-(%.2f,%.2f)',
+      [vp.BoundingBox.LBN.x, vp.BoundingBox.LBN.y, vp.BoundingBox.RTF.x, vp.BoundingBox.RTF.y], LM_Info);
   end;
   CalcActualVisible(ADC.DrawingContext.VActuality);
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: FormatEntity after CalcActualVisible Visible=%d',
+    [Ord(Visible)], LM_Info);
   if EFDraw in AStage then
   begin
+    programlog.LogOutStr(
+      'uzeentacadtable: FormatEntity calling BuildGeometry',
+      LM_Info);
     // Строим геометрию только один раз (при первой отрисовке)
     BuildGeometry(ADrawing);
+    programlog.LogOutStr(
+      'uzeentacadtable: FormatEntity after BuildGeometry',
+      LM_Info);
     if Assigned(EntExtensions) then
       EntExtensions.RunOnAfterEntityFormat(@Self, ADrawing, ADC);
   end;
+  programlog.LogOutStr(
+    'uzeentacadtable: FormatEntity END',
+    LM_Info);
 end;
 
 // Использует отложенное форматирование (стадийный FormatEntity).

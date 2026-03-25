@@ -84,8 +84,12 @@ implementation
 
 uses
   Math,
-  uzcLog,
-  uzeentproxyparser;
+  uzcLog;
+  //uzeentproxyparser;
+
+const
+  PROXY_X_AXIS: TzePoint3d = (x: 1.0; y: 0.0; z: 0.0);
+  PROXY_Y_AXIS: TzePoint3d = (x: 0.0; y: 1.0; z: 0.0);
 
 { === Вспомогательные функции === }
 
