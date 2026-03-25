@@ -34,8 +34,8 @@ uses
   uzgldrawcontext, uzedrawingdef, uzeentityfactory, uzeentcomplex,
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
-  uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,gzctnrVectorTypes,
-  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble, uzepalette;
+  uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
+  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble;
 
 const
   // Высота строки по умолчанию (в единицах чертежа)
@@ -91,9 +91,6 @@ type
     procedure SetCellTextByIndex(CellIdx: Integer; const AText: String);
     // Вычисляет bounding box таблицы на основе её размеров
     procedure getoutbound(var DC: TDrawContext);
-    // Рисует геометрию таблицы
-    procedure DrawGeometry(lw: Integer; var DC: TDrawContext;
-      const inFrustumState: TInBoundingVolume);
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -633,62 +630,15 @@ begin
     [MinX, MinY, MaxX, MaxY, TotalWidth, TotalHeight], LM_Info);
 end;
 
-// Рисует геометрию таблицы — рисует все объекты из ConstObjArray.
-procedure GDBObjAcadTable.DrawGeometry(lw: Integer; var DC: TDrawContext;
-  const inFrustumState: TInBoundingVolume);
-var
-  oldlw: SmallInt;
-  oldColor: TGDBPaletteColor;
-  pobj: PGDBObjEntity;
-  ir: itrec;
-begin
-  programlog.LogOutFormatStr(
-    'uzeentacadtable: DrawGeometry START ConstObjArray.Count=%d inFrustum=%d',
-    [ConstObjArray.Count, Ord(inFrustumState)], LM_Info);
-
-  if ConstObjArray.Count = 0 then
-  begin
-    programlog.LogOutStr('uzeentacadtable: DrawGeometry — пусто, выход', LM_Info);
-    Exit;
-  end;
-
-  oldlw := DC.OwnerLineWeight;
-  oldColor := DC.OwnerColor;
-  DC.OwnerLineWeight := Self.GetLineWeight;
-  case vp.Color of
-    ClByBlock: ;
-    ClByLayer:
-      DC.OwnerColor := vp.Layer^.color;
-    else
-      DC.OwnerColor := vp.Color;
-  end;
-
-  // Рисуем все объекты из ConstObjArray напрямую
-  pobj := ConstObjArray.beginiterate(ir);
-  if pobj <> nil then
-  begin
-    repeat
-      pobj^.DrawGeometry(lw, DC, inFrustumState);
-      pobj := ConstObjArray.iterate(ir);
-    until pobj = nil;
-  end;
-
-  DC.OwnerLineWeight := oldlw;
-  DC.OwnerColor := oldColor;
-
-  programlog.LogOutStr('uzeentacadtable: DrawGeometry END', LM_Info);
-end;
-
 // --- Методы сущности ---
 
 // Строит геометрию таблицы. Вызывается после добавления в чертёж.
+// ObjMatrix уже содержит мировую трансформацию из CalcObjMatrix,
+// поэтому FormatEntity дочерних объектов вычислит экранные координаты
+// в мировом пространстве — так же, как это делает GDBObjTable.Build.
 procedure GDBObjAcadTable.BuildGeometry(var ADrawing: TDrawingDef);
 var
-  m4: TzeTypedMatrix4d;
-  ir: itrec;
-  pv: PGDBObjEntity;
   DC: TDrawContext;
-  ObjCount: Integer;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildGeometry START built=%d rows=%d cols=%d Insert=(%.2f,%.2f)',
@@ -701,77 +651,20 @@ begin
       'uzeentacadtable: BuildGeometry created DC, ConstObjArray count before=%d',
       [ConstObjArray.Count], LM_Info);
 
-    // Сохраняем матрицу таблицы
-    m4 := getmatrix^;
-    programlog.LogOutFormatStr(
-      'uzeentacadtable: BuildGeometry saved matrix, objmatrix set to identity',
-      [], LM_Info);
-
-    // Временно устанавливаем единичную матрицу для построения геометрии
-    objmatrix := onematrix;
-
-    // Строим визуальное представление (линии и текст) в локальных координатах
+    // Строим визуальное представление (линии и текст)
     BuildVisualRepresentation(ADrawing, DC);
 
     programlog.LogOutFormatStr(
       'uzeentacadtable: BuildGeometry after BuildVisualRepresentation ConstObjArray count=%d',
       [ConstObjArray.Count], LM_Info);
 
-    // Применяем трансформацию таблицы ко всем созданным объектам
-    pv := ConstObjArray.beginiterate(ir);
-    ObjCount := 0;
-    if pv <> nil then
-    begin
-      repeat
-        // Применяем трансформацию матрицы таблицы к объекту
-        // Для разных типов объектов - разные координаты
-        if pv^.GetObjType = GDBLineID then
-        begin
-          programlog.LogOutFormatStr(
-            'uzeentacadtable: BuildGeometry transform Line before=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)',
-            [PGDBObjLine(pv)^.CoordInOCS.lBegin.x, PGDBObjLine(pv)^.CoordInOCS.lBegin.y, PGDBObjLine(pv)^.CoordInOCS.lBegin.z,
-             PGDBObjLine(pv)^.CoordInOCS.lEnd.x, PGDBObjLine(pv)^.CoordInOCS.lEnd.y, PGDBObjLine(pv)^.CoordInOCS.lEnd.z], LM_Info);
-        end
-        else if pv^.GetObjType = GDBMTextID then
-        begin
-          programlog.LogOutFormatStr(
-            'uzeentacadtable: BuildGeometry transform MText before=(%.2f,%.2f,%.2f)',
-            [PGDBObjMText(pv)^.Local.P_insert.x, PGDBObjMText(pv)^.Local.P_insert.y, PGDBObjMText(pv)^.Local.P_insert.z], LM_Info);
-        end;
-        pv^.transform(m4);
-        if pv^.GetObjType = GDBLineID then
-        begin
-          programlog.LogOutFormatStr(
-            'uzeentacadtable: BuildGeometry transform Line after=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)',
-            [PGDBObjLine(pv)^.CoordInOCS.lBegin.x, PGDBObjLine(pv)^.CoordInOCS.lBegin.y, PGDBObjLine(pv)^.CoordInOCS.lBegin.z,
-             PGDBObjLine(pv)^.CoordInOCS.lEnd.x, PGDBObjLine(pv)^.CoordInOCS.lEnd.y, PGDBObjLine(pv)^.CoordInOCS.lEnd.z], LM_Info);
-        end
-        else if pv^.GetObjType = GDBMTextID then
-        begin
-          programlog.LogOutFormatStr(
-            'uzeentacadtable: BuildGeometry transform MText after=(%.2f,%.2f,%.2f)',
-            [PGDBObjMText(pv)^.Local.P_insert.x, PGDBObjMText(pv)^.Local.P_insert.y, PGDBObjMText(pv)^.Local.P_insert.z], LM_Info);
-        end;
-        Inc(ObjCount);
-        pv := ConstObjArray.iterate(ir);
-      until pv = nil;
-    end;
-    programlog.LogOutFormatStr(
-      'uzeentacadtable: BuildGeometry transformed %d objects',
-      [ObjCount], LM_Info);
-
     FGeometryBuilt := True;
-    // Восстанавливаем матрицу таблицы
-    objmatrix := m4;
 
     programlog.LogOutStr(
       'uzeentacadtable: BuildGeometry building ObjTree',
       LM_Info);
-    // Строим дерево отрисовки из ConstObjArray вручную
-    // inherited BuildGeometry не работает, т.к. объекты добавлены через PushBackData
-    // а не через AddPEntity, и не были добавлены в ObjTree
-    ConstObjArray.ObjTree.ClearSub;
-    ConstObjArray.ObjTree.maketreefrom(ConstObjArray, vp.BoundingBox, nil);
+    // Строим дерево отрисовки — аналогично GDBObjComplex.BuildGeometry
+    inherited BuildGeometry(ADrawing);
     programlog.LogOutFormatStr(
       'uzeentacadtable: BuildGeometry END ObjTree.NodeCount=%d',
       [ConstObjArray.ObjTree.nul.Count], LM_Info);
