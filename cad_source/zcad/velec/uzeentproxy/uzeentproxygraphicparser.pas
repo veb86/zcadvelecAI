@@ -13,23 +13,30 @@
 *****************************************************************************
 }
 {
+@author(Vladimir Bobrov)
+}
+
+{
   Модуль: uzeentproxygraphicparser
-  Назначение: Полный парсер Proxy Graphic формата AcGiWorldDraw
-  
-  Структура данных:
-  - Заголовок: ChunkSize (4b) + CommandCount (4b)
-  - Команды: CommandSize (4b) + OpCode (4b) + Данные
-  
-  OPCODE:
-  - 1 = SetExtents (BBox)
-  - 2 = Circle (Center + Radius + Normal)
-  - 4 = CircularArc
-  - 6 = Polyline
-  - 14 = SetColor
-  - 16 = SetLayer
-  - 29 = PushTransform
-  - 31 = PopTransform
-  - 44 = EllipticArc
+  Назначение: Парсер бинарного блока Proxy Graphic (AcGiWorldDraw формат).
+
+  Структура данных Proxy Graphic:
+    [ChunkSize: int32] [CommandCount: int32]
+    Повтор CommandCount раз:
+      [CommandSize: int32] [OpCode: int32] [Данные...]
+
+  Диспетчеризация:
+  - Системные команды (Extents, SetColor, SetLayer, Push/PopMatrix) обрабатываются
+    непосредственно в этом модуле.
+  - Примитивные команды (Circle, Text, Polyline и т.д.) обрабатываются через
+    TProxyOpCodeDispatcher — менеджер, куда каждый модуль-парсер регистрирует
+    свой обработчик в секции initialization.
+  - Если примитив не зарегистрирован — команда пропускается автоматически.
+
+  Результат парсинга (TProxyGraphicParseResult):
+  - BBoxMin, BBoxMax — суммарный BBox всех успешно распаршенных примитивов
+  - AllVertices      — вершины всех контуров для отрисовки (полилинии)
+  - PrimitiveCount   — количество успешно обработанных примитивов
 }
 
 unit uzeentproxygraphicparser;
@@ -41,100 +48,92 @@ interface
 uses
   SysUtils,
   uzeentproxystream,
-  uzeentproxytypes,
-  uzeentity,
-  uzedrawingdef,
+  uzeentproxymanager,
   uzegeometrytypes,
-  UGDBPoint3DArray,
-  uzgldrawcontext,
-  uzeTypes,
-  gzctnrVectorTypes,
-  gzctnrVector,
-  uzeentproxyparsercircle,
-  uzeentproxyparsertext;
+  UGDBPoint3DArray;
 
 type
-  { Результат парсинга Proxy Graphic }
+  { Итоговый результат разбора одного Proxy Graphic блока }
   TProxyGraphicParseResult = record
-    CircleCount: Integer;
-    ArcCount: Integer;
-    EntityCount: Integer;
+    { Суммарный BBox всех примитивов }
     BBoxMin: TzePoint3d;
     BBoxMax: TzePoint3d;
+    { Флаг: BBox вычислен хотя бы одним примитивом }
     BBoxLoaded: Boolean;
-    CenterPoint: TzePoint3d;  // Центр первого круга для контрольной точки
-    CircleVertices: GDBPoint3DArray;  // Вершины круга для отрисовки
-    HasCircleVertices: Boolean;
-    { Данные текста для отрисовки }
-    TextInsert: TzePoint3d;
-    TextHeight: Double;
-    TextContent: string;
-    HasText: Boolean;
+    { Все вершины контуров для отрисовки, объединённые в один массив }
+    AllVertices: GDBPoint3DArray;
+    { Флаг: в AllVertices есть данные }
+    HasVertices: Boolean;
+    { Число контуров (примитивов), добавленных в AllVertices }
+    ContourCount: Integer;
+    { Общее число успешно обработанных примитивов (включая без вершин, только BBox) }
+    PrimitiveCount: Integer;
   end;
 
-  { Парсер Proxy Graphic }
+  { Парсер Proxy Graphic.
+    Создаётся для каждого прокси-объекта отдельно. }
   TProxyGraphicParser = class
   private
     FStream: TProxyByteStream;
-    FChunkSize: Integer;
-    FCommandCount: Integer;
-    FDrawing: TDrawingDef;
-    FDC: TDrawContext;
-    FStage: TEFStages;
     FResult: TProxyGraphicParseResult;
-    
-    { Парсинг заголовка }
-    function ParseHeader: Boolean;
-    
-    { Парсинг команды }
-    function ParseCommand: Boolean;
-    
-    { Обработчики команд }
-    procedure HandleCircle(CommandSize: Integer);
-    procedure HandleText(CommandSize: Integer);
-    procedure HandleArc(CommandSize: Integer);
-    procedure HandlePolyline(CommandSize: Integer);
-    procedure HandleSetColor(CommandSize: Integer);
-    procedure HandleSetLayer(CommandSize: Integer);
-    procedure HandlePushMatrix(CommandSize: Integer);
-    procedure HandlePopMatrix(CommandSize: Integer);
-    procedure HandleExtents(CommandSize: Integer);
-    procedure SkipCommand(CommandSize: Integer);
-    
+
+    { Разбирает заголовок блока; возвращает количество команд }
+    function ParseHeader(out CommandCount: Integer): Boolean;
+
+    { Разбирает одну команду; пропускает неизвестные }
+    procedure ParseCommand;
+
+    { Системные обработчики — не модульные, так как изменение их поведения
+      требует изменения архитектуры всего прокси-объекта }
+    procedure HandleExtents;
+    procedure HandleSetColor;
+    procedure HandleSetLayer;
+    procedure HandlePushMatrix;
+    procedure HandlePopMatrix;
+    procedure SkipDataBytes(const CommandSize: Integer);
+
+    { Добавляет вершины примитива в суммарный массив AllVertices }
+    procedure AppendVertices(var Src: GDBPoint3DArray);
+
+    { Расширяет суммарный BBox данными из одного примитива }
+    procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
+
   public
-    constructor Create(const Data: TBytes; var Drawing: TDrawingDef; var DC: TDrawContext; Stage: TEFStages);
+    constructor Create(const Data: TBytes);
     destructor Destroy; override;
-    
-    { Главный метод парсинга }
+
+    { Разбирает весь блок Proxy Graphic; возвращает суммарный результат }
     function Parse: TProxyGraphicParseResult;
   end;
 
 implementation
 
 uses
-  uzcLog,
-  uzeentcircle,
-  uzeentarc,
-  uzeentpolyline,
-  uzegeometry,
-  Math;
+  uzcLog;
 
 const
-  PROXY_X_AXIS: TzePoint3d = (x: 1.0; y: 0.0; z: 0.0);
-  PROXY_Y_AXIS: TzePoint3d = (x: 0.0; y: 1.0; z: 0.0);
-  PROXY_Z_AXIS: TzePoint3d = (x: 0.0; y: 0.0; z: 1.0);
+  { Системные OpCode, обрабатываемые напрямую в этом модуле }
+  OPCODE_EXTENTS     = 1;
+  OPCODE_SET_COLOR   = 14;
+  OPCODE_SET_LAYER   = 16;
+  OPCODE_PUSH_MATRIX = 29;
+  OPCODE_PUSH_MATRIX2 = 30;
+  OPCODE_POP_MATRIX  = 31;
+
+  { Размер заголовка одной команды: [CommandSize: int32] + [OpCode: int32] }
+  COMMAND_HEADER_SIZE = 8;
+
+  { Максимально разумное количество команд в одном блоке }
+  MAX_COMMAND_COUNT = 100000;
 
 { === TProxyGraphicParser === }
 
-constructor TProxyGraphicParser.Create(const Data: TBytes; var Drawing: TDrawingDef; var DC: TDrawContext; Stage: TEFStages);
+constructor TProxyGraphicParser.Create(const Data: TBytes);
 begin
   inherited Create;
   FStream := TProxyByteStream.Create(Data);
-  FDrawing := Drawing;
-  FDC := DC;
-  FStage := Stage;
   FillChar(FResult, SizeOf(FResult), 0);
-  FResult.BBoxLoaded := False;
+  FResult.AllVertices.init(0);
 end;
 
 destructor TProxyGraphicParser.Destroy;
@@ -143,313 +142,278 @@ begin
   inherited Destroy;
 end;
 
-function TProxyGraphicParser.ParseHeader: Boolean;
-begin
-  Result := False;
-  
-  try
-    FChunkSize := FStream.ReadInt32;
-    FCommandCount := FStream.ReadInt32;
-    
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Header - ChunkSize=%d, CommandCount=%d', 
-      [FChunkSize, FCommandCount], LM_Info);
-    
-    Result := (FChunkSize > 0) and (FCommandCount > 0) and (FCommandCount < 10000);
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: ParseHeader error: %s', [E.Message], LM_Error);
-      Result := False;
-    end;
-  end;
-end;
-
-function TProxyGraphicParser.ParseCommand: Boolean;
+{ Добавляет все вершины из Src в суммарный массив AllVertices.
+  Между контурами вставляется разделитель (NaN-вершина) не нужен —
+  используется DrawPolyLine с замкнутым флагом для каждого контура отдельно,
+  поэтому контуры хранятся непрерывно, а разделение по контурам
+  осуществляется через ContourCount + размеры сегментов (не реализовано здесь:
+  текущая реализация просто конкатенирует вершины, рендерер их рисует одним
+  DrawPolyLineWithLT). }
+procedure TProxyGraphicParser.AppendVertices(var Src: GDBPoint3DArray);
 var
-  CommandSize: Integer;
-  OpCode: Integer;
-begin
-  Result := False;
-  
-  try
-    CommandSize := FStream.ReadInt32;
-    OpCode := FStream.ReadInt32;
-    
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Command - Size=%d, OpCode=%d', 
-      [CommandSize, OpCode], LM_Info);
-    
-    if CommandSize < 8 then
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: Invalid CommandSize %d, skipping', [CommandSize], LM_Warning);
-      Result := True;
-      Exit;
-    end;
-    
-    case OpCode of
-      2: HandleCircle(CommandSize);       // Круг
-      4: HandleArc(CommandSize);          // Дуга
-      6: HandlePolyline(CommandSize);     // Полилиния
-      10: HandleText(CommandSize);        // Текст (ANSI)
-      38: HandleText(CommandSize);        // Текст (Unicode v2)
-      14: HandleSetColor(CommandSize);    // Цвет
-      16: HandleSetLayer(CommandSize);    // Слой
-      29, 30: HandlePushMatrix(CommandSize); // PushTransform
-      31: HandlePopMatrix(CommandSize);   // PopTransform
-      1: HandleExtents(CommandSize);      // Extents
-    else
-      SkipCommand(CommandSize);
-    end;
-    
-    Result := True;
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: ParseCommand error: %s', [E.Message], LM_Error);
-      Result := False;
-    end;
-  end;
-end;
-
-procedure TProxyGraphicParser.HandleCircle(CommandSize: Integer);
-var
-  CircleParseResult: TProxyCircleParseResult;
   ir: itrec;
   pV: PzePoint3d;
 begin
-  { Вызываем автономный парсер круга из uzeentproxyparsercircle.pas }
-  TProxyCircleParser.ParseAndDraw(FStream, FDrawing, FDC, CircleParseResult);
-  
-  { Если круг успешно распаршен, обновляем BBox и сохраняем вершины результата }
-  if CircleParseResult.Valid and CircleParseResult.HasBBox then
+  pV := Src.beginiterate(ir);
+  while pV <> nil do
   begin
-    if not FResult.BBoxLoaded then
-    begin
-      FResult.BBoxMin := CircleParseResult.BBoxMin;
-      FResult.BBoxMax := CircleParseResult.BBoxMax;
-      FResult.BBoxLoaded := True;
-      FResult.CenterPoint := CircleParseResult.Center;
-    end
-    else
-    begin
-      { Расширяем BBox }
-      if CircleParseResult.BBoxMin.x < FResult.BBoxMin.x then FResult.BBoxMin.x := CircleParseResult.BBoxMin.x;
-      if CircleParseResult.BBoxMin.y < FResult.BBoxMin.y then FResult.BBoxMin.y := CircleParseResult.BBoxMin.y;
-      if CircleParseResult.BBoxMin.z < FResult.BBoxMin.z then FResult.BBoxMin.z := CircleParseResult.BBoxMin.z;
-      if CircleParseResult.BBoxMax.x > FResult.BBoxMax.x then FResult.BBoxMax.x := CircleParseResult.BBoxMax.x;
-      if CircleParseResult.BBoxMax.y > FResult.BBoxMax.y then FResult.BBoxMax.y := CircleParseResult.BBoxMax.y;
-      if CircleParseResult.BBoxMax.z > FResult.BBoxMax.z then FResult.BBoxMax.z := CircleParseResult.BBoxMax.z;
-    end;
-    
-    { Сохраняем вершины круга для отрисовки }
-    if CircleParseResult.HasCircleVertices and not FResult.HasCircleVertices then
-    begin
-      FResult.CircleVertices.init(CircleParseResult.CircleVertices.Count);
-      pV := CircleParseResult.CircleVertices.beginiterate(ir);
-      while pV <> nil do
-      begin
-        FResult.CircleVertices.PushBackData(pV^);
-        pV := CircleParseResult.CircleVertices.iterate(ir);
-      end;
-      FResult.HasCircleVertices := True;
-    end;
-    
-    Inc(FResult.CircleCount);
+    FResult.AllVertices.PushBackData(pV^);
+    pV := Src.iterate(ir);
   end;
 end;
 
-procedure TProxyGraphicParser.HandleArc(CommandSize: Integer);
+{ Расширяет суммарный BBox данными из результата обработчика }
+procedure TProxyGraphicParser.MergeHandlerBBox(
+  const HandlerResult: TProxyHandlerResult);
 begin
-  // TODO: Реализовать парсинг дуги
-  programlog.LogOutFormatStr('uzeentproxygraphicparser: Arc command not implemented yet', [], LM_Warning);
-  SkipCommand(CommandSize);
+  if not HandlerResult.HasBBox then
+    Exit;
+  MergeBBox(
+    HandlerResult.BBoxMin, HandlerResult.BBoxMax,
+    FResult.BBoxMin, FResult.BBoxMax,
+    FResult.BBoxLoaded);
 end;
 
-procedure TProxyGraphicParser.HandleText(CommandSize: Integer);
+{ Разбирает заголовок блока: [ChunkSize][CommandCount] }
+function TProxyGraphicParser.ParseHeader(out CommandCount: Integer): Boolean;
 var
-  TextParseResult: TProxyTextParseResult;
+  ChunkSize: Integer;
 begin
-  { Вызываем автономный парсер текста из uzeentproxyparsertext.pas }
-  { Для OpCode=10 используем ParseAndDraw, для OpCode=38 - ParseUnicodeText2 }
-  TProxyTextParser.ParseUnicodeText2(FStream, FDrawing, FDC, TextParseResult);
-  
-  { Если текст успешно распаршен, обновляем BBox и сохраняем данные для отрисовки }
-  if TextParseResult.Valid and TextParseResult.HasBBox then
+  Result := False;
+  CommandCount := 0;
+  try
+    ChunkSize := FStream.ReadInt32;
+    CommandCount := FStream.ReadInt32;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: Header ChunkSize=%d CommandCount=%d',
+      [ChunkSize, CommandCount], LM_Info);
+    Result := (ChunkSize > 0)
+      and (CommandCount > 0)
+      and (CommandCount < MAX_COMMAND_COUNT);
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: ParseHeader error: %s', [E.Message], LM_Info);
+  end;
+end;
+
+{ Пропускает байты данных команды (всё, что идёт после заголовка) }
+procedure TProxyGraphicParser.SkipDataBytes(const CommandSize: Integer);
+var
+  DataSize: Integer;
+begin
+  DataSize := CommandSize - COMMAND_HEADER_SIZE;
+  if DataSize > 0 then
   begin
-    if not FResult.BBoxLoaded then
-    begin
-      FResult.BBoxMin := TextParseResult.BBoxMin;
-      FResult.BBoxMax := TextParseResult.BBoxMax;
-      FResult.BBoxLoaded := True;
-      FResult.CenterPoint := TextParseResult.Insert;
-    end
-    else
-    begin
-      { Расширяем BBox }
-      if TextParseResult.BBoxMin.x < FResult.BBoxMin.x then FResult.BBoxMin.x := TextParseResult.BBoxMin.x;
-      if TextParseResult.BBoxMin.y < FResult.BBoxMin.y then FResult.BBoxMin.y := TextParseResult.BBoxMin.y;
-      if TextParseResult.BBoxMin.z < FResult.BBoxMin.z then FResult.BBoxMin.z := TextParseResult.BBoxMin.z;
-      if TextParseResult.BBoxMax.x > FResult.BBoxMax.x then FResult.BBoxMax.x := TextParseResult.BBoxMax.x;
-      if TextParseResult.BBoxMax.y > FResult.BBoxMax.y then FResult.BBoxMax.y := TextParseResult.BBoxMax.y;
-      if TextParseResult.BBoxMax.z > FResult.BBoxMax.z then FResult.BBoxMax.z := TextParseResult.BBoxMax.z;
-    end;
-    
-    { Сохраняем данные текста для отрисовки }
-    FResult.TextInsert := TextParseResult.Insert;
-    FResult.TextHeight := TextParseResult.Height;
-    FResult.TextContent := TextParseResult.Text;
-    FResult.HasText := True;
-    
-    Inc(FResult.EntityCount);
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Text parsed successfully: "%s"', [TextParseResult.Text], LM_Info);
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SkipDataBytes %d bytes', [DataSize], LM_Info);
+    FStream.Skip(DataSize);
   end;
 end;
 
-procedure TProxyGraphicParser.HandlePolyline(CommandSize: Integer);
-begin
-  // TODO: Реализовать парсинг полилинии
-  programlog.LogOutFormatStr('uzeentproxygraphicparser: Polyline command not implemented yet', [], LM_Warning);
-  SkipCommand(CommandSize);
-end;
-
-procedure TProxyGraphicParser.HandleSetColor(CommandSize: Integer);
-var
-  Color: Integer;
-begin
-  try
-    Color := FStream.ReadInt32;
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: SetColor - Color=%d', [Color], LM_Info);
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: HandleSetColor error: %s', [E.Message], LM_Error);
-      SkipCommand(CommandSize);
-    end;
-  end;
-end;
-
-procedure TProxyGraphicParser.HandleSetLayer(CommandSize: Integer);
-var
-  LayerIndex: Integer;
-begin
-  try
-    LayerIndex := FStream.ReadInt32;
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: SetLayer - LayerIndex=%d', [LayerIndex], LM_Info);
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: HandleSetLayer error: %s', [E.Message], LM_Error);
-      SkipCommand(CommandSize);
-    end;
-  end;
-end;
-
-procedure TProxyGraphicParser.HandlePushMatrix(CommandSize: Integer);
-var
-  I: Integer;
-  Matrix: array[0..15] of Double;
-begin
-  try
-    for I := 0 to 15 do
-      Matrix[I] := FStream.ReadDouble;
-    
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: PushMatrix - matrix loaded (16 doubles)', [], LM_Info);
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: HandlePushMatrix error: %s', [E.Message], LM_Error);
-      SkipCommand(CommandSize);
-    end;
-  end;
-end;
-
-procedure TProxyGraphicParser.HandlePopMatrix(CommandSize: Integer);
-begin
-  programlog.LogOutFormatStr('uzeentproxygraphicparser: PopMatrix', [], LM_Info);
-end;
-
-procedure TProxyGraphicParser.HandleExtents(CommandSize: Integer);
+{ Системный обработчик: ExtentsCommand — BBox объекта из файла }
+procedure TProxyGraphicParser.HandleExtents;
 var
   MinPt, MaxPt: TzePoint3d;
 begin
   try
     MinPt := FStream.ReadVertex;
     MaxPt := FStream.ReadVertex;
-    
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Extents - Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: Extents Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)',
       [MinPt.x, MinPt.y, MinPt.z, MaxPt.x, MaxPt.y, MaxPt.z], LM_Info);
-    
-    { Сохраняем BBox из Extents }
+    { Extents из файла используем только как начальный BBox,
+      если реальные примитивы ещё не дали своего }
     if not FResult.BBoxLoaded then
-    begin
-      FResult.BBoxMin := MinPt;
-      FResult.BBoxMax := MaxPt;
-      FResult.BBoxLoaded := True;
-      { Центр BBox для контрольной точки }
-      FResult.CenterPoint.x := (MinPt.x + MaxPt.x) / 2;
-      FResult.CenterPoint.y := (MinPt.y + MaxPt.y) / 2;
-      FResult.CenterPoint.z := (MinPt.z + MaxPt.z) / 2;
-    end;
+      MergeBBox(MinPt, MaxPt, FResult.BBoxMin, FResult.BBoxMax, FResult.BBoxLoaded);
   except
     on E: Exception do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: HandleExtents error: %s', [E.Message], LM_Error);
-      SkipCommand(CommandSize);
-    end;
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleExtents error: %s', [E.Message], LM_Info);
   end;
 end;
 
-procedure TProxyGraphicParser.SkipCommand(CommandSize: Integer);
-var
-  BytesToSkip: Integer;
+{ Системный обработчик: SetColor — читает и игнорирует значение цвета }
+procedure TProxyGraphicParser.HandleSetColor;
 begin
-  BytesToSkip := CommandSize - 8; // Вычитаем размер заголовка команды (Size + OpCode)
-  if BytesToSkip > 0 then
-  begin
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Skipping %d bytes', [BytesToSkip], LM_Info);
-    FStream.Skip(BytesToSkip);
+  try
+    FStream.ReadInt32; { Значение цвета — пока не применяется }
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetColor error: %s', [E.Message], LM_Info);
   end;
 end;
 
-function TProxyGraphicParser.Parse: TProxyGraphicParseResult;
+{ Системный обработчик: SetLayer — читает и игнорирует индекс слоя }
+procedure TProxyGraphicParser.HandleSetLayer;
+begin
+  try
+    FStream.ReadInt32; { Индекс слоя — пока не применяется }
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetLayer error: %s', [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: PushMatrix — читает матрицу трансформации (16 double) }
+procedure TProxyGraphicParser.HandlePushMatrix;
 var
   I: Integer;
 begin
-  FillChar(Result, SizeOf(Result), 0);
-  
-  programlog.LogOutFormatStr('uzeentproxygraphicparser: Parse START', [], LM_Info);
-  
   try
-    // Парсим заголовок
-    if not ParseHeader then
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: ParseHeader failed', [], LM_Error);
-      Exit;
-    end;
-    
-    // Парсим команды
-    for I := 0 to FCommandCount - 1 do
-    begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: Processing command %d of %d', [I + 1, FCommandCount], LM_Info);
-      
-      if not ParseCommand then
-      begin
-        programlog.LogOutFormatStr('uzeentproxygraphicparser: ParseCommand failed at command %d', [I + 1], LM_Error);
-        Break;
-      end;
-    end;
-    
-    FResult.EntityCount := FResult.CircleCount + FResult.ArcCount;
-    programlog.LogOutFormatStr('uzeentproxygraphicparser: Parse COMPLETE - Circles=%d, Arcs=%d, Total=%d', 
-      [FResult.CircleCount, FResult.ArcCount, FResult.EntityCount], LM_Info);
-    
-    Result := FResult;
+    { TODO: применять матрицу к последующим примитивам }
+    for I := 0 to 15 do
+      FStream.ReadDouble;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: PushMatrix read (matrix transform not yet applied)',
+      [], LM_Info);
   except
     on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandlePushMatrix error: %s', [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: PopMatrix — конец блока трансформации }
+procedure TProxyGraphicParser.HandlePopMatrix;
+begin
+  { TODO: восстановить предыдущую матрицу }
+  programlog.LogOutFormatStr(
+    'uzeentproxygraphicparser: PopMatrix', [], LM_Info);
+end;
+
+{ Разбирает одну команду.
+  Системные OpCode обрабатываются напрямую.
+  Остальные передаются в TProxyOpCodeDispatcher. }
+procedure TProxyGraphicParser.ParseCommand;
+var
+  CommandSize: Integer;
+  OpCode: Integer;
+  HandlerResult: TProxyHandlerResult;
+begin
+  CommandSize := FStream.ReadInt32;
+  OpCode := FStream.ReadInt32;
+
+  programlog.LogOutFormatStr(
+    'uzeentproxygraphicparser: Command OpCode=%d Size=%d',
+    [OpCode, CommandSize], LM_Info);
+
+  { Слишком маленький размер команды — пропускаем }
+  if CommandSize < COMMAND_HEADER_SIZE then
+    Exit;
+
+  { Сначала проверяем системные OpCode }
+  case OpCode of
+    OPCODE_EXTENTS:
+      HandleExtents;
+
+    OPCODE_SET_COLOR:
+      HandleSetColor;
+
+    OPCODE_SET_LAYER:
+      HandleSetLayer;
+
+    OPCODE_PUSH_MATRIX, OPCODE_PUSH_MATRIX2:
+      HandlePushMatrix;
+
+    OPCODE_POP_MATRIX:
+      HandlePopMatrix;
+
+  else
+    { Передаём в диспетчер — каждый зарегистрированный модуль-парсер
+      получит вызов своего обработчика }
+    if TProxyOpCodeDispatcher.IsRegistered(OpCode) then
     begin
-      programlog.LogOutFormatStr('uzeentproxygraphicparser: Parse EXCEPTION: %s', [E.Message], LM_Error);
-      FillChar(Result, SizeOf(Result), 0);
+      if TProxyOpCodeDispatcher.HandleOpCode(OpCode, FStream, HandlerResult) then
+      begin
+        { Обновляем суммарный BBox }
+        MergeHandlerBBox(HandlerResult);
+
+        { Сохраняем вершины контура и освобождаем память парсера }
+        if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0) then
+        begin
+          AppendVertices(HandlerResult.Vertices);
+          Inc(FResult.ContourCount);
+          FResult.HasVertices := True;
+          HandlerResult.Vertices.done;
+        end;
+
+        Inc(FResult.PrimitiveCount);
+      end
+      else
+      begin
+        programlog.LogOutFormatStr(
+          'uzeentproxygraphicparser: Handler for OpCode=%d returned invalid result',
+          [OpCode], LM_Info);
+        SkipDataBytes(CommandSize);
+      end;
+    end
+    else
+    begin
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: OpCode=%d not registered, skipping %d bytes',
+        [OpCode, CommandSize - COMMAND_HEADER_SIZE], LM_Info);
+      SkipDataBytes(CommandSize);
     end;
   end;
+end;
+
+{ Главный метод: разбирает весь блок Proxy Graphic }
+function TProxyGraphicParser.Parse: TProxyGraphicParseResult;
+var
+  CommandCount, I: Integer;
+begin
+  FResult.AllVertices.init(0);
+  FResult.BBoxLoaded := False;
+  FResult.HasVertices := False;
+  FResult.PrimitiveCount := 0;
+  FResult.ContourCount := 0;
+
+  programlog.LogOutFormatStr(
+    'uzeentproxygraphicparser: Parse START (registered handlers: %d)',
+    [TProxyOpCodeDispatcher.GetRegisteredCount], LM_Info);
+
+  try
+    if not ParseHeader(CommandCount) then
+    begin
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: ParseHeader failed', [], LM_Info);
+      Result := FResult;
+      Exit;
+    end;
+
+    for I := 0 to CommandCount - 1 do
+    begin
+      if FStream.EndOfStream then
+        Break;
+      try
+        ParseCommand;
+      except
+        on E: Exception do
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentproxygraphicparser: Command %d exception: %s',
+            [I, E.Message], LM_Info);
+          Break;
+        end;
+      end;
+    end;
+
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: Parse DONE: primitives=%d contours=%d vertices=%d bbox=%s',
+      [FResult.PrimitiveCount, FResult.ContourCount,
+       FResult.AllVertices.Count,
+       BoolToStr(FResult.BBoxLoaded, True)], LM_Info);
+
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: Parse exception: %s', [E.Message], LM_Info);
+  end;
+
+  Result := FResult;
 end;
 
 end.

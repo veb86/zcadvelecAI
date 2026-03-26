@@ -13,13 +13,24 @@
 *****************************************************************************
 }
 {
+@author(Vladimir Bobrov)
+}
+
+{
   Модуль: uzeentproxymanager
-  Назначение: Менеджер регистрации Proxy примитивов
-  
+  Назначение: Менеджер регистрации парсеров примитивов внутри Proxy объектов.
+
   Архитектура по аналогии с uzeentityfactory.pas:
-  - Каждый примитив регистрируется при инициализации модуля
-  - Менеджер хранит фабрики для создания парсеров
-  - Легко отключить примитив - исключить файл из проекта
+  - Каждый примитив регистрирует обработчик при инициализации своего модуля
+  - Регистрация выполняется через RegisterProxyOpCode()
+  - Диспетчеризация по числовому OpCode — HandleOpCode()
+  - Чтобы отключить примитив, достаточно исключить его .pas из проекта:
+    его initialization не выполнится, OpCode не зарегистрируется, парсинг
+    этого примитива не произойдёт без изменения главного модуля
+
+  Интерфейс TProxyOpCodeHandler:
+    ParseAndCollect — читает бинарные данные из потока, обновляет BBox
+                      и возвращает вершины для отрисовки
 }
 
 unit uzeentproxymanager;
@@ -30,233 +41,230 @@ interface
 
 uses
   SysUtils,
-  uzeentproxytypes,
-  uzeentity,
+  uzeentproxystream,
   uzegeometrytypes,
-  uzedrawingdef;
+  UGDBPoint3DArray;
+
+const
+  { Максимальный OpCode, поддерживаемый таблицей диспетчеризации }
+  PROXY_MAX_OPCODE = 255;
 
 type
-  { Интерфейс парсера Proxy примитива }
-  IProxyPrimitiveParser = interface
-    ['{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}']
-    
-    { Чтение данных из потока (должен вызвать TProxyByteStream.Read...) }
-    function ParseFromStream(Stream: TObject; CommandSize: Integer): Boolean;
-    
-    { Проверка валидности данных }
-    function IsValid: Boolean;
-    
-    { Получение ошибки }
-    function GetErrorMsg: string;
-    
-    { Создание сущности ZCAD для отрисовки }
-    function CreateZCDEntity(const Drawing: TDrawingDef; const State: TProxyGraphicState): PGDBObjEntity;
-    
-    { Расширение BBox (для вычисления габаритов) }
-    procedure ExpandBoundingBox(var MinPt, MaxPt: TzePoint3d);
-    
-    { Тип примитива }
-    function GetPrimitiveType: TProxyPrimitiveType;
+  { Результат обработки одного OpCode-примитива.
+    Хранит геометрию и BBox, собранные парсером. }
+  TProxyHandlerResult = record
+    { Флаг: примитив успешно распаршен }
+    Valid: Boolean;
+    { Вершины контура для отрисовки (могут быть пустыми) }
+    Vertices: GDBPoint3DArray;
+    { Флаг: вершины заполнены }
+    HasVertices: Boolean;
+    { Минимальная точка BBox примитива }
+    BBoxMin: TzePoint3d;
+    { Максимальная точка BBox примитива }
+    BBoxMax: TzePoint3d;
+    { Флаг: BBox вычислен }
+    HasBBox: Boolean;
   end;
 
-  { Функция создания парсера }
-  TCreateProxyParserFunc = function: IProxyPrimitiveParser;
+  { Процедура-обработчик одного OpCode.
+    Читает данные из потока, заполняет Result. }
+  TProxyOpCodeHandlerProc = procedure(
+    Stream: TProxyByteStream;
+    out HandlerResult: TProxyHandlerResult);
 
-  { Информация о зарегистрированном примитиве }
-  TProxyPrimitiveInfo = record
-    PrimitiveType: TProxyPrimitiveType;
-    DXFName: string;
-    CreateParserFunc: TCreateProxyParserFunc;
+  { Запись регистрации одного OpCode }
+  TProxyOpCodeEntry = record
+    { Флаг: запись заполнена }
+    Registered: Boolean;
+    { Читаемое название команды для логирования }
+    Name: string;
+    { Обработчик }
+    Handler: TProxyOpCodeHandlerProc;
   end;
 
-  { Менеджер Proxy примитивов }
-  TProxyPrimitiveManager = class
+  { Диспетчер OpCode-обработчиков для Proxy Graphic команд.
+    Аналог TEntityFactory из uzeentityfactory.pas, но для внутренних
+    примитивов прокси-объекта. }
+  TProxyOpCodeDispatcher = class
   private
     class var
-      FPrimitives: array[TProxyPrimitiveType] of TProxyPrimitiveInfo;
+      { Таблица зарегистрированных обработчиков, индекс = OpCode }
+      FTable: array[0..PROXY_MAX_OPCODE] of TProxyOpCodeEntry;
+      { Флаг первой инициализации }
       FInitialized: Boolean;
-      
-    class procedure InitializeManager;
-    class function GetPrimitiveInfo(PrimitiveType: TProxyPrimitiveType): TProxyPrimitiveInfo;
-    
+
+    { Инициализирует таблицу при первом обращении }
+    class procedure EnsureInitialized;
+
   public
-    { Регистрация примитива (вызывается в initialization модуля) }
-    class procedure RegisterPrimitive(
-      const PrimitiveType: TProxyPrimitiveType;
-      const DXFName: string;
-      const CreateParserFunc: TCreateProxyParserFunc
-    );
-    
-    { Создание парсера для примитива }
-    class function CreateParser(PrimitiveType: TProxyPrimitiveType): IProxyPrimitiveParser;
-    
-    { Проверка регистрации примитива }
-    class function IsPrimitiveRegistered(PrimitiveType: TProxyPrimitiveType): Boolean;
-    
-    { Получение количества зарегистрированных примитивов }
+    { Регистрирует обработчик для заданного OpCode.
+      Вызывается в секции initialization каждого модуля-парсера. }
+    class procedure RegisterOpCode(
+      const OpCode: Integer;
+      const Name: string;
+      const Handler: TProxyOpCodeHandlerProc);
+
+    { Обрабатывает команду с заданным OpCode.
+      Если обработчик зарегистрирован — вызывает его и возвращает результат.
+      Если нет — Result.Valid = False. }
+    class function HandleOpCode(
+      const OpCode: Integer;
+      Stream: TProxyByteStream;
+      out HandlerResult: TProxyHandlerResult): Boolean;
+
+    { Проверяет, зарегистрирован ли обработчик для OpCode }
+    class function IsRegistered(const OpCode: Integer): Boolean;
+
+    { Возвращает количество зарегистрированных обработчиков }
     class function GetRegisteredCount: Integer;
-    
-    { Очистка (для финализации) }
-    class procedure FinalizeManager;
   end;
 
-{ Вспомогательная функция для расширения BBox }
-procedure ExpandBBoxWithPoint(const Pt: TzePoint3d; var MinPt, MaxPt: TzePoint3d);
+{ Вспомогательная функция: расширяет BBox точкой Pt.
+  Если BBoxInitialized = False — инициализирует BBox этой точкой. }
+procedure ExpandBBox(const Pt: TzePoint3d;
+  var BBoxMin, BBoxMax: TzePoint3d; var BBoxInitialized: Boolean);
+
+{ Расширяет BBox другим BBox (MinB, MaxB).
+  Если BBoxInitialized = False — копирует MinB/MaxB как начальное значение. }
+procedure MergeBBox(
+  const MinB, MaxB: TzePoint3d;
+  var BBoxMin, BBoxMax: TzePoint3d;
+  var BBoxInitialized: Boolean);
 
 implementation
 
 uses
   uzcLog;
 
-{ === TProxyPrimitiveManager === }
+{ === Вспомогательные функции === }
 
-class procedure TProxyPrimitiveManager.InitializeManager;
-var
-  P: TProxyPrimitiveType;
+procedure ExpandBBox(const Pt: TzePoint3d;
+  var BBoxMin, BBoxMax: TzePoint3d; var BBoxInitialized: Boolean);
 begin
-  if not FInitialized then
+  if not BBoxInitialized then
   begin
-    for P := Low(TProxyPrimitiveType) to High(TProxyPrimitiveType) do
-    begin
-      FPrimitives[P].PrimitiveType := P;
-      FPrimitives[P].DXFName := '';
-      FPrimitives[P].CreateParserFunc := nil;
-    end;
-    FInitialized := True;
-  end;
-end;
-
-class procedure TProxyPrimitiveManager.RegisterPrimitive(
-  const PrimitiveType: TProxyPrimitiveType;
-  const DXFName: string;
-  const CreateParserFunc: TCreateProxyParserFunc
-);
-begin
-  InitializeManager;
-  
-  if PrimitiveType in [Low(TProxyPrimitiveType)..High(TProxyPrimitiveType)] then
-  begin
-    FPrimitives[PrimitiveType].PrimitiveType := PrimitiveType;
-    FPrimitives[PrimitiveType].DXFName := DXFName;
-    FPrimitives[PrimitiveType].CreateParserFunc := CreateParserFunc;
-    
-    programlog.LogOutFormatStr('uzeentproxymanager: Registered primitive %s (%d)', 
-      [DXFName, Ord(PrimitiveType)], LM_Info);
+    BBoxMin := Pt;
+    BBoxMax := Pt;
+    BBoxInitialized := True;
   end
   else
   begin
-    programlog.LogOutFormatStr('uzeentproxymanager: Invalid PrimitiveType %d', 
-      [Ord(PrimitiveType)], LM_Error);
+    if Pt.x < BBoxMin.x then BBoxMin.x := Pt.x;
+    if Pt.y < BBoxMin.y then BBoxMin.y := Pt.y;
+    if Pt.z < BBoxMin.z then BBoxMin.z := Pt.z;
+    if Pt.x > BBoxMax.x then BBoxMax.x := Pt.x;
+    if Pt.y > BBoxMax.y then BBoxMax.y := Pt.y;
+    if Pt.z > BBoxMax.z then BBoxMax.z := Pt.z;
   end;
 end;
 
-class function TProxyPrimitiveManager.GetPrimitiveInfo(
-  PrimitiveType: TProxyPrimitiveType
-): TProxyPrimitiveInfo;
+procedure MergeBBox(
+  const MinB, MaxB: TzePoint3d;
+  var BBoxMin, BBoxMax: TzePoint3d;
+  var BBoxInitialized: Boolean);
 begin
-  InitializeManager;
-  
-  if PrimitiveType in [Low(TProxyPrimitiveType)..High(TProxyPrimitiveType)] then
-    Result := FPrimitives[PrimitiveType]
-  else
-  begin
-    Result.PrimitiveType := pptUnknown;
-    Result.DXFName := '';
-    Result.CreateParserFunc := nil;
-  end;
+  ExpandBBox(MinB, BBoxMin, BBoxMax, BBoxInitialized);
+  ExpandBBox(MaxB, BBoxMin, BBoxMax, BBoxInitialized);
 end;
 
-class function TProxyPrimitiveManager.CreateParser(
-  PrimitiveType: TProxyPrimitiveType
-): IProxyPrimitiveParser;
+{ === TProxyOpCodeDispatcher === }
+
+class procedure TProxyOpCodeDispatcher.EnsureInitialized;
 var
-  Info: TProxyPrimitiveInfo;
+  I: Integer;
 begin
-  Result := nil;
-  
-  InitializeManager;
-  Info := GetPrimitiveInfo(PrimitiveType);
-  
-  if Assigned(Info.CreateParserFunc) then
+  if FInitialized then
+    Exit;
+
+  { Обнуляем таблицу }
+  for I := 0 to PROXY_MAX_OPCODE do
+  begin
+    FTable[I].Registered := False;
+    FTable[I].Name := '';
+    FTable[I].Handler := nil;
+  end;
+  FInitialized := True;
+end;
+
+class procedure TProxyOpCodeDispatcher.RegisterOpCode(
+  const OpCode: Integer;
+  const Name: string;
+  const Handler: TProxyOpCodeHandlerProc);
+begin
+  EnsureInitialized;
+
+  { Проверяем диапазон OpCode }
+  if (OpCode < 0) or (OpCode > PROXY_MAX_OPCODE) then
+  begin
+    programlog.LogOutFormatStr(
+      'uzeentproxymanager: RegisterOpCode - OpCode %d out of range [0..%d]',
+      [OpCode, PROXY_MAX_OPCODE], LM_Info);
+    Exit;
+  end;
+
+  FTable[OpCode].Registered := True;
+  FTable[OpCode].Name := Name;
+  FTable[OpCode].Handler := Handler;
+
+  programlog.LogOutFormatStr(
+    'uzeentproxymanager: Registered OpCode %d (%s)',
+    [OpCode, Name], LM_Info);
+end;
+
+class function TProxyOpCodeDispatcher.HandleOpCode(
+  const OpCode: Integer;
+  Stream: TProxyByteStream;
+  out HandlerResult: TProxyHandlerResult): Boolean;
+begin
+  Result := False;
+  HandlerResult.Valid := False;
+  HandlerResult.HasVertices := False;
+  HandlerResult.HasBBox := False;
+
+  EnsureInitialized;
+
+  { Проверяем диапазон }
+  if (OpCode < 0) or (OpCode > PROXY_MAX_OPCODE) then
+    Exit;
+
+  { Вызываем зарегистрированный обработчик }
+  if FTable[OpCode].Registered and Assigned(FTable[OpCode].Handler) then
   begin
     try
-      Result := Info.CreateParserFunc();
-      programlog.LogOutFormatStr('uzeentproxymanager: Created parser for %s (%d)', 
-        [Info.DXFName, Ord(PrimitiveType)], LM_Info);
+      FTable[OpCode].Handler(Stream, HandlerResult);
+      Result := HandlerResult.Valid;
     except
       on E: Exception do
       begin
-        programlog.LogOutFormatStr('uzeentproxymanager: Failed to create parser for %s: %s', 
-          [Info.DXFName, E.Message], LM_Error);
-        Result := nil;
+        programlog.LogOutFormatStr(
+          'uzeentproxymanager: HandleOpCode %d (%s) exception: %s',
+          [OpCode, FTable[OpCode].Name, E.Message], LM_Info);
+        Result := False;
       end;
     end;
-  end
-  else
-  begin
-    programlog.LogOutFormatStr('uzeentproxymanager: No parser registered for %d', 
-      [Ord(PrimitiveType)], LM_Warning);
   end;
 end;
 
-class function TProxyPrimitiveManager.IsPrimitiveRegistered(
-  PrimitiveType: TProxyPrimitiveType
-): Boolean;
-var
-  Info: TProxyPrimitiveInfo;
+class function TProxyOpCodeDispatcher.IsRegistered(const OpCode: Integer): Boolean;
 begin
-  InitializeManager;
-  Info := GetPrimitiveInfo(PrimitiveType);
-  Result := Assigned(Info.CreateParserFunc);
+  EnsureInitialized;
+  Result := (OpCode >= 0) and (OpCode <= PROXY_MAX_OPCODE)
+    and FTable[OpCode].Registered;
 end;
 
-class function TProxyPrimitiveManager.GetRegisteredCount: Integer;
+class function TProxyOpCodeDispatcher.GetRegisteredCount: Integer;
 var
-  P: TProxyPrimitiveType;
+  I: Integer;
 begin
-  InitializeManager;
+  EnsureInitialized;
   Result := 0;
-  
-  for P := Low(TProxyPrimitiveType) to High(TProxyPrimitiveType) do
-  begin
-    if Assigned(FPrimitives[P].CreateParserFunc) then
+  for I := 0 to PROXY_MAX_OPCODE do
+    if FTable[I].Registered then
       Inc(Result);
-  end;
-end;
-
-class procedure TProxyPrimitiveManager.FinalizeManager;
-var
-  P: TProxyPrimitiveType;
-begin
-  if FInitialized then
-  begin
-    for P := Low(TProxyPrimitiveType) to High(TProxyPrimitiveType) do
-    begin
-      FPrimitives[P].CreateParserFunc := nil;
-    end;
-    FInitialized := False;
-    
-    programlog.LogOutFormatStr('uzeentproxymanager: Finalized (%d primitives unregistered)', 
-      [GetRegisteredCount], LM_Info);
-  end;
-end;
-
-{ === Вспомогательные функции === }
-
-procedure ExpandBBoxWithPoint(const Pt: TzePoint3d; var MinPt, MaxPt: TzePoint3d);
-begin
-  if Pt.x < MinPt.x then MinPt.x := Pt.x;
-  if Pt.y < MinPt.y then MinPt.y := Pt.y;
-  if Pt.z < MinPt.z then MinPt.z := Pt.z;
-  if Pt.x > MaxPt.x then MaxPt.x := Pt.x;
-  if Pt.y > MaxPt.y then MaxPt.y := Pt.y;
-  if Pt.z > MaxPt.z then MaxPt.z := Pt.z;
 end;
 
 initialization
-  TProxyPrimitiveManager.InitializeManager;
-  
-finalization
-  TProxyPrimitiveManager.FinalizeManager;
-  
+  TProxyOpCodeDispatcher.EnsureInitialized;
+
 end.

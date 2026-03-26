@@ -19,16 +19,27 @@
 {
   Модуль: uzeentacdproxy
   Назначение: Поддержка прокси-объектов AutoCAD (ACAD_PROXY_ENTITY) в ZCAD.
-  
-  НОВАЯ АРХИТЕКТУРА (модульная):
-  - Использует TProxyPrimitiveManager для регистрации парсеров
-  - Каждый примитив в отдельном модуле (uzeentproxyparsercircle.pas и др.)
-  - Легко отключить примитив - исключить файл из проекта
-  - Обратная совместимость через старый механизм удалена
-  
-  Текущая реализация:
-  - Поддерживает только круги (pptCircle)
-  - Остальные примитивы будут добавлены в следующих задачах
+
+  Архитектура:
+  - Парсинг Proxy Graphic выполняется в FormatEntity через TProxyGraphicParser
+  - Примитивы внутри прокси регистрируются в TProxyOpCodeDispatcher каждый
+    в своём модуле (uzeentproxyparsercircle.pas, uzeentproxyparsertext.pas и т.д.)
+  - Чтобы отключить конкретный примитив — исключить его .pas из проекта
+
+  Рендеринг:
+  - Контуры (полилинии) отрисовываются через Representation.DrawPolyLineWithLT,
+    как принято в ZCAD (аналогично GDBObjCircle)
+  - DrawGeometry вызывает Representation.DrawGeometry — стандартный путь
+
+  BBox:
+  - Вычисляется суммарно по всем успешно распаршенным примитивам
+  - Если ни один примитив не поддерживается — объект пропускается
+    с сообщением в лог
+
+  Зависимости от примитивов:
+  - uzeentproxyparsercircle  — парсер кругов (OpCode=2)
+  - uzeentproxyparsertext    — парсер текста (OpCode=10, 38)
+  Каждый из них регистрируется в TProxyOpCodeDispatcher при загрузке модуля.
 }
 
 unit uzeentacdproxy;
@@ -58,22 +69,18 @@ uses
   uzestyleslayers,
   uzecamera,
   SysUtils,
-  Math,
-  uzeentproxystream,
-  uzeentproxytypes,
   uzeentproxymanager,
   uzeentproxygraphicparser,
-  uzeentproxybaseparser,
-  uzeentproxyparsercircle,
-  uzeentproxyparsertext,
-  uzeenttext,
+  { Подключаем модули-парсеры примитивов. Каждый регистрирует свой обработчик
+    в TProxyOpCodeDispatcher при инициализации модуля (секция initialization).
+    Чтобы отключить конкретный примитив — закомментировать его строку ниже:
+    его initialization не выполнится и OpCode не зарегистрируется. }
+  uzeentproxyparsercircle,  { OpCode=2: Circle }
+  uzeentproxyparsertext,    { OpCode=10,38: Text, UnicodeText2 }
   UGDBSelectedObjArray,
   uzesnap,
-  uzegeomentitiestree,
   gzctnrVectorTypes,
   gzctnrVector,
-  uzeentabstracttext,
-  //uzedrawingdef,
   UGDBPoint3DArray,
   UGDBVisibleTreeArray;
 
@@ -81,42 +88,37 @@ type
   PGDBObjAcdProxy = ^GDBObjAcdProxy;
 
   { Прокси-объект AutoCAD (ACAD_PROXY_ENTITY).
-    Отображает прокси-графику через парсинг AcGiWorldDraw команд.
-    
-    НОВАЯ АРХИТЕКТУРА:
-    - Использует интерфейс IProxyPrimitiveParser для всех примитивов
-    - Круги: uzeentproxyparsercircle.pas (реализовано)
-    - Остальные примитивы: будут добавлены в следующих задачах
-    }
+
+    Загружает бинарный блок Proxy Graphic из DXF, разбирает его через
+    TProxyGraphicParser и отображает результат через стандартный механизм
+    Representation.DrawPolyLineWithLT.
+
+    Каждый тип примитива обрабатывается отдельным модулем, который
+    регистрирует свой обработчик при загрузке (секция initialization).
+    Добавление нового примитива = создание нового .pas файла. }
   GDBObjAcdProxy = object(GDBObj3d)
   private
-    { Координата минимального угла габаритной рамки в OCS }
+    { Минимальная точка суммарного BBox в OCS }
     FBBoxMinInOCS: TzePoint3d;
-    { Координата максимального угла габаритной рамки в OCS }
+    { Максимальная точка суммарного BBox в OCS }
     FBBoxMaxInOCS: TzePoint3d;
-    { Флаг: данные габаритной рамки успешно загружены }
+    { Флаг: BBox вычислен хотя бы одним примитивом }
     FBBoxLoaded: Boolean;
-    
-    { Бинарные данные прокси-графики }
+
+    { Сырые байты Proxy Graphic (код 310 из DXF) }
     FProxyDataBytes: TBytes;
-    
-    { Центр объекта для контрольной точки }
+
+    { Вершины всех контуров для отрисовки, объединённые в один массив }
+    FContourVertices: GDBPoint3DArray;
+    { Флаг: FContourVertices заполнен }
+    FHasContourVertices: Boolean;
+
+    { Центр BBox — используется как контрольная точка }
     FCenterPoint: TzePoint3d;
     FHasCenterPoint: Boolean;
-    
-    { Вершины круга для отрисовки }
-    FCircleVertices: GDBPoint3DArray;
-    FHasCircleVertices: Boolean;
-    
-    { Данные текста для отрисовки }
-    FTextInsert: TzePoint3d;
-    FTextHeight: Double;
-    FTextContent: string;
-    FHasText: Boolean;
 
-    { Отрисовывает одно ребро габаритной рамки }
-    procedure DrawBBoxEdge(var DC: TDrawContext;
-      const ptFrom, ptTo: TzePoint3d);
+    { Разбирает FProxyDataBytes и заполняет контуры и BBox }
+    procedure ParseProxyData;
 
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
@@ -133,24 +135,24 @@ type
       var drawing: TDrawingDef;
       var IODXFContext: TIODXFSaveContext); virtual;
 
-    { Рассчитывает визуальное представление объекта }
+    { Рассчитывает визуальное представление и заполняет Representation }
     procedure FormatEntity(var drawing: TDrawingDef;
       var DC: TDrawContext;
       Stage: TEFStages = EFAllStages); virtual;
 
-    { Отрисовывает геометрию объекта напрямую (используется при трансформации) }
+    { Отрисовывает объект через Representation }
     procedure DrawGeometry(lw: integer; var DC: TDrawContext;
       const inFrustumState: TInBoundingVolume); virtual;
 
-    { Вычисляет, попадает ли объект в усечённую пирамиду видимости }
+    { Вычисляет попадание объекта в усечённую пирамиду видимости }
     function CalcTrueInFrustum(
       const frustum: TzeFrustum): TInBoundingVolume; virtual;
 
-    { Применяет матрицу трансформации из объекта-источника }
+    { Применяет матрицу трансформации }
     procedure TransformAt(p: PGDBObjEntity;
       t_matrix: PzeTypedMatrix4d); virtual;
 
-    { Возвращает наименование типа объекта }
+    { Возвращает тип объекта в виде строки }
     function GetObjTypeName: string; virtual;
 
     { Возвращает числовой идентификатор типа объекта }
@@ -165,25 +167,25 @@ type
     { Сохраняет состояние для real-time модификации }
     procedure rtsave(refp: Pointer); virtual;
 
-    { Применяет real-time изменение одной точки }
+    { Применяет real-time изменение точки }
     procedure rtmodifyonepoint(const rtmod: TRTModifyData); virtual;
 
     { Проверяет необходимость real-time модификации }
     function IsRTNeedModify(const Point: PControlPointDesc;
       p: Pointer): boolean; virtual;
 
-    { Переносит контрольную точку на экранные координаты }
+    { Проецирует контрольную точку на экранные координаты }
     procedure remaponecontrolpoint(pdesc: pcontrolpointdesc;
       ProjectProc: GDBProjectProc); virtual;
 
-    { Вычисляет габаритный прямоугольник в экранных координатах }
+    { Вычисляет экранный BBox }
     procedure getoutbound(var DC: TDrawContext); virtual;
 
-    { Создаёт новый инициализированный экземпляр прокси-объекта }
+    { Создаёт новый инициализированный экземпляр }
     class function CreateInstance: PGDBObjAcdProxy; static;
   end;
 
-{ Выделяет память для нового прокси-объекта без инициализации }
+{ Выделяет память для нового прокси-объекта }
 function AllocAcdProxy: Pointer;
 
 { Выделяет и инициализирует новый прокси-объект }
@@ -192,45 +194,21 @@ function AllocAndInitAcdProxy(
 
 implementation
 
-{ Вспомогательная функция для отображения байтов в hex }
-function HexDisplay(const Bytes: TBytes; Count: Integer): string;
+{ --- Вспомогательные функции --- }
+
+{ Конвертирует hex-строку в массив байт.
+  Используется при разборе кода 310 из DXF. }
+function HexStringToBytes(const HexStr: string): TBytes;
 var
-  I: Integer;
+  I, Len: Integer;
 begin
-  Result := '';
-  if Count > Length(Bytes) then
-    Count := Length(Bytes);
-    
-  for I := 0 to Count - 1 do
-  begin
-    if I > 0 then
-      Result := Result + ' ';
-    Result := Result + IntToHex(Bytes[I], 2);
-  end;
+  Len := Length(HexStr) div 2;
+  SetLength(Result, Len);
+  for I := 0 to Len - 1 do
+    Result[I] := Lo(StrToIntDef('$' + Copy(HexStr, I * 2 + 1, 2), 0));
 end;
 
-{ --- Вспомогательные процедуры --- }
-
-{ Обновляет минимальную/максимальную точку габаритной рамки по заданной вершине.
-  Используется при загрузке вершин из DXF для построения AABB. }
-procedure ExpandBBox(var bbMin, bbMax: TzePoint3d;
-  const pt: TzePoint3d; var initialized: Boolean);
-begin
-  if not initialized then begin
-    bbMin := pt;
-    bbMax := pt;
-    initialized := True;
-  end else begin
-    if pt.x < bbMin.x then bbMin.x := pt.x;
-    if pt.y < bbMin.y then bbMin.y := pt.y;
-    if pt.z < bbMin.z then bbMin.z := pt.z;
-    if pt.x > bbMax.x then bbMax.x := pt.x;
-    if pt.y > bbMax.y then bbMax.y := pt.y;
-    if pt.z > bbMax.z then bbMax.z := pt.z;
-  end;
-end;
-
-{ --- GDBObjAcdProxy --- }
+{ === GDBObjAcdProxy === }
 
 constructor GDBObjAcdProxy.init;
 begin
@@ -238,11 +216,9 @@ begin
   FBBoxLoaded := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
+  FHasContourVertices := False;
+  FContourVertices.init(0);
   FHasCenterPoint := False;
-  FHasCircleVertices := False;
-  FCircleVertices.init(0);
-  FHasText := False;
-  FTextContent := '';
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -251,69 +227,52 @@ begin
   FBBoxLoaded := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
+  FHasContourVertices := False;
+  FContourVertices.init(0);
   FHasCenterPoint := False;
-  FHasCircleVertices := False;
-  FCircleVertices.init(0);
-  FHasText := False;
-  FTextContent := '';
 end;
 
 destructor GDBObjAcdProxy.done;
 begin
-  FCircleVertices.done;
+  FContourVertices.done;
   inherited done;
 end;
 
-{ Отрисовывает одно ребро габаритной рамки }
-procedure GDBObjAcdProxy.DrawBBoxEdge(var DC: TDrawContext;
-  const ptFrom, ptTo: TzePoint3d);
-begin
-  DC.drawer.DrawLine3DInModelSpace(ptFrom, ptTo, DC.DrawingContext.matrixs);
-end;
-
-{ Загружает данные объекта из DXF-потока }
-procedure GDBObjAcdProxy.LoadFromDXF(var rdr: TZMemReader; ptu: PExtensionData;
+{ Загружает данные объекта из DXF-потока.
+  Читает hex-данные кода 310 и накапливает их в FProxyDataBytes. }
+procedure GDBObjAcdProxy.LoadFromDXF(var rdr: TZMemReader;
+  ptu: PExtensionData;
   var drawing: TDrawingDef; var context: TIODXFLoadContext);
 var
-  ProxyDataHex: string;
-  ProxyDataBytes: TBytes;
-  I, Len: Integer;
+  HexAccum: string;
   Code: Integer;
 begin
-  { Читаем бинарные данные прокси-графики (код 310) и базовые свойства }
-  ProxyDataHex := '';
+  HexAccum := '';
   Code := rdr.ParseInteger;
-  while Code <> 0 do begin
+  while Code <> 0 do
+  begin
     case Code of
-      310: begin  { Бинарные данные прокси-графики }
-          ProxyDataHex := ProxyDataHex + rdr.ParseString;
-        end;
+      310:
+        HexAccum := HexAccum + rdr.ParseString;
     else
-      { Пропускаем неизвестные коды }
       rdr.SkipString;
     end;
     Code := rdr.ParseInteger;
   end;
 
-  { Конвертируем hex-строку в байты }
-  if Length(ProxyDataHex) > 0 then begin
-    Len := Length(ProxyDataHex) div 2;
-    SetLength(FProxyDataBytes, Len);
-    for I := 0 to Len - 1 do begin
-      FProxyDataBytes[I] := Lo(StrToIntDef('$' + Copy(ProxyDataHex, I * 2 + 1, 2), 0));
-    end;
-
-    { Данные загружены, но BBox будет вычислен после парсинга }
-    FBBoxLoaded := False;
-
-    programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF - Loaded proxy data (%d bytes)', [Len], LM_Info);
-  end else begin
-    { Нет данных - нулевой BBox }
-    FBBoxLoaded := False;
-    FBBoxMinInOCS := NulVertex;
-    FBBoxMaxInOCS := NulVertex;
-    
-    programlog.LogOutFormatStr('uzeentacdproxy: LoadFromDXF - No proxy data found', [], LM_Warning);
+  if Length(HexAccum) > 0 then
+  begin
+    FProxyDataBytes := HexStringToBytes(HexAccum);
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: LoadFromDXF loaded %d bytes of proxy data',
+      [Length(FProxyDataBytes)], LM_Info);
+  end
+  else
+  begin
+    SetLength(FProxyDataBytes, 0);
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: LoadFromDXF no proxy data (code 310 absent)',
+      [], LM_Info);
   end;
 end;
 
@@ -322,268 +281,188 @@ procedure GDBObjAcdProxy.SaveToDXF(var outStream: TZctnrVectorBytes;
   var drawing: TDrawingDef; var IODXFContext: TIODXFSaveContext);
 begin
   inherited SaveToDXF(outStream, drawing, IODXFContext);
-  { TODO: Сохранить бинарные данные прокси-графики }
+  { TODO: записать FProxyDataBytes обратно в DXF код 310 }
 end;
 
-{ Рассчитывает визуальное представление объекта }
-procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
-  var DC: TDrawContext; Stage: TEFStages);
+{ Разбирает FProxyDataBytes через TProxyGraphicParser.
+  Заполняет FContourVertices, FBBoxMinInOCS/FBBoxMaxInOCS, FCenterPoint. }
+procedure GDBObjAcdProxy.ParseProxyData;
 var
-  ProxyParser: TProxyGraphicParser;
+  Parser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
-  ir2: itrec;
-  pV2: PzePoint3d;
+  ir: itrec;
+  pV: PzePoint3d;
 begin
-  if assigned(EntExtensions) then
-    EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
+  if Length(FProxyDataBytes) = 0 then
+    Exit;
 
-  { --- Этап расчёта геометрии --- }
-  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then begin
-    { Устанавливаем BoundingBox для системы видимости и выбора }
-    if FBBoxLoaded then begin
-      vp.BoundingBox.LBN := FBBoxMinInOCS;
-      vp.BoundingBox.RTF := FBBoxMaxInOCS;
-    end else begin
-      { Если нет данных — нулевой BB в начале координат }
-      vp.BoundingBox.LBN := NulVertex;
-      vp.BoundingBox.RTF := NulVertex;
-    end;
-    CalcActualVisible(DC.DrawingContext.VActuality);
-  end;
+  { Сбрасываем предыдущие данные }
+  FContourVertices.done;
+  FContourVertices.init(0);
+  FHasContourVertices := False;
+  FBBoxLoaded := False;
+  FHasCenterPoint := False;
 
-  { --- Этап отрисовки --- }
-  if ((Stage = EFAllStages) or (EFDraw in Stage))
-    and (not (ESTemp in State))
-    and (DCODrawable in DC.Options)
-  then begin
-    Representation.Clear;
+  Parser := TProxyGraphicParser.Create(FProxyDataBytes);
+  try
+    ParseResult := Parser.Parse;
 
-    { НОВАЯ АРХИТЕКТУРА: Отрисовка через менеджер парсеров }
-    { Поддерживаются только круги (pptCircle) }
-    
-    programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Using NEW modular architecture', [], LM_Info);
-    
-    if Length(FProxyDataBytes) > 0 then
+    { Обновляем BBox }
+    if ParseResult.BBoxLoaded then
     begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Using NEW ProxyGraphicParser', [], LM_Info);
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Proxy data length: %d bytes', [Length(FProxyDataBytes)], LM_Info);
-      
-      { Выводим первые 32 байта для отладки }
-      if Length(FProxyDataBytes) >= 32 then
-      begin
-        programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - First 32 bytes: %s', 
-          [HexDisplay(FProxyDataBytes, 32)], LM_Info);
-      end;
-      
-      { Создаем полный парсер Proxy Graphic }
-      ProxyParser := TProxyGraphicParser.Create(FProxyDataBytes, Drawing, DC, Stage);
-      try
-        ParseResult := ProxyParser.Parse;
-        
-        if ParseResult.CircleCount > 0 then
-        begin
-          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Successfully parsed %d circles', [ParseResult.CircleCount], LM_Info);
-        end
-        else
-        begin
-          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No circles found in proxy data', [], LM_Warning);
-        end;
-        
-        { Обновляем BBox из результата парсинга ВСЕГДА }
-        if ParseResult.BBoxLoaded then
-        begin
-          { Расширяем BBox от всех примитивов }
-          if not FBBoxLoaded then
-          begin
-            FBBoxMinInOCS := ParseResult.BBoxMin;
-            FBBoxMaxInOCS := ParseResult.BBoxMax;
-            FBBoxLoaded := True;
-            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox initialized from primitive: Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
-              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z], LM_Info);
-          end
-          else
-          begin
-            { Расширяем существующий BBox }
-            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - Expanding BBox: Old Min=(%.3f,%.3f,%.3f) New Min=(%.3f,%.3f,%.3f)', 
-              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, ParseResult.BBoxMin.x, ParseResult.BBoxMin.y, ParseResult.BBoxMin.z], LM_Info);
-            
-            if ParseResult.BBoxMin.x < FBBoxMinInOCS.x then FBBoxMinInOCS.x := ParseResult.BBoxMin.x;
-            if ParseResult.BBoxMin.y < FBBoxMinInOCS.y then FBBoxMinInOCS.y := ParseResult.BBoxMin.y;
-            if ParseResult.BBoxMin.z < FBBoxMinInOCS.z then FBBoxMinInOCS.z := ParseResult.BBoxMin.z;
-            if ParseResult.BBoxMax.x > FBBoxMaxInOCS.x then FBBoxMaxInOCS.x := ParseResult.BBoxMax.x;
-            if ParseResult.BBoxMax.y > FBBoxMaxInOCS.y then FBBoxMaxInOCS.y := ParseResult.BBoxMax.y;
-            if ParseResult.BBoxMax.z > FBBoxMaxInOCS.z then FBBoxMaxInOCS.z := ParseResult.BBoxMax.z;
-            
-            programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox expanded: New Min=(%.3f,%.3f,%.3f) Max=(%.3f,%.3f,%.3f)', 
-              [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z, FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z], LM_Info);
-          end;
-          
-          vp.BoundingBox.LBN := FBBoxMinInOCS;
-          vp.BoundingBox.RTF := FBBoxMaxInOCS;
-          
-          { Устанавливаем центр BBox для контрольной точки }
-          FCenterPoint.x := (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2;
-          FCenterPoint.y := (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2;
-          FCenterPoint.z := (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2;
-          FHasCenterPoint := True;
-          
-          { Сохраняем вершины круга для отрисовки }
-          if ParseResult.HasCircleVertices then
-          begin
-            FCircleVertices.init(ParseResult.CircleVertices.Count);
-            pV2 := ParseResult.CircleVertices.beginiterate(ir2);
-            while pV2 <> nil do
-            begin
-              FCircleVertices.PushBackData(pV2^);
-              pV2 := ParseResult.CircleVertices.iterate(ir2);
-            end;
-            FHasCircleVertices := True;
-          end;
-          
-          { Сохраняем данные текста для отрисовки }
-          if ParseResult.HasText then
-          begin
-            FTextInsert := ParseResult.TextInsert;
-            FTextHeight := ParseResult.TextHeight;
-            FTextContent := ParseResult.TextContent;
-            FHasText := True;
-          end;
-          
-          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - BBox updated from proxy data, Center=(%.3f,%.3f,%.3f)', 
-            [FCenterPoint.x, FCenterPoint.y, FCenterPoint.z], LM_Info);
-        end
-        else
-        begin
-          programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No BBox from parser', [], LM_Warning);
-        end;
-      finally
-        ProxyParser.Free;
-      end;
+      FBBoxMinInOCS := ParseResult.BBoxMin;
+      FBBoxMaxInOCS := ParseResult.BBoxMax;
+      FBBoxLoaded := True;
+
+      { Вычисляем центр BBox }
+      FCenterPoint.x := (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2;
+      FCenterPoint.y := (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2;
+      FCenterPoint.z := (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2;
+      FHasCenterPoint := True;
+
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: ParseProxyData BBox=(%.3f,%.3f,%.3f)-(%.3f,%.3f,%.3f) primitives=%d',
+        [FBBoxMinInOCS.x, FBBoxMinInOCS.y, FBBoxMinInOCS.z,
+         FBBoxMaxInOCS.x, FBBoxMaxInOCS.y, FBBoxMaxInOCS.z,
+         ParseResult.PrimitiveCount], LM_Info);
     end
     else
     begin
-      programlog.LogOutFormatStr('uzeentacdproxy: FormatEntity - No proxy data to parse (Length=%d)', [Length(FProxyDataBytes)], LM_Warning);
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: ParseProxyData no supported primitives found',
+        [], LM_Info);
     end;
-    
-    { Круги будут отрисованы в DrawGeometry }
+
+    { Копируем вершины контуров }
+    if ParseResult.HasVertices and (ParseResult.AllVertices.Count > 0) then
+    begin
+      FContourVertices.init(ParseResult.AllVertices.Count);
+      pV := ParseResult.AllVertices.beginiterate(ir);
+      while pV <> nil do
+      begin
+        FContourVertices.PushBackData(pV^);
+        pV := ParseResult.AllVertices.iterate(ir);
+      end;
+      FHasContourVertices := True;
+    end;
+
+  finally
+    ParseResult.AllVertices.done;
+    Parser.Free;
+  end;
+end;
+
+{ Рассчитывает визуальное представление объекта.
+  Аналогично GDBObjCircle:
+  - EFCalcEntityCS: устанавливает BBox, вызывает разбор данных
+  - EFDraw: заполняет Representation через DrawPolyLineWithLT }
+procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
+  var DC: TDrawContext; Stage: TEFStages);
+begin
+  if Assigned(EntExtensions) then
+    EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
+
+  { --- Этап расчёта координатной системы и геометрии --- }
+  if (Stage = EFAllStages) or (EFCalcEntityCS in Stage) then
+  begin
+    { Разбираем данные каждый раз при форматировании:
+      это обеспечивает корректную работу при первом отображении и
+      при изменении трансформации }
+    ParseProxyData;
+
+    { Передаём BBox системе видимости }
+    if FBBoxLoaded then
+    begin
+      vp.BoundingBox.LBN := FBBoxMinInOCS;
+      vp.BoundingBox.RTF := FBBoxMaxInOCS;
+    end
+    else
+    begin
+      vp.BoundingBox.LBN := NulVertex;
+      vp.BoundingBox.RTF := NulVertex;
+    end;
+
+    CalcActualVisible(DC.DrawingContext.VActuality);
   end;
 
-  if assigned(EntExtensions) then
+  { --- Этап формирования визуального представления --- }
+  if ((Stage = EFAllStages) or (EFDraw in Stage))
+    and not (ESTemp in State)
+    and (DCODrawable in DC.Options)
+  then
+  begin
+    Representation.Clear;
+
+    { Рисуем все контуры примитивов через стандартный механизм Representation.
+      Это обеспечивает корректную работу с line types и отсечением.
+      Аналог: GDBObjCircle.FormatEntity → Representation.DrawPolyLineWithLT }
+    if FHasContourVertices and (FContourVertices.Count > 0) then
+    begin
+      Representation.DrawPolyLineWithLT(DC, FContourVertices, vp, True, True);
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: FormatEntity drew %d contour vertices into Representation',
+        [FContourVertices.Count], LM_Info);
+    end
+    else if not FBBoxLoaded then
+    begin
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: FormatEntity no supported primitives, object skipped in zcUI',
+        [], LM_Info);
+    end;
+  end;
+
+  if Assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
 end;
 
-{ Прямая отрисовка 12 рёбер габаритной рамки через drawer.
-  Вызывается при перемещении/копировании, когда Representation устарело. }
+{ Отрисовывает геометрию через Representation (стандартный путь ZCAD) }
 procedure GDBObjAcdProxy.DrawGeometry(lw: integer; var DC: TDrawContext;
   const inFrustumState: TInBoundingVolume);
-var
-  v000, v100, v010, v110: TzePoint3d;
-  v001, v101, v011, v111: TzePoint3d;
-  bbMin, bbMax: TzePoint3d;
-  TextObj: PGDBObjText;
 begin
-  if not FBBoxLoaded then
-    Exit;
-
-  bbMin := FBBoxMinInOCS;
-  bbMax := FBBoxMaxInOCS;
-
-  { Вычисляем 8 вершин ограничивающего параллелепипеда }
-  v000.x := bbMin.x; v000.y := bbMin.y; v000.z := bbMin.z;
-  v100.x := bbMax.x; v100.y := bbMin.y; v100.z := bbMin.z;
-  v010.x := bbMin.x; v010.y := bbMax.y; v010.z := bbMin.z;
-  v110.x := bbMax.x; v110.y := bbMax.y; v110.z := bbMin.z;
-  v001.x := bbMin.x; v001.y := bbMin.y; v001.z := bbMax.z;
-  v101.x := bbMax.x; v101.y := bbMin.y; v101.z := bbMax.z;
-  v011.x := bbMin.x; v011.y := bbMax.y; v011.z := bbMax.z;
-  v111.x := bbMax.x; v111.y := bbMax.y; v111.z := bbMax.z;
-
-  { Нижняя грань }
-  DrawBBoxEdge(DC, v000, v100);
-  DrawBBoxEdge(DC, v100, v110);
-  DrawBBoxEdge(DC, v110, v010);
-  DrawBBoxEdge(DC, v010, v000);
-
-  { Верхняя грань }
-  DrawBBoxEdge(DC, v001, v101);
-  DrawBBoxEdge(DC, v101, v111);
-  DrawBBoxEdge(DC, v111, v011);
-  DrawBBoxEdge(DC, v011, v001);
-
-  { Вертикальные рёбра }
-  DrawBBoxEdge(DC, v000, v001);
-  DrawBBoxEdge(DC, v100, v101);
-  DrawBBoxEdge(DC, v110, v111);
-  DrawBBoxEdge(DC, v010, v011);
-  
-  { Рисуем круг если вершины загружены }
-  if FHasCircleVertices and (FCircleVertices.Count > 0) then
-  begin
-    programlog.LogOutFormatStr('uzeentacdproxy: DrawGeometry - Drawing %d circle vertices', [FCircleVertices.Count], LM_Info);
-    DC.drawer.DrawContour3DInModelSpace(FCircleVertices, DC.DrawingContext.matrixs, True);
-  end;
-  
-  { Рисуем текст если есть }
-  if FHasText and (FTextContent <> '') then
-  begin
-    programlog.LogOutFormatStr('uzeentacdproxy: DrawGeometry - Drawing text "%s" at (%.3f,%.3f,%.3f)', 
-      [FTextContent, FTextInsert.x, FTextInsert.y, FTextInsert.z], LM_Info);
-    
-    { Создаем сущность текста }
-
-    TextObj := GDBObjText.CreateInstance;
-    TextObj^.initnul(nil);
-    TextObj^.Local.p_insert := FTextInsert;
-    TextObj^.Content := FTextContent;
-    TextObj^.obj_height := FTextHeight;
-    TextObj^.textprop.size := FTextHeight;
-    TextObj^.textprop.wfactor := 1.0;
-    TextObj^.textprop.oblique := 0.0;
-    TextObj^.textprop.justify := jstl; { Left baseline }
-
-    { Вычисляем матрицу и отрисовываем }
-    TextObj^.CalcObjMatrix(nil);
-    //TextObj^.FormatEntity(DC.DrawingContext.DrawingDef^, DC, EFDraw);
-    TextObj^.done;
-    FreeMem(Pointer(TextObj));
-  end;
-  
-  { Рисуем контрольную точку в центре }
-  if FHasCenterPoint then
-  begin
-    DC.drawer.DrawPoint3DInModelSpace(FCenterPoint, DC.DrawingContext.matrixs);
-  end;
+  Representation.DrawGeometry(DC, vp.BoundingBox, inFrustumState);
+  inherited;
 end;
 
+{ Вычисляет попадание BBox объекта в усечённую пирамиду видимости }
 function GDBObjAcdProxy.CalcTrueInFrustum(
   const frustum: TzeFrustum): TInBoundingVolume;
 var
   I: Integer;
   D1, D2: Double;
 begin
-  { Проверяем попадание BBox во frustum по 6 плоскостям }
-  for I := 0 to 5 do begin
-    { Проверяем оба угла BBox }
-    D1 := frustum.v[I].v[0] * FBBoxMinInOCS.x + frustum.v[I].v[1] * FBBoxMinInOCS.y +
-          frustum.v[I].v[2] * FBBoxMinInOCS.z + frustum.v[I].v[3];
-    D2 := frustum.v[I].v[0] * FBBoxMaxInOCS.x + frustum.v[I].v[1] * FBBoxMaxInOCS.y +
-          frustum.v[I].v[2] * FBBoxMaxInOCS.z + frustum.v[I].v[3];
-    
-    { Если оба угла снаружи плоскости - BBox вне frustum }
+  if not FBBoxLoaded then
+  begin
+    Result := IREmpty;
+    Exit;
+  end;
+
+  { Проверяем оба угла BBox по каждой из 6 плоскостей frustum }
+  for I := 0 to 5 do
+  begin
+    D1 := frustum.v[I].v[0] * FBBoxMinInOCS.x
+        + frustum.v[I].v[1] * FBBoxMinInOCS.y
+        + frustum.v[I].v[2] * FBBoxMinInOCS.z
+        + frustum.v[I].v[3];
+    D2 := frustum.v[I].v[0] * FBBoxMaxInOCS.x
+        + frustum.v[I].v[1] * FBBoxMaxInOCS.y
+        + frustum.v[I].v[2] * FBBoxMaxInOCS.z
+        + frustum.v[I].v[3];
+
+    { Если оба угла за плоскостью — объект вне frustum }
     if (D1 < 0) and (D2 < 0) then
     begin
       Result := IREmpty;
       Exit;
     end;
   end;
-  
+
   Result := IRFully;
 end;
 
 procedure GDBObjAcdProxy.TransformAt(p: PGDBObjEntity;
   t_matrix: PzeTypedMatrix4d);
 begin
-  { TODO: Применить матрицу трансформации }
+  { TODO: применить матрицу трансформации к FProxyDataBytes или к вершинам }
 end;
 
 function GDBObjAcdProxy.GetObjTypeName: string;
@@ -599,29 +478,26 @@ end;
 function GDBObjAcdProxy.Clone(own: Pointer): PGDBObjEntity;
 begin
   Result := CreateInstance;
-  { TODO: Скопировать данные }
+  { TODO: скопировать FProxyDataBytes и вычисленные данные }
 end;
 
+{ Добавляет одну контрольную точку в центре BBox }
 procedure GDBObjAcdProxy.addcontrolpoints(tdesc: Pointer);
 var
   pdesc: controlpointdesc;
 begin
   if not FHasCenterPoint then
     Exit;
-    
-  { Создаем одну контрольную точку в центре }
+
   PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
-  
+
   pdesc.selected := False;
   pdesc.PDrawable := nil;
-  pdesc.pointtype := os_begin;  // Используем os_begin как тип точки
+  pdesc.pointtype := os_begin;
   pdesc.attr := [CPA_Strech];
   pdesc.worldcoord := FCenterPoint;
-  
+
   PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(pdesc);
-  
-  programlog.LogOutFormatStr('uzeentacdproxy: Added control point at (%.3f, %.3f, %.3f)', 
-    [FCenterPoint.x, FCenterPoint.y, FCenterPoint.z], LM_Info);
 end;
 
 procedure GDBObjAcdProxy.rtsave(refp: Pointer);
@@ -655,10 +531,7 @@ end;
 
 procedure GDBObjAcdProxy.getoutbound(var DC: TDrawContext);
 begin
-  { Вычисляем габаритный прямоугольник в экранных координатах }
-  if FBBoxLoaded then begin
-    { TODO: Спроецировать BBox на экран }
-  end;
+  { TODO: спроецировать BBox на экран }
 end;
 
 class function GDBObjAcdProxy.CreateInstance: PGDBObjAcdProxy;
@@ -680,16 +553,16 @@ begin
 end;
 
 initialization
-  { Регистрация прокси-объекта в фабрике сущностей }
+  { Регистрируем тип объекта в фабрике DXF-сущностей }
   RegisterDXFEntity(
     GDBAcdProxyID,
     'ACAD_PROXY_ENTITY',
     'ProxyEntity',
     @AllocAcdProxy,
-    @AllocAndInitAcdProxy
-  );
-  
-  programlog.LogOutFormatStr('uzeentacdproxy: Registered ACAD_PROXY_ENTITY (NEW modular architecture)', [], LM_Info);
-  programlog.LogOutFormatStr('uzeentacdproxy: Registered primitives count: %d', [TProxyPrimitiveManager.GetRegisteredCount], LM_Info);
-  
+    @AllocAndInitAcdProxy);
+
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: Registered ACAD_PROXY_ENTITY, proxy OpCode handlers: %d',
+    [TProxyOpCodeDispatcher.GetRegisteredCount], LM_Info);
+
 end.
