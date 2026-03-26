@@ -67,10 +67,13 @@ uses
   uzbLogIntf,
   uzclog,
   uzestyleslayers,
+  uzestylestexts,
   uzecamera,
   SysUtils,
+  Math,
   uzeentproxymanager,
   uzeentproxygraphicparser,
+  uzglgeometry,
   { Подключаем модули-парсеры примитивов. Каждый регистрирует свой обработчик
     в TProxyOpCodeDispatcher при инициализации модуля (секция initialization).
     Чтобы отключить конкретный примитив — закомментировать его строку ниже:
@@ -113,12 +116,18 @@ type
     { Флаг: FContourVertices заполнен }
     FHasContourVertices: Boolean;
 
+    { Текстовые примитивы, собранные при разборе }
+    FTextItems: array of TProxyTextItem;
+
     { Центр BBox — используется как контрольная точка }
     FCenterPoint: TzePoint3d;
     FHasCenterPoint: Boolean;
 
     { Разбирает FProxyDataBytes и заполняет контуры и BBox }
     procedure ParseProxyData;
+
+    { Отрисовывает текстовые примитивы через Representation.DrawTextContent }
+    procedure DrawTextItems(var drawing: TDrawingDef; var DC: TDrawContext);
 
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp; LW: smallint);
@@ -302,6 +311,7 @@ begin
   FHasContourVertices := False;
   FBBoxLoaded := False;
   FHasCenterPoint := False;
+  SetLength(FTextItems, 0);
 
   Parser := TProxyGraphicParser.Create(FProxyDataBytes);
   try
@@ -346,9 +356,86 @@ begin
       FHasContourVertices := True;
     end;
 
+    { Копируем текстовые примитивы }
+    FTextItems := ParseResult.TextItems;
+
+    if Length(FTextItems) > 0 then
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: ParseProxyData collected %d text items',
+        [Length(FTextItems)], LM_Info);
+
   finally
     ParseResult.AllVertices.done;
     Parser.Free;
+  end;
+end;
+
+{ Отрисовывает все собранные текстовые примитивы.
+  Для каждого элемента FTextItems:
+  - берёт шрифт из таблицы стилей чертежа (или "Standard" по умолчанию);
+  - строит матрицы трансформации аналогично GDBObjText.CalcObjMatrix;
+  - вызывает Representation.DrawTextContent. }
+procedure GDBObjAcdProxy.DrawTextItems(var drawing: TDrawingDef;
+  var DC: TDrawContext);
+var
+  I: Integer;
+  TXTStyle: PGDBTextStyle;
+  Item: TProxyTextItem;
+  ObjMatrix, DrawMatrix, RotMatrix, ScaleMatrix, TransMatrix: TzeTypedMatrix4d;
+  TextOutbound: OutBound4V;
+begin
+  if Length(FTextItems) = 0 then
+    Exit;
+
+  for I := 0 to High(FTextItems) do
+  begin
+    Item := FTextItems[I];
+
+    { Получаем стиль текста: сначала по имени шрифта, затем "Standard", затем первый }
+    TXTStyle := nil;
+    if Item.FontName <> '' then
+      TXTStyle := drawing.GetTextStyleTable^.FindStyle(Item.FontName, False);
+    if TXTStyle = nil then
+      TXTStyle := drawing.GetTextStyleTable^.FindStyle('Standard', False);
+    if TXTStyle = nil then
+      TXTStyle := PGDBTextStyle(drawing.GetTextStyleTable^.getDataMutable(0));
+
+    if (TXTStyle = nil) or (TXTStyle^.pfont = nil) then
+    begin
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: DrawTextItems[%d] no font found, skip',
+        [I], LM_Info);
+      Continue;
+    end;
+
+    { ObjMatrix: матрица объекта = поворот * перенос в точку вставки.
+      Аналогично GDBObjPlainWithOX.CalcObjMatrix + поворот по углу. }
+    TransMatrix := CreateTranslationMatrix(Item.Insert);
+    RotMatrix := CreateRotationMatrixZ(Item.Angle);
+    ObjMatrix := MatrixMultiply(RotMatrix, TransMatrix);
+
+    { DrawMatrix: масштаб ширины и высоты без наклона (ObliqueAngle=0).
+      Аналогично GDBObjAbstractText.CalcObjMatrix:
+        m3 = scale(wfactor*height, height, height)
+        DrawMatrix = m3 * NulTranslation }
+    ScaleMatrix := CreateScaleMatrix(
+      Item.WidthFactor * Item.Height,
+      Item.Height,
+      Item.Height);
+    DrawMatrix := ScaleMatrix;
+
+    Representation.DrawTextContent(
+      DC.drawer,
+      Item.Text,
+      TXTStyle^.pfont,
+      DrawMatrix,
+      ObjMatrix,
+      Item.Height,
+      TextOutbound);
+
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: DrawTextItems[%d] drew text "%s" at (%.3f,%.3f)',
+      [I, Item.Text, Item.Insert.x, Item.Insert.y], LM_Info);
   end;
 end;
 
@@ -409,6 +496,9 @@ begin
         'uzeentacdproxy: FormatEntity no supported primitives, object skipped in zcUI',
         [], LM_Info);
     end;
+
+    { Отрисовываем текстовые примитивы }
+    DrawTextItems(drawing, DC);
   end;
 
   if Assigned(EntExtensions) then
