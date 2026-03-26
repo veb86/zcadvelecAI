@@ -53,8 +53,7 @@
 
   Текущая реализация:
   - BBox вычисляется аппроксимационно: ширина = len(text) × height × wfactor
-  - Рендер текста: TextItem заполняется и передаётся в GDBObjAcdProxy.DrawTextItems,
-    которая вызывает Representation.DrawTextContent с шрифтом из таблицы стилей чертежа
+  - Рендер текста пока не реализован (TODO: интеграция с GDBObjMText/GDBObjText)
   - HandlerResult.HasVertices = False (текст не тесселируется в полилинию)
 }
 
@@ -70,7 +69,6 @@ implementation
 
 uses
   SysUtils,
-  Math,
   uzeentproxystream,
   uzeentproxymanager,
   uzegeometrytypes,
@@ -142,25 +140,23 @@ end;
 { --- Обработчики OpCode --- }
 
 { Читает текстовый примитив формата OpCode=10 (ANSI Text1).
-  Возвращает BBox и TextItem для отрисовки через DrawTextContent. }
+  Возвращает BBox; вершины не генерируются (рендер текста — TODO). }
 procedure HandleText(
   Stream: TProxyByteStream;
   out HandlerResult: TProxyHandlerResult);
 var
-  Insert, Normal, Direction: TzePoint3d;
+  Insert, Normal: TzePoint3d;
   Height, WidthFactor: Double;
   Text: string;
-  Angle: Double;
 begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
-  HandlerResult.HasTextItem := False;
 
   { Читаем геометрию }
   Insert := Stream.ReadVertex;
   Normal := Stream.ReadVector;
-  Direction := Stream.ReadVector;
+  Stream.ReadVector;    { Direction — пока не используется }
 
   Height := Stream.ReadDouble;
   WidthFactor := Stream.ReadDouble;
@@ -179,53 +175,33 @@ begin
   if not VectorsAreEqual(Normal, TEXT_Z_AXIS) then
     Insert := TransformPointToOCS(Insert, Normal);
 
-  { Угол поворота текста из вектора Direction (проекция на плоскость XY) }
-  if (Abs(Direction.x) > 1e-9) or (Abs(Direction.y) > 1e-9) then
-    Angle := ArcTan2(Direction.y, Direction.x)
-  else
-    Angle := 0.0;
-
   { Аппроксимационный BBox }
   CalcTextBBox(Insert, Text, Height, WidthFactor,
     HandlerResult.BBoxMin, HandlerResult.BBoxMax);
   HandlerResult.HasBBox := True;
-
-  { Заполняем данные текстового примитива для отрисовки }
-  HandlerResult.TextItem.Insert := Insert;
-  HandlerResult.TextItem.Text := Text;
-  HandlerResult.TextItem.Height := Height;
-  HandlerResult.TextItem.WidthFactor := WidthFactor;
-  HandlerResult.TextItem.Angle := Angle;
-  HandlerResult.TextItem.FontName := '';
-  HandlerResult.HasTextItem := True;
-
   HandlerResult.Valid := True;
 
-  programlog.LogOutFormatStr(
-    'uzeentproxyparsertext: Text1 OK, angle=%.3f rad, TextItem filled',
-    [Angle], LM_Info);
+  { TODO: тесселировать или создать GDBObjText для отрисовки }
 end;
 
 { Читает расширенный Unicode-текст формата OpCode=38 (UnicodeText2).
-  Возвращает BBox и TextItem для отрисовки через DrawTextContent. }
+  Возвращает BBox; вершины не генерируются (рендер текста — TODO). }
 procedure HandleUnicodeText2(
   Stream: TProxyByteStream;
   out HandlerResult: TProxyHandlerResult);
 var
-  Insert, Normal, Direction: TzePoint3d;
+  Insert, Normal: TzePoint3d;
   Height, WidthFactor: Double;
   Text, FontName: string;
-  Angle: Double;
 begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
-  HandlerResult.HasTextItem := False;
 
   { Геометрия }
   Insert := Stream.ReadVertex;
   Normal := Stream.ReadVector;
-  Direction := Stream.ReadVector;
+  Stream.ReadVector;   { Direction — пока не используется }
 
   { Текст (UTF-16, выровнен по 4 байтам) }
   try
@@ -268,31 +244,13 @@ begin
   if not VectorsAreEqual(Normal, TEXT_Z_AXIS) then
     Insert := TransformPointToOCS(Insert, Normal);
 
-  { Угол поворота текста из вектора Direction (проекция на плоскость XY) }
-  if (Abs(Direction.x) > 1e-9) or (Abs(Direction.y) > 1e-9) then
-    Angle := ArcTan2(Direction.y, Direction.x)
-  else
-    Angle := 0.0;
-
   { Аппроксимационный BBox }
   CalcTextBBox(Insert, Text, Height, WidthFactor,
     HandlerResult.BBoxMin, HandlerResult.BBoxMax);
   HandlerResult.HasBBox := True;
-
-  { Заполняем данные текстового примитива для отрисовки }
-  HandlerResult.TextItem.Insert := Insert;
-  HandlerResult.TextItem.Text := Text;
-  HandlerResult.TextItem.Height := Height;
-  HandlerResult.TextItem.WidthFactor := WidthFactor;
-  HandlerResult.TextItem.Angle := Angle;
-  HandlerResult.TextItem.FontName := FontName;
-  HandlerResult.HasTextItem := True;
-
   HandlerResult.Valid := True;
 
-  programlog.LogOutFormatStr(
-    'uzeentproxyparsertext: UnicodeText2 OK, angle=%.3f rad, TextItem filled',
-    [Angle], LM_Info);
+  { TODO: интеграция с GDBObjMText для отрисовки текста }
 end;
 
 initialization

@@ -69,8 +69,6 @@ type
     ContourCount: Integer;
     { Общее число успешно обработанных примитивов (включая без вершин, только BBox) }
     PrimitiveCount: Integer;
-    { Текстовые примитивы для отрисовки через DrawTextContent }
-    TextItems: array of TProxyTextItem;
   end;
 
   { Парсер Proxy Graphic.
@@ -100,9 +98,6 @@ type
 
     { Расширяет суммарный BBox данными из одного примитива }
     procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
-
-    { Добавляет текстовый элемент в список TextItems результата }
-    procedure AppendTextItem(const Item: TProxyTextItem);
 
   public
     constructor Create(const Data: TBytes);
@@ -166,16 +161,6 @@ begin
     FResult.AllVertices.PushBackData(pV^);
     pV := Src.iterate(ir);
   end;
-end;
-
-{ Добавляет текстовый элемент в список TextItems результата }
-procedure TProxyGraphicParser.AppendTextItem(const Item: TProxyTextItem);
-var
-  NewLen: Integer;
-begin
-  NewLen := Length(FResult.TextItems) + 1;
-  SetLength(FResult.TextItems, NewLen);
-  FResult.TextItems[NewLen - 1] := Item;
 end;
 
 { Расширяет суммарный BBox данными из результата обработчика }
@@ -356,10 +341,6 @@ begin
           HandlerResult.Vertices.done;
         end;
 
-        { Сохраняем текстовый примитив для последующей отрисовки }
-        if HandlerResult.HasTextItem then
-          AppendTextItem(HandlerResult.TextItem);
-
         Inc(FResult.PrimitiveCount);
       end
       else
@@ -390,7 +371,6 @@ begin
   FResult.HasVertices := False;
   FResult.PrimitiveCount := 0;
   FResult.ContourCount := 0;
-  SetLength(FResult.TextItems, 0);
 
   programlog.LogOutFormatStr(
     'uzeentproxygraphicparser: Parse START (registered handlers: %d)',

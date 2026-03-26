@@ -50,25 +50,8 @@ const
   PROXY_MAX_OPCODE = 255;
 
 type
-  { Данные одного текстового примитива, переданные обработчиком.
-    Используются в FormatEntity для вызова Representation.DrawTextContent. }
-  TProxyTextItem = record
-    { Точка вставки текста в OCS }
-    Insert: TzePoint3d;
-    { Строка текста }
-    Text: string;
-    { Высота символов }
-    Height: Double;
-    { Масштаб по ширине }
-    WidthFactor: Double;
-    { Угол поворота текста (радианы) }
-    Angle: Double;
-    { Имя шрифта (ANSI, может быть пустым — тогда используется Standard) }
-    FontName: string;
-  end;
-
   { Результат обработки одного OpCode-примитива.
-    Хранит геометрию, BBox и текстовые данные, собранные парсером. }
+    Хранит геометрию и BBox, собранные парсером. }
   TProxyHandlerResult = record
     { Флаг: примитив успешно распаршен }
     Valid: Boolean;
@@ -82,10 +65,6 @@ type
     BBoxMax: TzePoint3d;
     { Флаг: BBox вычислен }
     HasBBox: Boolean;
-    { Данные текстового примитива (заполняются только для OpCode текста) }
-    TextItem: TProxyTextItem;
-    { Флаг: TextItem заполнен }
-    HasTextItem: Boolean;
   end;
 
   { Процедура-обработчик одного OpCode.
@@ -242,7 +221,6 @@ begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
-  HandlerResult.HasTextItem := False;
 
   EnsureInitialized;
 
