@@ -50,6 +50,7 @@ uses
   uzeentproxystream,
   uzeentproxymanager,
   uzegeometrytypes,
+  gzctnrVectorTypes,
   UGDBPoint3DArray;
 
 type
