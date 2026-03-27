@@ -60,6 +60,16 @@ type
                        LTypeStyleTable:GDBLtypeArray;
                        DimStyleTable:GDBDimStyleArray;
                        DrawingExtensions:TDrawingExtensions;
+
+                       { Сырой текст секции CLASSES из исходного DXF-файла.
+                         Сохраняется при загрузке и записывается обратно при сохранении,
+                         чтобы не потерять определения пользовательских классов. }
+                       RawClassesSection: string;
+                       { Сырой текст секции OBJECTS из исходного DXF-файла.
+                         Содержит словари, XRECORD, VISUALSTYLE и другие объекты,
+                         которые ZCAD не обрабатывает, но AutoCAD требует при открытии. }
+                       RawObjectsSection: string;
+
                        function GetLastSelected:PGDBObjEntity;virtual;
                        constructor init(pcam:PGDBObjCamera);
                        destructor done;virtual;
@@ -797,6 +807,8 @@ begin
                        pcamera.zmax:=100000.0;
                        pcamera.fovy:=35.0;
                      end;
+  RawClassesSection := '';
+  RawObjectsSection := '';
   LTypeStyleTable.init(100);
   LayerTable.init(200,LTypeStyleTable.GetSystemLT(TLTContinous));
   DimStyleTable.init(100);

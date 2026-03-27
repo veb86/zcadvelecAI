@@ -28,7 +28,7 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,uzclog,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes;
 resourcestring
   rsLoadDXFFile='Load DXF file';
 type
@@ -99,6 +99,67 @@ begin
     Result := True;
   end else
     Result := False;
+end;
+
+{ Извлекает сырой текст секции из DXF-файла.
+  Ищет секцию SectionName (CLASSES, OBJECTS и т.д.) и возвращает её содержимое
+  включая строки 0/SECTION, 2/SectionName, ..., 0/ENDSEC.
+  Используется для сохранения секций, которые ZCAD не обрабатывает. }
+function ExtractDxfRawSection(const AFileName: string;
+  const SectionName: string): string;
+var
+  Lines: TStringList;
+  I, SectionStart, SectionEnd: Integer;
+begin
+  Result := '';
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(AFileName);
+    SectionStart := -1;
+    SectionEnd := -1;
+    I := 0;
+    while I < Lines.Count - 3 do
+    begin
+      { Ищем начало секции: 0 / SECTION / 2 / SectionName }
+      if (Trim(Lines[I]) = '0') and
+         (Trim(Lines[I + 1]) = 'SECTION') and
+         (Trim(Lines[I + 2]) = '2') and
+         (Trim(Lines[I + 3]) = SectionName) then
+      begin
+        SectionStart := I;
+        Break;
+      end;
+      Inc(I);
+    end;
+    if SectionStart < 0 then
+      Exit;
+    { Ищем конец секции: 0 / ENDSEC }
+    I := SectionStart + 4;
+    while I < Lines.Count - 1 do
+    begin
+      if (Trim(Lines[I]) = '0') and
+         (Trim(Lines[I + 1]) = 'ENDSEC') then
+      begin
+        SectionEnd := I + 1;
+        Break;
+      end;
+      Inc(I);
+    end;
+    if SectionEnd < 0 then
+      Exit;
+    { Собираем строки секции }
+    for I := SectionStart to SectionEnd do
+    begin
+      if I > SectionStart then
+        Result := Result + LineEnding;
+      Result := Result + Lines[I];
+    end;
+    programlog.LogOutFormatStr(
+      'uzeffdxf: ExtractDxfRawSection: секция %s извлечена (%d строк)',
+      [SectionName, SectionEnd - SectionStart + 1], LM_Info);
+  finally
+    Lines.Free;
+  end;
 end;
 
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
@@ -1351,6 +1412,16 @@ begin
         dwgCtx.POwner^.calcbb(dwgCtx.DC);
         result:=fileCtx.Header;
         fileCtx.Done;
+
+        { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
+          Эти секции ZCAD не обрабатывает при загрузке, но AutoCAD
+          требует их наличие при открытии — без них файл считается
+          повреждённым. Сохраняем их для записи обратно при сохранении. }
+        dwgCtx.PDrawing^.RawClassesSection :=
+          ExtractDxfRawSection(AFileName, 'CLASSES');
+        dwgCtx.PDrawing^.RawObjectsSection :=
+          ExtractDxfRawSection(AFileName, 'OBJECTS');
+
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally
@@ -1490,6 +1561,47 @@ begin
                                            VarsDict.Add('$TEXTSIZE',floattostr({sysvar.DWG.DWG_TextSize^}drawing.TextSize));
 end;
 
+{ Записывает содержимое сырой секции в выходной поток.
+  Пропускает первые 2 строки (0/SECTION), т.к. они уже записаны
+  при обработке шаблона. Записывает от строки 2/SectionName
+  до конца (0/ENDSEC включительно). }
+procedure WriteRawSectionContent(var outstream: TZctnrVectorBytes;
+  const RawSection: string);
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawSection;
+    { Пропускаем первые 2 строки: "0" и "SECTION",
+      т.к. они были записаны из шаблона при обработке предыдущей
+      группы (группа 0, значение SECTION). }
+    for I := 2 to Lines.Count - 1 do
+      outstream.TXTAddStringEOL(Lines[I]);
+  finally
+    Lines.Free;
+  end;
+end;
+
+{ Пропускает содержимое текущей секции в шаблоне до 0/ENDSEC.
+  Вызывается после WriteRawSectionContent, чтобы шаблонные данные
+  секции не попали в выходной поток. }
+procedure SkipTemplateSection(var templatefile: TZctnrVectorBytes);
+var
+  gs, vs: string;
+  gi: Integer;
+begin
+  while templatefile.notEOF do
+  begin
+    gs := templatefile.readString;
+    vs := templatefile.readString;
+    gi := strtoint(gs);
+    if (gi = 0) and (vs = 'ENDSEC') then
+      Exit;
+  end;
+end;
+
 function savedxf2000(const SavedFileName:String; const TemplateFileName:String;var drawing:TSimpleDrawing;codepage:integer):boolean;
 var
   sysfilename:RawByteString;
@@ -1627,6 +1739,27 @@ begin
         end
       end
       else
+        { Секция CLASSES: если есть сохранённая секция из исходного файла,
+          записываем её вместо содержимого шаблона }
+        if (groupi = 2) and (values = 'CLASSES')
+           and (drawing.RawClassesSection <> '') then
+        begin
+          { Записываем содержимое сохранённой секции CLASSES,
+            пропуская первые 2 строки (0/SECTION), т.к. они уже записаны }
+          WriteRawSectionContent(outstream, drawing.RawClassesSection);
+          { Пропускаем содержимое секции CLASSES в шаблоне до ENDSEC }
+          SkipTemplateSection(templatefile);
+        end
+        else
+        { Секция OBJECTS: если есть сохранённая секция из исходного файла,
+          записываем её вместо содержимого шаблона }
+        if (groupi = 2) and (values = 'OBJECTS')
+           and (drawing.RawObjectsSection <> '') then
+        begin
+          WriteRawSectionContent(outstream, drawing.RawObjectsSection);
+          SkipTemplateSection(templatefile);
+        end
+        else
         if (groupi = 2) and (values = 'ENTITIES') then
         begin
           outstream.TXTAddStringEOL(groups);
