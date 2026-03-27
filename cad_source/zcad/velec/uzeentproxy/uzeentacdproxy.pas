@@ -111,6 +111,14 @@ type
     { Сырые байты Proxy Graphic (код 310 из DXF) }
     FProxyDataBytes: TBytes;
 
+    { Метаданные ACAD_PROXY_ENTITY из DXF }
+    FProxyClassID: Integer;       { Код 90: ID класса прокси }
+    FAppClassID: Integer;         { Код 91: ID класса приложения }
+    FEntityDataSize: Integer;     { Код 93: размер данных сущности }
+    FObjectDataSize: Integer;     { Код 94: размер данных объекта }
+    FDrawingFormat: Integer;      { Код 95: формат чертежа }
+    FOriginalDataFormat: Integer; { Код 70: формат исходных данных }
+
     { Вершины всех контуров для отрисовки, объединённые в один массив }
     FContourVertices: GDBPoint3DArray;
     { Флаг: FContourVertices заполнен }
@@ -217,6 +225,17 @@ begin
     Result[I] := Lo(StrToIntDef('$' + Copy(HexStr, I * 2 + 1, 2), 0));
 end;
 
+{ Конвертирует массив байт в hex-строку.
+  Используется при записи кода 310 в DXF. }
+function BytesToHexString(const Data: TBytes): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(Data) do
+    Result := Result + IntToHex(Data[I], 2);
+end;
+
 { === GDBObjAcdProxy === }
 
 constructor GDBObjAcdProxy.init;
@@ -228,6 +247,13 @@ begin
   FHasContourVertices := False;
   FContourVertices.init(0);
   FHasCenterPoint := False;
+  { Значения по умолчанию для метаданных DXF }
+  FProxyClassID := 498;
+  FAppClassID := 499;
+  FEntityDataSize := 0;
+  FObjectDataSize := 0;
+  FDrawingFormat := 15;
+  FOriginalDataFormat := 0;
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -239,6 +265,13 @@ begin
   FHasContourVertices := False;
   FContourVertices.init(0);
   FHasCenterPoint := False;
+  { Значения по умолчанию для метаданных DXF }
+  FProxyClassID := 498;
+  FAppClassID := 499;
+  FEntityDataSize := 0;
+  FObjectDataSize := 0;
+  FDrawingFormat := 15;
+  FOriginalDataFormat := 0;
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -248,7 +281,7 @@ begin
 end;
 
 { Загружает данные объекта из DXF-потока.
-  Читает hex-данные кода 310 и накапливает их в FProxyDataBytes. }
+  Читает hex-данные кода 310, а также метаданные прокси (коды 90,91,93-95,70). }
 procedure GDBObjAcdProxy.LoadFromDXF(var rdr: TZMemReader;
   ptu: PExtensionData;
   var drawing: TDrawingDef; var context: TIODXFLoadContext);
@@ -261,6 +294,20 @@ begin
   while Code <> 0 do
   begin
     case Code of
+      90:
+        FProxyClassID := StrToIntDef(rdr.ParseString, 498);
+      91:
+        FAppClassID := StrToIntDef(rdr.ParseString, 499);
+      92, 160:
+        rdr.SkipString; { Размер вычисляется из FProxyDataBytes }
+      93:
+        FEntityDataSize := StrToIntDef(rdr.ParseString, 0);
+      94:
+        FObjectDataSize := StrToIntDef(rdr.ParseString, 0);
+      95:
+        FDrawingFormat := StrToIntDef(rdr.ParseString, 15);
+      70:
+        FOriginalDataFormat := StrToIntDef(rdr.ParseString, 0);
       310:
         HexAccum := HexAccum + rdr.ParseString;
     else
@@ -285,12 +332,53 @@ begin
   end;
 end;
 
-{ Сохраняет данные объекта в DXF-поток }
+{ Сохраняет данные объекта в DXF-поток.
+  Записывает полную структуру ACAD_PROXY_ENTITY:
+  заголовок, метаданные, бинарные данные proxy graphic (код 310). }
 procedure GDBObjAcdProxy.SaveToDXF(var outStream: TZctnrVectorBytes;
   var drawing: TDrawingDef; var IODXFContext: TIODXFSaveContext);
+const
+  { Максимум 254 hex-символа на строку (127 байт) }
+  MaxHexCharsPerChunk = 254;
+var
+  HexStr, Chunk: string;
+  GraphicsSize, Offset, ChunkLen: Integer;
 begin
-  inherited SaveToDXF(outStream, drawing, IODXFContext);
-  { TODO: записать FProxyDataBytes обратно в DXF код 310 }
+  SaveToDXFObjPrefix(outStream, 'ACAD_PROXY_ENTITY',
+    'AcDbProxyEntity', IODXFContext);
+
+  { Метаданные прокси-объекта }
+  dxfIntegerout(outStream, 90, FProxyClassID);
+  dxfIntegerout(outStream, 91, FAppClassID);
+
+  { Размер графических данных и сами данные }
+  GraphicsSize := Length(FProxyDataBytes);
+  dxfIntegerout(outStream, 92, GraphicsSize);
+
+  if GraphicsSize > 0 then
+  begin
+    HexStr := BytesToHexString(FProxyDataBytes);
+    Offset := 1;
+    while Offset <= Length(HexStr) do
+    begin
+      ChunkLen := Length(HexStr) - Offset + 1;
+      if ChunkLen > MaxHexCharsPerChunk then
+        ChunkLen := MaxHexCharsPerChunk;
+      Chunk := Copy(HexStr, Offset, ChunkLen);
+      dxfStringWithoutEncodeOut(outStream, 310, Chunk);
+      Inc(Offset, ChunkLen);
+    end;
+  end;
+
+  { Оставшиеся метаданные }
+  dxfIntegerout(outStream, 93, FEntityDataSize);
+  dxfIntegerout(outStream, 94, FObjectDataSize);
+  dxfIntegerout(outStream, 95, FDrawingFormat);
+  dxfIntegerout(outStream, 70, FOriginalDataFormat);
+
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: SaveToDXF wrote %d bytes of proxy data',
+    [GraphicsSize], LM_Info);
 end;
 
 { Разбирает FProxyDataBytes через TProxyGraphicParser.
@@ -565,10 +653,35 @@ begin
   Result := GDBAcdProxyID;
 end;
 
+{ Создаёт копию прокси-объекта с сохранением всех данных }
 function GDBObjAcdProxy.Clone(own: Pointer): PGDBObjEntity;
+var
+  ClonePtr: PGDBObjAcdProxy;
 begin
-  Result := CreateInstance;
-  { TODO: скопировать FProxyDataBytes и вычисленные данные }
+  ClonePtr := CreateInstance;
+
+  { Копируем бинарные данные proxy graphic }
+  SetLength(ClonePtr^.FProxyDataBytes, Length(FProxyDataBytes));
+  if Length(FProxyDataBytes) > 0 then
+    Move(FProxyDataBytes[0], ClonePtr^.FProxyDataBytes[0],
+      Length(FProxyDataBytes));
+
+  { Копируем метаданные DXF }
+  ClonePtr^.FProxyClassID := FProxyClassID;
+  ClonePtr^.FAppClassID := FAppClassID;
+  ClonePtr^.FEntityDataSize := FEntityDataSize;
+  ClonePtr^.FObjectDataSize := FObjectDataSize;
+  ClonePtr^.FDrawingFormat := FDrawingFormat;
+  ClonePtr^.FOriginalDataFormat := FOriginalDataFormat;
+
+  { Копируем BBox }
+  ClonePtr^.FBBoxMinInOCS := FBBoxMinInOCS;
+  ClonePtr^.FBBoxMaxInOCS := FBBoxMaxInOCS;
+  ClonePtr^.FBBoxLoaded := FBBoxLoaded;
+  ClonePtr^.FCenterPoint := FCenterPoint;
+  ClonePtr^.FHasCenterPoint := FHasCenterPoint;
+
+  Result := PGDBObjEntity(ClonePtr);
 end;
 
 { Добавляет одну контрольную точку в центре BBox }
