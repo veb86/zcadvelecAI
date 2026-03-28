@@ -23,7 +23,10 @@
   Архитектура:
   - Парсинг Proxy Graphic выполняется в FormatEntity через TProxyGraphicParser
   - Примитивы внутри прокси регистрируются в TProxyOpCodeDispatcher каждый
-    в своём модуле (uzeentproxyparsercircle.pas, uzeentproxyparsertext.pas и т.д.)
+    в своём модуле (uzeentproxyparsercircle.pas, uzeentproxyparsertext.pas,
+    uzeentproxyparserarc.pas, uzeentproxyparserpolyline.pas,
+    uzeentproxyparserpolygon.pas, uzeentproxyparserlwpolyline.pas,
+    uzeentproxyparserellipse.pas и т.д.)
   - Чтобы отключить конкретный примитив — исключить его .pas из проекта
 
   Рендеринг:
@@ -37,8 +40,13 @@
     с сообщением в лог
 
   Зависимости от примитивов:
-  - uzeentproxyparsercircle  — парсер кругов (OpCode=2)
-  - uzeentproxyparsertext    — парсер текста (OpCode=10, 38)
+  - uzeentproxyparsercircle    — парсер кругов (OpCode=2)
+  - uzeentproxyparsertext      — парсер текста (OpCode=10, 38)
+  - uzeentproxyparserarc       — парсер дуг (OpCode=4)
+  - uzeentproxyparserpolyline  — парсер полилиний и линий (OpCode=6)
+  - uzeentproxyparserpolygon   — парсер полигонов/штриховки (OpCode=7)
+  - uzeentproxyparserlwpolyline — парсер 2D полилиний (OpCode=33)
+  - uzeentproxyparserellipse   — парсер эллипсов и эллиптических дуг (OpCode=44)
   Каждый из них регистрируется в TProxyOpCodeDispatcher при загрузке модуля.
 }
 
@@ -78,8 +86,13 @@ uses
     в TProxyOpCodeDispatcher при инициализации модуля (секция initialization).
     Чтобы отключить конкретный примитив — закомментировать его строку ниже:
     его initialization не выполнится и OpCode не зарегистрируется. }
-  uzeentproxyparsercircle,  { OpCode=2: Circle }
-  uzeentproxyparsertext,    { OpCode=10,38: Text, UnicodeText2 }
+  uzeentproxyparsercircle,   { OpCode=2: Circle }
+  uzeentproxyparsertext,     { OpCode=10,38: Text, UnicodeText2 }
+  uzeentproxyparserarc,      { OpCode=4: CircularArc (ARC) }
+  uzeentproxyparserpolyline, { OpCode=6: Polyline/Line }
+  uzeentproxyparserpolygon,  { OpCode=7: Polygon/Hatch }
+  uzeentproxyparserlwpolyline, { OpCode=33: LwPolyline (LWPOLYLINE) }
+  uzeentproxyparserellipse,  { OpCode=44: EllipticArc (ELLIPSE) }
   UGDBSelectedObjArray,
   uzesnap,
   gzctnrVectorTypes,
