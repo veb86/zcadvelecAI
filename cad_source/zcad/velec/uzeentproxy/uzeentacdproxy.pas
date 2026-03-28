@@ -147,6 +147,10 @@ type
     { Разбирает FProxyDataBytes и заполняет контуры и BBox }
     procedure ParseProxyData;
 
+    { Применяет матрицу блока-владельца к вершинам и BBox.
+      Вызывается после ParseProxyData, если объект находится внутри блока. }
+    procedure ApplyOwnerMatrix(const OwnerMatrix: TzeTypedMatrix4d);
+
     { Отрисовывает текстовые примитивы через Representation.DrawTextContent }
     procedure DrawTextItems(var drawing: TDrawingDef; var DC: TDrawContext);
 
@@ -471,6 +475,69 @@ begin
   end;
 end;
 
+{ Применяет матрицу блока-владельца к вершинам контуров, BBox и точкам
+  вставки текстовых примитивов. Исправляет позиционирование прокси-объектов,
+  находящихся внутри блоков: координаты из Proxy Graphic заданы в локальной
+  системе координат блока (OCS), а для отображения нужны мировые координаты. }
+procedure GDBObjAcdProxy.ApplyOwnerMatrix(const OwnerMatrix: TzeTypedMatrix4d);
+var
+  ir: itrec;
+  pV: PzePoint3d;
+  I: Integer;
+  TempDouble: Double;
+begin
+  { Трансформируем вершины контуров из OCS блока в WCS }
+  pV := FContourVertices.beginiterate(ir);
+  while pV <> nil do
+  begin
+    pV^ := VectorTransform3D(pV^, OwnerMatrix);
+    pV := FContourVertices.iterate(ir);
+  end;
+
+  { Трансформируем углы BBox из OCS блока в WCS }
+  if FBBoxLoaded then
+  begin
+    FBBoxMinInOCS := VectorTransform3D(FBBoxMinInOCS, OwnerMatrix);
+    FBBoxMaxInOCS := VectorTransform3D(FBBoxMaxInOCS, OwnerMatrix);
+    { Исправляем порядок углов после трансформации: при повороте или
+      масштабировании с отражением min и max могут поменяться местами }
+    if FBBoxMinInOCS.x > FBBoxMaxInOCS.x then
+    begin
+      TempDouble := FBBoxMinInOCS.x;
+      FBBoxMinInOCS.x := FBBoxMaxInOCS.x;
+      FBBoxMaxInOCS.x := TempDouble;
+    end;
+    if FBBoxMinInOCS.y > FBBoxMaxInOCS.y then
+    begin
+      TempDouble := FBBoxMinInOCS.y;
+      FBBoxMinInOCS.y := FBBoxMaxInOCS.y;
+      FBBoxMaxInOCS.y := TempDouble;
+    end;
+    if FBBoxMinInOCS.z > FBBoxMaxInOCS.z then
+    begin
+      TempDouble := FBBoxMinInOCS.z;
+      FBBoxMinInOCS.z := FBBoxMaxInOCS.z;
+      FBBoxMaxInOCS.z := TempDouble;
+    end;
+
+    { Пересчитываем центр BBox после трансформации }
+    if FHasCenterPoint then
+    begin
+      FCenterPoint.x := (FBBoxMinInOCS.x + FBBoxMaxInOCS.x) / 2;
+      FCenterPoint.y := (FBBoxMinInOCS.y + FBBoxMaxInOCS.y) / 2;
+      FCenterPoint.z := (FBBoxMinInOCS.z + FBBoxMaxInOCS.z) / 2;
+    end;
+  end;
+
+  { Трансформируем точки вставки текстовых примитивов }
+  for I := 0 to High(FTextItems) do
+    FTextItems[I].Insert := VectorTransform3D(FTextItems[I].Insert, OwnerMatrix);
+
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: ApplyOwnerMatrix applied to %d vertices, %d text items',
+    [FContourVertices.Count, Length(FTextItems)], LM_Info);
+end;
+
 { Отрисовывает все собранные текстовые примитивы.
   Для каждого элемента FTextItems:
   - берёт шрифт из таблицы стилей чертежа (или "Standard" по умолчанию);
@@ -557,6 +624,14 @@ begin
       это обеспечивает корректную работу при первом отображении и
       при изменении трансформации }
     ParseProxyData;
+
+    { Если объект находится внутри блока — применяем матрицу вставки блока.
+      Координаты Proxy Graphic заданы в локальной системе координат блока,
+      поэтому для корректного отображения нужно перевести их в WCS.
+      Аналогично GDBObjPoint: P_insertInWCS := VectorTransform3D(P_insertInOCS,
+      bp.ListPos.owner^.GetMatrix^) }
+    if bp.ListPos.owner <> nil then
+      ApplyOwnerMatrix(bp.ListPos.owner^.GetMatrix^);
 
     { Передаём BBox системе видимости }
     if FBBoxLoaded then
