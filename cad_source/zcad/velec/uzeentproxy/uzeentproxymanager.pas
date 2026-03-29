@@ -76,6 +76,8 @@ type
     Vertices: GDBPoint3DArray;
     { Флаг: вершины заполнены }
     HasVertices: Boolean;
+    { Флаг: контур замкнут (круг, полигон, эллипс и т.д.) }
+    Closed: Boolean;
     { Минимальная точка BBox примитива }
     BBoxMin: TzePoint3d;
     { Максимальная точка BBox примитива }
@@ -241,6 +243,7 @@ begin
   Result := False;
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
+  HandlerResult.Closed := False;
   HandlerResult.HasBBox := False;
   HandlerResult.HasTextItem := False;
 

@@ -147,6 +147,7 @@ begin
   HandlerResult.Vertices.PushBackData(FirstVertex);
 
   HandlerResult.HasVertices := True;
+  { Контур уже замкнут вручную (первая вершина добавлена в конец) }
   HandlerResult.HasBBox := BBoxInitialized;
   HandlerResult.Valid := True;
 

@@ -209,6 +209,7 @@ begin
     CommandSize и перемещает указатель потока. }
 
   HandlerResult.HasVertices := (HandlerResult.Vertices.Count > 0);
+  { Контуры граней уже замкнуты вручную (первая вершина добавлена в конец) }
   HandlerResult.HasBBox := BBoxInitialized;
   HandlerResult.Valid := True;
 

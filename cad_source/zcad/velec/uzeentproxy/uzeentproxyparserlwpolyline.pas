@@ -104,6 +104,7 @@ procedure HandleLwPolyline(
   out HandlerResult: TProxyHandlerResult);
 var
   VertexCount: Integer;
+  Flags: Integer;
   Elevation: Double;
   I: Integer;
   Pt2D: TzePoint2d;
@@ -115,7 +116,7 @@ begin
   HandlerResult.HasBBox := False;
 
   { Читаем заголовок LWPOLYLINE }
-  Stream.ReadInt32;   { Flags: биты замкнутости и других свойств }
+  Flags := Stream.ReadInt32; { Flags: бит 9 (512) = замкнутая полилиния }
   Stream.ReadDouble;  { ConstWidth: постоянная ширина (не используется в отрисовке) }
   Elevation := Stream.ReadDouble; { Elevation: Z-координата всех вершин }
   Stream.ReadDouble;  { Thickness: толщина экструзии (не используется) }
@@ -159,12 +160,14 @@ begin
   end;
 
   HandlerResult.HasVertices := True;
+  HandlerResult.Closed := (Flags and 512) <> 0;
   HandlerResult.HasBBox := BBoxInitialized;
   HandlerResult.Valid := True;
 
   programlog.LogOutFormatStr(
-    'uzeentproxyparserlwpolyline: OK, %d vertices, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
+    'uzeentproxyparserlwpolyline: OK, %d vertices, closed=%s, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
     [HandlerResult.Vertices.Count,
+     BoolToStr(HandlerResult.Closed, True),
      HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;

@@ -184,6 +184,7 @@ begin
   { Тесселируем контур окружности }
   TessellateCircle(Center, Radius, HandlerResult.Vertices);
   HandlerResult.HasVertices := True;
+  HandlerResult.Closed := True;
 
   HandlerResult.Valid := True;
 

@@ -54,6 +54,14 @@ uses
   UGDBPoint3DArray;
 
 type
+  { Один контур (набор вершин одного примитива) для отрисовки }
+  TProxyContour = record
+    { Вершины контура }
+    Vertices: GDBPoint3DArray;
+    { Флаг: контур замкнут (полигон, круг, эллипс) }
+    Closed: Boolean;
+  end;
+
   { Итоговый результат разбора одного Proxy Graphic блока }
   TProxyGraphicParseResult = record
     { Суммарный BBox всех примитивов }
@@ -61,13 +69,11 @@ type
     BBoxMax: TzePoint3d;
     { Флаг: BBox вычислен хотя бы одним примитивом }
     BBoxLoaded: Boolean;
-    { Все вершины контуров для отрисовки, объединённые в один массив }
-    AllVertices: GDBPoint3DArray;
-    { Флаг: в AllVertices есть данные }
-    HasVertices: Boolean;
-    { Число контуров (примитивов), добавленных в AllVertices }
+    { Контуры примитивов для отрисовки (каждый контур отдельно) }
+    Contours: array of TProxyContour;
+    { Число контуров }
     ContourCount: Integer;
-    { Общее число успешно обработанных примитивов (включая без вершин, только BBox) }
+    { Общее число успешно обработанных примитивов (включая без вершин) }
     PrimitiveCount: Integer;
     { Текстовые примитивы для отрисовки через DrawTextContent }
     TextItems: array of TProxyTextItem;
@@ -102,8 +108,9 @@ type
     procedure HandleSetThickness;
     procedure SkipDataBytes(const CommandSize: Integer);
 
-    { Добавляет вершины примитива в суммарный массив AllVertices }
-    procedure AppendVertices(var Src: GDBPoint3DArray);
+    { Добавляет контур (набор вершин одного примитива) в массив контуров }
+    procedure AppendContour(var Src: GDBPoint3DArray;
+      const IsClosed: Boolean);
 
     { Расширяет суммарный BBox данными из одного примитива }
     procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
@@ -153,7 +160,6 @@ begin
   inherited Create;
   FStream := TProxyByteStream.Create(Data);
   FillChar(FResult, SizeOf(FResult), 0);
-  FResult.AllVertices.init(0);
 end;
 
 destructor TProxyGraphicParser.Destroy;
@@ -162,22 +168,23 @@ begin
   inherited Destroy;
 end;
 
-{ Добавляет все вершины из Src в суммарный массив AllVertices.
-  Между контурами вставляется разделитель (NaN-вершина) не нужен —
-  используется DrawPolyLine с замкнутым флагом для каждого контура отдельно,
-  поэтому контуры хранятся непрерывно, а разделение по контурам
-  осуществляется через ContourCount + размеры сегментов (не реализовано здесь:
-  текущая реализация просто конкатенирует вершины, рендерер их рисует одним
-  DrawPolyLineWithLT). }
-procedure TProxyGraphicParser.AppendVertices(var Src: GDBPoint3DArray);
+{ Добавляет контур (вершины одного примитива) как отдельный элемент.
+  Каждый примитив хранится в своём контуре для раздельной отрисовки. }
+procedure TProxyGraphicParser.AppendContour(var Src: GDBPoint3DArray;
+  const IsClosed: Boolean);
 var
+  Idx: Integer;
   ir: itrec;
   pV: PzePoint3d;
 begin
+  Idx := Length(FResult.Contours);
+  SetLength(FResult.Contours, Idx + 1);
+  FResult.Contours[Idx].Vertices.init(Src.Count);
+  FResult.Contours[Idx].Closed := IsClosed;
   pV := Src.beginiterate(ir);
   while pV <> nil do
   begin
-    FResult.AllVertices.PushBackData(pV^);
+    FResult.Contours[Idx].Vertices.PushBackData(pV^);
     pV := Src.iterate(ir);
   end;
 end;
@@ -486,12 +493,11 @@ begin
         { Обновляем суммарный BBox }
         MergeHandlerBBox(HandlerResult);
 
-        { Сохраняем вершины контура и освобождаем память парсера }
+        { Сохраняем контур как отдельный элемент для раздельной отрисовки }
         if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0) then
         begin
-          AppendVertices(HandlerResult.Vertices);
+          AppendContour(HandlerResult.Vertices, HandlerResult.Closed);
           Inc(FResult.ContourCount);
-          FResult.HasVertices := True;
           HandlerResult.Vertices.done;
         end;
 
@@ -536,9 +542,8 @@ function TProxyGraphicParser.Parse: TProxyGraphicParseResult;
 var
   CommandCount, I: Integer;
 begin
-  FResult.AllVertices.init(0);
+  SetLength(FResult.Contours, 0);
   FResult.BBoxLoaded := False;
-  FResult.HasVertices := False;
   FResult.PrimitiveCount := 0;
   FResult.ContourCount := 0;
   SetLength(FResult.TextItems, 0);
@@ -574,9 +579,8 @@ begin
     end;
 
     programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: Parse DONE: primitives=%d contours=%d vertices=%d bbox=%s',
+      'uzeentproxygraphicparser: Parse DONE: primitives=%d contours=%d bbox=%s',
       [FResult.PrimitiveCount, FResult.ContourCount,
-       FResult.AllVertices.Count,
        BoolToStr(FResult.BBoxLoaded, True)], LM_Info);
 
   except
