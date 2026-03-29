@@ -93,6 +93,13 @@ type
     procedure HandleSetLayer;
     procedure HandlePushMatrix;
     procedure HandlePopMatrix;
+    procedure HandleSetLinetype;
+    procedure HandleSetMarker;
+    procedure HandleSetFill;
+    procedure HandleSetTrueColor;
+    procedure HandleSetLineweight;
+    procedure HandleSetLtScale;
+    procedure HandleSetThickness;
     procedure SkipDataBytes(const CommandSize: Integer);
 
     { Добавляет вершины примитива в суммарный массив AllVertices }
@@ -119,12 +126,19 @@ uses
 
 const
   { Системные OpCode, обрабатываемые напрямую в этом модуле }
-  OPCODE_EXTENTS     = 1;
-  OPCODE_SET_COLOR   = 14;
-  OPCODE_SET_LAYER   = 16;
-  OPCODE_PUSH_MATRIX = 29;
-  OPCODE_PUSH_MATRIX2 = 30;
-  OPCODE_POP_MATRIX  = 31;
+  OPCODE_EXTENTS          = 1;
+  OPCODE_SET_COLOR        = 14;
+  OPCODE_SET_LAYER        = 16;
+  OPCODE_SET_LINETYPE     = 18;
+  OPCODE_SET_MARKER       = 19;
+  OPCODE_SET_FILL         = 20;
+  OPCODE_SET_TRUE_COLOR   = 22;
+  OPCODE_SET_LINEWEIGHT   = 23;
+  OPCODE_SET_LTSCALE      = 24;
+  OPCODE_SET_THICKNESS    = 25;
+  OPCODE_PUSH_MATRIX      = 29;
+  OPCODE_PUSH_MATRIX2     = 30;
+  OPCODE_POP_MATRIX       = 31;
 
   { Размер заголовка одной команды: [CommandSize: int32] + [OpCode: int32] }
   COMMAND_HEADER_SIZE = 8;
@@ -300,17 +314,121 @@ begin
     'uzeentproxygraphicparser: PopMatrix', [], LM_Info);
 end;
 
+{ Системный обработчик: SetLinetype — читает индекс типа линии }
+procedure TProxyGraphicParser.HandleSetLinetype;
+begin
+  try
+    FStream.ReadInt32;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetLinetype error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetMarker — читает индекс маркера выбора }
+procedure TProxyGraphicParser.HandleSetMarker;
+begin
+  try
+    FStream.ReadInt32;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetMarker error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetFill — читает флаг заливки }
+procedure TProxyGraphicParser.HandleSetFill;
+begin
+  try
+    FStream.ReadInt32;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetFill error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetTrueColor — читает значение RGB цвета }
+procedure TProxyGraphicParser.HandleSetTrueColor;
+begin
+  try
+    FStream.ReadInt32;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetTrueColor error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetLineweight — читает вес линии }
+procedure TProxyGraphicParser.HandleSetLineweight;
+begin
+  try
+    FStream.ReadInt32;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetLineweight error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetLtScale — читает масштаб типа линии }
+procedure TProxyGraphicParser.HandleSetLtScale;
+begin
+  try
+    FStream.ReadDouble;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetLtScale error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
+{ Системный обработчик: SetThickness — читает толщину }
+procedure TProxyGraphicParser.HandleSetThickness;
+begin
+  try
+    FStream.ReadDouble;
+  except
+    on E: Exception do
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: HandleSetThickness error: %s',
+        [E.Message], LM_Info);
+  end;
+end;
+
 { Разбирает одну команду.
   Системные OpCode обрабатываются напрямую.
-  Остальные передаются в TProxyOpCodeDispatcher. }
+  Остальные передаются в TProxyOpCodeDispatcher.
+  После обработки команды указатель потока устанавливается на начало
+  следующей команды (по CommandSize), даже если обработчик не прочитал
+  все данные. Это необходимо для корректного разбора команд с
+  дополнительными данными (traits), которые обработчик может пропустить. }
 procedure TProxyGraphicParser.ParseCommand;
 var
   CommandSize: Integer;
   OpCode: Integer;
   HandlerResult: TProxyHandlerResult;
+  StartIndex: Integer;
+  ExpectedEnd: Integer;
+  BytesRemaining: Integer;
 begin
+  { Запоминаем позицию начала команды (до чтения заголовка) }
+  StartIndex := FStream.Index;
+
   CommandSize := FStream.ReadInt32;
   OpCode := FStream.ReadInt32;
+
+  { Позиция, на которой должна закончиться обработка команды }
+  ExpectedEnd := StartIndex + CommandSize;
 
   programlog.LogOutFormatStr(
     'uzeentproxygraphicparser: Command OpCode=%d Size=%d',
@@ -330,6 +448,27 @@ begin
 
     OPCODE_SET_LAYER:
       HandleSetLayer;
+
+    OPCODE_SET_LINETYPE:
+      HandleSetLinetype;
+
+    OPCODE_SET_MARKER:
+      HandleSetMarker;
+
+    OPCODE_SET_FILL:
+      HandleSetFill;
+
+    OPCODE_SET_TRUE_COLOR:
+      HandleSetTrueColor;
+
+    OPCODE_SET_LINEWEIGHT:
+      HandleSetLineweight;
+
+    OPCODE_SET_LTSCALE:
+      HandleSetLtScale;
+
+    OPCODE_SET_THICKNESS:
+      HandleSetThickness;
 
     OPCODE_PUSH_MATRIX, OPCODE_PUSH_MATRIX2:
       HandlePushMatrix;
@@ -377,6 +516,18 @@ begin
         [OpCode, CommandSize - COMMAND_HEADER_SIZE], LM_Info);
       SkipDataBytes(CommandSize);
     end;
+  end;
+
+  { Корректируем позицию потока: если обработчик не прочитал все
+    данные команды (например, traits у Shell), пропускаем остаток.
+    Это гарантирует, что следующая команда будет прочитана с верной позиции. }
+  BytesRemaining := ExpectedEnd - FStream.Index;
+  if BytesRemaining > 0 then
+  begin
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: Skipping %d trailing bytes for OpCode=%d',
+      [BytesRemaining, OpCode], LM_Info);
+    FStream.Skip(BytesRemaining);
   end;
 end;
 
