@@ -60,6 +60,7 @@ uses
   uzegeometrytypes,
   uzegeometry,
   UGDBPoint3DArray,
+  gzctnrVectorTypes,
   uzcLog;
 
 const
