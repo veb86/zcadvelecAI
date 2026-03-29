@@ -26,7 +26,7 @@
     в своём модуле (uzeentproxyparsercircle.pas, uzeentproxyparsertext.pas,
     uzeentproxyparserarc.pas, uzeentproxyparserpolyline.pas,
     uzeentproxyparserpolygon.pas, uzeentproxyparserlwpolyline.pas,
-    uzeentproxyparserellipse.pas и т.д.)
+    uzeentproxyparserellipse.pas, uzeentproxyparsershell.pas и т.д.)
   - Чтобы отключить конкретный примитив — исключить его .pas из проекта
 
   Рендеринг:
@@ -47,6 +47,7 @@
   - uzeentproxyparserpolygon   — парсер полигонов/штриховки (OpCode=7)
   - uzeentproxyparserlwpolyline — парсер 2D полилиний (OpCode=33)
   - uzeentproxyparserellipse   — парсер эллипсов и эллиптических дуг (OpCode=44)
+  - uzeentproxyparsershell     — парсер оболочек Shell/PolyFace (OpCode=9)
   Каждый из них регистрируется в TProxyOpCodeDispatcher при загрузке модуля.
 }
 
@@ -93,6 +94,7 @@ uses
   uzeentproxyparserpolygon,  { OpCode=7: Polygon/Hatch }
   uzeentproxyparserlwpolyline, { OpCode=33: LwPolyline (LWPOLYLINE) }
   uzeentproxyparserellipse,  { OpCode=44: EllipticArc (ELLIPSE) }
+  uzeentproxyparsershell,    { OpCode=9: Shell/PolyFace }
   UGDBSelectedObjArray,
   uzesnap,
   gzctnrVectorTypes,
