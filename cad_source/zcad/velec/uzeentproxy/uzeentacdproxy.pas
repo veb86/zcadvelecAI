@@ -134,10 +134,10 @@ type
     FDrawingFormat: Integer;      { Код 95: формат чертежа }
     FOriginalDataFormat: Integer; { Код 70: формат исходных данных }
 
-    { Вершины всех контуров для отрисовки, объединённые в один массив }
-    FContourVertices: GDBPoint3DArray;
-    { Флаг: FContourVertices заполнен }
-    FHasContourVertices: Boolean;
+    { Контуры примитивов для раздельной отрисовки }
+    FContours: array of TProxyContour;
+    { Число заполненных контуров }
+    FContourCount: Integer;
 
     { Текстовые примитивы, собранные при разборе }
     FTextItems: array of TProxyTextItem;
@@ -263,8 +263,8 @@ begin
   FBBoxLoaded := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
-  FHasContourVertices := False;
-  FContourVertices.init(0);
+  FContourCount := 0;
+  SetLength(FContours, 0);
   FHasCenterPoint := False;
   { Значения по умолчанию для метаданных DXF }
   FProxyClassID := 498;
@@ -281,8 +281,8 @@ begin
   FBBoxLoaded := False;
   FBBoxMinInOCS := NulVertex;
   FBBoxMaxInOCS := NulVertex;
-  FHasContourVertices := False;
-  FContourVertices.init(0);
+  FContourCount := 0;
+  SetLength(FContours, 0);
   FHasCenterPoint := False;
   { Значения по умолчанию для метаданных DXF }
   FProxyClassID := 498;
@@ -294,8 +294,13 @@ begin
 end;
 
 destructor GDBObjAcdProxy.done;
+var
+  I: Integer;
 begin
-  FContourVertices.done;
+  for I := 0 to FContourCount - 1 do
+    FContours[I].Vertices.done;
+  SetLength(FContours, 0);
+  FContourCount := 0;
   inherited done;
 end;
 
@@ -401,11 +406,12 @@ begin
 end;
 
 { Разбирает FProxyDataBytes через TProxyGraphicParser.
-  Заполняет FContourVertices, FBBoxMinInOCS/FBBoxMaxInOCS, FCenterPoint. }
+  Заполняет FContours, FBBoxMinInOCS/FBBoxMaxInOCS, FCenterPoint. }
 procedure GDBObjAcdProxy.ParseProxyData;
 var
   Parser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
+  I: Integer;
   ir: itrec;
   pV: PzePoint3d;
 begin
@@ -413,9 +419,10 @@ begin
     Exit;
 
   { Сбрасываем предыдущие данные }
-  FContourVertices.done;
-  FContourVertices.init(0);
-  FHasContourVertices := False;
+  for I := 0 to FContourCount - 1 do
+    FContours[I].Vertices.done;
+  SetLength(FContours, 0);
+  FContourCount := 0;
   FBBoxLoaded := False;
   FHasCenterPoint := False;
   SetLength(FTextItems, 0);
@@ -450,17 +457,23 @@ begin
         [], LM_Info);
     end;
 
-    { Копируем вершины контуров }
-    if ParseResult.HasVertices and (ParseResult.AllVertices.Count > 0) then
+    { Копируем контуры: каждый примитив хранится отдельно }
+    FContourCount := ParseResult.ContourCount;
+    if FContourCount > 0 then
     begin
-      FContourVertices.init(ParseResult.AllVertices.Count);
-      pV := ParseResult.AllVertices.beginiterate(ir);
-      while pV <> nil do
+      SetLength(FContours, FContourCount);
+      for I := 0 to FContourCount - 1 do
       begin
-        FContourVertices.PushBackData(pV^);
-        pV := ParseResult.AllVertices.iterate(ir);
+        FContours[I].Closed := ParseResult.Contours[I].Closed;
+        FContours[I].Vertices.init(
+          ParseResult.Contours[I].Vertices.Count);
+        pV := ParseResult.Contours[I].Vertices.beginiterate(ir);
+        while pV <> nil do
+        begin
+          FContours[I].Vertices.PushBackData(pV^);
+          pV := ParseResult.Contours[I].Vertices.iterate(ir);
+        end;
       end;
-      FHasContourVertices := True;
     end;
 
     { Копируем текстовые примитивы }
@@ -472,7 +485,9 @@ begin
         [Length(FTextItems)], LM_Info);
 
   finally
-    ParseResult.AllVertices.done;
+    { Освобождаем память контуров результата парсера }
+    for I := 0 to Length(ParseResult.Contours) - 1 do
+      ParseResult.Contours[I].Vertices.done;
     Parser.Free;
   end;
 end;
@@ -488,12 +503,15 @@ var
   I: Integer;
   TempDouble: Double;
 begin
-  { Трансформируем вершины контуров из OCS блока в WCS }
-  pV := FContourVertices.beginiterate(ir);
-  while pV <> nil do
+  { Трансформируем вершины каждого контура из OCS блока в WCS }
+  for I := 0 to FContourCount - 1 do
   begin
-    pV^ := VectorTransform3D(pV^, OwnerMatrix);
-    pV := FContourVertices.iterate(ir);
+    pV := FContours[I].Vertices.beginiterate(ir);
+    while pV <> nil do
+    begin
+      pV^ := VectorTransform3D(pV^, OwnerMatrix);
+      pV := FContours[I].Vertices.iterate(ir);
+    end;
   end;
 
   { Трансформируем углы BBox из OCS блока в WCS }
@@ -536,8 +554,8 @@ begin
     FTextItems[I].Insert := VectorTransform3D(FTextItems[I].Insert, OwnerMatrix);
 
   programlog.LogOutFormatStr(
-    'uzeentacdproxy: ApplyOwnerMatrix applied to %d vertices, %d text items',
-    [FContourVertices.Count, Length(FTextItems)], LM_Info);
+    'uzeentacdproxy: ApplyOwnerMatrix applied to %d contours, %d text items',
+    [FContourCount, Length(FTextItems)], LM_Info);
 end;
 
 { Отрисовывает все собранные текстовые примитивы.
@@ -615,6 +633,8 @@ end;
   - EFDraw: заполняет Representation через DrawPolyLineWithLT }
 procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
+var
+  I: Integer;
 begin
   if Assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
@@ -658,22 +678,25 @@ begin
   begin
     Representation.Clear;
 
-    { Рисуем все контуры примитивов через стандартный механизм Representation.
-      Это обеспечивает корректную работу с line types и отсечением.
-      Аналог: GDBObjCircle.FormatEntity → Representation.DrawPolyLineWithLT }
-    if FHasContourVertices and (FContourVertices.Count > 0) then
+    { Рисуем каждый контур отдельно через DrawPolyLineWithLT.
+      Это исправляет проблему, когда все примитивы рисовались одной
+      непрерывной полилинией, создавая ложные соединения между ними. }
+    for I := 0 to FContourCount - 1 do
     begin
-      Representation.DrawPolyLineWithLT(DC, FContourVertices, vp, True, True);
-      programlog.LogOutFormatStr(
-        'uzeentacdproxy: FormatEntity drew %d contour vertices into Representation',
-        [FContourVertices.Count], LM_Info);
-    end
-    else if not FBBoxLoaded then
-    begin
-      programlog.LogOutFormatStr(
-        'uzeentacdproxy: FormatEntity no supported primitives, object skipped in zcUI',
-        [], LM_Info);
+      if FContours[I].Vertices.Count > 0 then
+        Representation.DrawPolyLineWithLT(
+          DC, FContours[I].Vertices, vp,
+          FContours[I].Closed, True);
     end;
+
+    if FContourCount > 0 then
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: FormatEntity drew %d contours',
+        [FContourCount], LM_Info)
+    else if not FBBoxLoaded then
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: FormatEntity no supported primitives',
+        [], LM_Info);
 
     { Отрисовываем текстовые примитивы }
     DrawTextItems(drawing, DC);

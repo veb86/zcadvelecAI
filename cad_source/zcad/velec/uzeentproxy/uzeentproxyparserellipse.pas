@@ -261,6 +261,9 @@ begin
     StartParam, EndParam, HandlerResult.Vertices);
   HandlerResult.HasVertices := True;
 
+  { Полный эллипс замкнут (параметры от 0 до 2π) }
+  HandlerResult.Closed := Abs(EndParam - StartParam - 2 * Pi) < 1e-6;
+
   { Вычисляем BBox по тесселированным вершинам }
   CalcEllipseBBoxFromVertices(HandlerResult.Vertices,
     HandlerResult.BBoxMin, HandlerResult.BBoxMax);
