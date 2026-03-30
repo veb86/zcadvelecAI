@@ -2027,6 +2027,12 @@ begin
               for i := 0 to {p}drawing.BlockDefArray.count - 1 do
               begin
                 zDebugLn('{D}[DXF_CONTENTS]write BlockDef '+PBlockdefArray({p}drawing.BlockDefArray.parray)^[i].name);
+                { Получаем дескриптор BLOCK_RECORD заранее, чтобы записать группу 330
+                  в сущностях BLOCK и ENDBLK. AutoCAD требует группу 330 во всех
+                  сущностях блока, указывающую на их запись BLOCK_RECORD. }
+                IODXFContext.p2h.MyGetOrCreateValue(
+                  @(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),
+                  IODXFContext.handle, temphandle2);
                 outstream.TXTAddStringEOL(dxfGroupCode(0));
                 outstream.TXTAddStringEOL('BLOCK');
 
@@ -2035,6 +2041,10 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(5));
                 outstream.TXTAddStringEOL(inttohex(IODXFContext.handle{temphandle}, 0));
                 inc(IODXFContext.handle);
+                { Группа 330: дескриптор BLOCK_RECORD — владельца данного блока.
+                  Необходима для корректного построения графа владения в AutoCAD. }
+                outstream.TXTAddStringEOL(dxfGroupCode(330));
+                outstream.TXTAddStringEOL(inttohex(temphandle2, 0));
                 outstream.TXTAddStringEOL(dxfGroupCode(100));
                 outstream.TXTAddStringEOL(dxfName_AcDbEntity);
                 outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -2059,9 +2069,6 @@ begin
                 { Устанавливаем дескриптор BLOCK_RECORD как владельца сущностей блока.
                   AutoCAD требует группу 330 в каждой сущности, указывающую
                   на BLOCK_RECORD-запись блока-контейнера. }
-                IODXFContext.p2h.MyGetOrCreateValue(
-                  @(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),
-                  IODXFContext.handle, temphandle2);
                 IODXFContext.CurrentOwnerHandle := temphandle2;
                 saveentitiesdxf2000(@PBlockdefArray(drawing.BlockDefArray.parray)^[i].ObjArray, outstream,drawing,IODXFContext);
                 IODXFContext.CurrentOwnerHandle := 0;
@@ -2071,6 +2078,9 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(5));
                 outstream.TXTAddStringEOL(inttohex(IODXFContext.handle, 0));
                 inc(IODXFContext.handle);
+                { Группа 330 для ENDBLK: тот же BLOCK_RECORD-владелец. }
+                outstream.TXTAddStringEOL(dxfGroupCode(330));
+                outstream.TXTAddStringEOL(inttohex(temphandle2, 0));
                 outstream.TXTAddStringEOL(dxfGroupCode(100));
                 outstream.TXTAddStringEOL(dxfName_AcDbEntity);
                 outstream.TXTAddStringEOL(dxfGroupCode(8));
