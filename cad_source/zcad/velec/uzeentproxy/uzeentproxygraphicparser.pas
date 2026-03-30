@@ -50,6 +50,7 @@ uses
   uzeentproxystream,
   uzeentproxymanager,
   uzegeometrytypes,
+  uzegeometry,
   gzctnrVectorTypes,
   UGDBPoint3DArray;
 
@@ -86,6 +87,14 @@ type
     FStream: TProxyByteStream;
     FResult: TProxyGraphicParseResult;
 
+    { Стек матриц трансформации для PushMatrix/PopMatrix.
+      Когда PushMatrix встречается — матрица читается и помещается
+      в стек. Все последующие вершины примитивов трансформируются
+      через текущую матрицу (вершина стека). PopMatrix убирает
+      матрицу из стека, возвращая предыдущую. }
+    FMatrixStack: array of TzeTypedMatrix4d;
+    FMatrixStackDepth: Integer;
+
     { Разбирает заголовок блока; возвращает количество команд }
     function ParseHeader(out CommandCount: Integer): Boolean;
 
@@ -117,6 +126,14 @@ type
 
     { Добавляет текстовый элемент в список TextItems результата }
     procedure AppendTextItem(const Item: TProxyTextItem);
+
+    { Применяет текущую матрицу из стека к вершинам результата
+      обработчика (если стек не пуст). }
+    procedure TransformHandlerVertices(
+      var HandlerResult: TProxyHandlerResult);
+
+    { Проверяет, является ли текущая матрица в стеке единичной }
+    function HasActiveTransform: Boolean;
 
   public
     constructor Create(const Data: TBytes);
@@ -160,6 +177,8 @@ begin
   inherited Create;
   FStream := TProxyByteStream.Create(Data);
   FillChar(FResult, SizeOf(FResult), 0);
+  FMatrixStackDepth := 0;
+  SetLength(FMatrixStack, 0);
 end;
 
 destructor TProxyGraphicParser.Destroy;
@@ -294,31 +313,112 @@ begin
   end;
 end;
 
-{ Системный обработчик: PushMatrix — читает матрицу трансформации (16 double) }
+{ Системный обработчик: PushMatrix — читает матрицу трансформации (16 double)
+  и помещает её в стек. Все последующие примитивы будут трансформированы
+  через эту матрицу до вызова PopMatrix. }
 procedure TProxyGraphicParser.HandlePushMatrix;
 var
-  I: Integer;
+  I, Row, Col: Integer;
+  MatrixData: array[0..15] of Double;
+  NewMatrix: TzeTypedMatrix4d;
 begin
   try
-    { TODO: применять матрицу к последующим примитивам }
+    { Читаем 16 чисел double из потока (4×4 матрица, построчно) }
     for I := 0 to 15 do
-      FStream.ReadDouble;
+      MatrixData[I] := FStream.ReadDouble;
+
+    { Заполняем матрицу ZCAD.
+      Формат proxy: построчно data[row*4 + col], translation в col 3.
+      Формат ZCAD: .mtr.v[row].v[col], translation в row 3.
+      Транспонируем: mtr.v[Row].v[Col] := data[Col * 4 + Row]. }
+    for Row := 0 to 3 do
+      for Col := 0 to 3 do
+        NewMatrix.mtr.v[Row].v[Col] := MatrixData[Col * 4 + Row];
+
+    { Добавляем матрицу в стек }
+    Inc(FMatrixStackDepth);
+    if FMatrixStackDepth > Length(FMatrixStack) then
+      SetLength(FMatrixStack, FMatrixStackDepth);
+    FMatrixStack[FMatrixStackDepth - 1] := NewMatrix;
+
     programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: PushMatrix read (matrix transform not yet applied)',
-      [], LM_Info);
+      'uzeentproxygraphicparser: PushMatrix depth=%d ' +
+      'translation=(%.3f, %.3f, %.3f)',
+      [FMatrixStackDepth,
+       NewMatrix.mtr.v[3].v[0],
+       NewMatrix.mtr.v[3].v[1],
+       NewMatrix.mtr.v[3].v[2]],
+      LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
-        'uzeentproxygraphicparser: HandlePushMatrix error: %s', [E.Message], LM_Info);
+        'uzeentproxygraphicparser: HandlePushMatrix error: %s',
+        [E.Message], LM_Info);
   end;
 end;
 
-{ Системный обработчик: PopMatrix — конец блока трансформации }
+{ Системный обработчик: PopMatrix — убирает матрицу из стека }
 procedure TProxyGraphicParser.HandlePopMatrix;
 begin
-  { TODO: восстановить предыдущую матрицу }
-  programlog.LogOutFormatStr(
-    'uzeentproxygraphicparser: PopMatrix', [], LM_Info);
+  if FMatrixStackDepth > 0 then
+  begin
+    Dec(FMatrixStackDepth);
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: PopMatrix depth=%d',
+      [FMatrixStackDepth], LM_Info);
+  end
+  else
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: PopMatrix on empty stack',
+      [], LM_Info);
+end;
+
+{ Проверяет, есть ли активная (не единичная) матрица в стеке }
+function TProxyGraphicParser.HasActiveTransform: Boolean;
+begin
+  Result := FMatrixStackDepth > 0;
+end;
+
+{ Применяет текущую матрицу из стека к вершинам и BBox результата.
+  Если стек пуст — ничего не делает.
+  Используется после каждого успешного вызова обработчика примитива. }
+procedure TProxyGraphicParser.TransformHandlerVertices(
+  var HandlerResult: TProxyHandlerResult);
+var
+  ir: itrec;
+  pV: PzePoint3d;
+  CurrentMatrix: TzeTypedMatrix4d;
+begin
+  if not HasActiveTransform then
+    Exit;
+
+  { Берём верхнюю матрицу из стека }
+  CurrentMatrix := FMatrixStack[FMatrixStackDepth - 1];
+
+  { Трансформируем вершины контура }
+  if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0) then
+  begin
+    pV := HandlerResult.Vertices.beginiterate(ir);
+    while pV <> nil do
+    begin
+      pV^ := VectorTransform3D(pV^, CurrentMatrix);
+      pV := HandlerResult.Vertices.iterate(ir);
+    end;
+  end;
+
+  { Трансформируем BBox }
+  if HandlerResult.HasBBox then
+  begin
+    HandlerResult.BBoxMin :=
+      VectorTransform3D(HandlerResult.BBoxMin, CurrentMatrix);
+    HandlerResult.BBoxMax :=
+      VectorTransform3D(HandlerResult.BBoxMax, CurrentMatrix);
+  end;
+
+  { Трансформируем точку вставки текста }
+  if HandlerResult.HasTextItem then
+    HandlerResult.TextItem.Insert :=
+      VectorTransform3D(HandlerResult.TextItem.Insert, CurrentMatrix);
 end;
 
 { Системный обработчик: SetLinetype — читает индекс типа линии }
@@ -490,6 +590,9 @@ begin
     begin
       if TProxyOpCodeDispatcher.HandleOpCode(OpCode, FStream, HandlerResult) then
       begin
+        { Применяем матрицу трансформации из стека (если есть) }
+        TransformHandlerVertices(HandlerResult);
+
         { Обновляем суммарный BBox }
         MergeHandlerBBox(HandlerResult);
 
