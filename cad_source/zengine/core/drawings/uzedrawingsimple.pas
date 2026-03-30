@@ -70,6 +70,12 @@ type
                          которые ZCAD не обрабатывает, но AutoCAD требует при открытии. }
                        RawObjectsSection: string;
 
+                       { Карта дескрипторов (handle) из исходного DXF-файла.
+                         Хранит соответствие: handle_из_источника → указатель
+                         на объект в памяти. Используется при сохранении для
+                         пересопоставления дескрипторов в секции OBJECTS. }
+                       SourceHandleMap: TObject;
+
                        function GetLastSelected:PGDBObjEntity;virtual;
                        constructor init(pcam:PGDBObjCamera);
                        destructor done;virtual;
@@ -770,6 +776,7 @@ begin
                                 Freemem(pointer(pcamera));
                            end;
      DrawingExtensions.Free;
+     SourceHandleMap.Free;
 end;
 constructor TSimpleDrawing.init;
 var {tp:GDBTextStyleProp;}
@@ -809,6 +816,7 @@ begin
                      end;
   RawClassesSection := '';
   RawObjectsSection := '';
+  SourceHandleMap := nil;
   LTypeStyleTable.init(100);
   LayerTable.init(200,LTypeStyleTable.GetSystemLT(TLTContinous));
   DimStyleTable.init(100);
