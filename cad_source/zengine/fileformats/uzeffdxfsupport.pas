@@ -104,6 +104,10 @@ type
     VarsDict:TString2StringDictionary;
     Header:TDXFHeaderInfo;
     LocalEntityFlags:TLocalEntityFlags;
+    { Дескриптор блока-владельца для текущей секции сущностей.
+      Записывается в группу 330 каждой сущности, чтобы AutoCAD знал,
+      в каком блоке находится объект (model space, paper space и т.д.). }
+    CurrentOwnerHandle: TDWGHandle;
 
     procedure InitRec;
     procedure Done;
@@ -311,6 +315,7 @@ begin
   currentEntAddrOverrider:=nil;
   VarsDict:=TString2StringDictionary.create;
   handle := $2;
+  CurrentOwnerHandle := 0;
 
   Header.InitRec;
 end;
