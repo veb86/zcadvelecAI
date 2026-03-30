@@ -1655,12 +1655,19 @@ end;
   полностью перегенерируются с новыми дескрипторами, а секция OBJECTS
   ссылается на них через коды 5, 330, 340, 350, 360, 390, 320, 105.
   Без пересопоставления AutoCAD не может найти объекты по дескрипторам
-  и отказывается открывать файл. }
+  и отказывается открывать файл.
+
+  Параметр TemplateHandleRemap — карта дескрипторов шаблона, построенная при
+  записи секции TABLES. Используется как резервный источник пересопоставления
+  для системных объектов (BLOCK_RECORD *Model_Space и др.), которые не
+  отслеживаются в SourceHandleMap (загрузочная карта содержит только сущности,
+  типы линий и стили текста, но не записи таблиц TABLES). }
 procedure WriteRemappedObjectsSection(
   var outstream: TZctnrVectorBytes;
   const RawSection: string;
   var IODXFContext: TIODXFSaveContext;
-  SourceHandleMap: TObject);
+  SourceHandleMap: TObject;
+  TemplateHandleRemap: TMapHandleToHandle);
 var
   Lines: TStringList;
   I, GroupCode: Integer;
@@ -1725,9 +1732,17 @@ begin
                 NewHandle := IODXFContext.p2h.MyGetValue(Ptr);
             end;
 
+            { Если через SourceH2P не нашли — пробуем карту шаблона.
+              Системные объекты (BLOCK_RECORD *Model_Space, LAYOUT и т.д.)
+              не попадают в SourceH2P при загрузке, но их дескрипторы
+              в шаблоне совпадают с дескрипторами исходного файла, поэтому
+              карта шаблона позволяет корректно пересопоставить их. }
+            if (NewHandle = 0) and (TemplateHandleRemap <> nil) then
+              NewHandle := TemplateHandleRemap.MyGetValue(OldHandle);
+
             if NewHandle > 0 then
             begin
-              { Нашли новый дескриптор через загрузочную карту }
+              { Нашли новый дескриптор через загрузочную карту или шаблон }
               LocalRemap.Add(OldHandle, NewHandle);
               outstream.TXTAddStringEOL(GroupStr);
               outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
@@ -1930,7 +1945,7 @@ begin
         begin
           WriteRemappedObjectsSection(outstream,
             drawing.RawObjectsSection, IODXFContext,
-            drawing.SourceHandleMap);
+            drawing.SourceHandleMap, OldHandele2NewHandle);
           SkipTemplateSection(templatefile);
         end
         else
