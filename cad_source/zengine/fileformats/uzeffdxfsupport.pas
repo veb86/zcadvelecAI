@@ -340,7 +340,9 @@ end;
 
 procedure TIODXFLoadContext.Done;
 begin
-  h2p.Free;
+  { h2p может быть nil, если была передана в чертёж (SourceHandleMap) }
+  if h2p <> nil then
+    h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
 end;

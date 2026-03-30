@@ -1411,6 +1411,14 @@ begin
         lps.EndLongProcess(lph);
         dwgCtx.POwner^.calcbb(dwgCtx.DC);
         result:=fileCtx.Header;
+
+        { Передаём карту дескрипторов (handle → указатель) из контекста
+          загрузки в чертёж. Она понадобится при сохранении для
+          пересопоставления дескрипторов в секции OBJECTS. }
+        dwgCtx.PDrawing^.SourceHandleMap.Free;
+        dwgCtx.PDrawing^.SourceHandleMap := fileCtx.h2p;
+        fileCtx.h2p := nil;
+
         fileCtx.Done;
 
         { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
@@ -1602,6 +1610,125 @@ begin
   end;
 end;
 
+{ Записывает секцию OBJECTS с пересопоставлением дескрипторов (handle).
+  Дескрипторы из исходного файла заменяются на новые, назначенные при
+  сохранении. Это необходимо потому, что секции TABLES и BLOCKS
+  полностью перегенерируются с новыми дескрипторами, а секция OBJECTS
+  ссылается на них через коды 5, 330, 340, 350, 360, 390, 320, 105.
+  Без пересопоставления AutoCAD не может найти объекты по дескрипторам
+  и отказывается открывать файл. }
+procedure WriteRemappedObjectsSection(
+  var outstream: TZctnrVectorBytes;
+  const RawSection: string;
+  var IODXFContext: TIODXFSaveContext;
+  SourceHandleMap: TObject);
+var
+  Lines: TStringList;
+  I, GroupCode: Integer;
+  GroupStr, ValueStr: string;
+  OldHandle, NewHandle: TDWGHandle;
+  SourceH2P: TDXFHandle2ZCObject;
+  LocalRemap: TMapHandleToHandle;
+  Ptr: Pointer;
+begin
+  { Приводим SourceHandleMap к конкретному типу }
+  if (SourceHandleMap <> nil)
+     and (SourceHandleMap is TDXFHandle2ZCObject) then
+    SourceH2P := TDXFHandle2ZCObject(SourceHandleMap)
+  else
+    SourceH2P := nil;
+
+  LocalRemap := TMapHandleToHandle.Create;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawSection;
+    { Пропускаем первые 2 строки (0/SECTION) }
+    I := 2;
+    while I < Lines.Count - 1 do
+    begin
+      GroupStr := Lines[I];
+      ValueStr := Lines[I + 1];
+      GroupCode := StrToIntDef(Trim(GroupStr), -1);
+
+      { Проверяем, является ли код группы дескриптором }
+      if (GroupCode = 5) or (GroupCode = 105) or
+         (GroupCode = 320) or (GroupCode = 330) or
+         (GroupCode = 340) or (GroupCode = 350) or
+         (GroupCode = 360) or (GroupCode = 390) or
+         (GroupCode = 1005) then
+      begin
+        OldHandle := StrToInt64Def('$' + Trim(ValueStr), 0);
+        if OldHandle = 0 then
+        begin
+          { Дескриптор 0 — без владельца, записываем как есть }
+          outstream.TXTAddStringEOL(GroupStr);
+          outstream.TXTAddStringEOL('0');
+        end
+        else
+        begin
+          { Ищем пересопоставление в локальной карте }
+          NewHandle := LocalRemap.MyGetValue(OldHandle);
+          if NewHandle > 0 then
+          begin
+            { Дескриптор уже пересопоставлен ранее }
+            outstream.TXTAddStringEOL(GroupStr);
+            outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
+          end
+          else
+          begin
+            { Пробуем найти объект через карту загрузки и карту
+              сохранения: source_handle → указатель → new_handle }
+            NewHandle := 0;
+            if SourceH2P <> nil then
+            begin
+              Ptr := SourceH2P.MyGetValue(OldHandle).p;
+              if Ptr <> nil then
+                NewHandle := IODXFContext.p2h.MyGetValue(Ptr);
+            end;
+
+            if NewHandle > 0 then
+            begin
+              { Нашли новый дескриптор через загрузочную карту }
+              LocalRemap.Add(OldHandle, NewHandle);
+              outstream.TXTAddStringEOL(GroupStr);
+              outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
+            end
+            else
+            begin
+              { Объект не найден в картах — назначаем новый
+                дескриптор (для внутренних объектов секции OBJECTS) }
+              NewHandle := IODXFContext.handle;
+              Inc(IODXFContext.handle);
+              LocalRemap.Add(OldHandle, NewHandle);
+              outstream.TXTAddStringEOL(GroupStr);
+              outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
+            end;
+          end;
+        end;
+      end
+      else
+      begin
+        { Обычный код группы — записываем без изменений }
+        outstream.TXTAddStringEOL(GroupStr);
+        outstream.TXTAddStringEOL(ValueStr);
+      end;
+
+      Inc(I, 2);
+    end;
+
+    { Если количество строк нечётное, записываем последнюю строку }
+    if (Lines.Count > 2) and (I = Lines.Count - 1) then
+      outstream.TXTAddStringEOL(Lines[I]);
+
+    programlog.LogOutFormatStr(
+      'uzeffdxf: WriteRemappedObjectsSection: пересопоставлено %d дескрипторов',
+      [Integer(LocalRemap.Count)], LM_Info);
+  finally
+    Lines.Free;
+    LocalRemap.Free;
+  end;
+end;
+
 function savedxf2000(const SavedFileName:String; const TemplateFileName:String;var drawing:TSimpleDrawing;codepage:integer):boolean;
 var
   sysfilename:RawByteString;
@@ -1752,11 +1879,17 @@ begin
         end
         else
         { Секция OBJECTS: если есть сохранённая секция из исходного файла,
-          записываем её вместо содержимого шаблона }
+          записываем её с пересопоставлением дескрипторов (handle).
+          Дескрипторы в секции OBJECTS ссылаются на объекты из TABLES
+          и BLOCKS, которые при сохранении получают новые дескрипторы.
+          Без пересопоставления AutoCAD не может найти объекты
+          и отказывается открывать файл. }
         if (groupi = 2) and (values = 'OBJECTS')
            and (drawing.RawObjectsSection <> '') then
         begin
-          WriteRawSectionContent(outstream, drawing.RawObjectsSection);
+          WriteRemappedObjectsSection(outstream,
+            drawing.RawObjectsSection, IODXFContext,
+            drawing.SourceHandleMap);
           SkipTemplateSection(templatefile);
         end
         else
