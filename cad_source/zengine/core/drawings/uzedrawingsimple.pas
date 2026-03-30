@@ -76,6 +76,11 @@ type
                          пересопоставления дескрипторов в секции OBJECTS. }
                        SourceHandleMap: TObject;
 
+                       { Версия DXF формата исходного файла (например, 'AC1021').
+                         Сохраняется при загрузке и используется при сохранении,
+                         чтобы не понижать версию файла (AC1021 → AC1015). }
+                       OriginalAcadVer: string;
+
                        function GetLastSelected:PGDBObjEntity;virtual;
                        constructor init(pcam:PGDBObjCamera);
                        destructor done;virtual;

@@ -1419,6 +1419,13 @@ begin
         dwgCtx.PDrawing^.SourceHandleMap := fileCtx.h2p;
         fileCtx.h2p := nil;
 
+        { Сохраняем версию DXF формата исходного файла.
+          Используется при сохранении, чтобы не понижать версию
+          (например, AC1021 не должна сохраняться как AC1015).
+          Извлекаем до вызова fileCtx.Done, который освобождает DWGVarsDict. }
+        dwgCtx.PDrawing^.OriginalAcadVer :=
+          fileCtx.DWGVarsDict[dxfVar_ACADVER];
+
         fileCtx.Done;
 
         { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
@@ -1502,6 +1509,13 @@ var
    pcurrtextstyle:PGDBTextStyle;
    pcurrentdimstyle:PGDBDimStyle;
 begin
+    { Если файл был загружен с версией выше AC1015, сохраняем её.
+      Без этого ZCAD всегда понижает версию до AC1015, что приводит
+      к ошибкам при открытии файла в AutoCAD (неверный формат CLASS,
+      отсутствие объектов AC1021). }
+    if drawing.OriginalAcadVer <> '' then
+      VarsDict.Add('$ACADVER', drawing.OriginalAcadVer);
+
     VarsDict.Add('$CLAYER',drawing.GetCurrentLayer^.Name);
     VarsDict.Add('$CELTYPE',drawing.GetCurrentLType^.Name);
     VarsDict.Add('$DWGCODEPAGE',ZCCP2Str(drawing.DXFCodePage));
@@ -1592,18 +1606,25 @@ begin
   end;
 end;
 
-{ Записывает секцию CLASSES с фильтрацией группы 91 (счётчик экземпляров).
-  Группа 91 появилась в формате AC1021 (AutoCAD 2007+), но ZCAD сохраняет
-  файлы в формате AC1015. При наличии группы 91 в записи CLASS AutoCAD
-  (читающий файл как AC1015) сообщает: «Ожидалась группа 280 (флаг зомби)».
+{ Записывает секцию CLASSES, при необходимости фильтруя группу 91.
+  Группа 91 (счётчик экземпляров класса) появилась в формате AC1021+.
+  При сохранении в AC1015 её нужно удалять: AutoCAD, читая файл как AC1015,
+  ожидает сразу группу 280 после 90, и при наличии 91 сообщает:
+  «Ожидалась группа 280 (флаг зомби)».
+  При сохранении в AC1021+ группу 91 нужно сохранять.
+  Параметр TargetVersion задаёт целевую версию DXF для принятия решения.
   Функция пропускает первые 2 строки (0/SECTION), т.к. они уже записаны
-  из шаблона, и при обходе пар группа/значение пропускает пары с кодом 91. }
+  из шаблона. }
 procedure WriteFilteredClassesSectionContent(var outstream: TZctnrVectorBytes;
-  const RawSection: string);
+  const RawSection: string; const TargetVersion: TACDWGVer);
 var
   Lines: TStringList;
   I, GroupCode: Integer;
+  FilterGroup91: Boolean;
 begin
+  { Фильтруем группу 91 только при сохранении в формате AC1015 и ниже }
+  FilterGroup91 := (TargetVersion < AC1021);
+
   Lines := TStringList.Create;
   try
     Lines.Text := RawSection;
@@ -1613,8 +1634,8 @@ begin
     begin
       GroupCode := StrToIntDef(Trim(Lines[I]), -1);
       { Группа 91 (счётчик экземпляров класса) — только AC1021+.
-        Пропускаем её вместе со значением, чтобы сохранить совместимость AC1015. }
-      if GroupCode = 91 then
+        Пропускаем её при сохранении в AC1015, сохраняем при AC1021+. }
+      if FilterGroup91 and (GroupCode = 91) then
       begin
         Inc(I, 2);
         Continue;
@@ -1791,6 +1812,8 @@ var
   groups,values,ts: String;
   groupi,valuei,intable,attr: Integer;
   temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle: TDWGHandle;
+  modelSpaceBlockHandle: TDWGHandle;
+  lastGroup5Handle: TDWGHandle;
   i: integer;
   OldHandele2NewHandle:TMapHandleToHandle;
 
@@ -1818,8 +1841,27 @@ var
 begin
   intable:=0;
   IODXFContext.InitRec;
-  IODXFContext.Header.Version:=AC1015;
-  IODXFContext.Header.iVersion:=1015;
+  { По умолчанию сохраняем в формате AC1015 (AutoCAD 2000).
+    Если исходный файл имел более высокую версию — сохраняем её,
+    чтобы AutoCAD мог корректно прочитать объекты формата AC1021+. }
+  if Length(drawing.OriginalAcadVer) > 2 then
+  begin
+    { Отрезаем префикс 'AC' и преобразуем остаток в число, например 'AC1021' -> 1021 }
+    IODXFContext.Header.iVersion :=
+      StrToIntDef(Copy(drawing.OriginalAcadVer, 3, MaxInt), 1015);
+    IODXFContext.Header.Version  := ACVer2DXF_ACVer(IODXFContext.Header.iVersion);
+    { Если версия нераспознана — откатываемся к AC1015 }
+    if IODXFContext.Header.Version = AC_INVALID then
+    begin
+      IODXFContext.Header.Version  := AC1015;
+      IODXFContext.Header.iVersion := 1015;
+    end;
+  end
+  else
+  begin
+    IODXFContext.Header.Version  := AC1015;
+    IODXFContext.Header.iVersion := 1015;
+  end;
 
   IODXFContext.Header.DWGCodePage:=SysCP2ACCP(codepage);
   IODXFContext.Header.iDWGCodePage:=codepage;
@@ -1839,6 +1881,8 @@ begin
   inlttypetable:=false;
   indimstyletable:=false;
   inappidtable:=false;
+  modelSpaceBlockHandle := 0;
+  lastGroup5Handle := 0;
   MakeVariablesDict(IODXFContext.VarsDict,drawing);
   processedvarscount:=IODXFContext.VarsDict.count;
   while templatefile.notEOF do
@@ -1915,6 +1959,9 @@ begin
                                              plottablefansdle:=lasthandle;  {поймать плоттабле}
         if indimstyletable and (groupi=5) then
                                              dimtablehandle:=lasthandle;  {поймать dimtable}
+        { Запоминаем дескриптор, назначенный последней группе 5 (handle) }
+        if groupi = 5 then
+          lastGroup5Handle := lasthandle;
         (*{if instyletable and (groupi=5) then
                                              standartstylehandle:=lasthandle;{intable;}  {поймать standart}*)
         end
@@ -1925,11 +1972,11 @@ begin
         if (groupi = 2) and (values = 'CLASSES')
            and (drawing.RawClassesSection <> '') then
         begin
-          { Записываем содержимое сохранённой секции CLASSES с фильтрацией
-            группы 91 (счётчик экземпляров класса, только AC1021+).
-            ZCAD сохраняет в формате AC1015, поэтому группа 91 недопустима:
-            AutoCAD при чтении AC1015 ожидает сразу группу 280 после группы 90. }
-          WriteFilteredClassesSectionContent(outstream, drawing.RawClassesSection);
+          { Записываем содержимое сохранённой секции CLASSES.
+            Группа 91 (счётчик экземпляров класса) присутствует только в AC1021+.
+            При сохранении в AC1015 её нужно удалять, при AC1021+ — сохранять. }
+          WriteFilteredClassesSectionContent(
+            outstream, drawing.RawClassesSection, IODXFContext.Header.Version);
           { Пропускаем содержимое секции CLASSES в шаблоне до ENDSEC }
           SkipTemplateSection(templatefile);
         end
@@ -1955,8 +2002,13 @@ begin
           //WriteString_EOL(outstream, groups);
           outstream.TXTAddStringEOL(values);
           //WriteString_EOL(outstream, values);
+          { Устанавливаем дескриптор *Model_Space как владельца сущностей.
+            AutoCAD требует группу 330 в каждой сущности ENTITIES-секции,
+            указывающую на блок-запись (BLOCK_RECORD), которому она принадлежит. }
+          IODXFContext.CurrentOwnerHandle := modelSpaceBlockHandle;
           //historyoutstr('Entities start here_______________________________________________________');
           saveentitiesdxf2000(@{p}drawing.pObjRoot^.ObjArray, outstream,drawing,IODXFContext);
+          IODXFContext.CurrentOwnerHandle := 0;
         end
         else
           if (groupi = 2) and (values = 'BLOCKS') then
@@ -2004,7 +2056,15 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(1));
                 outstream.TXTAddStringEOL('');
 
+                { Устанавливаем дескриптор BLOCK_RECORD как владельца сущностей блока.
+                  AutoCAD требует группу 330 в каждой сущности, указывающую
+                  на BLOCK_RECORD-запись блока-контейнера. }
+                IODXFContext.p2h.MyGetOrCreateValue(
+                  @(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),
+                  IODXFContext.handle, temphandle2);
+                IODXFContext.CurrentOwnerHandle := temphandle2;
                 saveentitiesdxf2000(@PBlockdefArray(drawing.BlockDefArray.parray)^[i].ObjArray, outstream,drawing,IODXFContext);
+                IODXFContext.CurrentOwnerHandle := 0;
 
                 outstream.TXTAddStringEOL(dxfGroupCode(0));
                 outstream.TXTAddStringEOL('ENDBLK');
@@ -2890,6 +2950,12 @@ ENDTAB}
                   outstream.TXTAddStringEOL(groups);
                   outstream.TXTAddStringEOL(values);
                   end;
+                  { Запоминаем дескриптор блока *Model_Space для записи в группу 330
+                    сущностей: когда в таблице BLOCK_RECORD встречаем запись с именем
+                    '*Model_Space', lastGroup5Handle содержит дескриптор этой записи
+                    (назначенный при обработке группы 5 данной записи). }
+                  if inblocktable and (groupi = 2) and (values = '*Model_Space') then
+                    modelSpaceBlockHandle := lastGroup5Handle;
                   //val('$' + values, i, cod);
                 end;
     //s := readspace(s);
