@@ -1592,6 +1592,45 @@ begin
   end;
 end;
 
+{ Записывает секцию CLASSES с фильтрацией группы 91 (счётчик экземпляров).
+  Группа 91 появилась в формате AC1021 (AutoCAD 2007+), но ZCAD сохраняет
+  файлы в формате AC1015. При наличии группы 91 в записи CLASS AutoCAD
+  (читающий файл как AC1015) сообщает: «Ожидалась группа 280 (флаг зомби)».
+  Функция пропускает первые 2 строки (0/SECTION), т.к. они уже записаны
+  из шаблона, и при обходе пар группа/значение пропускает пары с кодом 91. }
+procedure WriteFilteredClassesSectionContent(var outstream: TZctnrVectorBytes;
+  const RawSection: string);
+var
+  Lines: TStringList;
+  I, GroupCode: Integer;
+begin
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawSection;
+    { Пропускаем первые 2 строки: "0" и "SECTION" }
+    I := 2;
+    while I < Lines.Count - 1 do
+    begin
+      GroupCode := StrToIntDef(Trim(Lines[I]), -1);
+      { Группа 91 (счётчик экземпляров класса) — только AC1021+.
+        Пропускаем её вместе со значением, чтобы сохранить совместимость AC1015. }
+      if GroupCode = 91 then
+      begin
+        Inc(I, 2);
+        Continue;
+      end;
+      outstream.TXTAddStringEOL(Lines[I]);
+      outstream.TXTAddStringEOL(Lines[I + 1]);
+      Inc(I, 2);
+    end;
+    { Если число строк нечётное — записываем последнюю строку }
+    if (Lines.Count > 2) and (I = Lines.Count - 1) then
+      outstream.TXTAddStringEOL(Lines[I]);
+  finally
+    Lines.Free;
+  end;
+end;
+
 { Пропускает содержимое текущей секции в шаблоне до 0/ENDSEC.
   Вызывается после WriteRawSectionContent, чтобы шаблонные данные
   секции не попали в выходной поток. }
@@ -1871,9 +1910,11 @@ begin
         if (groupi = 2) and (values = 'CLASSES')
            and (drawing.RawClassesSection <> '') then
         begin
-          { Записываем содержимое сохранённой секции CLASSES,
-            пропуская первые 2 строки (0/SECTION), т.к. они уже записаны }
-          WriteRawSectionContent(outstream, drawing.RawClassesSection);
+          { Записываем содержимое сохранённой секции CLASSES с фильтрацией
+            группы 91 (счётчик экземпляров класса, только AC1021+).
+            ZCAD сохраняет в формате AC1015, поэтому группа 91 недопустима:
+            AutoCAD при чтении AC1015 ожидает сразу группу 280 после группы 90. }
+          WriteFilteredClassesSectionContent(outstream, drawing.RawClassesSection);
           { Пропускаем содержимое секции CLASSES в шаблоне до ENDSEC }
           SkipTemplateSection(templatefile);
         end
