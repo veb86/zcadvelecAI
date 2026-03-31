@@ -152,9 +152,10 @@ var
   I, Code, IntVal: Integer;
   Value: string;
   CellStyle: TGDBTableCellStyle;
-  InCellStyle: Boolean;
+  { Индекс текущего блока строки таблицы: 0=title, 1=header, 2=data }
+  CellIdx: Integer;
 begin
-  InCellStyle := False;
+  CellIdx := -1;
   FillChar(CellStyle, SizeOf(CellStyle), 0);
   I := 0;
 
@@ -195,36 +196,38 @@ begin
         end;
       7:
         begin
-          { Начало нового блока стиля строки таблицы (group 7 = имя текстового стиля).
-            При встрече второго блока сохраняем предыдущий. }
-          if InCellStyle then
+          { Начало нового блока стиля строки таблицы (группа 7 = имя текст. стиля).
+            Каждое новое значение группы 7 начинает следующий блок (title/header/data). }
+          if CellIdx >= 0 then
             Style^.tblformat.PushBackData(CellStyle);
           FillChar(CellStyle, SizeOf(CellStyle), 0);
-          CellStyle.TextStyleName := Value;
-          InCellStyle := True;
+          Inc(CellIdx);
+          { Сохраняем имя текстового стиля для данного блока в TGDBTableStyle }
+          if CellIdx <= 2 then
+            Style^.CellTextStyleName[CellIdx] := Value;
         end;
       140:
         { Высота текста строки }
-        if InCellStyle then
+        if CellIdx >= 0 then
           CellStyle.TextHeight := StrToFloatDef(Value, 2.5);
       170:
         { Выравнивание текста в ячейке }
-        if InCellStyle then
+        if CellIdx >= 0 then
           if TryStrToInt(Value, IntVal) then
             CellStyle.Alignment := IntVal;
       62:
         { Цвет текста ячейки }
-        if InCellStyle then
+        if CellIdx >= 0 then
           if TryStrToInt(Value, IntVal) then
             CellStyle.TextColor := IntVal;
       63:
         { Цвет фона ячейки }
-        if InCellStyle then
+        if CellIdx >= 0 then
           if TryStrToInt(Value, IntVal) then
             CellStyle.BackgroundColor := IntVal;
       283:
         { Признак использования цвета фона }
-        if InCellStyle then
+        if CellIdx >= 0 then
           if TryStrToInt(Value, IntVal) then
             CellStyle.BackgroundColorEnabled := IntVal <> 0;
     end;
@@ -233,7 +236,7 @@ begin
   end;
 
   { Сохраняем последний блок стиля строки }
-  if InCellStyle then
+  if CellIdx >= 0 then
     Style^.tblformat.PushBackData(CellStyle);
 
   { Логируем завершение загрузки стиля }
@@ -361,12 +364,14 @@ begin
 end;
 
 { Добавляет в Lines строки одного блока ячейки стиля таблицы (title/header/data).
-  Если CS.TextStyleName пустой — используется 'Standard'. }
-procedure AppendCellStyleLines(Lines: TStringList; const CS: TGDBTableCellStyle);
+  TextStyleName — имя текстового стиля для данного блока (группа 7).
+  Если TextStyleName пустой — используется 'Standard'. }
+procedure AppendCellStyleLines(Lines: TStringList; const CS: TGDBTableCellStyle;
+  const TextStyleName: string);
 begin
   Lines.Add('  7');
-  if CS.TextStyleName <> '' then
-    Lines.Add(CS.TextStyleName)
+  if TextStyleName <> '' then
+    Lines.Add(TextStyleName)
   else
     Lines.Add('Standard');
 
@@ -472,7 +477,8 @@ begin
     PCellStyle := Style^.tblformat.beginiterate(Iter);
     while (PCellStyle <> nil) and (CellIdx < 3) do
     begin
-      AppendCellStyleLines(Lines, PCellStyle^);
+      { Имя текстового стиля хранится в CellTextStyleName (не в CellStyle record) }
+      AppendCellStyleLines(Lines, PCellStyle^, Style^.CellTextStyleName[CellIdx]);
       Inc(CellIdx);
       PCellStyle := Style^.tblformat.iterate(Iter);
     end;
@@ -481,11 +487,10 @@ begin
     while CellIdx < 3 do
     begin
       FillChar(CS, SizeOf(CS), 0);
-      CS.TextStyleName := 'Standard';
       CS.TextHeight := 2.5;
       CS.Alignment := DefaultAlignments[CellIdx];
       CS.BackgroundColor := 7;
-      AppendCellStyleLines(Lines, CS);
+      AppendCellStyleLines(Lines, CS, 'Standard');
       Inc(CellIdx);
     end;
 
