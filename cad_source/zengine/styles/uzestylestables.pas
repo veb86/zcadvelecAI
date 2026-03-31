@@ -86,9 +86,16 @@ begin
   //size:=sizeof(TGDBTableStyle);
 end;
 constructor TGDBTableStyle.Init;
+var
+  I: Integer;
 begin
     inherited;
     tblformat.init(10);
+    TitleSuppressed := False;
+    ColumnHeadingSuppressed := False;
+    { Инициализируем имена текстовых стилей для трёх типов строк }
+    for I := 0 to 2 do
+      pointer(CellTextStyleName[I]) := nil;
 end;
 destructor TGDBTableStyle.Done;
 var
