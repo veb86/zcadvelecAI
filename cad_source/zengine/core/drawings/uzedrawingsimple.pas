@@ -27,7 +27,8 @@ uses
   uzestyleslayers,uzestyleslinetypes,uzeentity,UGDBSelectedObjArray,
   uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
   uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
-  uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity;
+  uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity,
+  uzestylestablesdxf;
 type
   TMainBlockCreateProc=procedure (_to:PTDrawingDef;name:String) of object;
 
@@ -57,6 +58,9 @@ type
                        BlockDefArray:GDBObjBlockdefArray;
                        Numerator:GDBNumerator;
                        TableStyleTable:GDBTableStyleArray;
+                       { Таблица стилей таблиц для DXF-обмена.
+                         Используется только при загрузке и сохранении DXF. }
+                       DXFTableStyleTable: GDBDXFTableStyleArray;
                        LTypeStyleTable:GDBLtypeArray;
                        DimStyleTable:GDBDimStyleArray;
                        DrawingExtensions:TDrawingExtensions;
@@ -760,6 +764,7 @@ begin
      BlockDefArray.Done;
      Numerator.Done;
      TableStyleTable.Done;
+     DXFTableStyleTable.Done;
      LTypeStyleTable.Done;
      DimStyleTable.Done;
      //FileName:='';
@@ -836,6 +841,7 @@ begin
   Numerator.init(10);
 
   TableStyleTable.init(10);
+  DXFTableStyleTable.init(10);
 
   PTempTableStyle:=TableStyleTable.AddStyle('Temp');
 

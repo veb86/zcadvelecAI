@@ -1428,7 +1428,7 @@ begin
           поэтому обрабатываем их отдельно после извлечения сырой секции. }
         ReadTableStylesFromDXFObjects(
           dwgCtx.PDrawing^.RawObjectsSection,
-          dwgCtx.PDrawing^.TableStyleTable);
+          dwgCtx.PDrawing^.DXFTableStyleTable);
 
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
@@ -1655,7 +1655,7 @@ begin
 
   { Обновляем стили таблиц в сырой секции OBJECTS перед сохранением.
     Записываем актуальные TABLESTYLE объекты из TableStyleTable. }
-  WriteTableStylesToDXFObjects(drawing.TableStyleTable, drawing.RawObjectsSection);
+  WriteTableStylesToDXFObjects(drawing.DXFTableStyleTable, drawing.RawObjectsSection);
 
   outstream.init(10*1024*1024);
   begin
