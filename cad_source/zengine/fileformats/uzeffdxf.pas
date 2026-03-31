@@ -1341,9 +1341,13 @@ begin
     //if assigned(ProcessLongProcessProc)then
     //ProcessLongProcessProc(rdr.ReadPos);
   until rdr.EOF;
-  {$IFNDEF DELPHI}
-  Handle2BlockName.destroy;
-  {$ENDIF}
+  { Передаём карту дескрипторов BLOCK_RECORD в чертёж.
+    Она нужна при сохранении для пересопоставления ссылок
+    на BLOCK_RECORD в секции OBJECTS (например, в объектах LAYOUT). }
+  ZCDCtx.PDrawing^.SourceBlockRecordHandleMap.Free;
+  ZCDCtx.PDrawing^.SourceBlockRecordHandleMap := Handle2BlockName;
+  Handle2BlockName := nil;
+
   zDebugLn('{D-}[DXF_CONTENTS]end; {AddFromDXF2000}');
   //programlog.LogOutStr('end; {AddFromDXF2000}',lp_DecPos,LM_Debug);
 
@@ -1804,6 +1808,96 @@ begin
   end;
 end;
 
+{ Дополняет карту пересопоставления дескрипторов (TemplateHandleRemap) записями
+  для дескрипторов BLOCK_RECORD из исходного DXF-файла.
+
+  При сохранении секция OBJECTS содержит объекты LAYOUT, которые ссылаются на
+  BLOCK_RECORD через дескрипторы исходного файла (группа 330). Если в шаблоне
+  BLOCK_RECORD использует другой дескриптор (что обычно и есть), то
+  WriteRemappedObjectsSection не найдёт соответствие и создаст новый
+  "висячий" (dangling) дескриптор, который AutoCAD не сможет разрешить.
+
+  Функция получает карту источника source_handle → block_name, и для каждой
+  записи находит новый дескриптор (из захваченных при записи BLOCK_RECORD или
+  из карты pointer-to-handle), затем добавляет source_handle → new_handle в
+  TemplateHandleRemap, если такого соответствия там ещё нет. }
+procedure AddBlockRecordHandleMappings(
+  var Drawing: TSimpleDrawing;
+  var IODXFContext: TIODXFSaveContext;
+  TemplateHandleRemap: TMapHandleToHandle;
+  ModelSpaceHandle: TDWGHandle;
+  PaperSpaceHandle: TDWGHandle;
+  PaperSpace0Handle: TDWGHandle);
+{$IFNDEF DELPHI}
+var
+  SourceBRMap: TMapBlockHandle_BlockNames;
+  Iterator: TMapBlockHandle_BlockNames.TIterator;
+  SrcHandle: TDWGHandle;
+  BlockName: string;
+  NewHandle: TDWGHandle;
+  BlockIdx: Integer;
+  BlockPtr: Pointer;
+{$ENDIF}
+begin
+{$IFNDEF DELPHI}
+  { Проверяем наличие карты дескрипторов BLOCK_RECORD из исходного файла }
+  if not (Drawing.SourceBlockRecordHandleMap is TMapBlockHandle_BlockNames) then
+    Exit;
+
+  SourceBRMap := TMapBlockHandle_BlockNames(Drawing.SourceBlockRecordHandleMap);
+  if SourceBRMap = nil then
+    Exit;
+
+  { Перебираем все записи: source_handle → block_name }
+  Iterator := SourceBRMap.Min;
+  if Iterator = nil then
+    Exit;
+
+  repeat
+    SrcHandle := Iterator.GetKey;
+    BlockName := Iterator.GetValue;
+
+    { Пропускаем, если дескриптор уже есть в карте пересопоставления }
+    if TemplateHandleRemap.MyGetValue(SrcHandle) > 0 then
+    begin
+      { Continue перейдёт к условию until, которое вызовет Iterator.Next }
+      Continue;
+    end;
+
+    { Определяем новый дескриптор по имени блока }
+    NewHandle := 0;
+
+    if BlockName = '*Model_Space' then
+      NewHandle := ModelSpaceHandle
+    else if BlockName = '*Paper_Space' then
+      NewHandle := PaperSpaceHandle
+    else if BlockName = '*Paper_Space0' then
+      NewHandle := PaperSpace0Handle
+    else
+    begin
+      { Пользовательский блок: ищем через указатель → handle }
+      BlockIdx := Drawing.BlockDefArray.getindex(BlockName);
+      if BlockIdx >= 0 then
+      begin
+        BlockPtr := @PBlockdefArray(Drawing.BlockDefArray.parray)^[BlockIdx];
+        NewHandle := IODXFContext.p2h.MyGetValue(BlockPtr);
+      end;
+    end;
+
+    { Добавляем соответствие, если нашли новый дескриптор }
+    if NewHandle > 0 then
+    begin
+      TemplateHandleRemap.Add(SrcHandle, NewHandle);
+      programlog.LogOutFormatStr(
+        'uzeffdxf: AddBlockRecordHandleMappings: %s: %x -> %x',
+        [BlockName, SrcHandle, NewHandle], LM_Info);
+    end;
+
+  until not Iterator.Next;
+  Iterator.Destroy;
+{$ENDIF}
+end;
+
 function savedxf2000(const SavedFileName:String; const TemplateFileName:String;var drawing:TSimpleDrawing;codepage:integer):boolean;
 var
   sysfilename:RawByteString;
@@ -1813,6 +1907,11 @@ var
   groupi,valuei,intable,attr: Integer;
   temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle: TDWGHandle;
   modelSpaceBlockHandle: TDWGHandle;
+  { Дескрипторы BLOCK_RECORD для пространств листов (*Paper_Space, *Paper_Space0).
+    Запоминаются при обработке таблицы BLOCK_RECORD шаблона и используются
+    для пересопоставления ссылок в секции OBJECTS (объекты LAYOUT). }
+  paperSpaceBlockHandle: TDWGHandle;
+  paperSpace0BlockHandle: TDWGHandle;
   lastGroup5Handle: TDWGHandle;
   i: integer;
   OldHandele2NewHandle:TMapHandleToHandle;
@@ -1882,6 +1981,8 @@ begin
   indimstyletable:=false;
   inappidtable:=false;
   modelSpaceBlockHandle := 0;
+  paperSpaceBlockHandle := 0;
+  paperSpace0BlockHandle := 0;
   lastGroup5Handle := 0;
   MakeVariablesDict(IODXFContext.VarsDict,drawing);
   processedvarscount:=IODXFContext.VarsDict.count;
@@ -1990,6 +2091,16 @@ begin
         if (groupi = 2) and (values = 'OBJECTS')
            and (drawing.RawObjectsSection <> '') then
         begin
+          { Дополняем карту пересопоставления дескрипторов отображением
+            дескрипторов BLOCK_RECORD из исходного файла на новые дескрипторы.
+            Это необходимо для корректной обработки объектов LAYOUT в секции OBJECTS,
+            которые ссылаются на BLOCK_RECORD через дескрипторы исходного файла.
+            Без этого дополнения ссылки превращаются в "висячие" (dangling handles),
+            из-за чего AutoCAD отказывается открывать файл. }
+          AddBlockRecordHandleMappings(
+            drawing, IODXFContext, OldHandele2NewHandle,
+            modelSpaceBlockHandle, paperSpaceBlockHandle, paperSpace0BlockHandle);
+
           WriteRemappedObjectsSection(outstream,
             drawing.RawObjectsSection, IODXFContext,
             drawing.SourceHandleMap, OldHandele2NewHandle);
@@ -2960,12 +3071,18 @@ ENDTAB}
                   outstream.TXTAddStringEOL(groups);
                   outstream.TXTAddStringEOL(values);
                   end;
-                  { Запоминаем дескриптор блока *Model_Space для записи в группу 330
-                    сущностей: когда в таблице BLOCK_RECORD встречаем запись с именем
-                    '*Model_Space', lastGroup5Handle содержит дескриптор этой записи
-                    (назначенный при обработке группы 5 данной записи). }
-                  if inblocktable and (groupi = 2) and (values = '*Model_Space') then
-                    modelSpaceBlockHandle := lastGroup5Handle;
+                  { Запоминаем дескрипторы BLOCK_RECORD для пространства модели и листов.
+                    Дескриптор lastGroup5Handle содержит новый дескриптор записи,
+                    назначенный при обработке группы 5 этой записи в таблице BLOCK_RECORD. }
+                  if inblocktable and (groupi = 2) then
+                  begin
+                    if values = '*Model_Space' then
+                      modelSpaceBlockHandle := lastGroup5Handle
+                    else if values = '*Paper_Space' then
+                      paperSpaceBlockHandle := lastGroup5Handle
+                    else if values = '*Paper_Space0' then
+                      paperSpace0BlockHandle := lastGroup5Handle;
+                  end;
                   //val('$' + values, i, cod);
                 end;
     //s := readspace(s);

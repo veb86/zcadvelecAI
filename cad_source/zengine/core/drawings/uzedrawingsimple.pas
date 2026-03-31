@@ -76,6 +76,13 @@ type
                          пересопоставления дескрипторов в секции OBJECTS. }
                        SourceHandleMap: TObject;
 
+                       { Карта дескрипторов BLOCK_RECORD из исходного DXF-файла.
+                         Хранит соответствие: handle_BLOCK_RECORD → имя_блока.
+                         Используется при сохранении для корректного пересопоставления
+                         ссылок на BLOCK_RECORD в секции OBJECTS (например, в объектах
+                         LAYOUT, которые ссылаются на *Paper_Space по дескриптору). }
+                       SourceBlockRecordHandleMap: TObject;
+
                        { Версия DXF формата исходного файла (например, 'AC1021').
                          Сохраняется при загрузке и используется при сохранении,
                          чтобы не понижать версию файла (AC1021 → AC1015). }
@@ -782,6 +789,7 @@ begin
                            end;
      DrawingExtensions.Free;
      SourceHandleMap.Free;
+     SourceBlockRecordHandleMap.Free;
 end;
 constructor TSimpleDrawing.init;
 var {tp:GDBTextStyleProp;}
@@ -822,6 +830,7 @@ begin
   RawClassesSection := '';
   RawObjectsSection := '';
   SourceHandleMap := nil;
+  SourceBlockRecordHandleMap := nil;
   LTypeStyleTable.init(100);
   LayerTable.init(200,LTypeStyleTable.GetSystemLT(TLTContinous));
   DimStyleTable.init(100);
