@@ -104,10 +104,6 @@ type
     VarsDict:TString2StringDictionary;
     Header:TDXFHeaderInfo;
     LocalEntityFlags:TLocalEntityFlags;
-    { Дескриптор блока-владельца для текущей секции сущностей.
-      Записывается в группу 330 каждой сущности, чтобы AutoCAD знал,
-      в каком блоке находится объект (model space, paper space и т.д.). }
-    CurrentOwnerHandle: TDWGHandle;
 
     procedure InitRec;
     procedure Done;
@@ -315,7 +311,6 @@ begin
   currentEntAddrOverrider:=nil;
   VarsDict:=TString2StringDictionary.create;
   handle := $2;
-  CurrentOwnerHandle := 0;
 
   Header.InitRec;
 end;
@@ -345,9 +340,7 @@ end;
 
 procedure TIODXFLoadContext.Done;
 begin
-  { h2p может быть nil, если была передана в чертёж (SourceHandleMap) }
-  if h2p <> nil then
-    h2p.Free;
+  h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
 end;

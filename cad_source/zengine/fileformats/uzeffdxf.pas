@@ -1341,13 +1341,9 @@ begin
     //if assigned(ProcessLongProcessProc)then
     //ProcessLongProcessProc(rdr.ReadPos);
   until rdr.EOF;
-  { Передаём карту дескрипторов BLOCK_RECORD в чертёж.
-    Она нужна при сохранении для пересопоставления ссылок
-    на BLOCK_RECORD в секции OBJECTS (например, в объектах LAYOUT). }
-  ZCDCtx.PDrawing^.SourceBlockRecordHandleMap.Free;
-  ZCDCtx.PDrawing^.SourceBlockRecordHandleMap := Handle2BlockName;
-  Handle2BlockName := nil;
-
+  {$IFNDEF DELPHI}
+  Handle2BlockName.destroy;
+  {$ENDIF}
   zDebugLn('{D-}[DXF_CONTENTS]end; {AddFromDXF2000}');
   //programlog.LogOutStr('end; {AddFromDXF2000}',lp_DecPos,LM_Debug);
 
@@ -1415,21 +1411,6 @@ begin
         lps.EndLongProcess(lph);
         dwgCtx.POwner^.calcbb(dwgCtx.DC);
         result:=fileCtx.Header;
-
-        { Передаём карту дескрипторов (handle → указатель) из контекста
-          загрузки в чертёж. Она понадобится при сохранении для
-          пересопоставления дескрипторов в секции OBJECTS. }
-        dwgCtx.PDrawing^.SourceHandleMap.Free;
-        dwgCtx.PDrawing^.SourceHandleMap := fileCtx.h2p;
-        fileCtx.h2p := nil;
-
-        { Сохраняем версию DXF формата исходного файла.
-          Используется при сохранении, чтобы не понижать версию
-          (например, AC1021 не должна сохраняться как AC1015).
-          Извлекаем до вызова fileCtx.Done, который освобождает DWGVarsDict. }
-        dwgCtx.PDrawing^.OriginalAcadVer :=
-          fileCtx.DWGVarsDict[dxfVar_ACADVER];
-
         fileCtx.Done;
 
         { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
@@ -1513,13 +1494,6 @@ var
    pcurrtextstyle:PGDBTextStyle;
    pcurrentdimstyle:PGDBDimStyle;
 begin
-    { Если файл был загружен с версией выше AC1015, сохраняем её.
-      Без этого ZCAD всегда понижает версию до AC1015, что приводит
-      к ошибкам при открытии файла в AutoCAD (неверный формат CLASS,
-      отсутствие объектов AC1021). }
-    if drawing.OriginalAcadVer <> '' then
-      VarsDict.Add('$ACADVER', drawing.OriginalAcadVer);
-
     VarsDict.Add('$CLAYER',drawing.GetCurrentLayer^.Name);
     VarsDict.Add('$CELTYPE',drawing.GetCurrentLType^.Name);
     VarsDict.Add('$DWGCODEPAGE',ZCCP2Str(drawing.DXFCodePage));
@@ -1610,52 +1584,6 @@ begin
   end;
 end;
 
-{ Записывает секцию CLASSES, при необходимости фильтруя группу 91.
-  Группа 91 (счётчик экземпляров класса) появилась в формате AC1021+.
-  При сохранении в AC1015 её нужно удалять: AutoCAD, читая файл как AC1015,
-  ожидает сразу группу 280 после 90, и при наличии 91 сообщает:
-  «Ожидалась группа 280 (флаг зомби)».
-  При сохранении в AC1021+ группу 91 нужно сохранять.
-  Параметр TargetVersion задаёт целевую версию DXF для принятия решения.
-  Функция пропускает первые 2 строки (0/SECTION), т.к. они уже записаны
-  из шаблона. }
-procedure WriteFilteredClassesSectionContent(var outstream: TZctnrVectorBytes;
-  const RawSection: string; const TargetVersion: TACDWGVer);
-var
-  Lines: TStringList;
-  I, GroupCode: Integer;
-  FilterGroup91: Boolean;
-begin
-  { Фильтруем группу 91 только при сохранении в формате AC1015 и ниже }
-  FilterGroup91 := (TargetVersion < AC1021);
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawSection;
-    { Пропускаем первые 2 строки: "0" и "SECTION" }
-    I := 2;
-    while I < Lines.Count - 1 do
-    begin
-      GroupCode := StrToIntDef(Trim(Lines[I]), -1);
-      { Группа 91 (счётчик экземпляров класса) — только AC1021+.
-        Пропускаем её при сохранении в AC1015, сохраняем при AC1021+. }
-      if FilterGroup91 and (GroupCode = 91) then
-      begin
-        Inc(I, 2);
-        Continue;
-      end;
-      outstream.TXTAddStringEOL(Lines[I]);
-      outstream.TXTAddStringEOL(Lines[I + 1]);
-      Inc(I, 2);
-    end;
-    { Если число строк нечётное — записываем последнюю строку }
-    if (Lines.Count > 2) and (I = Lines.Count - 1) then
-      outstream.TXTAddStringEOL(Lines[I]);
-  finally
-    Lines.Free;
-  end;
-end;
-
 { Пропускает содержимое текущей секции в шаблоне до 0/ENDSEC.
   Вызывается после WriteRawSectionContent, чтобы шаблонные данные
   секции не попали в выходной поток. }
@@ -1674,230 +1602,6 @@ begin
   end;
 end;
 
-{ Записывает секцию OBJECTS с пересопоставлением дескрипторов (handle).
-  Дескрипторы из исходного файла заменяются на новые, назначенные при
-  сохранении. Это необходимо потому, что секции TABLES и BLOCKS
-  полностью перегенерируются с новыми дескрипторами, а секция OBJECTS
-  ссылается на них через коды 5, 330, 340, 350, 360, 390, 320, 105.
-  Без пересопоставления AutoCAD не может найти объекты по дескрипторам
-  и отказывается открывать файл.
-
-  Параметр TemplateHandleRemap — карта дескрипторов шаблона, построенная при
-  записи секции TABLES. Используется как резервный источник пересопоставления
-  для системных объектов (BLOCK_RECORD *Model_Space и др.), которые не
-  отслеживаются в SourceHandleMap (загрузочная карта содержит только сущности,
-  типы линий и стили текста, но не записи таблиц TABLES). }
-procedure WriteRemappedObjectsSection(
-  var outstream: TZctnrVectorBytes;
-  const RawSection: string;
-  var IODXFContext: TIODXFSaveContext;
-  SourceHandleMap: TObject;
-  TemplateHandleRemap: TMapHandleToHandle);
-var
-  Lines: TStringList;
-  I, GroupCode: Integer;
-  GroupStr, ValueStr: string;
-  OldHandle, NewHandle: TDWGHandle;
-  SourceH2P: TDXFHandle2ZCObject;
-  LocalRemap: TMapHandleToHandle;
-  Ptr: Pointer;
-begin
-  { Приводим SourceHandleMap к конкретному типу }
-  if (SourceHandleMap <> nil)
-     and (SourceHandleMap is TDXFHandle2ZCObject) then
-    SourceH2P := TDXFHandle2ZCObject(SourceHandleMap)
-  else
-    SourceH2P := nil;
-
-  LocalRemap := TMapHandleToHandle.Create;
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawSection;
-    { Пропускаем первые 2 строки (0/SECTION) }
-    I := 2;
-    while I < Lines.Count - 1 do
-    begin
-      GroupStr := Lines[I];
-      ValueStr := Lines[I + 1];
-      GroupCode := StrToIntDef(Trim(GroupStr), -1);
-
-      { Проверяем, является ли код группы дескриптором }
-      if (GroupCode = 5) or (GroupCode = 105) or
-         (GroupCode = 320) or (GroupCode = 330) or
-         (GroupCode = 340) or (GroupCode = 350) or
-         (GroupCode = 360) or (GroupCode = 390) or
-         (GroupCode = 1005) then
-      begin
-        OldHandle := StrToInt64Def('$' + Trim(ValueStr), 0);
-        if OldHandle = 0 then
-        begin
-          { Дескриптор 0 — без владельца, записываем как есть }
-          outstream.TXTAddStringEOL(GroupStr);
-          outstream.TXTAddStringEOL('0');
-        end
-        else
-        begin
-          { Ищем пересопоставление в локальной карте }
-          NewHandle := LocalRemap.MyGetValue(OldHandle);
-          if NewHandle > 0 then
-          begin
-            { Дескриптор уже пересопоставлен ранее }
-            outstream.TXTAddStringEOL(GroupStr);
-            outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
-          end
-          else
-          begin
-            { Пробуем найти объект через карту загрузки и карту
-              сохранения: source_handle → указатель → new_handle }
-            NewHandle := 0;
-            if SourceH2P <> nil then
-            begin
-              Ptr := SourceH2P.MyGetValue(OldHandle).p;
-              if Ptr <> nil then
-                NewHandle := IODXFContext.p2h.MyGetValue(Ptr);
-            end;
-
-            { Если через SourceH2P не нашли — пробуем карту шаблона.
-              Системные объекты (BLOCK_RECORD *Model_Space, LAYOUT и т.д.)
-              не попадают в SourceH2P при загрузке, но их дескрипторы
-              в шаблоне совпадают с дескрипторами исходного файла, поэтому
-              карта шаблона позволяет корректно пересопоставить их. }
-            if (NewHandle = 0) and (TemplateHandleRemap <> nil) then
-              NewHandle := TemplateHandleRemap.MyGetValue(OldHandle);
-
-            if NewHandle > 0 then
-            begin
-              { Нашли новый дескриптор через загрузочную карту или шаблон }
-              LocalRemap.Add(OldHandle, NewHandle);
-              outstream.TXTAddStringEOL(GroupStr);
-              outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
-            end
-            else
-            begin
-              { Объект не найден в картах — назначаем новый
-                дескриптор (для внутренних объектов секции OBJECTS) }
-              NewHandle := IODXFContext.handle;
-              Inc(IODXFContext.handle);
-              LocalRemap.Add(OldHandle, NewHandle);
-              outstream.TXTAddStringEOL(GroupStr);
-              outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
-            end;
-          end;
-        end;
-      end
-      else
-      begin
-        { Обычный код группы — записываем без изменений }
-        outstream.TXTAddStringEOL(GroupStr);
-        outstream.TXTAddStringEOL(ValueStr);
-      end;
-
-      Inc(I, 2);
-    end;
-
-    { Если количество строк нечётное, записываем последнюю строку }
-    if (Lines.Count > 2) and (I = Lines.Count - 1) then
-      outstream.TXTAddStringEOL(Lines[I]);
-
-    programlog.LogOutFormatStr(
-      'uzeffdxf: WriteRemappedObjectsSection: пересопоставлено %d дескрипторов',
-      [Integer(LocalRemap.Count)], LM_Info);
-  finally
-    Lines.Free;
-    LocalRemap.Free;
-  end;
-end;
-
-{ Дополняет карту пересопоставления дескрипторов (TemplateHandleRemap) записями
-  для дескрипторов BLOCK_RECORD из исходного DXF-файла.
-
-  При сохранении секция OBJECTS содержит объекты LAYOUT, которые ссылаются на
-  BLOCK_RECORD через дескрипторы исходного файла (группа 330). Если в шаблоне
-  BLOCK_RECORD использует другой дескриптор (что обычно и есть), то
-  WriteRemappedObjectsSection не найдёт соответствие и создаст новый
-  "висячий" (dangling) дескриптор, который AutoCAD не сможет разрешить.
-
-  Функция получает карту источника source_handle → block_name, и для каждой
-  записи находит новый дескриптор (из захваченных при записи BLOCK_RECORD или
-  из карты pointer-to-handle), затем добавляет source_handle → new_handle в
-  TemplateHandleRemap, если такого соответствия там ещё нет. }
-procedure AddBlockRecordHandleMappings(
-  var Drawing: TSimpleDrawing;
-  var IODXFContext: TIODXFSaveContext;
-  TemplateHandleRemap: TMapHandleToHandle;
-  ModelSpaceHandle: TDWGHandle;
-  PaperSpaceHandle: TDWGHandle;
-  PaperSpace0Handle: TDWGHandle);
-{$IFNDEF DELPHI}
-var
-  SourceBRMap: TMapBlockHandle_BlockNames;
-  Iterator: TMapBlockHandle_BlockNames.TIterator;
-  SrcHandle: TDWGHandle;
-  BlockName: string;
-  NewHandle: TDWGHandle;
-  BlockIdx: Integer;
-  BlockPtr: Pointer;
-{$ENDIF}
-begin
-{$IFNDEF DELPHI}
-  { Проверяем наличие карты дескрипторов BLOCK_RECORD из исходного файла }
-  if not (Drawing.SourceBlockRecordHandleMap is TMapBlockHandle_BlockNames) then
-    Exit;
-
-  SourceBRMap := TMapBlockHandle_BlockNames(Drawing.SourceBlockRecordHandleMap);
-  if SourceBRMap = nil then
-    Exit;
-
-  { Перебираем все записи: source_handle → block_name }
-  Iterator := SourceBRMap.Min;
-  if Iterator = nil then
-    Exit;
-
-  repeat
-    SrcHandle := Iterator.GetKey;
-    BlockName := Iterator.GetValue;
-
-    { Пропускаем, если дескриптор уже есть в карте пересопоставления }
-    if TemplateHandleRemap.MyGetValue(SrcHandle) > 0 then
-    begin
-      { Continue перейдёт к условию until, которое вызовет Iterator.Next }
-      Continue;
-    end;
-
-    { Определяем новый дескриптор по имени блока }
-    NewHandle := 0;
-
-    if BlockName = '*Model_Space' then
-      NewHandle := ModelSpaceHandle
-    else if BlockName = '*Paper_Space' then
-      NewHandle := PaperSpaceHandle
-    else if BlockName = '*Paper_Space0' then
-      NewHandle := PaperSpace0Handle
-    else
-    begin
-      { Пользовательский блок: ищем через указатель → handle }
-      BlockIdx := Drawing.BlockDefArray.getindex(BlockName);
-      if BlockIdx >= 0 then
-      begin
-        BlockPtr := @PBlockdefArray(Drawing.BlockDefArray.parray)^[BlockIdx];
-        NewHandle := IODXFContext.p2h.MyGetValue(BlockPtr);
-      end;
-    end;
-
-    { Добавляем соответствие, если нашли новый дескриптор }
-    if NewHandle > 0 then
-    begin
-      TemplateHandleRemap.Add(SrcHandle, NewHandle);
-      programlog.LogOutFormatStr(
-        'uzeffdxf: AddBlockRecordHandleMappings: %s: %x -> %x',
-        [BlockName, SrcHandle, NewHandle], LM_Info);
-    end;
-
-  until not Iterator.Next;
-  Iterator.Destroy;
-{$ENDIF}
-end;
-
 function savedxf2000(const SavedFileName:String; const TemplateFileName:String;var drawing:TSimpleDrawing;codepage:integer):boolean;
 var
   sysfilename:RawByteString;
@@ -1906,13 +1610,6 @@ var
   groups,values,ts: String;
   groupi,valuei,intable,attr: Integer;
   temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle: TDWGHandle;
-  modelSpaceBlockHandle: TDWGHandle;
-  { Дескрипторы BLOCK_RECORD для пространств листов (*Paper_Space, *Paper_Space0).
-    Запоминаются при обработке таблицы BLOCK_RECORD шаблона и используются
-    для пересопоставления ссылок в секции OBJECTS (объекты LAYOUT). }
-  paperSpaceBlockHandle: TDWGHandle;
-  paperSpace0BlockHandle: TDWGHandle;
-  lastGroup5Handle: TDWGHandle;
   i: integer;
   OldHandele2NewHandle:TMapHandleToHandle;
 
@@ -1940,27 +1637,8 @@ var
 begin
   intable:=0;
   IODXFContext.InitRec;
-  { По умолчанию сохраняем в формате AC1015 (AutoCAD 2000).
-    Если исходный файл имел более высокую версию — сохраняем её,
-    чтобы AutoCAD мог корректно прочитать объекты формата AC1021+. }
-  if Length(drawing.OriginalAcadVer) > 2 then
-  begin
-    { Отрезаем префикс 'AC' и преобразуем остаток в число, например 'AC1021' -> 1021 }
-    IODXFContext.Header.iVersion :=
-      StrToIntDef(Copy(drawing.OriginalAcadVer, 3, MaxInt), 1015);
-    IODXFContext.Header.Version  := ACVer2DXF_ACVer(IODXFContext.Header.iVersion);
-    { Если версия нераспознана — откатываемся к AC1015 }
-    if IODXFContext.Header.Version = AC_INVALID then
-    begin
-      IODXFContext.Header.Version  := AC1015;
-      IODXFContext.Header.iVersion := 1015;
-    end;
-  end
-  else
-  begin
-    IODXFContext.Header.Version  := AC1015;
-    IODXFContext.Header.iVersion := 1015;
-  end;
+  IODXFContext.Header.Version:=AC1015;
+  IODXFContext.Header.iVersion:=1015;
 
   IODXFContext.Header.DWGCodePage:=SysCP2ACCP(codepage);
   IODXFContext.Header.iDWGCodePage:=codepage;
@@ -1980,10 +1658,6 @@ begin
   inlttypetable:=false;
   indimstyletable:=false;
   inappidtable:=false;
-  modelSpaceBlockHandle := 0;
-  paperSpaceBlockHandle := 0;
-  paperSpace0BlockHandle := 0;
-  lastGroup5Handle := 0;
   MakeVariablesDict(IODXFContext.VarsDict,drawing);
   processedvarscount:=IODXFContext.VarsDict.count;
   while templatefile.notEOF do
@@ -2060,9 +1734,6 @@ begin
                                              plottablefansdle:=lasthandle;  {поймать плоттабле}
         if indimstyletable and (groupi=5) then
                                              dimtablehandle:=lasthandle;  {поймать dimtable}
-        { Запоминаем дескриптор, назначенный последней группе 5 (handle) }
-        if groupi = 5 then
-          lastGroup5Handle := lasthandle;
         (*{if instyletable and (groupi=5) then
                                              standartstylehandle:=lasthandle;{intable;}  {поймать standart}*)
         end
@@ -2073,37 +1744,19 @@ begin
         if (groupi = 2) and (values = 'CLASSES')
            and (drawing.RawClassesSection <> '') then
         begin
-          { Записываем содержимое сохранённой секции CLASSES.
-            Группа 91 (счётчик экземпляров класса) присутствует только в AC1021+.
-            При сохранении в AC1015 её нужно удалять, при AC1021+ — сохранять. }
-          WriteFilteredClassesSectionContent(
-            outstream, drawing.RawClassesSection, IODXFContext.Header.Version);
+          { Записываем содержимое сохранённой секции CLASSES,
+            пропуская первые 2 строки (0/SECTION), т.к. они уже записаны }
+          WriteRawSectionContent(outstream, drawing.RawClassesSection);
           { Пропускаем содержимое секции CLASSES в шаблоне до ENDSEC }
           SkipTemplateSection(templatefile);
         end
         else
         { Секция OBJECTS: если есть сохранённая секция из исходного файла,
-          записываем её с пересопоставлением дескрипторов (handle).
-          Дескрипторы в секции OBJECTS ссылаются на объекты из TABLES
-          и BLOCKS, которые при сохранении получают новые дескрипторы.
-          Без пересопоставления AutoCAD не может найти объекты
-          и отказывается открывать файл. }
+          записываем её вместо содержимого шаблона }
         if (groupi = 2) and (values = 'OBJECTS')
            and (drawing.RawObjectsSection <> '') then
         begin
-          { Дополняем карту пересопоставления дескрипторов отображением
-            дескрипторов BLOCK_RECORD из исходного файла на новые дескрипторы.
-            Это необходимо для корректной обработки объектов LAYOUT в секции OBJECTS,
-            которые ссылаются на BLOCK_RECORD через дескрипторы исходного файла.
-            Без этого дополнения ссылки превращаются в "висячие" (dangling handles),
-            из-за чего AutoCAD отказывается открывать файл. }
-          AddBlockRecordHandleMappings(
-            drawing, IODXFContext, OldHandele2NewHandle,
-            modelSpaceBlockHandle, paperSpaceBlockHandle, paperSpace0BlockHandle);
-
-          WriteRemappedObjectsSection(outstream,
-            drawing.RawObjectsSection, IODXFContext,
-            drawing.SourceHandleMap, OldHandele2NewHandle);
+          WriteRawSectionContent(outstream, drawing.RawObjectsSection);
           SkipTemplateSection(templatefile);
         end
         else
@@ -2113,13 +1766,8 @@ begin
           //WriteString_EOL(outstream, groups);
           outstream.TXTAddStringEOL(values);
           //WriteString_EOL(outstream, values);
-          { Устанавливаем дескриптор *Model_Space как владельца сущностей.
-            AutoCAD требует группу 330 в каждой сущности ENTITIES-секции,
-            указывающую на блок-запись (BLOCK_RECORD), которому она принадлежит. }
-          IODXFContext.CurrentOwnerHandle := modelSpaceBlockHandle;
           //historyoutstr('Entities start here_______________________________________________________');
           saveentitiesdxf2000(@{p}drawing.pObjRoot^.ObjArray, outstream,drawing,IODXFContext);
-          IODXFContext.CurrentOwnerHandle := 0;
         end
         else
           if (groupi = 2) and (values = 'BLOCKS') then
@@ -2138,12 +1786,6 @@ begin
               for i := 0 to {p}drawing.BlockDefArray.count - 1 do
               begin
                 zDebugLn('{D}[DXF_CONTENTS]write BlockDef '+PBlockdefArray({p}drawing.BlockDefArray.parray)^[i].name);
-                { Получаем дескриптор BLOCK_RECORD заранее, чтобы записать группу 330
-                  в сущностях BLOCK и ENDBLK. AutoCAD требует группу 330 во всех
-                  сущностях блока, указывающую на их запись BLOCK_RECORD. }
-                IODXFContext.p2h.MyGetOrCreateValue(
-                  @(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),
-                  IODXFContext.handle, temphandle2);
                 outstream.TXTAddStringEOL(dxfGroupCode(0));
                 outstream.TXTAddStringEOL('BLOCK');
 
@@ -2152,10 +1794,6 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(5));
                 outstream.TXTAddStringEOL(inttohex(IODXFContext.handle{temphandle}, 0));
                 inc(IODXFContext.handle);
-                { Группа 330: дескриптор BLOCK_RECORD — владельца данного блока.
-                  Необходима для корректного построения графа владения в AutoCAD. }
-                outstream.TXTAddStringEOL(dxfGroupCode(330));
-                outstream.TXTAddStringEOL(inttohex(temphandle2, 0));
                 outstream.TXTAddStringEOL(dxfGroupCode(100));
                 outstream.TXTAddStringEOL(dxfName_AcDbEntity);
                 outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -2177,21 +1815,13 @@ begin
                 outstream.TXTAddStringEOL(dxfGroupCode(1));
                 outstream.TXTAddStringEOL('');
 
-                { Устанавливаем дескриптор BLOCK_RECORD как владельца сущностей блока.
-                  AutoCAD требует группу 330 в каждой сущности, указывающую
-                  на BLOCK_RECORD-запись блока-контейнера. }
-                IODXFContext.CurrentOwnerHandle := temphandle2;
                 saveentitiesdxf2000(@PBlockdefArray(drawing.BlockDefArray.parray)^[i].ObjArray, outstream,drawing,IODXFContext);
-                IODXFContext.CurrentOwnerHandle := 0;
 
                 outstream.TXTAddStringEOL(dxfGroupCode(0));
                 outstream.TXTAddStringEOL('ENDBLK');
                 outstream.TXTAddStringEOL(dxfGroupCode(5));
                 outstream.TXTAddStringEOL(inttohex(IODXFContext.handle, 0));
                 inc(IODXFContext.handle);
-                { Группа 330 для ENDBLK: тот же BLOCK_RECORD-владелец. }
-                outstream.TXTAddStringEOL(dxfGroupCode(330));
-                outstream.TXTAddStringEOL(inttohex(temphandle2, 0));
                 outstream.TXTAddStringEOL(dxfGroupCode(100));
                 outstream.TXTAddStringEOL(dxfName_AcDbEntity);
                 outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -3070,18 +2700,6 @@ ENDTAB}
                   begin
                   outstream.TXTAddStringEOL(groups);
                   outstream.TXTAddStringEOL(values);
-                  end;
-                  { Запоминаем дескрипторы BLOCK_RECORD для пространства модели и листов.
-                    Дескриптор lastGroup5Handle содержит новый дескриптор записи,
-                    назначенный при обработке группы 5 этой записи в таблице BLOCK_RECORD. }
-                  if inblocktable and (groupi = 2) then
-                  begin
-                    if values = '*Model_Space' then
-                      modelSpaceBlockHandle := lastGroup5Handle
-                    else if values = '*Paper_Space' then
-                      paperSpaceBlockHandle := lastGroup5Handle
-                    else if values = '*Paper_Space0' then
-                      paperSpace0BlockHandle := lastGroup5Handle;
                   end;
                   //val('$' + values, i, cod);
                 end;

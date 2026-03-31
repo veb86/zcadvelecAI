@@ -1348,6 +1348,8 @@ AcDbSymbolTableRecord
 AcDbBlockTableRecord
   2
 *Model_Space
+340
+22
   0
 BLOCK_RECORD
   5
@@ -1360,6 +1362,8 @@ AcDbSymbolTableRecord
 AcDbBlockTableRecord
   2
 *Paper_Space
+340
+59
   0
 BLOCK_RECORD
   5
@@ -1372,6 +1376,8 @@ AcDbSymbolTableRecord
 AcDbBlockTableRecord
   2
 *Paper_Space0
+340
+5E
   0
 ENDTAB
   0

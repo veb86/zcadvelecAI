@@ -1040,11 +1040,6 @@ begin
     end;
   end;
   dxfStringWithoutEncodeout(outStream,5,inttohex(tmpHandle,0));
-  { Группа 330: дескриптор блока-владельца (owner handle).
-    AutoCAD требует её для корректного определения принадлежности объекта
-    к блоку (model space, paper space или именованный блок). }
-  if IODXFContext.CurrentOwnerHandle <> 0 then
-    dxfStringWithoutEncodeout(outStream,330,inttohex(IODXFContext.CurrentOwnerHandle,0));
   dxfStringWithoutEncodeout(outStream,100,dxfName_AcDbEntity);
   dxfStringout(outStream,8,vp.layer^.Name,IODXFContext.Header);
   if vp.color<>ClByLayer then
