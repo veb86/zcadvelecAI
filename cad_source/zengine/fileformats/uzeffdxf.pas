@@ -28,7 +28,8 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,uzclog,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,
+  uzestylestablesdxf;
 resourcestring
   rsLoadDXFFile='Load DXF file';
 type
@@ -1422,6 +1423,13 @@ begin
         dwgCtx.PDrawing^.RawObjectsSection :=
           ExtractDxfRawSection(AFileName, 'OBJECTS');
 
+        { Загружаем стили таблиц из секции OBJECTS.
+          TABLESTYLE объекты находятся в OBJECTS, а не в TABLES,
+          поэтому обрабатываем их отдельно после извлечения сырой секции. }
+        ReadTableStylesFromDXFObjects(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          dwgCtx.PDrawing^.TableStyleTable);
+
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally
@@ -1644,6 +1652,11 @@ begin
   IODXFContext.Header.iDWGCodePage:=codepage;
 
   DefaultFormatSettings.DecimalSeparator := '.';
+
+  { Обновляем стили таблиц в сырой секции OBJECTS перед сохранением.
+    Записываем актуальные TABLESTYLE объекты из TableStyleTable. }
+  WriteTableStylesToDXFObjects(drawing.TableStyleTable, drawing.RawObjectsSection);
+
   outstream.init(10*1024*1024);
   begin
     lph:=lps.StartLongProcess('Save DXF file',@outstream,drawing.pObjRoot^.ObjArray.Count);

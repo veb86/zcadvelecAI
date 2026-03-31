@@ -29,18 +29,30 @@ type
     jcr(*'TopRight'*));
   PTGDBTableCellStyle=^TGDBTableCellStyle;
 
+  { Стиль ячейки таблицы с полями для хранения DXF-параметров }
   TGDBTableCellStyle=record
     Width,TextWidth:double;
     CF:TTableCellJustify;
+    { Дополнительные поля для импорта/экспорта DXF }
+    TextStyleName: string;          { Имя текстового стиля (группа 7) }
+    TextHeight: double;             { Высота текста (группа 140) }
+    Alignment: Integer;             { Выравнивание (группа 170) }
+    TextColor: Integer;             { Цвет текста (группа 62) }
+    BackgroundColor: Integer;       { Цвет фона (группа 63) }
+    BackgroundColorEnabled: Boolean;{ Включён ли цвет фона (группа 283) }
   end;
 
   GDBCellFormatArray=GZVector<TGDBTableCellStyle>;
 
+  { Стиль таблицы — именованный объект с параметрами отображения таблицы }
   TGDBTableStyle=object(GDBNamedObject)
     rowheight:integer;
     textheight:double;
     tblformat:GDBCellFormatArray;
     HeadBlockName:string;
+    { Дополнительные поля для импорта/экспорта DXF }
+    TitleSuppressed: Boolean;         { Подавление строки заголовка (группа 280) }
+    ColumnHeadingSuppressed: Boolean; { Подавление строки колонок (группа 281) }
     constructor Init(const n:string);
     destructor Done;virtual;
   end;
