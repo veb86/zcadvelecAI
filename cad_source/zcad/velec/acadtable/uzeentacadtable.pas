@@ -49,6 +49,97 @@ const
   // Максимальное количество ячеек — защита памяти
   CAcadTableMaxCells = 100000;
 
+  // --- Типы данных ячеек ---
+  TCellDataType = (cdtText, cdtNumber, cdtFormula, cdtBlock);
+
+  // Горизонтальное выравнивание текста в ячейке
+  THorzAlign = (haLeft, haCenter, haRight);
+  // Вертикальное выравнивание текста в ячейке
+  TVertAlign = (vaTop, vaMiddle, vaBottom);
+
+  // Сторона границы ячейки
+  TBorderSide = (bsLeft, bsTop, bsRight, bsBottom);
+  // Набор сторон границ (для одновременного задания нескольких)
+  TBorderSides = set of TBorderSide;
+
+  // Типы переопределений стиля ячейки
+  TStyleOverride = (
+    soTextStyle,
+    soTextHeight,
+    soTextColor,
+    soHAlign,
+    soVAlign,
+    soBackground,
+    soBorders
+  );
+  // Набор флагов переопределения стиля
+  TStyleOverrides = set of TStyleOverride;
+
+  // Стиль ячейки: значения + маска override
+  // Если флаг переопределения не установлен — брать значение от родителя
+  TCellStyle = record
+    // Текстовые свойства
+    TextStyle: String;
+    TextHeight: Double;
+    TextColor: Integer;
+    // Выравнивание
+    HorzAlign: THorzAlign;
+    VertAlign: TVertAlign;
+    // Фон ячейки
+    HasBackground: Boolean;
+    BackgroundColor: Integer;
+    // Границы
+    Borders: TBorderSides;
+    BorderColor: Integer;
+    // Флаги переопределения — какие свойства заданы явно
+    Overrides: TStyleOverrides;
+  end;
+
+  // Табличный стиль (аналог AcDbTableStyle)
+  TTableStyle = record
+    Name: String;
+    // Базовый стиль по умолчанию
+    DefaultCell: TCellStyle;
+    // Стили для различных типов строк (как в AutoCAD)
+    TitleCell: TCellStyle;
+    HeaderCell: TCellStyle;
+    DataCell: TCellStyle;
+    // Размеры по умолчанию
+    DefaultRowHeight: Double;
+    DefaultColWidth: Double;
+  end;
+
+  // Строка таблицы
+  TTableRow = record
+    Height: Double;
+    Style: TCellStyle;
+  end;
+
+  // Столбец таблицы
+  TTableColumn = record
+    Width: Double;
+    Style: TCellStyle;
+  end;
+
+  // Ячейка таблицы (минималистично — только данные + override)
+  TTableCell = record
+    DataType: TCellDataType;
+    // Контент ячейки
+    Text: String;
+    Value: Double;
+    Formula: String;
+    // Для блоков
+    BlockName: String;
+    // Переопределение стиля (applied on top of table/row/column style)
+    Style: TCellStyle;
+  end;
+
+  // Диапазон объединённых ячеек
+  TMergeRange = record
+    Row1, Col1: Integer;
+    Row2, Col2: Integer;
+  end;
+
 type
   // Тип указателя на GDBObjAcadTable
   PGDBObjAcadTable = ^GDBObjAcadTable;
@@ -74,6 +165,18 @@ type
     // Признак того, что геометрия уже была построена
     FGeometryBuilt: Boolean;
 
+    // Новая модель данных (этап 2)
+    // Стиль таблицы
+    FTableStyle: TTableStyle;
+    // Строки таблицы (с размерами и стилем)
+    FRows: array of TTableRow;
+    // Столбцы таблицы (с размерами и стилем)
+    FCols: array of TTableColumn;
+    // Ячейки таблицы (только данные + override)
+    FCells: array of array of TTableCell;
+    // Диапазоны объединённых ячеек
+    FMerges: array of TMergeRange;
+
     // Возвращает высоту строки по индексу или значение по умолчанию
     function GetRowHeight(RowIndex: Integer): Double;
     // Возвращает ширину столбца по индексу или значение по умолчанию
@@ -91,6 +194,12 @@ type
     procedure SetCellTextByIndex(CellIdx: Integer; const AText: String);
     // Вычисляет bounding box таблицы на основе её размеров
     procedure getoutbound(var DC: TDrawContext);
+    // Проверяет, находится ли ячейка в диапазоне объединения
+    function IsCellMerged(RowIdx, ColIdx: Integer): Boolean;
+    // Возвращает координаты главной ячейки объединённого диапазона
+    function GetMergeRoot(RowIdx, ColIdx: Integer): TPoint;
+    // Резолвит итоговый стиль ячейки с учётом иерархии
+    function ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -197,6 +306,167 @@ begin
   FCellTexts[CellIdx] := AText;
 end;
 
+// Инициализирует стиль ячейки значениями по умолчанию.
+procedure InitCellStyle(var ACellStyle: TCellStyle);
+begin
+  ACellStyle.TextStyle := '';
+  ACellStyle.TextHeight := CAcadTableDefaultTextHeight;
+  ACellStyle.TextColor := 0;
+  ACellStyle.HorzAlign := haLeft;
+  ACellStyle.VertAlign := vaMiddle;
+  ACellStyle.HasBackground := False;
+  ACellStyle.BackgroundColor := 0;
+  ACellStyle.Borders := [];
+  ACellStyle.BorderColor := 0;
+  ACellStyle.Overrides := [];
+end;
+
+// Проверяет, находится ли ячейка в диапазоне объединения.
+function GDBObjAcadTable.IsCellMerged(RowIdx, ColIdx: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to High(FMerges) do
+  begin
+    if (RowIdx >= FMerges[i].Row1) and (RowIdx <= FMerges[i].Row2) and
+       (ColIdx >= FMerges[i].Col1) and (ColIdx <= FMerges[i].Col2) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+// Возвращает координаты главной ячейки объединённого диапазона.
+// Если ячейка не в объединении — возвращает её собственные координаты.
+function GDBObjAcadTable.GetMergeRoot(RowIdx, ColIdx: Integer): TPoint;
+var
+  i: Integer;
+begin
+  Result.X := ColIdx;
+  Result.Y := RowIdx;
+  for i := 0 to High(FMerges) do
+  begin
+    if (RowIdx >= FMerges[i].Row1) and (RowIdx <= FMerges[i].Row2) and
+       (ColIdx >= FMerges[i].Col1) and (ColIdx <= FMerges[i].Col2) then
+    begin
+      Result.X := FMerges[i].Col1;
+      Result.Y := FMerges[i].Row1;
+      Exit;
+    end;
+  end;
+end;
+
+// Резолвит итоговый стиль ячейки с учётом иерархии.
+// Приоритет: Cell > Row > Column > TableStyle > Defaults
+function GDBObjAcadTable.ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
+var
+  TableCell: TTableCell;
+  RowStyle: TCellStyle;
+  ColStyle: TCellStyle;
+  BaseStyle: TCellStyle;
+begin
+  // Начинаем с дефолтного стиля таблицы
+  if Assigned(FTableStyle.DefaultCell.Overrides) then
+    BaseStyle := FTableStyle.DefaultCell
+  else
+  begin
+    InitCellStyle(BaseStyle);
+    BaseStyle := FTableStyle.DefaultCell;
+  end;
+
+  // Применяем стиль строки
+  if (RowIdx >= 0) and (RowIdx <= High(FRows)) then
+    RowStyle := FRows[RowIdx].Style
+  else
+    InitCellStyle(RowStyle);
+
+  // Применяем стиль столбца
+  if (ColIdx >= 0) and (ColIdx <= High(FCols)) then
+    ColStyle := FCols[ColIdx].Style
+  else
+    InitCellStyle(ColStyle);
+
+  // Применяем стиль ячейки
+  if (RowIdx >= 0) and (RowIdx < FRowCount) and
+     (ColIdx >= 0) and (ColIdx < FColCount) and
+     (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
+    TableCell := FCells[RowIdx][ColIdx]
+  else
+    InitCellStyle(TableCell.Style);
+
+  // Резолвим с учётом override флагов (применяем от меньшего приоритета к большему)
+  // База
+  Result := BaseStyle;
+
+  // Row
+  if soTextStyle in RowStyle.Overrides then
+    Result.TextStyle := RowStyle.TextStyle;
+  if soTextHeight in RowStyle.Overrides then
+    Result.TextHeight := RowStyle.TextHeight;
+  if soTextColor in RowStyle.Overrides then
+    Result.TextColor := RowStyle.TextColor;
+  if soHAlign in RowStyle.Overrides then
+    Result.HorzAlign := RowStyle.HorzAlign;
+  if soVAlign in RowStyle.Overrides then
+    Result.VertAlign := RowStyle.VertAlign;
+  if soBackground in RowStyle.Overrides then
+  begin
+    Result.HasBackground := RowStyle.HasBackground;
+    Result.BackgroundColor := RowStyle.BackgroundColor;
+  end;
+  if soBorders in RowStyle.Overrides then
+  begin
+    Result.Borders := RowStyle.Borders;
+    Result.BorderColor := RowStyle.BorderColor;
+  end;
+
+  // Column
+  if soTextStyle in ColStyle.Overrides then
+    Result.TextStyle := ColStyle.TextStyle;
+  if soTextHeight in ColStyle.Overrides then
+    Result.TextHeight := ColStyle.TextHeight;
+  if soTextColor in ColStyle.Overrides then
+    Result.TextColor := ColStyle.TextColor;
+  if soHAlign in ColStyle.Overrides then
+    Result.HorzAlign := ColStyle.HorzAlign;
+  if soVAlign in ColStyle.Overrides then
+    Result.VertAlign := ColStyle.VertAlign;
+  if soBackground in ColStyle.Overrides then
+  begin
+    Result.HasBackground := ColStyle.HasBackground;
+    Result.BackgroundColor := ColStyle.BackgroundColor;
+  end;
+  if soBorders in ColStyle.Overrides then
+  begin
+    Result.Borders := ColStyle.Borders;
+    Result.BorderColor := ColStyle.BorderColor;
+  end;
+
+  // Cell
+  if soTextStyle in TableCell.Style.Overrides then
+    Result.TextStyle := TableCell.Style.TextStyle;
+  if soTextHeight in TableCell.Style.Overrides then
+    Result.TextHeight := TableCell.Style.TextHeight;
+  if soTextColor in TableCell.Style.Overrides then
+    Result.TextColor := TableCell.Style.TextColor;
+  if soHAlign in TableCell.Style.Overrides then
+    Result.HorzAlign := TableCell.Style.HorzAlign;
+  if soVAlign in TableCell.Style.Overrides then
+    Result.VertAlign := TableCell.Style.VertAlign;
+  if soBackground in TableCell.Style.Overrides then
+  begin
+    Result.HasBackground := TableCell.Style.HasBackground;
+    Result.BackgroundColor := TableCell.Style.BackgroundColor;
+  end;
+  if soBorders in TableCell.Style.Overrides then
+  begin
+    Result.Borders := TableCell.Style.Borders;
+    Result.BorderColor := TableCell.Style.BorderColor;
+  end;
+end;
+
 // --- Конструктор и деструктор ---
 
 // Инициализирует сущность с нулевыми значениями.
@@ -210,6 +480,18 @@ begin
   FColWidths.initnul;
   System.SetLength(FCellTexts, 0);
   FGeometryBuilt := False;
+
+  // Инициализация новых структур данных (этап 2)
+  InitCellStyle(FTableStyle.DefaultCell);
+  InitCellStyle(FTableStyle.TitleCell);
+  InitCellStyle(FTableStyle.HeaderCell);
+  InitCellStyle(FTableStyle.DataCell);
+  FTableStyle.DefaultRowHeight := CAcadTableDefaultRowHeight;
+  FTableStyle.DefaultColWidth := CAcadTableDefaultColWidth;
+  System.SetLength(FRows, 0);
+  System.SetLength(FCols, 0);
+  System.SetLength(FCells, 0, 0);
+  System.SetLength(FMerges, 0);
 end;
 
 // Освобождает динамически выделенные ресурсы.
@@ -218,6 +500,11 @@ begin
   FRowHeights.done;
   FColWidths.done;
   System.SetLength(FCellTexts, 0);
+  // Освобождение новых структур данных (этап 2)
+  System.SetLength(FRows, 0);
+  System.SetLength(FCols, 0);
+  System.SetLength(FCells, 0, 0);
+  System.SetLength(FMerges, 0);
   inherited done;
 end;
 
@@ -434,9 +721,57 @@ begin
   // Координаты вставки переносим в Local для корректного позиционирования
   Local.P_insert := FInsertPoint;
 
+  // Инициализация новых структур данных (этап 2)
+  // Инициализируем табличный стиль
+  InitCellStyle(FTableStyle.DefaultCell);
+  InitCellStyle(FTableStyle.TitleCell);
+  InitCellStyle(FTableStyle.HeaderCell);
+  InitCellStyle(FTableStyle.DataCell);
+  FTableStyle.DefaultRowHeight := CAcadTableDefaultRowHeight;
+  FTableStyle.DefaultColWidth := CAcadTableDefaultColWidth;
+
+  // Инициализируем массивы строк и столбцов
+  if (FRowCount > 0) and (FColCount > 0) then
+  begin
+    // Инициализируем строки
+    System.SetLength(FRows, FRowCount);
+    for RowHeightCount := 0 to FRowCount - 1 do
+    begin
+      FRows[RowHeightCount].Height := GetRowHeight(RowHeightCount);
+      InitCellStyle(FRows[RowHeightCount].Style);
+    end;
+
+    // Инициализируем столбцы
+    System.SetLength(FCols, FColCount);
+    for ColWidthCount := 0 to FColCount - 1 do
+    begin
+      FCols[ColWidthCount].Width := GetColWidth(ColWidthCount);
+      InitCellStyle(FCols[ColWidthCount].Style);
+    end;
+
+    // Инициализируем ячейки (2D массив)
+    System.SetLength(FCells, FRowCount, FColCount);
+    for RowHeightCount := 0 to FRowCount - 1 do
+      for ColWidthCount := 0 to FColCount - 1 do
+      begin
+        FCells[RowHeightCount][ColWidthCount].DataType := cdtText;
+        FCells[RowHeightCount][ColWidthCount].Text := GetCellText(RowHeightCount, ColWidthCount);
+        FCells[RowHeightCount][ColWidthCount].Value := 0;
+        FCells[RowHeightCount][ColWidthCount].Formula := '';
+        FCells[RowHeightCount][ColWidthCount].BlockName := '';
+        InitCellStyle(FCells[RowHeightCount][ColWidthCount].Style);
+      end;
+
+    // Инициализируем пустой массив объединений
+    System.SetLength(FMerges, 0);
+  end;
+
   programlog.LogOutFormatStr(
     'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d row_heights=%d col_widths=%d',
     [FRowCount, FColCount, Length(FCellTexts), FRowHeights.Count, FColWidths.Count], LM_Info);
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: LoadFromDXF new structures: FRows=%d FCols=%d FCells[0,0] initialized',
+    [Length(FRows), Length(FCols)], LM_Info);
 end;
 
 // --- Построение визуального представления ---
@@ -458,6 +793,8 @@ var
   PMText: PGDBObjMText;
   CellStr: String;
   LineCount, TextCount: Integer;
+  CellStyle: TCellStyle;
+  TextHeightLocal: Double;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation START rows=%d cols=%d',
@@ -552,31 +889,94 @@ begin
     for ColIdx := 0 to FColCount - 1 do
     begin
       ColW := GetColWidth(ColIdx);
-      CellStr := GetCellText(RowIdx, ColIdx);
 
+      // Проверяем, не объединена ли ячейка — рисуем только главную ячейку
+      if IsCellMerged(RowIdx, ColIdx) then
+      begin
+        // Ячейка в объединённом диапазоне — пропускаем, если не главная
+        if not ((RowIdx = GetMergeRoot(RowIdx, ColIdx).Y) and
+                (ColIdx = GetMergeRoot(RowIdx, ColIdx).X)) then
+        begin
+          CurrentX := CurrentX + ColW;
+          Continue;
+        end;
+      end;
+
+      // Получаем текст из новой структуры FCells или из старой FCellTexts
+      CellStr := '';
+      if (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
+        CellStr := FCells[RowIdx][ColIdx].Text
+      else
+        CellStr := GetCellText(RowIdx, ColIdx);
+
+      // Резолвим стиль ячейки с учётом иерархии
+      // Пока структуры пустые — используем значения по умолчанию
       programlog.LogOutFormatStr(
         'uzeentacadtable: BuildVisualRepresentation Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f',
         [RowIdx, ColIdx, CellStr, ColW, RowH], LM_Info);
 
       if CellStr <> '' then
       begin
+        // Резолвим стиль
+        CellStyle := ResolveCellStyle(RowIdx, ColIdx);
+
         pointer(PMText) := ConstObjArray.CreateInitObj(GDBMTextID, @Self);
         PMText^.Template := UTF8ToString(CellStr);
-        PMText^.textprop.size := CAcadTableDefaultTextHeight;
+
+        // Используем текст высоту из стиля
+        if CellStyle.TextHeight > 0 then
+          PMText^.textprop.size := CellStyle.TextHeight
+        else
+          PMText^.textprop.size := CAcadTableDefaultTextHeight;
+
         PMText^.linespacef := 1;
         PMText^.Width := ColW * 0.9;
-        PMText^.textprop.justify := jstl;
-        PMText^.Local.P_insert.x :=
-          CurrentX + CAcadTableDefaultTextHeight * 0.5;
-        PMText^.Local.P_insert.y :=
-          -(CurrentY + RowH * 0.5);
+
+        // Выравнивание по горизонтали
+        case CellStyle.HorzAlign of
+          haLeft: PMText^.textprop.justify := jstl;
+          haCenter: PMText^.textprop.justify := jstc;
+          haRight: PMText^.textprop.justify := jstr;
+        else
+          PMText^.textprop.justify := jstl;
+        end;
+
+        // Вычисляем позицию текста с учётом выравнивания
+        TextHeightLocal := PMText^.textprop.size;
+
+        case CellStyle.HorzAlign of
+          haLeft:
+            PMText^.Local.P_insert.x := CurrentX + TextHeightLocal * 0.5;
+          haCenter:
+            PMText^.Local.P_insert.x := CurrentX + ColW / 2;
+          haRight:
+            PMText^.Local.P_insert.x := CurrentX + ColW - TextHeightLocal * 0.5;
+        else
+          PMText^.Local.P_insert.x := CurrentX + TextHeightLocal * 0.5;
+        end;
+
+        // Выравнивание по вертикали
+        case CellStyle.VertAlign of
+          vaTop:
+            PMText^.Local.P_insert.y := -(CurrentY + TextHeightLocal * 0.5);
+          vaMiddle:
+            PMText^.Local.P_insert.y := -(CurrentY + RowH / 2);
+          vaBottom:
+            PMText^.Local.P_insert.y := -(CurrentY + RowH - TextHeightLocal * 0.5);
+        else
+          PMText^.Local.P_insert.y := -(CurrentY + RowH / 2);
+        end;
+
         PMText^.Local.P_insert.z := 0;
         PMText^.TXTStyle :=
           pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
+
+        // TODO: Применить цвет текста из стиля (когда будет реализована поддержка цвета)
+
         programlog.LogOutFormatStr(
-          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) text="%s"',
+          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) text="%s" halign=%d valign=%d',
           [RowIdx, ColIdx, PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
-           PMText^.Template], LM_Info);
+           PMText^.Template, Ord(CellStyle.HorzAlign), Ord(CellStyle.VertAlign)], LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
         Inc(TextCount);
@@ -758,7 +1158,7 @@ end;
 function GDBObjAcadTable.Clone(AOwn: Pointer): PGDBObjEntity;
 var
   NewTable: PGDBObjAcadTable;
-  Idx: Integer;
+  Idx, Idx2: Integer;
 begin
   GetMem(Pointer(NewTable), SizeOf(GDBObjAcadTable));
   NewTable^.initnul(AOwn);
@@ -781,6 +1181,33 @@ begin
   System.SetLength(NewTable^.FCellTexts, Length(FCellTexts));
   for Idx := 0 to High(FCellTexts) do
     NewTable^.FCellTexts[Idx] := FCellTexts[Idx];
+
+  // Копируем новые структуры данных (этап 2)
+  NewTable^.FTableStyle := FTableStyle;
+
+  // Копируем строки
+  System.SetLength(NewTable^.FRows, Length(FRows));
+  for Idx := 0 to High(FRows) do
+    NewTable^.FRows[Idx] := FRows[Idx];
+
+  // Копируем столбцы
+  System.SetLength(NewTable^.FCols, Length(FCols));
+  for Idx := 0 to High(FCols) do
+    NewTable^.FCols[Idx] := FCols[Idx];
+
+  // Копируем ячейки
+  System.SetLength(NewTable^.FCells, Length(FCells));
+  for Idx := 0 to High(FCells) do
+  begin
+    System.SetLength(NewTable^.FCells[Idx], Length(FCells[Idx]));
+    for Idx2 := 0 to High(FCells[Idx]) do
+      NewTable^.FCells[Idx][Idx2] := FCells[Idx][Idx2];
+  end;
+
+  // Копируем объединения
+  System.SetLength(NewTable^.FMerges, Length(FMerges));
+  for Idx := 0 to High(FMerges) do
+    NewTable^.FMerges[Idx] := FMerges[Idx];
 
   NewTable^.bp.ListPos.Owner := AOwn;
   Result := NewTable;
