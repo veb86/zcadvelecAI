@@ -483,13 +483,18 @@ end;
 procedure AppendTextLinesToList(Lines: TStringList; const Text: string);
 var
   TempList: TStringList;
-  I: Integer;
+  LastIndex, I: Integer;
 begin
   TempList := TStringList.Create;
   try
     TempList.Text := Text;
-    { Последний элемент может быть пустым из-за завершающего #10 в Lines.Text }
-    for I := 0 to TempList.Count - 1 do
+    { TStringList.Text добавляет завершающий #10, что создаёт пустой последний элемент.
+      Пропускаем все пустые элементы с конца, чтобы не вставлять пустые строки в DXF,
+      которые нарушают разбор пар (код_группы, значение) и вызывают PARSEINTEGER ошибку. }
+    LastIndex := TempList.Count - 1;
+    while (LastIndex >= 0) and (TempList[LastIndex] = '') do
+      Dec(LastIndex);
+    for I := 0 to LastIndex do
       Lines.Add(TempList[I]);
   finally
     TempList.Free;

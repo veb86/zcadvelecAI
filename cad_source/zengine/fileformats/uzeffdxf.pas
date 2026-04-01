@@ -1577,15 +1577,21 @@ procedure WriteRawSectionContent(var outstream: TZctnrVectorBytes;
   const RawSection: string);
 var
   Lines: TStringList;
-  I: Integer;
+  LastIndex, I: Integer;
 begin
   Lines := TStringList.Create;
   try
     Lines.Text := RawSection;
     { Пропускаем первые 2 строки: "0" и "SECTION",
       т.к. они были записаны из шаблона при обработке предыдущей
-      группы (группа 0, значение SECTION). }
-    for I := 2 to Lines.Count - 1 do
+      группы (группа 0, значение SECTION).
+      Также пропускаем пустые строки в конце: TStringList.Text добавляет
+      завершающий #10, что создаёт пустой последний элемент и нарушает
+      разбор пар (код_группы, значение) в DXF-парсере (PARSEINTEGER ошибка). }
+    LastIndex := Lines.Count - 1;
+    while (LastIndex >= 2) and (Lines[LastIndex] = '') do
+      Dec(LastIndex);
+    for I := 2 to LastIndex do
       outstream.TXTAddStringEOL(Lines[I]);
   finally
     Lines.Free;
