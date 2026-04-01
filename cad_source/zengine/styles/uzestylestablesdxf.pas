@@ -476,6 +476,26 @@ begin
   end;
 end;
 
+{ Добавляет строки из многострочного текста Text в список Lines.
+  Необходимо для вставки результата BuildTableStyleObjectText (который использует
+  Lines.Text, оканчивающийся на #10) в ResultLines по одной строке, чтобы избежать
+  создания двойных переносов строк при последующем вызове ResultLines.Text. }
+procedure AppendTextLinesToList(Lines: TStringList; const Text: string);
+var
+  TempList: TStringList;
+  I: Integer;
+begin
+  TempList := TStringList.Create;
+  try
+    TempList.Text := Text;
+    { Последний элемент может быть пустым из-за завершающего #10 в Lines.Text }
+    for I := 0 to TempList.Count - 1 do
+      Lines.Add(TempList[I]);
+  finally
+    TempList.Free;
+  end;
+end;
+
 { Добавляет в Lines строки одного блока ячейки стиля таблицы (title/header/data).
   TextStyleName — имя текстового стиля для данного блока (группа 7).
   Если TextStyleName пустой — используется 'Standard'. }
@@ -766,7 +786,7 @@ begin
               end;
               ObjectText := BuildTableStyleObjectText(
                 StyleName, Style, NewHandle, DictHandle);
-              ResultLines.Add(ObjectText);
+              AppendTextLinesToList(ResultLines, ObjectText);
               WrittenStyleNames.Add(UpperCase(StyleName));
               programlog.LogOutFormatStr(
                 'uzestylestablesdxf: записан новый стиль "%s" хэндл=%s',
@@ -803,7 +823,7 @@ begin
                 { Используем оригинальный хэндл — словарь уже ссылается на него }
                 ObjectText := BuildTableStyleObjectText(
                   StyleName, Style, ObjHandle, DictHandle);
-                ResultLines.Add(ObjectText);
+                AppendTextLinesToList(ResultLines, ObjectText);
                 WrittenStyleNames.Add(UpperCase(StyleName));
                 programlog.LogOutFormatStr(
                   'uzestylestablesdxf: перезаписан стиль "%s" хэндл=%s',
