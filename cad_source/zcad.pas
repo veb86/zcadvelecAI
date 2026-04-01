@@ -313,6 +313,7 @@ uses
   testscale2,
   uzvrotate_main,
   uzccommand_align,
+  uzccommand_adddxftablestyle,
 
   //**IPC Server for remote control**//
   uzvipcserver,
