@@ -75,6 +75,10 @@ type
       (группа DXF 7). Массив строк хранится отдельно от record-а ячейки,
       так как string в GZVector небезопасен (raw memory). }
     CellTextStyleName: array[0..2] of string;
+    { Хэндл расширенного словаря объекта (блок 102/{ACAD_XDICTIONARY}).
+      Сохраняется при чтении и восстанавливается при записи, чтобы AutoCAD
+      не считал файл повреждённым из-за отсутствия XDICTIONARY-ссылок. }
+    XDictHandle: string;
     constructor init(const StyleName: string);
     destructor Done; virtual;
   end;
@@ -125,6 +129,7 @@ begin
   { Инициализируем указатели строк через nil для корректной работы с AnsiString }
   for I := 0 to 2 do
     pointer(CellTextStyleName[I]) := nil;
+  pointer(XDictHandle) := nil;
 end;
 
 destructor TGDBDXFTableStyle.Done;
@@ -136,6 +141,7 @@ begin
   { Явно освобождаем строки — необходимо при использовании object с GZVector }
   for I := 0 to 2 do
     CellTextStyleName[I] := '';
+  XDictHandle := '';
 end;
 
 { === Методы GDBDXFTableStyleArray === }
@@ -267,8 +273,11 @@ var
   CellStyle: TGDBDXFTableCellStyle;
   { Индекс текущего блока строки таблицы: 0=title, 1=header, 2=data }
   CellIdx: Integer;
+  { Признак нахождения внутри блока {ACAD_XDICTIONARY} }
+  InXDict: Boolean;
 begin
   CellIdx := -1;
+  InXDict := False;
   FillChar(CellStyle, SizeOf(CellStyle), 0);
   I := 0;
 
@@ -281,6 +290,23 @@ begin
     programlog.LogOutFormatStr(
       'TableStyle "%s": code=%d value=%s',
       [StyleName, Code, Value], LM_Info);
+
+    { Обрабатываем блок {ACAD_XDICTIONARY}: сохраняем хэндл расширенного словаря }
+    if (Code = 102) and (UpperCase(Copy(Value, 1, 17)) = '{ACAD_XDICTIONARY') then
+    begin
+      InXDict := True;
+      Inc(I, 2);
+      Continue;
+    end;
+    if InXDict then
+    begin
+      if Code = 102 then
+        InXDict := False
+      else if Code = 360 then
+        Style^.XDictHandle := Value;
+      Inc(I, 2);
+      Continue;
+    end;
 
     case Code of
       3:
@@ -562,13 +588,16 @@ begin
 end;
 
 { Создаёт текстовое представление объекта TABLESTYLE для секции OBJECTS.
-  Handle    — хэндл объекта в 16-ричном формате (например '299').
-  OwnerHandle — хэндл владельца (словарь ACAD_TABLESTYLE), или '' если неизвестен. }
+  Handle      — хэндл объекта в 16-ричном формате (например '299').
+  OwnerHandle — хэндл владельца (словарь ACAD_TABLESTYLE), или '' если неизвестен.
+  XDictHandle — хэндл расширенного словаря объекта (блок 102/{ACAD_XDICTIONARY}),
+                или '' если блок отсутствует. }
 function BuildTableStyleObjectText(
   const StyleName: string;
   Style: PTGDBDXFTableStyle;
   const Handle: string;
-  const OwnerHandle: string): string;
+  const OwnerHandle: string;
+  const XDictHandle: string): string;
 var
   Lines: TStringList;
   DefaultCS: TGDBDXFTableCellStyle;
@@ -589,6 +618,18 @@ begin
     Lines.Add('TABLESTYLE');
     Lines.Add('  5');
     Lines.Add(Handle);
+    { Блок 102/{ACAD_XDICTIONARY} — ссылка на расширенный словарь объекта.
+      Должна предшествовать блоку {ACAD_REACTORS}. AutoCAD требует этот блок,
+      если он присутствовал в исходном файле, иначе считает объект повреждённым. }
+    if XDictHandle <> '' then
+    begin
+      Lines.Add('102');
+      Lines.Add('{ACAD_XDICTIONARY');
+      Lines.Add('360');
+      Lines.Add(XDictHandle);
+      Lines.Add('102');
+      Lines.Add('}');
+    end;
     { Группа 102/330 — реакторы: объект принадлежит словарю ACAD_TABLESTYLE.
       Это обязательная связь, без которой AutoCAD считает файл повреждённым. }
     if OwnerHandle <> '' then
@@ -790,7 +831,7 @@ begin
                   AddStyleToDictionary(ResultLines, DictHandle, StyleName, NewHandle);
               end;
               ObjectText := BuildTableStyleObjectText(
-                StyleName, Style, NewHandle, DictHandle);
+                StyleName, Style, NewHandle, DictHandle, Style^.XDictHandle);
               AppendTextLinesToList(ResultLines, ObjectText);
               WrittenStyleNames.Add(UpperCase(StyleName));
               programlog.LogOutFormatStr(
@@ -827,7 +868,7 @@ begin
               begin
                 { Используем оригинальный хэндл — словарь уже ссылается на него }
                 ObjectText := BuildTableStyleObjectText(
-                  StyleName, Style, ObjHandle, DictHandle);
+                  StyleName, Style, ObjHandle, DictHandle, Style^.XDictHandle);
                 AppendTextLinesToList(ResultLines, ObjectText);
                 WrittenStyleNames.Add(UpperCase(StyleName));
                 programlog.LogOutFormatStr(
