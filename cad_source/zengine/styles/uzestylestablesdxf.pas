@@ -21,19 +21,74 @@
   связанных через словарь ACAD_TABLESTYLE. В отличие от DIMSTYLE (который
   находится в секции TABLES), TABLESTYLE является объектом секции OBJECTS.
 
-  Зависимости: uzestylestables, uzclog, sysutils, Classes
+  Модуль полностью самодостаточен: все необходимые типы данных определены
+  внутри. Не зависит от uzestylestables.
+
+  Зависимости: UGDBNamedObjectsArray, gzctnrVector, uzeNamedObject,
+               gzctnrVectorTypes, uzclog, sysutils, Classes
 }
 unit uzestylestablesdxf;
 {$Mode delphi}{$H+}
 {$INCLUDE zengineconfig.inc}
 interface
 uses
-  uzestylestables,
   UGDBNamedObjectsArray,
+  gzctnrVector,
+  uzeNamedObject,
   gzctnrVectorTypes,
   uzclog,
   sysutils,
   Classes;
+
+{ === Типы данных для DXF-стилей таблиц === }
+
+type
+  { Стиль одной строки ячейки таблицы (для DXF-обмена).
+    Содержит только value types — безопасно для GZVector (raw memory). }
+  TGDBDXFTableCellStyle = record
+    { Высота текста строки (группа DXF 140) }
+    TextHeight: Double;
+    { Выравнивание текста в ячейке (группа DXF 170) }
+    Alignment: Integer;
+    { Цвет текста (группа DXF 62) }
+    TextColor: Integer;
+    { Цвет фона ячейки (группа DXF 63) }
+    BackgroundColor: Integer;
+    { Признак включения цвета фона (группа DXF 283) }
+    BackgroundColorEnabled: Boolean;
+  end;
+  PTGDBDXFTableCellStyle = ^TGDBDXFTableCellStyle;
+
+  GDBDXFCellFormatArray = GZVector<TGDBDXFTableCellStyle>;
+
+  { Стиль таблицы для DXF-обмена — именованный объект.
+    Содержит все параметры, необходимые для записи/чтения TABLESTYLE в DXF.
+    Намеренно не зависит от uzestylestables. }
+  TGDBDXFTableStyle = object(GDBNamedObject)
+    { Массив стилей ячеек: 0=title, 1=header, 2=data }
+    CellFormats: GDBDXFCellFormatArray;
+    { Признак подавления строки заголовка (группа DXF 280) }
+    TitleSuppressed: Boolean;
+    { Признак подавления строки имён колонок (группа DXF 281) }
+    ColumnHeadingSuppressed: Boolean;
+    { Имена текстовых стилей для трёх типов строк: title, header, data
+      (группа DXF 7). Массив строк хранится отдельно от record-а ячейки,
+      так как string в GZVector небезопасен (raw memory). }
+    CellTextStyleName: array[0..2] of string;
+    constructor init(const StyleName: string);
+    destructor Done; virtual;
+  end;
+  PTGDBDXFTableStyle = ^TGDBDXFTableStyle;
+
+  { Массив стилей таблиц для DXF-обмена }
+  GDBDXFTableStyleArray = object(GDBNamedObjectsArray<PTGDBDXFTableStyle,
+                                                      TGDBDXFTableStyle>)
+    constructor init(InitialCapacity: Integer);
+    constructor initnul;
+    { Добавляет стиль с заданным именем или возвращает существующий }
+    function AddStyle(const StyleName: string): PTGDBDXFTableStyle;
+  end;
+  PGDBDXFTableStyleArray = ^GDBDXFTableStyleArray;
 
 { Загружает стили таблиц из сырого текста секции OBJECTS DXF-файла.
   Находит словарь ACAD_TABLESTYLE и все объекты TABLESTYLE,
@@ -43,7 +98,7 @@ uses
     TableStyleTable   — таблица стилей для заполнения }
 procedure ReadTableStylesFromDXFObjects(
   const RawObjectsSection: string;
-  var TableStyleTable: GDBTableStyleArray);
+  var TableStyleTable: GDBDXFTableStyleArray);
 
 { Записывает стили таблиц из таблицы стилей в сырой текст секции OBJECTS.
   Если секция OBJECTS уже содержит объекты TABLESTYLE — они заменяются.
@@ -52,14 +107,70 @@ procedure ReadTableStylesFromDXFObjects(
     TableStyleTable   — таблица стилей для записи
     RawObjectsSection — текст секции OBJECTS для обновления (in/out) }
 procedure WriteTableStylesToDXFObjects(
-  var TableStyleTable: GDBTableStyleArray;
+  var TableStyleTable: GDBDXFTableStyleArray;
   var RawObjectsSection: string);
 
 implementation
 
+{ === Конструктор и деструктор TGDBDXFTableStyle === }
+
+constructor TGDBDXFTableStyle.init(const StyleName: string);
+var
+  I: Integer;
+begin
+  inherited Init(StyleName);
+  CellFormats.Init(3);
+  TitleSuppressed := False;
+  ColumnHeadingSuppressed := False;
+  { Инициализируем указатели строк через nil для корректной работы с AnsiString }
+  for I := 0 to 2 do
+    pointer(CellTextStyleName[I]) := nil;
+end;
+
+destructor TGDBDXFTableStyle.Done;
+var
+  I: Integer;
+begin
+  inherited Done;
+  CellFormats.Done;
+  { Явно освобождаем строки — необходимо при использовании object с GZVector }
+  for I := 0 to 2 do
+    CellTextStyleName[I] := '';
+end;
+
+{ === Методы GDBDXFTableStyleArray === }
+
+constructor GDBDXFTableStyleArray.init(InitialCapacity: Integer);
+begin
+  inherited init(InitialCapacity);
+end;
+
+constructor GDBDXFTableStyleArray.initnul;
+begin
+  inherited initnul;
+end;
+
+function GDBDXFTableStyleArray.AddStyle(const StyleName: string): PTGDBDXFTableStyle;
+var
+  StylePtr: PTGDBDXFTableStyle;
+begin
+  case AddItem(StyleName, pointer(StylePtr)) of
+    IsFounded:
+      { Стиль уже существует — возвращаем указатель без изменений };
+    IsCreated:
+      { Новый стиль — инициализируем }
+      StylePtr^.init(StyleName);
+    IsError:
+      { Ошибка добавления — возвращаем nil }
+      StylePtr := nil;
+  end;
+  Result := StylePtr;
+end;
+
+{ === Вспомогательные функции разбора DXF === }
+
 { Разбивает текст DXF на строки и возвращает список.
-  Каждая строка — отдельный элемент: чётные индексы — коды групп,
-  нечётные — значения. }
+  Чётные индексы — коды групп, нечётные — значения. }
 function SplitDXFLines(const Text: string): TStringList;
 begin
   Result := TStringList.Create;
@@ -124,9 +235,7 @@ begin
     begin
       { Читаем записи словаря до следующего объекта }
       if Code = 0 then
-      begin
-        InTargetDict := False;
-      end
+        InTargetDict := False
       else if Code = 3 then
         LastKey := Value
       else if (Code = 350) and (LastKey <> '') then
@@ -147,11 +256,11 @@ end;
 procedure ParseTableStyleObject(
   const StyleName: string;
   ObjectLines: TStringList;
-  Style: PTGDBTableStyle);
+  Style: PTGDBDXFTableStyle);
 var
   I, Code, IntVal: Integer;
   Value: string;
-  CellStyle: TGDBTableCellStyle;
+  CellStyle: TGDBDXFTableCellStyle;
   { Индекс текущего блока строки таблицы: 0=title, 1=header, 2=data }
   CellIdx: Integer;
 begin
@@ -199,10 +308,10 @@ begin
           { Начало нового блока стиля строки таблицы (группа 7 = имя текст. стиля).
             Каждое новое значение группы 7 начинает следующий блок (title/header/data). }
           if CellIdx >= 0 then
-            Style^.tblformat.PushBackData(CellStyle);
+            Style^.CellFormats.PushBackData(CellStyle);
           FillChar(CellStyle, SizeOf(CellStyle), 0);
           Inc(CellIdx);
-          { Сохраняем имя текстового стиля для данного блока в TGDBTableStyle }
+          { Сохраняем имя текстового стиля для данного блока }
           if CellIdx <= 2 then
             Style^.CellTextStyleName[CellIdx] := Value;
         end;
@@ -237,18 +346,18 @@ begin
 
   { Сохраняем последний блок стиля строки }
   if CellIdx >= 0 then
-    Style^.tblformat.PushBackData(CellStyle);
+    Style^.CellFormats.PushBackData(CellStyle);
 
   { Логируем завершение загрузки стиля }
   programlog.LogOutFormatStr(
-    'TableStyle "%s" loaded',
+    'uzestylestablesdxf: стиль "%s" загружен',
     [StyleName], LM_Info);
 end;
 
 { Основная функция загрузки стилей таблиц из секции OBJECTS DXF-файла. }
 procedure ReadTableStylesFromDXFObjects(
   const RawObjectsSection: string;
-  var TableStyleTable: GDBTableStyleArray);
+  var TableStyleTable: GDBDXFTableStyleArray);
 var
   Lines: TStringList;
   StyleNameByHandle: TStringList;
@@ -256,7 +365,7 @@ var
   Value, ObjHandle, StyleName: string;
   InTableStyle: Boolean;
   ObjectLines: TStringList;
-  Style: PTGDBTableStyle;
+  Style: PTGDBDXFTableStyle;
 begin
   if RawObjectsSection = '' then
     Exit;
@@ -366,8 +475,8 @@ end;
 { Добавляет в Lines строки одного блока ячейки стиля таблицы (title/header/data).
   TextStyleName — имя текстового стиля для данного блока (группа 7).
   Если TextStyleName пустой — используется 'Standard'. }
-procedure AppendCellStyleLines(Lines: TStringList; const CS: TGDBTableCellStyle;
-  const TextStyleName: string);
+procedure AppendCellStyleLines(Lines: TStringList;
+  const CS: TGDBDXFTableCellStyle; const TextStyleName: string);
 begin
   Lines.Add('  7');
   if TextStyleName <> '' then
@@ -427,20 +536,21 @@ end;
   Handle — хэндл в 16-ричном формате (например 'F001'). }
 function BuildTableStyleObjectText(
   const StyleName: string;
-  Style: PTGDBTableStyle;
+  Style: PTGDBDXFTableStyle;
   const Handle: string): string;
 var
   Lines: TStringList;
-  CS: TGDBTableCellStyle;
-  PCellStyle: PTGDBTableCellStyle;
+  DefaultCS: TGDBDXFTableCellStyle;
+  PCellStyle: PTGDBDXFTableCellStyle;
   Iter: itrec;
-  { Значения ячеек по умолчанию для строк: title(0), header(1), data(2) }
+  { Значения выравнивания по умолчанию для строк: title(0), header(1), data(2) }
   DefaultAlignments: array[0..2] of Integer;
   CellIdx: Integer;
 begin
-  DefaultAlignments[0] := 2;  { TopLeft }
-  DefaultAlignments[1] := 5;  { MiddleCenter }
-  DefaultAlignments[2] := 5;  { MiddleCenter }
+  { Выравнивание по умолчанию: title=TopLeft(2), header=MiddleCenter(5), data=MiddleCenter(5) }
+  DefaultAlignments[0] := 2;
+  DefaultAlignments[1] := 5;
+  DefaultAlignments[2] := 5;
 
   Lines := TStringList.Create;
   try
@@ -472,25 +582,25 @@ begin
     else
       Lines.Add('     0');
 
-    { Записываем блоки ячеек из tblformat, при нехватке — используем значения по умолчанию }
+    { Записываем блоки ячеек из CellFormats, при нехватке — используем значения по умолчанию }
     CellIdx := 0;
-    PCellStyle := Style^.tblformat.beginiterate(Iter);
+    PCellStyle := Style^.CellFormats.beginiterate(Iter);
     while (PCellStyle <> nil) and (CellIdx < 3) do
     begin
-      { Имя текстового стиля хранится в CellTextStyleName (не в CellStyle record) }
+      { Имя текстового стиля хранится в CellTextStyleName (отдельно от record ячейки) }
       AppendCellStyleLines(Lines, PCellStyle^, Style^.CellTextStyleName[CellIdx]);
       Inc(CellIdx);
-      PCellStyle := Style^.tblformat.iterate(Iter);
+      PCellStyle := Style^.CellFormats.iterate(Iter);
     end;
 
     { Добиваем до трёх блоков значениями по умолчанию }
     while CellIdx < 3 do
     begin
-      FillChar(CS, SizeOf(CS), 0);
-      CS.TextHeight := 2.5;
-      CS.Alignment := DefaultAlignments[CellIdx];
-      CS.BackgroundColor := 7;
-      AppendCellStyleLines(Lines, CS, 'Standard');
+      FillChar(DefaultCS, SizeOf(DefaultCS), 0);
+      DefaultCS.TextHeight := 2.5;
+      DefaultCS.Alignment := DefaultAlignments[CellIdx];
+      DefaultCS.BackgroundColor := 7;
+      AppendCellStyleLines(Lines, DefaultCS, 'Standard');
       Inc(CellIdx);
     end;
 
@@ -503,13 +613,13 @@ end;
 { Записывает стили таблиц из TableStyleTable в секцию OBJECTS.
   Существующие объекты TABLESTYLE заменяются, новые добавляются перед ENDSEC. }
 procedure WriteTableStylesToDXFObjects(
-  var TableStyleTable: GDBTableStyleArray;
+  var TableStyleTable: GDBDXFTableStyleArray;
   var RawObjectsSection: string);
 var
   Lines: TStringList;
   ResultLines: TStringList;
   StyleIter: itrec;
-  Style: PTGDBTableStyle;
+  Style: PTGDBDXFTableStyle;
   I, Code, HandleBase: Integer;
   Value, StyleName: string;
   InTableStyle: Boolean;

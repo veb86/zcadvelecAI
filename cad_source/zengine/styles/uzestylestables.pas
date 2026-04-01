@@ -29,33 +29,18 @@ type
     jcr(*'TopRight'*));
   PTGDBTableCellStyle=^TGDBTableCellStyle;
 
-  { Стиль ячейки таблицы с полями для хранения DXF-параметров.
-    Внимание: добавление полей типа string в этот record небезопасно,
-    так как GZVector использует raw memory (GetMem/Move) для хранения. }
   TGDBTableCellStyle=record
     Width,TextWidth:double;
     CF:TTableCellJustify;
-    { Дополнительные поля для импорта/экспорта DXF (только value types) }
-    TextHeight: double;             { Высота текста (группа 140) }
-    Alignment: Integer;             { Выравнивание (группа 170) }
-    TextColor: Integer;             { Цвет текста (группа 62) }
-    BackgroundColor: Integer;       { Цвет фона (группа 63) }
-    BackgroundColorEnabled: Boolean;{ Включён ли цвет фона (группа 283) }
   end;
 
   GDBCellFormatArray=GZVector<TGDBTableCellStyle>;
 
-  { Стиль таблицы — именованный объект с параметрами отображения таблицы }
   TGDBTableStyle=object(GDBNamedObject)
     rowheight:integer;
     textheight:double;
     tblformat:GDBCellFormatArray;
     HeadBlockName:string;
-    { Дополнительные поля для импорта/экспорта DXF }
-    TitleSuppressed: Boolean;         { Подавление строки заголовка (группа 280) }
-    ColumnHeadingSuppressed: Boolean; { Подавление строки колонок (группа 281) }
-    { Имена текстовых стилей для трёх типов строк: title, header, data (группа 7) }
-    CellTextStyleName: array[0..2] of string;
     constructor Init(const n:string);
     destructor Done;virtual;
   end;
@@ -86,27 +71,15 @@ begin
   //size:=sizeof(TGDBTableStyle);
 end;
 constructor TGDBTableStyle.Init;
-var
-  I: Integer;
 begin
     inherited;
     tblformat.init(10);
-    TitleSuppressed := False;
-    ColumnHeadingSuppressed := False;
-    { Инициализируем имена текстовых стилей для трёх типов строк }
-    for I := 0 to 2 do
-      pointer(CellTextStyleName[I]) := nil;
 end;
 destructor TGDBTableStyle.Done;
-var
-  I: Integer;
 begin
     inherited;
     tblformat.Done;
     HeadBlockName:='';
-    { Освобождаем строки массива имён текстовых стилей }
-    for I := 0 to 2 do
-      CellTextStyleName[I] := '';
 end;
 function GDBTableStyleArray.AddStyle;
 var
