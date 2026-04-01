@@ -289,7 +289,7 @@ uses
   uzvcommand_spaceshowhide, //команда показ спрятать
   //****//
   {Сущность ACAD_TABLE — таблица AutoCAD из формата DXF (этап 1: чтение и отображение)}
-  uzeentacadtable,
+  //uzeentacadtable,
   //****//
   //FPSpreadsheet//
   uzvspreadsheet_register,
