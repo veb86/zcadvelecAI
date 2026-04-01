@@ -186,10 +186,12 @@ end;
 
 { Ищет в Lines словарь ACAD_TABLESTYLE и заполняет StyleNameByHandle.
   Ключ — хэндл объекта TABLESTYLE (в верхнем регистре),
-  значение — имя стиля из словаря. }
+  значение — имя стиля из словаря.
+  OutDictHandle — хэндл самого словаря ACAD_TABLESTYLE (или '' если не найден). }
 procedure ExtractTableStyleDictionary(
   Lines: TStringList;
-  StyleNameByHandle: TStringList);
+  StyleNameByHandle: TStringList;
+  out OutDictHandle: string);
 var
   I, Code: Integer;
   Value, DictHandle, LastKey: string;
@@ -214,6 +216,8 @@ begin
     end;
     Inc(I, 2);
   end;
+
+  OutDictHandle := DictHandle;
 
   if DictHandle = '' then
     Exit;
@@ -362,7 +366,7 @@ var
   Lines: TStringList;
   StyleNameByHandle: TStringList;
   I, Code: Integer;
-  Value, ObjHandle, StyleName: string;
+  Value, ObjHandle, StyleName, DictHandle: string;
   InTableStyle: Boolean;
   ObjectLines: TStringList;
   Style: PTGDBDXFTableStyle;
@@ -381,7 +385,7 @@ begin
     StyleNameByHandle.CaseSensitive := False;
 
     { Шаг 1: строим карту хэндл → имя стиля из словаря ACAD_TABLESTYLE }
-    ExtractTableStyleDictionary(Lines, StyleNameByHandle);
+    ExtractTableStyleDictionary(Lines, StyleNameByHandle, DictHandle);
 
     programlog.LogOutFormatStr(
       'uzestylestablesdxf: найдено %d стилей в словаре ACAD_TABLESTYLE',
@@ -533,11 +537,13 @@ begin
 end;
 
 { Создаёт текстовое представление объекта TABLESTYLE для секции OBJECTS.
-  Handle — хэндл в 16-ричном формате (например 'F001'). }
+  Handle    — хэндл объекта в 16-ричном формате (например '299').
+  OwnerHandle — хэндл владельца (словарь ACAD_TABLESTYLE), или '' если неизвестен. }
 function BuildTableStyleObjectText(
   const StyleName: string;
   Style: PTGDBDXFTableStyle;
-  const Handle: string): string;
+  const Handle: string;
+  const OwnerHandle: string): string;
 var
   Lines: TStringList;
   DefaultCS: TGDBDXFTableCellStyle;
@@ -558,6 +564,19 @@ begin
     Lines.Add('TABLESTYLE');
     Lines.Add('  5');
     Lines.Add(Handle);
+    { Группа 102/330 — реакторы: объект принадлежит словарю ACAD_TABLESTYLE.
+      Это обязательная связь, без которой AutoCAD считает файл повреждённым. }
+    if OwnerHandle <> '' then
+    begin
+      Lines.Add('102');
+      Lines.Add('{ACAD_REACTORS');
+      Lines.Add('330');
+      Lines.Add(OwnerHandle);
+      Lines.Add('102');
+      Lines.Add('}');
+      Lines.Add('330');
+      Lines.Add(OwnerHandle);
+    end;
     Lines.Add('100');
     Lines.Add('AcDbTableStyle');
     Lines.Add('  3');
@@ -610,18 +629,61 @@ begin
   end;
 end;
 
+{ Обновляет словарь ACAD_TABLESTYLE в ResultLines, добавляя запись для нового стиля.
+  DictHandle  — хэндл словаря ACAD_TABLESTYLE.
+  StyleName   — имя нового стиля.
+  StyleHandle — хэндл нового объекта TABLESTYLE. }
+procedure AddStyleToDictionary(ResultLines: TStringList;
+  const DictHandle, StyleName, StyleHandle: string);
+var
+  J, CodeJ: Integer;
+  ValJ: string;
+  InDict: Boolean;
+begin
+  { Ищем DICTIONARY с хэндлом DictHandle и вставляем перед его завершением. }
+  InDict := False;
+  J := 0;
+  while J < ResultLines.Count - 1 do
+  begin
+    CodeJ := ParseGroupCode(ResultLines[J]);
+    ValJ := Trim(ResultLines[J + 1]);
+    if not InDict then
+    begin
+      if (CodeJ = 5) and (UpperCase(ValJ) = UpperCase(DictHandle)) then
+        InDict := True;
+    end
+    else
+    begin
+      if CodeJ = 0 then
+      begin
+        { Вставляем новую запись перед следующим объектом }
+        ResultLines.Insert(J, StyleHandle);
+        ResultLines.Insert(J, '350');
+        ResultLines.Insert(J, StyleName);
+        ResultLines.Insert(J, '  3');
+        Exit;
+      end;
+    end;
+    Inc(J, 2);
+  end;
+end;
+
 { Записывает стили таблиц из TableStyleTable в секцию OBJECTS.
-  Существующие объекты TABLESTYLE заменяются, новые добавляются перед ENDSEC. }
+  Существующие объекты TABLESTYLE заменяются с сохранением оригинальных хэндлов,
+  что предотвращает разрыв ссылок из словаря ACAD_TABLESTYLE.
+  Новые стили добавляются перед ENDSEC с обновлением словаря. }
 procedure WriteTableStylesToDXFObjects(
   var TableStyleTable: GDBDXFTableStyleArray;
   var RawObjectsSection: string);
 var
   Lines: TStringList;
   ResultLines: TStringList;
+  StyleNameByHandle: TStringList;
+  HandleByStyleName: TStringList;
   StyleIter: itrec;
   Style: PTGDBDXFTableStyle;
   I, Code, HandleBase: Integer;
-  Value, StyleName: string;
+  Value, StyleName, ObjHandle, DictHandle, NewHandle: string;
   InTableStyle: Boolean;
   WrittenStyleNames: TStringList;
   ObjectText: string;
@@ -636,11 +698,33 @@ begin
   Lines := SplitDXFLines(RawObjectsSection);
   ResultLines := TStringList.Create;
   WrittenStyleNames := TStringList.Create;
+  StyleNameByHandle := TStringList.Create;
+  HandleByStyleName := TStringList.Create;
   try
-    InTableStyle := False;
-    { Хэндлы для новых объектов берём из диапазона, который не конфликтует
-      со стандартными хэндлами DXF (начинаем с большого значения) }
+    StyleNameByHandle.CaseSensitive := False;
+    HandleByStyleName.CaseSensitive := False;
+
+    { Шаг 1: читаем карту хэндл→имя из словаря ACAD_TABLESTYLE и строим обратную.
+      Это нужно, чтобы при перезаписи использовать оригинальные хэндлы:
+      словарь ссылается на них, и замена нарушает целостность файла. }
+    ExtractTableStyleDictionary(Lines, StyleNameByHandle, DictHandle);
+
+    for I := 0 to StyleNameByHandle.Count - 1 do
+    begin
+      Value := StyleNameByHandle.Names[I];
+      StyleName := StyleNameByHandle.ValueFromIndex[I];
+      HandleByStyleName.Values[UpperCase(StyleName)] := Value;
+    end;
+
+    programlog.LogOutFormatStr(
+      'uzestylestablesdxf: словарь ACAD_TABLESTYLE хэндл=%s, стилей=%d',
+      [DictHandle, StyleNameByHandle.Count], LM_Info);
+
+    { Хэндлы для новых стилей (отсутствующих в словаре) — берём из
+      диапазона, который не конфликтует со стандартными хэндлами. }
     HandleBase := $F000;
+    InTableStyle := False;
+    ObjHandle := '';
     I := 0;
 
     while I < Lines.Count - 1 do
@@ -652,13 +736,16 @@ begin
       begin
         if (Code = 0) and (UpperCase(Value) = 'TABLESTYLE') then
         begin
-          { Пропускаем существующие объекты TABLESTYLE — они будут заменены }
+          { Начало существующего объекта TABLESTYLE.
+            Не копируем — заменим обновлённой версией при обнаружении хэндла. }
           InTableStyle := True;
+          ObjHandle := '';
           Inc(I, 2);
           Continue;
         end;
 
-        { Непосредственно перед ENDSEC вставляем все стили из таблицы }
+        { Перед ENDSEC вставляем стили, которые ещё не были записаны
+          (например, добавленные программно, без записи в файле). }
         if (Code = 0) and (UpperCase(Value) = 'ENDSEC') then
         begin
           Style := TableStyleTable.beginiterate(StyleIter);
@@ -667,17 +754,23 @@ begin
             StyleName := Style^.Name;
             if WrittenStyleNames.IndexOf(UpperCase(StyleName)) < 0 then
             begin
+              NewHandle := HandleByStyleName.Values[UpperCase(StyleName)];
+              if NewHandle = '' then
+              begin
+                { Новый стиль — назначаем уникальный хэндл }
+                NewHandle := UpperCase(IntToHex(HandleBase, 0));
+                Inc(HandleBase);
+                { Добавляем запись в словарь ACAD_TABLESTYLE }
+                if DictHandle <> '' then
+                  AddStyleToDictionary(ResultLines, DictHandle, StyleName, NewHandle);
+              end;
               ObjectText := BuildTableStyleObjectText(
-                StyleName, Style,
-                UpperCase(IntToHex(HandleBase, 0)));
+                StyleName, Style, NewHandle, DictHandle);
               ResultLines.Add(ObjectText);
               WrittenStyleNames.Add(UpperCase(StyleName));
-
               programlog.LogOutFormatStr(
-                'uzestylestablesdxf: записан стиль "%s" хэндл=%s',
-                [StyleName, UpperCase(IntToHex(HandleBase, 0))], LM_Info);
-
-              Inc(HandleBase);
+                'uzestylestablesdxf: записан новый стиль "%s" хэндл=%s',
+                [StyleName, NewHandle], LM_Info);
             end;
             Style := TableStyleTable.iterate(StyleIter);
           end;
@@ -688,10 +781,38 @@ begin
       end
       else
       begin
-        { Внутри пропускаемого TABLESTYLE — ждём конца объекта }
+        { Внутри пропускаемого объекта TABLESTYLE — собираем хэндл. }
+        if (Code = 5) and (ObjHandle = '') then
+          ObjHandle := UpperCase(Value);
+
         if Code = 0 then
         begin
+          { Конец существующего TABLESTYLE — пишем его обновлённую версию. }
+          if ObjHandle <> '' then
+          begin
+            StyleName := StyleNameByHandle.Values[ObjHandle];
+            if StyleName = '' then
+              programlog.LogOutFormatStr(
+                'uzestylestablesdxf: TABLESTYLE хэндл=%s не в словаре, пропускаем',
+                [ObjHandle], LM_Info)
+            else if WrittenStyleNames.IndexOf(UpperCase(StyleName)) < 0 then
+            begin
+              Style := PTGDBDXFTableStyle(TableStyleTable.getAddres(StyleName));
+              if Style <> nil then
+              begin
+                { Используем оригинальный хэндл — словарь уже ссылается на него }
+                ObjectText := BuildTableStyleObjectText(
+                  StyleName, Style, ObjHandle, DictHandle);
+                ResultLines.Add(ObjectText);
+                WrittenStyleNames.Add(UpperCase(StyleName));
+                programlog.LogOutFormatStr(
+                  'uzestylestablesdxf: перезаписан стиль "%s" хэндл=%s',
+                  [StyleName, ObjHandle], LM_Info);
+              end;
+            end;
+          end;
           InTableStyle := False;
+          ObjHandle := '';
           { Текущую строку (начало следующего объекта) обработаем снова }
           Continue;
         end;
@@ -709,6 +830,8 @@ begin
     Lines.Free;
     ResultLines.Free;
     WrittenStyleNames.Free;
+    StyleNameByHandle.Free;
+    HandleByStyleName.Free;
   end;
 end;
 
