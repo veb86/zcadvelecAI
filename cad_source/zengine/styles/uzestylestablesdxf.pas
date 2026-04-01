@@ -75,7 +75,7 @@ type
       (группа DXF 7). Массив строк хранится отдельно от record-а ячейки,
       так как string в GZVector небезопасен (raw memory). }
     CellTextStyleName: array[0..2] of string;
-    { Хэндл расширенного словаря объекта (блок 102/{ACAD_XDICTIONARY}).
+    { Хэндл расширенного словаря объекта (блок 102/ACAD_XDICTIONARY).
       Сохраняется при чтении и восстанавливается при записи, чтобы AutoCAD
       не считал файл повреждённым из-за отсутствия XDICTIONARY-ссылок. }
     XDictHandle: string;
@@ -273,7 +273,7 @@ var
   CellStyle: TGDBDXFTableCellStyle;
   { Индекс текущего блока строки таблицы: 0=title, 1=header, 2=data }
   CellIdx: Integer;
-  { Признак нахождения внутри блока {ACAD_XDICTIONARY} }
+  { Признак нахождения внутри блока ACAD_XDICTIONARY }
   InXDict: Boolean;
 begin
   CellIdx := -1;
@@ -291,7 +291,7 @@ begin
       'TableStyle "%s": code=%d value=%s',
       [StyleName, Code, Value], LM_Info);
 
-    { Обрабатываем блок {ACAD_XDICTIONARY}: сохраняем хэндл расширенного словаря }
+    { Обрабатываем блок ACAD_XDICTIONARY: сохраняем хэндл расширенного словаря }
     if (Code = 102) and (UpperCase(Copy(Value, 1, 17)) = '{ACAD_XDICTIONARY') then
     begin
       InXDict := True;
@@ -590,7 +590,7 @@ end;
 { Создаёт текстовое представление объекта TABLESTYLE для секции OBJECTS.
   Handle      — хэндл объекта в 16-ричном формате (например '299').
   OwnerHandle — хэндл владельца (словарь ACAD_TABLESTYLE), или '' если неизвестен.
-  XDictHandle — хэндл расширенного словаря объекта (блок 102/{ACAD_XDICTIONARY}),
+  XDictHandle — хэндл расширенного словаря объекта (блок 102/ACAD_XDICTIONARY),
                 или '' если блок отсутствует. }
 function BuildTableStyleObjectText(
   const StyleName: string;
@@ -618,8 +618,8 @@ begin
     Lines.Add('TABLESTYLE');
     Lines.Add('  5');
     Lines.Add(Handle);
-    { Блок 102/{ACAD_XDICTIONARY} — ссылка на расширенный словарь объекта.
-      Должна предшествовать блоку {ACAD_REACTORS}. AutoCAD требует этот блок,
+    { Блок 102/ACAD_XDICTIONARY — ссылка на расширенный словарь объекта.
+      Должна предшествовать блоку ACAD_REACTORS. AutoCAD требует этот блок,
       если он присутствовал в исходном файле, иначе считает объект повреждённым. }
     if XDictHandle <> '' then
     begin
