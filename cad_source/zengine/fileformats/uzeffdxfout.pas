@@ -29,11 +29,61 @@ uses
   uzegeometrytypes,SysUtils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,uzestylestablesdxf,uzclog,Classes;
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
 implementation
+
+{ Извлекает тело секции DXF (строки между заголовком и ENDSEC).
+  Входная строка RawSection имеет формат:
+    0\nSECTION\n2\n<NAME>\n<body>\n0\nENDSEC
+  Функция возвращает только <body> без заголовка и без ENDSEC.
+  Если RawSection пустая или имеет неверный формат — возвращает пустую строку. }
+function ExtractDXFSectionBody(const RawSection: string): string;
+var
+  Lines: TStringList;
+  BodyStart, BodyEnd, I: Integer;
+begin
+  Result := '';
+  if RawSection = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawSection;
+
+    { Заголовок занимает 4 строки: 0, SECTION, 2, <NAME>.
+      Тело начинается с индекса 4. }
+    BodyStart := 4;
+    if Lines.Count <= BodyStart then
+      Exit;
+
+    { Конец тела — строки перед последним 0/ENDSEC.
+      Ищем последнее вхождение '0' с последующим 'ENDSEC'. }
+    BodyEnd := Lines.Count - 1;
+    I := Lines.Count - 2;
+    while I >= BodyStart do
+    begin
+      if (Trim(Lines[I]) = '0') and (Trim(Lines[I + 1]) = 'ENDSEC') then
+      begin
+        BodyEnd := I - 1;
+        Break;
+      end;
+      Dec(I);
+    end;
+
+    { Собираем тело секции }
+    for I := BodyStart to BodyEnd do
+    begin
+      if Result <> '' then
+        Result := Result + LineEnding;
+      Result := Result + Lines[I];
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
 
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 begin
@@ -149,6 +199,14 @@ var
   ignoredsource:boolean;
   instyletable:boolean;
   invporttable:boolean;
+  { Признак нахождения в секции OBJECTS шаблона — содержимое шаблона игнорируется,
+    вместо него записывается RawObjectsSection с обновлёнными стилями таблиц. }
+  inobjectssec:boolean;
+  { Признак нахождения в секции CLASSES шаблона — содержимое шаблона игнорируется,
+    вместо него записывается RawClassesSection из исходного файла. }
+  inclassessec:boolean;
+  { Обновлённый сырой текст секции OBJECTS со стилями таблиц }
+  updatedObjectsSection:string;
 
   pltp:PGDBLtypeProp;
   plp:PGDBLayerProp;
@@ -195,6 +253,18 @@ begin
     inlttypetable:=False;
     indimstyletable:=False;
     inappidtable:=False;
+    inobjectssec:=False;
+    inclassessec:=False;
+
+    { Обновляем секцию OBJECTS стилями таблиц из DXFTableStyleTable.
+      Если RawObjectsSection пустая (новый чертёж без загруженного DXF),
+      WriteTableStylesToDXFObjects просто не будет вызвана — нечего записывать. }
+    updatedObjectsSection := drawing.RawObjectsSection;
+    if drawing.DXFTableStyleTable.count > 0 then
+      WriteTableStylesToDXFObjects(drawing.DXFTableStyleTable, updatedObjectsSection);
+    programlog.LogOutFormatStr(
+      'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц)',
+      [drawing.DXFTableStyleTable.count], LM_Info);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
@@ -258,6 +328,45 @@ begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
           inblocksec:=True;
+        end else if (groupi=2) and (values='OBJECTS') then begin
+          { Секция OBJECTS: заголовок 0/SECTION уже записан на предыдущем шаге.
+            Заголовок 2/OBJECTS также записываем — он нужен в выходном файле.
+            Содержимое секции из шаблона игнорируется — вместо него записывается
+            тело updatedObjectsSection (без заголовка и ENDSEC, они добавляются отдельно). }
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+          inobjectssec:=True;
+          ignoredsource:=True;
+        end else if (groupi=2) and (values='CLASSES') then begin
+          { Секция CLASSES: аналогично OBJECTS — заголовок записывается, тело — из
+            RawClassesSection исходного файла, шаблон игнорируется. }
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+          inclassessec:=True;
+          ignoredsource:=True;
+        end else if (inobjectssec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
+          { Конец секции OBJECTS шаблона — записываем тело updatedObjectsSection.
+            updatedObjectsSection содержит весь раздел включая 0/SECTION..0/ENDSEC,
+            поэтому из него берём только строки между заголовком и ENDSEC (тело).
+            Заголовок (0/SECTION/2/OBJECTS) уже записан выше; ENDSEC пишем явно. }
+          inobjectssec:=False;
+          ignoredsource:=False;
+          outstream.TXTAddStringEOL(ExtractDXFSectionBody(updatedObjectsSection));
+          outstream.TXTAddStringEOL(dxfGroupCode(0));
+          outstream.TXTAddStringEOL(dxfName_ENDSEC);
+          programlog.LogOutFormatStr(
+            'uzeffdxfout: секция OBJECTS записана в файл',
+            [], LM_Info);
+        end else if (inclassessec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
+          { Конец секции CLASSES шаблона — записываем тело RawClassesSection. }
+          inclassessec:=False;
+          ignoredsource:=False;
+          outstream.TXTAddStringEOL(ExtractDXFSectionBody(drawing.RawClassesSection));
+          outstream.TXTAddStringEOL(dxfGroupCode(0));
+          outstream.TXTAddStringEOL(dxfName_ENDSEC);
+          programlog.LogOutFormatStr(
+            'uzeffdxfout: секция CLASSES записана в файл',
+            [], LM_Info);
         end else if (inblocksec) and ((groupi=0) and (values=dxfName_ENDSEC)) then begin
           if drawing.BlockDefArray.Count>0 then
             for i:=0 to drawing.BlockDefArray.Count-1 do begin
