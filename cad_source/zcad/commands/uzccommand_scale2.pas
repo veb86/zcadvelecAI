@@ -13,7 +13,7 @@
 *****************************************************************************
 }
 {
-@author(Vladimir Bobrov)
+@author(Vladimir Bobrov) <- Created using AI
 }
 {
   Модуль: uzccommand_scale2

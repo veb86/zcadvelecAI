@@ -256,10 +256,14 @@ uses
   uzcCommand_Duplicate,
 
   uzcCommand_PlaceDelegate,
+
+  uzccommand_scale2,  //Created using AI
+  uzccommand_align,   //Created using AI
+
   {$IFDEF ELECTROTECH}
-  uzcExtdrReport,uzccommand_ReportsUpdate,
+  uzcExtdrReport,uzccommand_ReportsUpdate,uzcCommand_FlattenZEnts,
   {$ENDIF}
-  uzcCommand_TextExplode,
+  uzcCommand_TextExplode,uzcCommand_Hatch2Line,
 
   uzcenitiesvariablesextender,uzcExtdrLayerControl,uzcExtdrSmartTextEnt,
   uzcExtdrIncludingVolume,uzcExtdrSCHConnection,uzcExtdrSCHConnector,
