@@ -215,7 +215,7 @@ uses
 
   uzccommand_line2,uzccommand_circle2,//old commands
 
-  uzccommand_scale,uzccommand_scale2,uzcCommand_RotateXYZ,uzcCommand_Rotate,uzccommand_rotateents,uzccommand_erase,
+  uzccommand_scale,uzcCommand_RotateXYZ,uzcCommand_Rotate,uzccommand_rotateents,uzccommand_erase,
   uzccommand_inverseselected,uzccommand_cutclip,
 
   uzccommand_polyed,
@@ -316,7 +316,7 @@ uses
   testalign,
   testscale2,
   uzvrotate_main,
-  uzccommand_align,
+  //uzccommand_align,
   uzccommand_adddxftablestyle,
 
   //**IPC Server for remote control**//

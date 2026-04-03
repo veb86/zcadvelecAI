@@ -28,7 +28,7 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
