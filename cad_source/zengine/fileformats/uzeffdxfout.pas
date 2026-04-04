@@ -85,6 +85,59 @@ begin
   end;
 end;
 
+{ Сканирует сырой DXF-текст секции и возвращает максимальное значение хэндла
+  из всех групп, являющихся ссылками на объекты (коды 5, 105, 320, 330, 340,
+  350, 360, 390, 1005). Используется для резервирования диапазона хэндлов
+  перед обработкой шаблона, чтобы избежать коллизий с хэндлами из RawObjectsSection.
+  Если секция пустая или хэндлов нет — возвращает 0. }
+function FindMaxHandleInDXFSection(const RawSection: string): TDWGHandle;
+var
+  Lines: TStringList;
+  I, Code: Integer;
+  HexVal: string;
+  HandleVal: QWord;
+begin
+  Result := 0;
+  if RawSection = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawSection;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryStrToInt(Trim(Lines[I]), Code) then
+      begin
+        { Обрабатываем все группы, содержащие ссылки на объекты }
+        if (Code = 5) or (Code = 105) or (Code = 320) or (Code = 330) or
+           (Code = 340) or (Code = 350) or (Code = 360) or (Code = 390) or
+           (Code = 1005) then
+        begin
+          HexVal := Trim(Lines[I + 1]);
+          if HexVal <> '' then
+          begin
+            { Хэндлы в DXF записаны в 16-ричном виде без префикса.
+              Используем QWord для корректной обработки больших значений. }
+            if TryStrToQWord('$' + HexVal, HandleVal) and (HandleVal > 0) then
+            begin
+              if HandleVal > Result then
+                Result := HandleVal;
+            end;
+          end;
+        end;
+      end;
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+
+  programlog.LogOutFormatStr(
+    'uzeffdxfout: FindMaxHandleInDXFSection: максимальный хэндл = %s',
+    [IntToHex(Result, 0)], LM_Info);
+end;
+
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 begin
   outstream^.TXTAddStringEOL(dxfGroupCode(0));
@@ -265,6 +318,23 @@ begin
     programlog.LogOutFormatStr(
       'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц)',
       [drawing.DXFTableStyleTable.count], LM_Info);
+
+    { Резервируем хэндлы из сырых секций OBJECTS и CLASSES.
+      Секции RawObjectsSection и RawClassesSection записываются в выходной файл
+      как есть — без ремаппинга хэндлов. Чтобы обработчик шаблона не назначил
+      новым объектам те же хэндлы, продвигаем счётчик IODXFContext.handle
+      за пределы максимального хэндла из обеих секций. }
+    temphandle := FindMaxHandleInDXFSection(updatedObjectsSection);
+    temphandle2 := FindMaxHandleInDXFSection(drawing.RawClassesSection);
+    if temphandle2 > temphandle then
+      temphandle := temphandle2;
+    if temphandle >= IODXFContext.handle then
+    begin
+      IODXFContext.handle := temphandle + 1;
+      programlog.LogOutFormatStr(
+        'uzeffdxfout: счётчик хэндлов продвинут до %s для избежания коллизий',
+        [IntToHex(IODXFContext.handle, 0)], LM_Info);
+    end;
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
