@@ -643,13 +643,8 @@ begin
       Lines.Add('330');
       Lines.Add(OwnerHandle);
     end;
-    { Блок AcDbObject — базовый класс для всех объектов в DXF.
-      Группа 280 — флаг зомби (0 = объект не удалён). Без этого AutoCAD
-      выдаёт ошибку "Ожидалась группа 280 (флаг зомби)" при открытии файла. }
-    Lines.Add('100');
-    Lines.Add('AcDbObject');
-    Lines.Add('280');
-    Lines.Add('     0');
+    { TABLESTYLE не использует подкласс AcDbObject.
+      AutoCAD напрямую ожидает AcDbTableStyle после блоков REACTORS/XDICTIONARY. }
     Lines.Add('100');
     Lines.Add('AcDbTableStyle');
     Lines.Add('  3');
