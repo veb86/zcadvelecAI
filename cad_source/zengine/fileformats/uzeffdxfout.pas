@@ -85,6 +85,81 @@ begin
   end;
 end;
 
+{ Записывает тело секции OBJECTS с перенумерацией хэндлов.
+  Все хэндлы (группы 5, 105, 320, 330, 340, 350, 360, 390, 1005)
+  заменяются на уникальные значения из IODXFContext.handle, чтобы
+  исключить конфликты с хэндлами из секции TABLES/HEADER/BLOCKS.
+  OldHandele2NewHandle используется совместно с шаблонной частью —
+  если хэндл уже известен, он будет использован повторно. }
+procedure WriteObjectsSectionBody(
+  const SectionBody: string;
+  var outstream: TZctnrVectorBytes;
+  var IODXFContext: TIODXFSaveContext;
+  OldHandele2NewHandle: TMapHandleToHandle);
+var
+  Lines: TStringList;
+  I, GroupCode, OldHandle, NewHandle: Integer;
+  GroupStr, ValueStr: string;
+  IsHandleCode: Boolean;
+begin
+  if SectionBody = '' then
+    Exit;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := SectionBody;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      GroupStr := Lines[I];
+      ValueStr := Lines[I + 1];
+      GroupCode := StrToIntDef(Trim(GroupStr), -1);
+      { Проверяем, является ли код группы хэндлом }
+      IsHandleCode :=
+        (GroupCode = 5) or (GroupCode = 105) or
+        (GroupCode = 320) or (GroupCode = 330) or
+        (GroupCode = 340) or (GroupCode = 350) or
+        (GroupCode = 360) or (GroupCode = 390) or
+        (GroupCode = 1005);
+      if IsHandleCode then
+      begin
+        OldHandle := StrToInt('$' + Trim(ValueStr));
+        if OldHandle = 0 then
+        begin
+          { Нулевой хэндл — записываем как есть }
+          outstream.TXTAddStringEOL(GroupStr);
+          outstream.TXTAddStringEOL('0');
+        end
+        else
+        begin
+          { Ищем уже назначенный хэндл или создаём новый }
+          NewHandle := OldHandele2NewHandle.MyGetValue(OldHandle);
+          if NewHandle > 0 then
+          begin
+            outstream.TXTAddStringEOL(GroupStr);
+            outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
+          end
+          else
+          begin
+            OldHandele2NewHandle.Add(OldHandle, IODXFContext.handle);
+            outstream.TXTAddStringEOL(GroupStr);
+            outstream.TXTAddStringEOL(IntToHex(IODXFContext.handle, 0));
+            Inc(IODXFContext.handle);
+          end;
+        end;
+      end
+      else
+      begin
+        { Обычная пара код/значение — копируем без изменений }
+        outstream.TXTAddStringEOL(GroupStr);
+        outstream.TXTAddStringEOL(ValueStr);
+      end;
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 begin
   outstream^.TXTAddStringEOL(dxfGroupCode(0));
@@ -345,13 +420,13 @@ begin
           inclassessec:=True;
           ignoredsource:=True;
         end else if (inobjectssec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
-          { Конец секции OBJECTS шаблона — записываем тело updatedObjectsSection.
-            updatedObjectsSection содержит весь раздел включая 0/SECTION..0/ENDSEC,
-            поэтому из него берём только строки между заголовком и ENDSEC (тело).
-            Заголовок (0/SECTION/2/OBJECTS) уже записан выше; ENDSEC пишем явно. }
+          { Конец секции OBJECTS шаблона — записываем тело updatedObjectsSection
+            с перенумерацией хэндлов через IODXFContext для предотвращения дублей. }
           inobjectssec:=False;
           ignoredsource:=False;
-          outstream.TXTAddStringEOL(ExtractDXFSectionBody(updatedObjectsSection));
+          WriteObjectsSectionBody(
+            ExtractDXFSectionBody(updatedObjectsSection),
+            outstream, IODXFContext, OldHandele2NewHandle);
           outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL(dxfName_ENDSEC);
           programlog.LogOutFormatStr(
