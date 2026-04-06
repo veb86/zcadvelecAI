@@ -50,7 +50,8 @@ const
   // Максимальное количество ячеек — защита памяти
   CAcadTableMaxCells = 100000;
 
-  // --- Типы данных ячеек ---
+type
+  // Типы данных ячеек
   TCellDataType = (cdtText, cdtNumber, cdtFormula, cdtBlock);
 
   // Горизонтальное выравнивание текста в ячейке
@@ -141,7 +142,6 @@ const
     Row2, Col2: Integer;
   end;
 
-type
   // Тип указателя на GDBObjAcadTable
   PGDBObjAcadTable = ^GDBObjAcadTable;
 
