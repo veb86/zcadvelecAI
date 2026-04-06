@@ -35,7 +35,8 @@ uses
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
-  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble;
+  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble,
+  uzestylestablesdxf, gzctnrVectorTypes;
 
 const
   // Высота строки по умолчанию (в единицах чертежа)
@@ -165,6 +166,9 @@ type
     // Признак того, что геометрия уже была построена
     FGeometryBuilt: Boolean;
 
+    // Хэндл DXF-стиля таблицы (group code 342) — читается при загрузке из DXF
+    FTableStyleHandle: String;
+
     // Новая модель данных (этап 2)
     // Стиль таблицы
     FTableStyle: TTableStyle;
@@ -200,6 +204,8 @@ type
     function GetMergeRoot(RowIdx, ColIdx: Integer): TPoint;
     // Резолвит итоговый стиль ячейки с учётом иерархии
     function ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
+    // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle
+    procedure ApplyDXFTableStyle(var ADrawing: TDrawingDef);
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -358,6 +364,150 @@ begin
   end;
 end;
 
+// Преобразует числовое значение выравнивания AutoCAD в горизонтальный алиас.
+// AutoCAD: 1=TopLeft,2=TopCenter,3=TopRight,4-6=Middle*,7-9=Bottom*
+function DXFAlignToHorz(Alignment: Integer): THorzAlign;
+var
+  HorzPart: Integer;
+begin
+  // Горизонтальная часть — остаток от 3 (0=Left,1=Center,2=Right)
+  HorzPart := (Alignment - 1) mod 3;
+  case HorzPart of
+    1: Result := haCenter;
+    2: Result := haRight;
+  else
+    Result := haLeft;
+  end;
+end;
+
+// Преобразует числовое значение выравнивания AutoCAD в вертикальный алиас.
+// AutoCAD: 1-3=Top, 4-6=Middle, 7-9=Bottom
+function DXFAlignToVert(Alignment: Integer): TVertAlign;
+var
+  VertPart: Integer;
+begin
+  // Вертикальная часть — округление вниз деления на 3
+  VertPart := (Alignment - 1) div 3;
+  case VertPart of
+    1: Result := vaMiddle;
+    2: Result := vaBottom;
+  else
+    Result := vaTop;
+  end;
+end;
+
+// Заполняет TCellStyle из TGDBDXFTableCellStyle и имени текстового стиля.
+// Устанавливает флаги override для всех явно заданных полей.
+procedure FillCellStyleFromDXF(var CellStyle: TCellStyle;
+  const ADXF: TGDBDXFTableCellStyle; const ATextStyleName: String);
+begin
+  InitCellStyle(CellStyle);
+  // Имя текстового стиля
+  CellStyle.TextStyle := ATextStyleName;
+  if ATextStyleName <> '' then
+    Include(CellStyle.Overrides, soTextStyle);
+  // Высота текста
+  if ADXF.TextHeight > 0 then
+  begin
+    CellStyle.TextHeight := ADXF.TextHeight;
+    Include(CellStyle.Overrides, soTextHeight);
+  end;
+  // Цвет текста
+  CellStyle.TextColor := ADXF.TextColor;
+  Include(CellStyle.Overrides, soTextColor);
+  // Выравнивание
+  if ADXF.Alignment > 0 then
+  begin
+    CellStyle.HorzAlign := DXFAlignToHorz(ADXF.Alignment);
+    CellStyle.VertAlign := DXFAlignToVert(ADXF.Alignment);
+    Include(CellStyle.Overrides, soHAlign);
+    Include(CellStyle.Overrides, soVAlign);
+  end;
+  // Фон
+  if ADXF.BackgroundColorEnabled then
+  begin
+    CellStyle.HasBackground := True;
+    CellStyle.BackgroundColor := ADXF.BackgroundColor;
+    Include(CellStyle.Overrides, soBackground);
+  end;
+end;
+
+// Применяет DXF-стиль таблицы к внутренней структуре FTableStyle.
+// Ищет первый стиль в DXFTableStyleTable чертежа (таблица обычно содержит
+// один стиль — тот, что использует данная таблица).
+// Если стиль найден — заполняет FTableStyle его данными для корректного
+// отображения выравнивания, цветов и других параметров форматирования.
+procedure GDBObjAcadTable.ApplyDXFTableStyle(var ADrawing: TDrawingDef);
+var
+  DXFStyleTable: PGDBDXFTableStyleArray;
+  StylePtr: PTGDBDXFTableStyle;
+  IterRec: itrec;
+  CellStylePtr: PTGDBDXFTableCellStyle;
+  CellFormatsIter: itrec;
+  CellIdx: Integer;
+begin
+  DXFStyleTable := ADrawing.GetDXFTableStyleTable;
+  if DXFStyleTable = nil then
+  begin
+    programlog.LogOutStr(
+      'uzeentacadtable: ApplyDXFTableStyle — таблица DXF-стилей недоступна',
+      LM_Info);
+    Exit;
+  end;
+
+  if DXFStyleTable^.count = 0 then
+  begin
+    programlog.LogOutStr(
+      'uzeentacadtable: ApplyDXFTableStyle — таблица DXF-стилей пуста',
+      LM_Info);
+    Exit;
+  end;
+
+  // Берём первый стиль из таблицы (в большинстве файлов стиль один)
+  StylePtr := DXFStyleTable^.beginiterate(IterRec);
+  if StylePtr = nil then
+    Exit;
+
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: ApplyDXFTableStyle применяем стиль "%s" (хэндл=%s)',
+    [StylePtr^.Name, FTableStyleHandle], LM_Info);
+
+  FTableStyle.Name := StylePtr^.Name;
+
+  // Заполняем стили ячеек перебором CellFormats (title=0, header=1, data=2)
+  CellIdx := 0;
+  CellStylePtr := StylePtr^.CellFormats.beginiterate(CellFormatsIter);
+  while (CellStylePtr <> nil) and (CellIdx < 3) do
+  begin
+    case CellIdx of
+      0:
+        FillCellStyleFromDXF(FTableStyle.TitleCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[0]);
+      1:
+        FillCellStyleFromDXF(FTableStyle.HeaderCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[1]);
+      2:
+        begin
+          FillCellStyleFromDXF(FTableStyle.DataCell, CellStylePtr^,
+            StylePtr^.CellTextStyleName[2]);
+          // Стиль данных используется как базовый по умолчанию
+          FillCellStyleFromDXF(FTableStyle.DefaultCell, CellStylePtr^,
+            StylePtr^.CellTextStyleName[2]);
+        end;
+    end;
+    Inc(CellIdx);
+    CellStylePtr := StylePtr^.CellFormats.iterate(CellFormatsIter);
+  end;
+
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: ApplyDXFTableStyle OK стиль="%s" ' +
+    'title_height=%.2f header_height=%.2f data_height=%.2f',
+    [FTableStyle.Name,
+     FTableStyle.TitleCell.TextHeight,
+     FTableStyle.HeaderCell.TextHeight,
+     FTableStyle.DataCell.TextHeight], LM_Info);
+end;
+
 // Резолвит итоговый стиль ячейки с учётом иерархии.
 // Приоритет: Cell > Row > Column > TableStyle > Defaults
 function GDBObjAcadTable.ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
@@ -367,14 +517,18 @@ var
   ColStyle: TCellStyle;
   BaseStyle: TCellStyle;
 begin
-  // Начинаем с дефолтного стиля таблицы
-  if Assigned(FTableStyle.DefaultCell.Overrides) then
-    BaseStyle := FTableStyle.DefaultCell
+  // Выбираем базовый стиль по типу строки (title=0, header=1, data=2+)
+  // Это соответствует поведению AutoCAD: каждый тип строки имеет свой стиль
+  if RowIdx = 0 then
+    BaseStyle := FTableStyle.TitleCell
+  else if RowIdx = 1 then
+    BaseStyle := FTableStyle.HeaderCell
   else
-  begin
-    InitCellStyle(BaseStyle);
+    BaseStyle := FTableStyle.DataCell;
+
+  // Если базовый стиль пуст (нет переопределений) — используем DefaultCell
+  if BaseStyle.Overrides = [] then
     BaseStyle := FTableStyle.DefaultCell;
-  end;
 
   // Применяем стиль строки
   if (RowIdx >= 0) and (RowIdx <= High(FRows)) then
@@ -480,6 +634,7 @@ begin
   FColWidths.initnul;
   System.SetLength(FCellTexts, 0);
   FGeometryBuilt := False;
+  FTableStyleHandle := '';
 
   // Инициализация новых структур данных (этап 2)
   InitCellStyle(FTableStyle.DefaultCell);
@@ -703,10 +858,19 @@ begin
             ARdr.SkipString;
         end;
 
+        // Хэндл стиля таблицы (ссылка на объект TABLESTYLE)
+        342:
+        begin
+          FTableStyleHandle := ARdr.ParseString;
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: LoadFromDXF TableStyleHandle="%s"',
+            [FTableStyleHandle], LM_Info);
+        end;
+
         // Пропускаем служебные коды ячеек
         11, 21, 31, 90, 93, 94, 95, 96, 170, 172, 173, 174, 175, 176, 177, 178,
         145, 300, 301, 304, 274, 275, 276, 278, 279, 280, 281, 283, 284, 285, 286,
-        288, 289, 63, 64, 65, 66, 68, 69, 70, 40, 41, 342, 343, 344, 340:
+        288, 289, 63, 64, 65, 66, 68, 69, 70, 40, 41, 343, 344, 340:
           ARdr.SkipString;
 
       else
@@ -1046,6 +1210,10 @@ begin
 
   if not FGeometryBuilt then
   begin
+    // Применяем DXF-стиль таблицы перед построением геометрии.
+    // К этому моменту чертёж уже полностью загружен и DXFTableStyleTable заполнена.
+    ApplyDXFTableStyle(ADrawing);
+
     DC := ADrawing.CreateDrawingRC;
     programlog.LogOutFormatStr(
       'uzeentacadtable: BuildGeometry created DC, ConstObjArray count before=%d',
@@ -1168,6 +1336,7 @@ begin
   NewTable^.FInsertPoint := FInsertPoint;
   NewTable^.FRowCount := FRowCount;
   NewTable^.FColCount := FColCount;
+  NewTable^.FTableStyleHandle := FTableStyleHandle;
 
   // Копируем высоты строк
   for Idx := 0 to FRowHeights.Count - 1 do

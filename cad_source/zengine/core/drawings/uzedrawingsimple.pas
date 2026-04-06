@@ -90,6 +90,7 @@ type
                        function GetLayerTable:PGDBLayerArray;virtual;
                        function GetLTypeTable:PGDBLtypeArray;virtual;
                        function GetTableStyleTable:PGDBTableStyleArray;virtual;
+                       function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;
                        function GetTextStyleTable:PGDBTextStyleArray;virtual;
                        function GetDimStyleTable:PGDBDimStyleArray;virtual;
                        function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
@@ -657,6 +658,10 @@ end;
 function TSimpleDrawing.GetTableStyleTable:PGDBTableStyleArray;
 begin
      result:=@TableStyleTable;
+end;
+function TSimpleDrawing.GetDXFTableStyleTable:PGDBDXFTableStyleArray;
+begin
+  result:=@DXFTableStyleTable;
 end;
 function TSimpleDrawing.GetTextStyleTable:PGDBTextStyleArray;
 begin
