@@ -124,6 +124,17 @@ procedure WriteTableStylesToDXFObjects(
 
 implementation
 
+{ Форматирует вещественное число для DXF-файла.
+  В отличие от FloatToStr, всегда гарантирует наличие десятичной точки,
+  чтобы AutoCAD корректно распознавал значение как double (группы 40-59, 140-149).
+  Без десятичной точки AutoCAD может отклонить файл как повреждённый. }
+function DXFFloatToStr(Value: Double): string;
+begin
+  Result := FloatToStr(Value);
+  if Pos('.', Result) = 0 then
+    Result := Result + '.0';
+end;
+
 { === Конструктор и деструктор TGDBDXFTableStyle === }
 
 constructor TGDBDXFTableStyle.init(const StyleName: string);
@@ -557,7 +568,7 @@ begin
     Lines.Add('Standard');
 
   Lines.Add('140');
-  Lines.Add(FloatToStr(CS.TextHeight));
+  Lines.Add(DXFFloatToStr(CS.TextHeight));
 
   Lines.Add('170');
   Lines.Add(IntToStr(CS.Alignment));
@@ -672,9 +683,9 @@ begin
     Lines.Add(' 71');
     Lines.Add(IntToStr(Style^.Flags71));
     Lines.Add(' 40');
-    Lines.Add(FloatToStr(Style^.HorzCellMargin));
+    Lines.Add(DXFFloatToStr(Style^.HorzCellMargin));
     Lines.Add(' 41');
-    Lines.Add(FloatToStr(Style^.VertCellMargin));
+    Lines.Add(DXFFloatToStr(Style^.VertCellMargin));
     Lines.Add('280');
     if Style^.TitleSuppressed then
       Lines.Add('     1')

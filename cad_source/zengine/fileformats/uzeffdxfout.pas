@@ -341,6 +341,19 @@ begin
       'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц)',
       [drawing.DXFTableStyleTable.count], LM_Info);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
+    { Если чертёж содержит стили таблиц (TABLESTYLE — объекты AC1018+),
+      а шаблон сохранения имеет формат AC1015 (DXF 2000), принудительно
+      повышаем $ACADVER до AC1021. Без этого AutoCAD отклонит файл,
+      т.к. TABLESTYLE не определён в стандарте AC1015.
+      Секции CLASSES и OBJECTS берутся из оригинального файла — они уже
+      корректны для AC1021, поэтому достаточно поправить только версию. }
+    if (drawing.DXFTableStyleTable.count > 0) and (AVer = ZCDxf2000) then
+    begin
+      IODXFContext.VarsDict.Add('$ACADVER', 'AC1021');
+      programlog.LogOutFormatStr(
+        'uzeffdxfout: версия $ACADVER повышена до AC1021 (стили таблиц)',
+        [], LM_Info);
+    end;
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
       groups:=templatefile.readString;
