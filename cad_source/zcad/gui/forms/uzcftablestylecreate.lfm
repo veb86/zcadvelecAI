@@ -8,7 +8,7 @@ object TableStyleCreateForm: TTableStyleCreateForm
   ClientHeight = 214
   ClientWidth = 356
   Position = poMainFormCenter
-  LCLVersion = '3.99.0.0'
+  LCLVersion = '4.99.0.0'
   OnCreate = FormCreate
   OnShow = FormShow
   object PanelContent: TPanel
@@ -80,6 +80,7 @@ object TableStyleCreateForm: TTableStyleCreateForm
       BorderSpacing.Left = 8
       BorderSpacing.Top = 4
       BorderSpacing.Right = 8
+      ItemHeight = 0
       Style = csDropDownList
       TabOrder = 1
       OnChange = ComboBaseStyleChange

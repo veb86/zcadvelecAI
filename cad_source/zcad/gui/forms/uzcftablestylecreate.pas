@@ -34,6 +34,7 @@ uses
   uzclog,
   gzctnrVectorTypes,
   uzestylestablesdxf,
+  uzcdrawings,
   uzedrawingsimple;
 
 type
