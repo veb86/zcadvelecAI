@@ -67,6 +67,14 @@ type
   TGDBDXFTableStyle = object(GDBNamedObject)
     { Массив стилей ячеек: 0=title, 1=header, 2=data }
     CellFormats: GDBDXFCellFormatArray;
+    { Флаги стиля таблицы (группа DXF 70) }
+    Flags70: Integer;
+    { Направление потока / версия (группа DXF 71) }
+    Flags71: Integer;
+    { Горизонтальный отступ ячейки (группа DXF 40) }
+    HorzCellMargin: Double;
+    { Вертикальный отступ ячейки (группа DXF 41) }
+    VertCellMargin: Double;
     { Признак подавления строки заголовка (группа DXF 280) }
     TitleSuppressed: Boolean;
     { Признак подавления строки имён колонок (группа DXF 281) }
@@ -124,6 +132,10 @@ var
 begin
   inherited Init(StyleName);
   CellFormats.Init(3);
+  Flags70 := 0;
+  Flags71 := 0;
+  HorzCellMargin := 1.5;
+  VertCellMargin := 1.5;
   TitleSuppressed := False;
   ColumnHeadingSuppressed := False;
   { Инициализируем указатели строк через nil для корректной работы с AnsiString }
@@ -312,15 +324,20 @@ begin
       3:
         { Описание стиля — не имя, имя берётся из словаря ACAD_TABLESTYLE }
         ;
-      70, 71:
-        { Флаги стиля таблицы — зарезервировано для будущего использования }
-        ;
+      70:
+        { Флаги стиля таблицы }
+        if TryStrToInt(Value, IntVal) then
+          Style^.Flags70 := IntVal;
+      71:
+        { Направление потока / версия стиля таблицы }
+        if TryStrToInt(Value, IntVal) then
+          Style^.Flags71 := IntVal;
       40:
-        { Горизонтальный отступ ячейки — не используется в текущей версии }
-        ;
+        { Горизонтальный отступ ячейки }
+        Style^.HorzCellMargin := StrToFloatDef(Value, 1.5);
       41:
-        { Вертикальный отступ ячейки — не используется в текущей версии }
-        ;
+        { Вертикальный отступ ячейки }
+        Style^.VertCellMargin := StrToFloatDef(Value, 1.5);
       280:
         begin
           { Признак подавления строки заголовка таблицы }
@@ -651,13 +668,13 @@ begin
     { Группа 3 — описание стиля (не имя, имя хранится в словаре ACAD_TABLESTYLE) }
     Lines.Add(StyleName);
     Lines.Add(' 70');
-    Lines.Add('     0');
+    Lines.Add(IntToStr(Style^.Flags70));
     Lines.Add(' 71');
-    Lines.Add('     0');
+    Lines.Add(IntToStr(Style^.Flags71));
     Lines.Add(' 40');
-    Lines.Add('1.5');
+    Lines.Add(FloatToStr(Style^.HorzCellMargin));
     Lines.Add(' 41');
-    Lines.Add('1.5');
+    Lines.Add(FloatToStr(Style^.VertCellMargin));
     Lines.Add('280');
     if Style^.TitleSuppressed then
       Lines.Add('     1')
