@@ -28,7 +28,7 @@ uses
   uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
   uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
   uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity,
-  uzestylestablesdxf;
+  uzestylestablesdxf,uzestylesmleaderdxf;
 type
   TMainBlockCreateProc=procedure (_to:PTDrawingDef;name:String) of object;
 
@@ -61,6 +61,9 @@ type
                        { Таблица стилей таблиц для DXF-обмена.
                          Используется только при загрузке и сохранении DXF. }
                        DXFTableStyleTable: GDBDXFTableStyleArray;
+                       { Таблица стилей мультивыносок для DXF-обмена.
+                         Используется только при загрузке и сохранении DXF. }
+                       DXFMLeaderStyleTable: GDBDXFMLeaderStyleArray;
                        LTypeStyleTable:GDBLtypeArray;
                        DimStyleTable:GDBDimStyleArray;
                        DrawingExtensions:TDrawingExtensions;
@@ -91,6 +94,7 @@ type
                        function GetLTypeTable:PGDBLtypeArray;virtual;
                        function GetTableStyleTable:PGDBTableStyleArray;virtual;
                        function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;
+                       function GetDXFMLeaderStyleTable:PGDBDXFMLeaderStyleArray;virtual;
                        function GetTextStyleTable:PGDBTextStyleArray;virtual;
                        function GetDimStyleTable:PGDBDimStyleArray;virtual;
                        function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
@@ -663,6 +667,10 @@ function TSimpleDrawing.GetDXFTableStyleTable:PGDBDXFTableStyleArray;
 begin
   result:=@DXFTableStyleTable;
 end;
+function TSimpleDrawing.GetDXFMLeaderStyleTable:PGDBDXFMLeaderStyleArray;
+begin
+  result:=@DXFMLeaderStyleTable;
+end;
 function TSimpleDrawing.GetTextStyleTable:PGDBTextStyleArray;
 begin
      result:=@TextStyleTable;
@@ -770,6 +778,7 @@ begin
      Numerator.Done;
      TableStyleTable.Done;
      DXFTableStyleTable.Done;
+     DXFMLeaderStyleTable.Done;
      LTypeStyleTable.Done;
      DimStyleTable.Done;
      //FileName:='';
@@ -847,6 +856,7 @@ begin
 
   TableStyleTable.init(10);
   DXFTableStyleTable.init(10);
+  DXFMLeaderStyleTable.init(10);
 
   PTempTableStyle:=TableStyleTable.AddStyle('Temp');
 
