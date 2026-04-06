@@ -1315,6 +1315,14 @@
         <Filename Value="zcad/commands/uzccommand_tablestyles.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit183>
+      <Unit184>
+        <Filename Value="zcad/gui/uzcui_tablestylemanager.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit184>
+      <Unit185>
+        <Filename Value="zcad/commands/uzccommand_tablestylemanager.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit185>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

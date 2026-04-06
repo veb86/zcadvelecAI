@@ -319,6 +319,7 @@ uses
   //uzccommand_align,
   uzccommand_adddxftablestyle,
   uzccommand_tablestyles,
+  uzccommand_tablestylemanager,
 
   //**IPC Server for remote control**//
   uzvipcserver,
