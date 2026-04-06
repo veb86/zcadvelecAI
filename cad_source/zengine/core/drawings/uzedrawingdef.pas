@@ -22,7 +22,7 @@ interface
 uses
   uzgldrawcontext,uzestylesdim,uzeTypes,uzestyleslayers,uzestylestexts,
   uzbUnits,
-  uzestyleslinetypes,uzestylestables;
+  uzestyleslinetypes,uzestylestables,uzestylestablesdxf;
 type
 
 PTDrawingDef=^TDrawingDef;
@@ -32,6 +32,8 @@ TDrawingDef= object(GDBaseobject)
                        function GetLTypeTable:PGDBLtypeArray;virtual;abstract;
                        function GetTextStyleTable:PGDBTextStyleArray;virtual;abstract;
                        function GetTableStyleTable:PGDBTableStyleArray;virtual;abstract;
+                       { Возвращает таблицу DXF-стилей таблиц для DXF-обмена }
+                       function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;abstract;
                        function GetDimStyleTable:PGDBDimStyleArray;virtual;abstract;
                        function GetDWGUnits:{PTUnitManager}pointer;virtual;abstract;
                        procedure AddBlockFromDBIfNeed(name:String);virtual;abstract;
