@@ -318,6 +318,7 @@ uses
   uzvrotate_main,
   //uzccommand_align,
   uzccommand_adddxftablestyle,
+  uzccommand_tablestyles,
 
   //**IPC Server for remote control**//
   uzvipcserver,
