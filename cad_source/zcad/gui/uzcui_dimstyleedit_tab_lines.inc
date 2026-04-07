@@ -5,7 +5,7 @@
   - группа "Размерные линии" (цвет, тип, вес, удлинение)
   - группа "Выносные линии" (цвет, тип 1/2, вес, удлинение)
   - область предпросмотра (заглушка) }
-procedure TDimStyleEditForm.BuildTabLines(ATab: TTabSheet);
+procedure TDimStyleEditDialog.BuildTabLines(ATab: TTabSheet);
 var
   GroupDimLines: TGroupBox;
   GroupExtLines: TGroupBox;

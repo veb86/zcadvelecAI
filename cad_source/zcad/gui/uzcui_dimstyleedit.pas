@@ -27,6 +27,7 @@
 }
 unit uzcui_dimstyleedit;
 {$INCLUDE zengineconfig.inc}
+
 {$mode objfpc}{$H+}
 
 interface

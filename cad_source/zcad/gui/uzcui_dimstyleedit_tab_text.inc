@@ -6,7 +6,7 @@
   - группа "Размещение текста" (вертикальное, горизонтальное)
   - группа "Ориентация текста" (горизонтально/вдоль/ISO)
   - область предпросмотра (заглушка) }
-procedure TDimStyleEditForm.BuildTabText(ATab: TTabSheet);
+procedure TDimStyleEditDialog.BuildTabText(ATab: TTabSheet);
 var
   GroupTextProp: TGroupBox;
   GroupTextPlace: TGroupBox;

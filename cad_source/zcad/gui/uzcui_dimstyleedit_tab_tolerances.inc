@@ -4,7 +4,7 @@
 { Создаёт элементы управления вкладки "Допуски".
   Все параметры на данном этапе не разработаны —
   элементы отображаются заблокированными. }
-procedure TDimStyleEditForm.BuildTabTolerances(
+procedure TDimStyleEditDialog.BuildTabTolerances(
   ATab: TTabSheet);
 var
   GroupFormat: TGroupBox;

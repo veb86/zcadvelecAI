@@ -7,7 +7,7 @@
   - группа "Масштаб размерных элементов" (DIMSCALE)
   - группа "Подгонка элементов"
   - область предпросмотра (заглушка) }
-procedure TDimStyleEditForm.BuildTabPlacing(
+procedure TDimStyleEditDialog.BuildTabPlacing(
   ATab: TTabSheet);
 var
   GroupFitOptions: TGroupBox;

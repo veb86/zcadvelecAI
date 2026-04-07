@@ -5,7 +5,7 @@
   - группа "Стрелки" (первая, вторая, выноска, размер)
   - группа "Маркеры центра" (нет/маркер/линия, размер)
   - область предпросмотра (заглушка) }
-procedure TDimStyleEditForm.BuildTabArrows(ATab: TTabSheet);
+procedure TDimStyleEditDialog.BuildTabArrows(ATab: TTabSheet);
 var
   GroupArrows: TGroupBox;
   GroupCenter: TGroupBox;

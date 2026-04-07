@@ -4,7 +4,7 @@
 { Создаёт элементы управления вкладки "Альт. единицы".
   Все параметры на данном этапе не разработаны —
   элементы отображаются заблокированными. }
-procedure TDimStyleEditForm.BuildTabAltUnits(
+procedure TDimStyleEditDialog.BuildTabAltUnits(
   ATab: TTabSheet);
 var
   GroupAlt: TGroupBox;

@@ -6,7 +6,7 @@
   - группа "Масштаб измерений" (DIMLFAC)
   - группа "Подавление нулей" (DIMZIN)
   - область предпросмотра (заглушка) }
-procedure TDimStyleEditForm.BuildTabUnits(
+procedure TDimStyleEditDialog.BuildTabUnits(
   ATab: TTabSheet);
 var
   GroupLinear: TGroupBox;
