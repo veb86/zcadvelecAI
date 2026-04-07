@@ -716,6 +716,12 @@ begin
   end;
   utd:=ptsu^.RegisterType(TypeInfo(PTGDBTableStyle),'PTGDBTableStyle');
 
+  {Регистрация типа для инспектора объектов — стиль таблицы}
+  utd:=ptsu^.RegisterType(TypeInfo(PGDBTableStyleObjInsp),
+                                  'PGDBTableStyleObjInsp');
+  utd:=ptsu^.RegisterType(TypeInfo(PPGDBTableStyleObjInsp),
+                                  'PPGDBTableStyleObjInsp');
+
   utd:=ptsu^.RegisterType(TypeInfo(GDBTextStyleProp),'GDBTextStyleProp');
   if utd<>nil then begin
     ptsu^.SetTypeDesk2(utd,['size','oblique','wfactor'],[FNProgram,FNUser]);
