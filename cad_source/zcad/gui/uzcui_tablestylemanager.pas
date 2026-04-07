@@ -20,6 +20,8 @@
   Назначение: диалоговое окно управления стилями таблиц DXF, аналог
   диалога «Стили таблиц» в AutoCAD. Форма строится программно, без .lfm.
   Позволяет просматривать, создавать, удалять стили и устанавливать текущий.
+  При создании нового стиля открывается вспомогательный диалог (тоже программный),
+  где пользователь вводит имя и выбирает базовый стиль.
   Зависимости: uzestylestablesdxf, uzcdrawings, uzedrawingsimple,
                uzcinterface, uzclog, LCL
 }
@@ -65,19 +67,49 @@ const
   { Вертикальный шаг между кнопками }
   CButtonStep = 35;
 
-  { Значения по умолчанию при создании нового стиля }
-  CDefaultTextHeight      = 2.5;
-  CDefaultAlignment       = 0;
-  CDefaultTextColor       = 0;
-  CDefaultBackColor       = 7;
-  CDefaultHorzMargin      = 0.06;
-  CDefaultVertMargin      = 0.06;
-  CDefaultTextStyleName   = 'Standard';
+  { Размеры диалога создания нового стиля }
+  CCreateFormWidth  = 356;
+  CCreateFormHeight = 190;
+  { Ширина правой колонки кнопок в диалоге создания }
+  CCreatePanelButtonsWidth = 96;
 
-  { Шаблон имени нового стиля для генерации уникального имени }
-  CNewStyleNameFormat = 'Стиль%d';
+  { Шаблон имени нового стиля по умолчанию: «Копия из <базовый>» }
+  CNewStyleNameTemplate = 'Копия из %s';
 
 type
+  { TTableStyleCreateDialog — программный диалог создания нового стиля таблицы.
+    Показывает поле ввода имени и выпадающий список базовых стилей.
+    Результат доступен через свойства NewStyleName и BaseStyleName. }
+  TTableStyleCreateDialog = class(TForm)
+  private
+    { Поле ввода имени нового стиля }
+    FEditStyleName: TEdit;
+    { Выпадающий список существующих стилей (базовый стиль) }
+    FComboBaseStyle: TComboBox;
+    { Кнопки диалога }
+    FButtonNext: TButton;
+    FButtonCancel: TButton;
+
+    { Обновляет предлагаемое имя нового стиля при смене базового }
+    procedure UpdateSuggestedName;
+    { Обработчик смены выбора базового стиля }
+    procedure OnBaseStyleChange(Sender: TObject);
+    { Обработчик нажатия «Далее» — проверяет имя и закрывает диалог }
+    procedure OnNextClick(Sender: TObject);
+
+  public
+    { Имя нового стиля — результат диалога (задаётся после mrOk) }
+    NewStyleName: string;
+    { Имя базового стиля — результат диалога (задаётся после mrOk) }
+    BaseStyleName: string;
+
+    constructor Create(AOwner: TComponent); override;
+
+    { Заполняет комбобокс стилями из таблицы текущего чертежа.
+      Параметр PreselectedName — имя стиля, который нужно выбрать изначально. }
+    procedure FillBaseStyles(const PreselectedName: string);
+  end;
+
   { TTableStyleManagerForm — диалог управления стилями таблиц.
     Строится программно, без .lfm-файла. }
   TTableStyleManagerForm = class(TForm)
@@ -124,6 +156,8 @@ type
     procedure UpdateButtonStates;
     { Возвращает указатель на выбранный стиль или nil }
     function GetSelectedStyle: PTGDBDXFTableStyle;
+    { Возвращает имя выбранного в списке стиля или пустую строку }
+    function GetSelectedStyleName: string;
     { Проверяет, является ли имя стиля текущим }
     function IsCurrentStyle(const StyleName: string): Boolean;
 
@@ -144,10 +178,10 @@ type
     { Обработчик рисования заглушки предпросмотра }
     procedure OnPaintPreview(Sender: TObject);
 
-    { Заполняет стиль значениями по умолчанию (три формата ячеек) }
-    procedure FillStyleWithDefaults(StylePtr: PTGDBDXFTableStyle);
-    { Создаёт одну ячейку (формат строки) со значениями по умолчанию }
-    function MakeDefaultCellStyle: TGDBDXFTableCellStyle;
+    { Копирует свойства из базового стиля в целевой, сохраняя имя целевого }
+    procedure CopyStyleData(
+      const BaseStyle: PTGDBDXFTableStyle;
+      const TargetStyle: PTGDBDXFTableStyle);
     { Рисует заглушку предпросмотра: серый фон, рамка, текст по центру }
     procedure DrawPreviewStub(myCanvas: TCanvas; const Bounds: TRect);
 
@@ -162,6 +196,166 @@ var
   TableStyleManagerForm: TTableStyleManagerForm;
 
 implementation
+
+{ ============================================================ }
+{ TTableStyleCreateDialog                                       }
+{ ============================================================ }
+
+constructor TTableStyleCreateDialog.Create(AOwner: TComponent);
+var
+  PanelContent: TPanel;
+  PanelButtons: TPanel;
+  LabelStyleName: TLabel;
+  LabelBaseStyle: TLabel;
+begin
+  inherited CreateNew(AOwner);
+  Caption      := 'Создание нового стиля таблиц';
+  Width        := CCreateFormWidth;
+  Height       := CCreateFormHeight;
+  Position     := poMainFormCenter;
+  BorderStyle  := bsDialog;
+  NewStyleName := '';
+  BaseStyleName := '';
+
+  { Правая панель с кнопками }
+  PanelButtons := TPanel.Create(Self);
+  PanelButtons.Parent     := Self;
+  PanelButtons.Align      := alRight;
+  PanelButtons.Width      := CCreatePanelButtonsWidth;
+  PanelButtons.BevelOuter := bvNone;
+
+  FButtonNext := TButton.Create(Self);
+  FButtonNext.Parent   := PanelButtons;
+  FButtonNext.Caption  := 'Далее';
+  FButtonNext.Left     := 8;
+  FButtonNext.Top      := 12;
+  FButtonNext.Width    := 80;
+  FButtonNext.Height   := 30;
+  FButtonNext.Default  := True;
+  FButtonNext.OnClick  := @OnNextClick;
+
+  FButtonCancel := TButton.Create(Self);
+  FButtonCancel.Parent      := PanelButtons;
+  FButtonCancel.Caption     := 'Отмена';
+  FButtonCancel.Left        := 8;
+  FButtonCancel.Top         := 54;
+  FButtonCancel.Width       := 80;
+  FButtonCancel.Height      := 30;
+  FButtonCancel.Cancel      := True;
+  FButtonCancel.ModalResult := mrCancel;
+
+  { Левая панель с полями ввода }
+  PanelContent := TPanel.Create(Self);
+  PanelContent.Parent     := Self;
+  PanelContent.Align      := alClient;
+  PanelContent.BevelOuter := bvNone;
+
+  LabelStyleName := TLabel.Create(Self);
+  LabelStyleName.Parent  := PanelContent;
+  LabelStyleName.Caption := 'Имя нового стиля:';
+  LabelStyleName.Left    := 8;
+  LabelStyleName.Top     := 12;
+
+  FEditStyleName := TEdit.Create(Self);
+  FEditStyleName.Parent := PanelContent;
+  FEditStyleName.Left   := 8;
+  FEditStyleName.Top    := 36;
+  FEditStyleName.Width  := CCreateFormWidth - CCreatePanelButtonsWidth - 20;
+
+  LabelBaseStyle := TLabel.Create(Self);
+  LabelBaseStyle.Parent  := PanelContent;
+  LabelBaseStyle.Caption := 'На основе:';
+  LabelBaseStyle.Left    := 8;
+  LabelBaseStyle.Top     := 74;
+
+  FComboBaseStyle := TComboBox.Create(Self);
+  FComboBaseStyle.Parent   := PanelContent;
+  FComboBaseStyle.Style    := csDropDownList;
+  FComboBaseStyle.Left     := 8;
+  FComboBaseStyle.Top      := 98;
+  FComboBaseStyle.Width    := CCreateFormWidth - CCreatePanelButtonsWidth - 20;
+  FComboBaseStyle.OnChange := @OnBaseStyleChange;
+end;
+
+{ Заполняет комбобокс именами стилей из таблицы стилей текущего чертежа }
+procedure TTableStyleCreateDialog.FillBaseStyles(const PreselectedName: string);
+var
+  DrawingPtr: PTSimpleDrawing;
+  StylePtr: PTGDBDXFTableStyle;
+  IterRec: itrec;
+  PreselectedIndex: Integer;
+begin
+  FComboBaseStyle.Items.Clear;
+  PreselectedIndex := 0;
+
+  DrawingPtr := drawings.GetCurrentDWG;
+  if DrawingPtr = nil then
+    Exit;
+
+  StylePtr := DrawingPtr^.DXFTableStyleTable.beginiterate(IterRec);
+  while StylePtr <> nil do
+  begin
+    FComboBaseStyle.Items.Add(StylePtr^.Name);
+    StylePtr := DrawingPtr^.DXFTableStyleTable.iterate(IterRec);
+  end;
+
+  { Выбираем переданный стиль как базовый, иначе — первый элемент }
+  if PreselectedName <> '' then
+    PreselectedIndex := FComboBaseStyle.Items.IndexOf(PreselectedName);
+
+  if PreselectedIndex < 0 then
+    PreselectedIndex := 0;
+
+  if FComboBaseStyle.Items.Count > 0 then
+    FComboBaseStyle.ItemIndex := PreselectedIndex;
+
+  UpdateSuggestedName;
+end;
+
+{ Предлагает имя нового стиля на основе выбранного базового }
+procedure TTableStyleCreateDialog.UpdateSuggestedName;
+var
+  BaseName: string;
+begin
+  if FComboBaseStyle.ItemIndex < 0 then
+    Exit;
+
+  BaseName := FComboBaseStyle.Items[FComboBaseStyle.ItemIndex];
+  FEditStyleName.Text := Format(CNewStyleNameTemplate, [BaseName]);
+end;
+
+{ Смена базового стиля — обновляем предлагаемое имя }
+procedure TTableStyleCreateDialog.OnBaseStyleChange(Sender: TObject);
+begin
+  UpdateSuggestedName;
+end;
+
+{ Нажатие «Далее» — сохраняем результат и закрываем диалог }
+procedure TTableStyleCreateDialog.OnNextClick(Sender: TObject);
+begin
+  NewStyleName := Trim(FEditStyleName.Text);
+  if NewStyleName = '' then
+  begin
+    ShowMessage('Введите имя нового стиля.');
+    FEditStyleName.SetFocus;
+    Exit;
+  end;
+
+  if FComboBaseStyle.ItemIndex >= 0 then
+    BaseStyleName := FComboBaseStyle.Items[FComboBaseStyle.ItemIndex]
+  else
+    BaseStyleName := '';
+
+  programlog.LogOutFormatStr(
+    'uzcui_tablestylemanager: диалог создания — имя "%s", основа "%s"',
+    [NewStyleName, BaseStyleName], LM_Info);
+
+  ModalResult := mrOk;
+end;
+
+{ ============================================================ }
+{ TTableStyleManagerForm                                        }
+{ ============================================================ }
 
 { --- Конструктор --- }
 
@@ -460,6 +654,17 @@ begin
   Result := PTGDBDXFTableStyle(FListBoxStyles.Items.Objects[Index]);
 end;
 
+{ Возвращает имя выбранного в списке стиля или пустую строку }
+function TTableStyleManagerForm.GetSelectedStyleName: string;
+var
+  Index: Integer;
+begin
+  Result := '';
+  Index := FListBoxStyles.ItemIndex;
+  if Index >= 0 then
+    Result := FListBoxStyles.Items[Index];
+end;
+
 { Проверяет, совпадает ли имя стиля с текущим (без учёта регистра) }
 function TTableStyleManagerForm.IsCurrentStyle(const StyleName: string): Boolean;
 begin
@@ -491,6 +696,47 @@ begin
   TextX := Bounds.Left + (Bounds.Right  - Bounds.Left - TextWidth)  div 2;
   TextY := Bounds.Top  + (Bounds.Bottom - Bounds.Top  - TextHeight) div 2;
   myCanvas.TextOut(TextX, TextY, CPreviewText);
+end;
+
+{ Копирует все поля из базового стиля в целевой, сохраняя имя целевого }
+procedure TTableStyleManagerForm.CopyStyleData(
+  const BaseStyle: PTGDBDXFTableStyle;
+  const TargetStyle: PTGDBDXFTableStyle);
+var
+  SavedName: string;
+  RowIndex: Integer;
+  CellItem: TGDBDXFTableCellStyle;
+  SrcIterRec: itrec;
+  CellIter: PTGDBDXFTableCellStyle;
+begin
+  SavedName := TargetStyle^.Name;
+
+  { Копируем числовые поля стиля }
+  TargetStyle^.Flags70 := BaseStyle^.Flags70;
+  TargetStyle^.Flags71 := BaseStyle^.Flags71;
+  TargetStyle^.HorzCellMargin := BaseStyle^.HorzCellMargin;
+  TargetStyle^.VertCellMargin := BaseStyle^.VertCellMargin;
+  TargetStyle^.TitleSuppressed := BaseStyle^.TitleSuppressed;
+  TargetStyle^.ColumnHeadingSuppressed := BaseStyle^.ColumnHeadingSuppressed;
+
+  { Копируем имена текстовых стилей для каждой строки (title, header, data) }
+  for RowIndex := 0 to 2 do
+    TargetStyle^.CellTextStyleName[RowIndex] :=
+      BaseStyle^.CellTextStyleName[RowIndex];
+
+  { Пересоздаём вектор форматов ячеек и копируем из базового стиля }
+  TargetStyle^.CellFormats.Done;
+  TargetStyle^.CellFormats.Init(3);
+  CellIter := BaseStyle^.CellFormats.beginiterate(SrcIterRec);
+  while CellIter <> nil do
+  begin
+    CellItem := CellIter^;
+    TargetStyle^.CellFormats.PushBackData(CellItem);
+    CellIter := BaseStyle^.CellFormats.iterate(SrcIterRec);
+  end;
+
+  { Восстанавливаем имя нового стиля }
+  TargetStyle^.Name := SavedName;
 end;
 
 { --- Обработчики событий --- }
@@ -534,84 +780,71 @@ begin
     [FCurrentStyleName], LM_Info);
 end;
 
-{ Создаёт одну запись формата ячейки со значениями по умолчанию }
-function TTableStyleManagerForm.MakeDefaultCellStyle: TGDBDXFTableCellStyle;
-begin
-  Result.TextHeight             := CDefaultTextHeight;
-  Result.Alignment              := CDefaultAlignment;
-  Result.TextColor              := CDefaultTextColor;
-  Result.BackgroundColor        := CDefaultBackColor;
-  Result.BackgroundColorEnabled := False;
-end;
-
-{ Заполняет три формата ячеек стиля (title, header, data) значениями по умолчанию }
-procedure TTableStyleManagerForm.FillStyleWithDefaults(
-  StylePtr: PTGDBDXFTableStyle);
-var
-  CellStyle: TGDBDXFTableCellStyle;
-  RowIndex: Integer;
-begin
-  StylePtr^.HorzCellMargin := CDefaultHorzMargin;
-  StylePtr^.VertCellMargin := CDefaultVertMargin;
-
-  CellStyle := MakeDefaultCellStyle;
-
-  { Инициализируем вектор форматов ячеек, затем добавляем три строки }
-  StylePtr^.CellFormats.Init(3);
-  for RowIndex := 0 to 2 do
-  begin
-    StylePtr^.CellFormats.PushBackData(CellStyle);
-    StylePtr^.CellTextStyleName[RowIndex] := CDefaultTextStyleName;
-  end;
-end;
-
-{ Кнопка «Создать...» — добавляет новый стиль с уникальным именем }
+{ Кнопка «Создать...» — открывает диалог выбора имени и базового стиля,
+  затем создаёт новый стиль как копию выбранного базового }
 procedure TTableStyleManagerForm.OnCreateClick(Sender: TObject);
 var
   DrawingPtr: PTSimpleDrawing;
-  NewStyleName: string;
+  CreateDialog: TTableStyleCreateDialog;
   NewStylePtr: PTGDBDXFTableStyle;
+  BaseStylePtr: PTGDBDXFTableStyle;
   NewIndex: Integer;
 begin
   DrawingPtr := drawings.GetCurrentDWG;
   if DrawingPtr = nil then
     Exit;
 
-  { Генерируем уникальное имя по шаблону «СтильN» }
-  NewStyleName := DrawingPtr^.DXFTableStyleTable.GetFreeName(
-    CNewStyleNameFormat, 1);
-  if NewStyleName = '' then
-  begin
+  { Открываем диалог: изначально выбран тот стиль, что выделен в списке }
+  CreateDialog := TTableStyleCreateDialog.Create(Self);
+  try
+    CreateDialog.FillBaseStyles(GetSelectedStyleName);
+    if CreateDialog.ShowModal <> mrOk then
+      Exit;
+
+    { Проверяем, что стиль с таким именем ещё не существует }
+    if DrawingPtr^.DXFTableStyleTable.getIndex(CreateDialog.NewStyleName) >= 0 then
+    begin
+      ShowMessage(
+        'Стиль с именем "' + CreateDialog.NewStyleName + '" уже существует.');
+      Exit;
+    end;
+
+    { Создаём новый стиль }
+    NewStylePtr := DrawingPtr^.DXFTableStyleTable.AddStyle(
+      CreateDialog.NewStyleName);
+    if NewStylePtr = nil then
+    begin
+      programlog.LogOutFormatStr(
+        'uzcui_tablestylemanager: ошибка создания стиля "%s"',
+        [CreateDialog.NewStyleName], LM_Info);
+      Exit;
+    end;
+
+    { Копируем свойства базового стиля в новый }
+    if CreateDialog.BaseStyleName <> '' then
+    begin
+      BaseStylePtr := PTGDBDXFTableStyle(
+        DrawingPtr^.DXFTableStyleTable.getAddres(CreateDialog.BaseStyleName));
+      if BaseStylePtr <> nil then
+        CopyStyleData(BaseStylePtr, NewStylePtr);
+    end;
+
     programlog.LogOutFormatStr(
-      'uzcui_tablestylemanager: не удалось сгенерировать имя стиля',
-      [], LM_Info);
-    Exit;
+      'uzcui_tablestylemanager: создан стиль "%s" на основе "%s"',
+      [CreateDialog.NewStyleName, CreateDialog.BaseStyleName], LM_Info);
+
+    RefreshStyleList;
+
+    { Выбираем только что созданный стиль в списке }
+    NewIndex := FListBoxStyles.Items.IndexOf(CreateDialog.NewStyleName);
+    if NewIndex >= 0 then
+      FListBoxStyles.ItemIndex := NewIndex;
+
+    UpdatePreviewLabel;
+    UpdateButtonStates;
+  finally
+    CreateDialog.Free;
   end;
-
-  NewStylePtr := DrawingPtr^.DXFTableStyleTable.AddStyle(NewStyleName);
-  if NewStylePtr = nil then
-  begin
-    programlog.LogOutFormatStr(
-      'uzcui_tablestylemanager: ошибка создания стиля "%s"',
-      [NewStyleName], LM_Info);
-    Exit;
-  end;
-
-  FillStyleWithDefaults(NewStylePtr);
-
-  programlog.LogOutFormatStr(
-    'uzcui_tablestylemanager: создан стиль "%s"',
-    [NewStyleName], LM_Info);
-
-  RefreshStyleList;
-
-  { Выбираем только что созданный стиль в списке }
-  NewIndex := FListBoxStyles.Items.IndexOf(NewStyleName);
-  if NewIndex >= 0 then
-    FListBoxStyles.ItemIndex := NewIndex;
-
-  UpdatePreviewLabel;
-  UpdateButtonStates;
 end;
 
 { Кнопка «Редактировать...» — заглушка }
