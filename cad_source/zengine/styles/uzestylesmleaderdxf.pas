@@ -66,6 +66,8 @@ type
     SecondSegAngle: Double;
     { Хэндл типа линии выноски (код 340, LTYPE) }
     LeaderLinetypeHandle: string;
+    { Имя типа линии выноски (разрешённое из хэндла) }
+    LeaderLinetypeName: string;
     { Тип присоединения текста слева (код 174) }
     TextAttachmentLeft: Integer;
     { Тип присоединения текста справа (код 178) }
@@ -90,12 +92,16 @@ type
     Description: string;
     { Хэндл блока стрелки (код 341, BLOCK_RECORD) }
     ArrowHeadBlockHandle: string;
+    { Имя блока стрелки (разрешённое из хэндла) }
+    ArrowHeadBlockName: string;
     { Масштаб содержимого (код 44) }
     TextHeight: Double;
     { Имя текстового стиля по умолчанию (код 300) }
     DefaultTextContent: string;
     { Хэндл текстового стиля (код 342, STYLE) }
     TextStyleHandle: string;
+    { Имя текстового стиля (разрешённое из хэндла) }
+    TextStyleName: string;
     { Цвет текста мультивыноски (код 93) }
     TextColor: Integer;
     { Расстояние от площадки (код 45) }
@@ -108,6 +114,8 @@ type
     BlockContentScale: Double;
     { Хэндл блока содержимого (код 343, BLOCK_RECORD) }
     BlockContentHandle: string;
+    { Имя блока содержимого (разрешённое из хэндла) }
+    BlockContentName: string;
     { Цвет блока содержимого (код 94) }
     BlockContentColor: Integer;
     { Множитель масштаба (код 47) }
@@ -154,11 +162,15 @@ type
 { Загружает стили мультивыносок из секции OBJECTS DXF-файла.
   Находит словарь ACAD_MLEADERSTYLE и все объекты MLEADERSTYLE,
   восстанавливает имена стилей из словаря и заполняет таблицу.
+  Для разрешения хэндлов ссылок (340-343) в имена объектов
+  используется секция TABLES.
   Параметры:
     RawObjectsSection — полный текст секции OBJECTS
+    RawTablesSection — полный текст секции TABLES
     MLeaderStyleTable — таблица стилей для заполнения }
 procedure ReadMLeaderStylesFromDXFObjects(
   const RawObjectsSection: string;
+  const RawTablesSection: string;
   var MLeaderStyleTable: GDBDXFMLeaderStyleArray);
 
 { Записывает стили мультивыносок в секцию OBJECTS DXF-файла.
@@ -190,6 +202,7 @@ begin
   SecondSegAngle := 0.0;
   { Инициализируем строки через nil для raw memory }
   pointer(LeaderLinetypeHandle) := nil;
+  pointer(LeaderLinetypeName) := nil;
   TextAttachmentLeft := 1;
   TextAttachmentRight := 1;
   TextAngleType := 1;
@@ -202,15 +215,18 @@ begin
   LandingGap := 0.36;
   pointer(Description) := nil;
   pointer(ArrowHeadBlockHandle) := nil;
+  pointer(ArrowHeadBlockName) := nil;
   TextHeight := 0.18;
   pointer(DefaultTextContent) := nil;
   pointer(TextStyleHandle) := nil;
+  pointer(TextStyleName) := nil;
   TextColor := -1056964608;
   ArrowHeadSize := 0.18;
   TextAlignAlwaysLeft := False;
   AlignSpace := False;
   BlockContentScale := 0.18;
   pointer(BlockContentHandle) := nil;
+  pointer(BlockContentName) := nil;
   BlockContentColor := -1056964608;
   BlockContentScaleX := 1.0;
   BlockContentScaleY := 1.0;
@@ -231,11 +247,15 @@ destructor TGDBDXFMLeaderStyle.Done;
 begin
   inherited Done;
   LeaderLinetypeHandle := '';
+  LeaderLinetypeName := '';
   Description := '';
   ArrowHeadBlockHandle := '';
+  ArrowHeadBlockName := '';
   DefaultTextContent := '';
   TextStyleHandle := '';
+  TextStyleName := '';
   BlockContentHandle := '';
+  BlockContentName := '';
   XDictHandle := '';
 end;
 
@@ -556,14 +576,100 @@ begin
     [StyleName], LM_Info);
 end;
 
+{ Строит карту хэндл→имя из секции TABLES для объектов
+  заданного типа (LTYPE, STYLE, BLOCK_RECORD).
+  Используется для разрешения хэндлов ссылок в MLEADERSTYLE. }
+procedure BuildHandleNameMap(
+  const RawTablesSection: string;
+  const ObjectType: string;
+  HandleToName: TStringList);
+var
+  Lines: TStringList;
+  I, Code: Integer;
+  Value, CurHandle, CurName, CurType: string;
+  InObject: Boolean;
+begin
+  if RawTablesSection = '' then
+    Exit;
+
+  Lines := SplitDXFLines(RawTablesSection);
+  try
+    InObject := False;
+    CurHandle := '';
+    CurName := '';
+    CurType := '';
+    I := 0;
+
+    while I < Lines.Count - 1 do
+    begin
+      Code := ParseGroupCode(Lines[I]);
+      Value := Trim(Lines[I + 1]);
+
+      if Code = 0 then
+      begin
+        { Сохраняем предыдущий объект если он нужного типа }
+        if InObject
+          and (UpperCase(CurType) = UpperCase(ObjectType))
+          and (CurHandle <> '')
+          and (CurName <> '') then
+        begin
+          HandleToName.Values[
+            UpperCase(CurHandle)] := CurName;
+        end;
+        CurHandle := '';
+        CurName := '';
+        CurType := Value;
+        InObject := True;
+      end
+      else if InObject then
+      begin
+        if (Code = 5) and (CurHandle = '') then
+          CurHandle := Value;
+        if Code = 2 then
+          CurName := Value;
+      end;
+
+      Inc(I, 2);
+    end;
+
+    { Последний объект }
+    if InObject
+      and (UpperCase(CurType) = UpperCase(ObjectType))
+      and (CurHandle <> '')
+      and (CurName <> '') then
+    begin
+      HandleToName.Values[
+        UpperCase(CurHandle)] := CurName;
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+{ Разрешает хэндл ссылки в имя объекта используя карту.
+  Возвращает имя или пустую строку если не найдено. }
+function ResolveHandleToName(
+  const Handle: string;
+  HandleToName: TStringList): string;
+begin
+  if Handle = '' then
+    Result := ''
+  else
+    Result := HandleToName.Values[UpperCase(Handle)];
+end;
+
 { Основная функция загрузки стилей мультивыносок
   из секции OBJECTS DXF-файла }
 procedure ReadMLeaderStylesFromDXFObjects(
   const RawObjectsSection: string;
+  const RawTablesSection: string;
   var MLeaderStyleTable: GDBDXFMLeaderStyleArray);
 var
   Lines: TStringList;
   StyleNameByHandle: TStringList;
+  LTypeHandleMap: TStringList;
+  StyleHandleMap: TStringList;
+  BlockRecHandleMap: TStringList;
   I, Code: Integer;
   Value, ObjHandle, StyleName, DictHandle: string;
   InMLeaderStyle: Boolean;
@@ -581,8 +687,31 @@ begin
   Lines := SplitDXFLines(RawObjectsSection);
   StyleNameByHandle := TStringList.Create;
   ObjectLines := TStringList.Create;
+  LTypeHandleMap := TStringList.Create;
+  StyleHandleMap := TStringList.Create;
+  BlockRecHandleMap := TStringList.Create;
   try
     StyleNameByHandle.CaseSensitive := False;
+    LTypeHandleMap.CaseSensitive := False;
+    StyleHandleMap.CaseSensitive := False;
+    BlockRecHandleMap.CaseSensitive := False;
+
+    { Строим карты хэндл→имя из секции TABLES
+      для разрешения ссылок MLEADERSTYLE }
+    BuildHandleNameMap(
+      RawTablesSection, 'LTYPE', LTypeHandleMap);
+    BuildHandleNameMap(
+      RawTablesSection, 'STYLE', StyleHandleMap);
+    BuildHandleNameMap(
+      RawTablesSection, 'BLOCK_RECORD',
+      BlockRecHandleMap);
+
+    programlog.LogOutFormatStr(
+      'uzestylesmleaderdxf: карты из TABLES: '
+      + 'LTYPE=%d, STYLE=%d, BLOCK_RECORD=%d',
+      [LTypeHandleMap.Count,
+       StyleHandleMap.Count,
+       BlockRecHandleMap.Count], LM_Info);
 
     { Шаг 1: карта хэндл → имя из ACAD_MLEADERSTYLE }
     ExtractMLeaderStyleDictionary(
@@ -633,8 +762,38 @@ begin
               Style :=
                 MLeaderStyleTable.AddStyle(StyleName);
               if Style <> nil then
+              begin
                 ParseMLeaderStyleObject(
                   StyleName, ObjectLines, Style);
+                { Разрешаем хэндлы в имена объектов }
+                Style^.LeaderLinetypeName :=
+                  ResolveHandleToName(
+                    Style^.LeaderLinetypeHandle,
+                    LTypeHandleMap);
+                Style^.ArrowHeadBlockName :=
+                  ResolveHandleToName(
+                    Style^.ArrowHeadBlockHandle,
+                    BlockRecHandleMap);
+                Style^.TextStyleName :=
+                  ResolveHandleToName(
+                    Style^.TextStyleHandle,
+                    StyleHandleMap);
+                Style^.BlockContentName :=
+                  ResolveHandleToName(
+                    Style^.BlockContentHandle,
+                    BlockRecHandleMap);
+                programlog.LogOutFormatStr(
+                  'uzestylesmleaderdxf: разрешены '
+                  + 'ссылки "%s": ltype="%s" '
+                  + 'arrow="%s" txtstyle="%s" '
+                  + 'block="%s"',
+                  [StyleName,
+                   Style^.LeaderLinetypeName,
+                   Style^.ArrowHeadBlockName,
+                   Style^.TextStyleName,
+                   Style^.BlockContentName],
+                  LM_Info);
+              end;
             end
             else
               programlog.LogOutFormatStr(
@@ -670,8 +829,26 @@ begin
         Style :=
           MLeaderStyleTable.AddStyle(StyleName);
         if Style <> nil then
+        begin
           ParseMLeaderStyleObject(
             StyleName, ObjectLines, Style);
+          Style^.LeaderLinetypeName :=
+            ResolveHandleToName(
+              Style^.LeaderLinetypeHandle,
+              LTypeHandleMap);
+          Style^.ArrowHeadBlockName :=
+            ResolveHandleToName(
+              Style^.ArrowHeadBlockHandle,
+              BlockRecHandleMap);
+          Style^.TextStyleName :=
+            ResolveHandleToName(
+              Style^.TextStyleHandle,
+              StyleHandleMap);
+          Style^.BlockContentName :=
+            ResolveHandleToName(
+              Style^.BlockContentHandle,
+              BlockRecHandleMap);
+        end;
       end;
     end;
 
@@ -683,6 +860,9 @@ begin
     Lines.Free;
     StyleNameByHandle.Free;
     ObjectLines.Free;
+    LTypeHandleMap.Free;
+    StyleHandleMap.Free;
+    BlockRecHandleMap.Free;
   end;
 end;
 

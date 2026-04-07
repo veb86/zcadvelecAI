@@ -273,6 +273,114 @@ begin
 end;
 
 
+{ Добавляет маппинги старых хэндлов из MLEADERSTYLE
+  в OldHandele2NewHandle, разрешая ссылки по именам объектов.
+  Вызывается после обработки шаблона (когда p2h содержит
+  все хэндлы из TABLES) и перед WriteObjectsSectionBody. }
+procedure PrePopulateMLeaderHandles(
+  var drawing: TSimpleDrawing;
+  var IODXFContext: TIODXFSaveContext;
+  OldHandele2NewHandle: TMapHandleToHandle);
+var
+  StyleIter: itrec;
+  Style: PTGDBDXFMLeaderStyle;
+  OldH: TDWGHandle;
+  NewH: TDWGHandle;
+  Ptr: Pointer;
+begin
+  if drawing.DXFMLeaderStyleTable.count = 0 then
+    Exit;
+
+  Style := drawing.DXFMLeaderStyleTable.beginiterate(
+    StyleIter);
+  while Style <> nil do
+  begin
+    { Разрешаем тип линии (код 340) }
+    if (Style^.LeaderLinetypeName <> '')
+      and (Style^.LeaderLinetypeHandle <> '') then
+    begin
+      Ptr := drawing.LTypeStyleTable.getAddres(
+        Style^.LeaderLinetypeName);
+      if Ptr <> nil then
+      begin
+        IODXFContext.p2h.MyGetOrCreateValue(
+          Ptr, IODXFContext.handle, NewH);
+        OldH := StrToQWord(
+          '$' + Style^.LeaderLinetypeHandle);
+        if (OldH > 0) and
+           (OldHandele2NewHandle.MyGetValue(OldH)
+             = 0) then
+          OldHandele2NewHandle.Add(OldH, NewH);
+      end;
+    end;
+
+    { Разрешаем блок стрелки (код 341) }
+    if (Style^.ArrowHeadBlockName <> '')
+      and (Style^.ArrowHeadBlockHandle <> '') then
+    begin
+      Ptr := drawing.BlockDefArray.getblockdef(
+        Style^.ArrowHeadBlockName);
+      if Ptr <> nil then
+      begin
+        IODXFContext.p2h.MyGetOrCreateValue(
+          Ptr, IODXFContext.handle, NewH);
+        OldH := StrToQWord(
+          '$' + Style^.ArrowHeadBlockHandle);
+        if (OldH > 0) and
+           (OldHandele2NewHandle.MyGetValue(OldH)
+             = 0) then
+          OldHandele2NewHandle.Add(OldH, NewH);
+      end;
+    end;
+
+    { Разрешаем текстовый стиль (код 342) }
+    if (Style^.TextStyleName <> '')
+      and (Style^.TextStyleHandle <> '') then
+    begin
+      Ptr := drawing.TextStyleTable.FindStyle(
+        Style^.TextStyleName, False);
+      if Ptr <> nil then
+      begin
+        IODXFContext.p2h.MyGetOrCreateValue(
+          Ptr, IODXFContext.handle, NewH);
+        OldH := StrToQWord(
+          '$' + Style^.TextStyleHandle);
+        if (OldH > 0) and
+           (OldHandele2NewHandle.MyGetValue(OldH)
+             = 0) then
+          OldHandele2NewHandle.Add(OldH, NewH);
+      end;
+    end;
+
+    { Разрешаем блок содержимого (код 343) }
+    if (Style^.BlockContentName <> '')
+      and (Style^.BlockContentHandle <> '') then
+    begin
+      Ptr := drawing.BlockDefArray.getblockdef(
+        Style^.BlockContentName);
+      if Ptr <> nil then
+      begin
+        IODXFContext.p2h.MyGetOrCreateValue(
+          Ptr, IODXFContext.handle, NewH);
+        OldH := StrToQWord(
+          '$' + Style^.BlockContentHandle);
+        if (OldH > 0) and
+           (OldHandele2NewHandle.MyGetValue(OldH)
+             = 0) then
+          OldHandele2NewHandle.Add(OldH, NewH);
+      end;
+    end;
+
+    programlog.LogOutFormatStr(
+      'uzeffdxfout: MLeaderStyle "%s" '
+      + 'хэндлы предзаполнены',
+      [Style^.Name], LM_Info);
+
+    Style := drawing.DXFMLeaderStyleTable.iterate(
+      StyleIter);
+  end;
+end;
+
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 var
   sysfilename:rawbytestring;
@@ -441,6 +549,11 @@ begin
             с перенумерацией хэндлов через IODXFContext для предотвращения дублей. }
           inobjectssec:=False;
           ignoredsource:=False;
+          { Предзаполняем маппинг хэндлов MLEADERSTYLE перед
+            перенумерацией: разрешаем ссылки на LTYPE, STYLE,
+            BLOCK_RECORD по именам из таблиц чертежа. }
+          PrePopulateMLeaderHandles(
+            drawing, IODXFContext, OldHandele2NewHandle);
           WriteObjectsSectionBody(
             ExtractDXFSectionBody(updatedObjectsSection),
             outstream, IODXFContext, OldHandele2NewHandle);
