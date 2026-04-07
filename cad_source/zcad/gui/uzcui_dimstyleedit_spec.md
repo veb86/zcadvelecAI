@@ -376,7 +376,7 @@
 ### 7.1. Основной класс
 
 ```pascal
-TDimStyleEditForm = class(TForm)
+TDimStyleEditDialog = class(TForm)
 private
   { Входной параметр — указатель на редактируемый стиль }
   FDimStyle: PGDBDimStyle;
@@ -469,13 +469,13 @@ programlog.LogOutFormatStr(
 procedure TDimStyleManagerForm.OnEditClick(Sender: TObject);
 var
   StylePtr: PGDBDimStyle;
-  EditForm: TDimStyleEditForm;
+  EditForm: TDimStyleEditDialog;
 begin
   StylePtr := GetSelectedStyle;
   if StylePtr = nil then
     Exit;
 
-  EditForm := TDimStyleEditForm.Create(Self);
+  EditForm := TDimStyleEditDialog.Create(Self);
   try
     EditForm.SetDimStyle(StylePtr);
     SetHeightControl(EditForm, sysvar.INTF.INTF_DefaultControlHeight^);
