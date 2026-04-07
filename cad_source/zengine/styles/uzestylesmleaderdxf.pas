@@ -37,6 +37,7 @@ uses
   uzeNamedObject,
   gzctnrVectorTypes,
   uzclog,
+  uzcinterface,
   sysutils,
   Classes;
 
@@ -658,6 +659,48 @@ begin
     Result := HandleToName.Values[UpperCase(Handle)];
 end;
 
+{ Код типа содержимого «блок» в MLEADERSTYLE (код 90).
+  ZCAD не поддерживает мультивыноски с блочным содержимым }
+const
+  CONTENT_TYPE_BLOCK = 1;
+
+{ Проверяет строки объекта MLEADERSTYLE на признаки
+  блочного содержимого ДО добавления стиля в таблицу.
+  Блочный стиль определяется по ContentType = 1 (код 90)
+  или по наличию непустого хэндла блока (код 343) }
+function HasBlockContentInLines(
+  ObjectLines: TStringList): Boolean;
+var
+  J, CodeJ, IntVal: Integer;
+  ValJ: string;
+begin
+  Result := False;
+  J := 0;
+  while J < ObjectLines.Count - 1 do
+  begin
+    CodeJ := ParseGroupCode(ObjectLines[J]);
+    ValJ := Trim(ObjectLines[J + 1]);
+    { Код 90 — тип содержимого: 1 означает блок }
+    if (CodeJ = 90) and TryStrToInt(ValJ, IntVal) then
+    begin
+      if IntVal = CONTENT_TYPE_BLOCK then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+    { Код 343 — хэндл блока содержимого.
+      Непустое значение означает блочный стиль
+      (характерно для AutoCAD 2008) }
+    if (CodeJ = 343) and (ValJ <> '') then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Inc(J, 2);
+  end;
+end;
+
 { Основная функция загрузки стилей мультивыносок
   из секции OBJECTS DXF-файла }
 procedure ReadMLeaderStylesFromDXFObjects(
@@ -759,40 +802,66 @@ begin
                 'uzestylesmleaderdxf: обработка '
                 + 'стиля "%s" хэндл=%s',
                 [StyleName, ObjHandle], LM_Info);
-              Style :=
-                MLeaderStyleTable.AddStyle(StyleName);
-              if Style <> nil then
+              { Проверяем блочный тип до добавления
+                в таблицу — ZCAD не поддерживает
+                мультивыноски с блочным содержимым }
+              if HasBlockContentInLines(
+                ObjectLines) then
               begin
-                ParseMLeaderStyleObject(
-                  StyleName, ObjectLines, Style);
-                { Разрешаем хэндлы в имена объектов }
-                Style^.LeaderLinetypeName :=
-                  ResolveHandleToName(
-                    Style^.LeaderLinetypeHandle,
-                    LTypeHandleMap);
-                Style^.ArrowHeadBlockName :=
-                  ResolveHandleToName(
-                    Style^.ArrowHeadBlockHandle,
-                    BlockRecHandleMap);
-                Style^.TextStyleName :=
-                  ResolveHandleToName(
-                    Style^.TextStyleHandle,
-                    StyleHandleMap);
-                Style^.BlockContentName :=
-                  ResolveHandleToName(
-                    Style^.BlockContentHandle,
-                    BlockRecHandleMap);
                 programlog.LogOutFormatStr(
-                  'uzestylesmleaderdxf: разрешены '
-                  + 'ссылки "%s": ltype="%s" '
-                  + 'arrow="%s" txtstyle="%s" '
-                  + 'block="%s"',
-                  [StyleName,
-                   Style^.LeaderLinetypeName,
-                   Style^.ArrowHeadBlockName,
-                   Style^.TextStyleName,
-                   Style^.BlockContentName],
-                  LM_Info);
+                  'uzestylesmleaderdxf: стиль '
+                  + '"%s" пропущен (блочное '
+                  + 'содержимое не поддерживается)',
+                  [StyleName], LM_Info);
+                zcUI.TextMessage(
+                  Format(
+                    'Стиль мультивыноски "%s" '
+                    + 'пропущен: ZCAD '
+                    + 'не поддерживает тип '
+                    + 'настройки текста '
+                    + 'мультивыносок: block',
+                    [StyleName]),
+                  TMWOHistoryOut);
+              end
+              else
+              begin
+                Style :=
+                  MLeaderStyleTable.AddStyle(
+                    StyleName);
+                if Style <> nil then
+                begin
+                  ParseMLeaderStyleObject(
+                    StyleName, ObjectLines,
+                    Style);
+                  { Разрешаем хэндлы в имена }
+                  Style^.LeaderLinetypeName :=
+                    ResolveHandleToName(
+                      Style^.LeaderLinetypeHandle,
+                      LTypeHandleMap);
+                  Style^.ArrowHeadBlockName :=
+                    ResolveHandleToName(
+                      Style^.ArrowHeadBlockHandle,
+                      BlockRecHandleMap);
+                  Style^.TextStyleName :=
+                    ResolveHandleToName(
+                      Style^.TextStyleHandle,
+                      StyleHandleMap);
+                  Style^.BlockContentName :=
+                    ResolveHandleToName(
+                      Style^.BlockContentHandle,
+                      BlockRecHandleMap);
+                  programlog.LogOutFormatStr(
+                    'uzestylesmleaderdxf: '
+                    + 'разрешены ссылки "%s": '
+                    + 'ltype="%s" arrow="%s" '
+                    + 'txtstyle="%s" block="%s"',
+                    [StyleName,
+                     Style^.LeaderLinetypeName,
+                     Style^.ArrowHeadBlockName,
+                     Style^.TextStyleName,
+                     Style^.BlockContentName],
+                    LM_Info);
+                end;
               end;
             end
             else
@@ -826,28 +895,50 @@ begin
         UpperCase(ObjHandle)];
       if StyleName <> '' then
       begin
-        Style :=
-          MLeaderStyleTable.AddStyle(StyleName);
-        if Style <> nil then
+        { Проверяем блочный тип до добавления }
+        if HasBlockContentInLines(
+          ObjectLines) then
         begin
-          ParseMLeaderStyleObject(
-            StyleName, ObjectLines, Style);
-          Style^.LeaderLinetypeName :=
-            ResolveHandleToName(
-              Style^.LeaderLinetypeHandle,
-              LTypeHandleMap);
-          Style^.ArrowHeadBlockName :=
-            ResolveHandleToName(
-              Style^.ArrowHeadBlockHandle,
-              BlockRecHandleMap);
-          Style^.TextStyleName :=
-            ResolveHandleToName(
-              Style^.TextStyleHandle,
-              StyleHandleMap);
-          Style^.BlockContentName :=
-            ResolveHandleToName(
-              Style^.BlockContentHandle,
-              BlockRecHandleMap);
+          programlog.LogOutFormatStr(
+            'uzestylesmleaderdxf: стиль '
+            + '"%s" пропущен (блочное '
+            + 'содержимое не поддерживается)',
+            [StyleName], LM_Info);
+          zcUI.TextMessage(
+            Format(
+              'Стиль мультивыноски "%s" '
+              + 'пропущен: ZCAD '
+              + 'не поддерживает тип '
+              + 'настройки текста '
+              + 'мультивыносок: block',
+              [StyleName]),
+            TMWOHistoryOut);
+        end
+        else
+        begin
+          Style :=
+            MLeaderStyleTable.AddStyle(StyleName);
+          if Style <> nil then
+          begin
+            ParseMLeaderStyleObject(
+              StyleName, ObjectLines, Style);
+            Style^.LeaderLinetypeName :=
+              ResolveHandleToName(
+                Style^.LeaderLinetypeHandle,
+                LTypeHandleMap);
+            Style^.ArrowHeadBlockName :=
+              ResolveHandleToName(
+                Style^.ArrowHeadBlockHandle,
+                BlockRecHandleMap);
+            Style^.TextStyleName :=
+              ResolveHandleToName(
+                Style^.TextStyleHandle,
+                StyleHandleMap);
+            Style^.BlockContentName :=
+              ResolveHandleToName(
+                Style^.BlockContentHandle,
+                BlockRecHandleMap);
+          end;
         end;
       end;
     end;
