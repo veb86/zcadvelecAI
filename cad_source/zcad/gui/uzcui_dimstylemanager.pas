@@ -594,13 +594,23 @@ begin
 
   FListBoxStyles.Items.EndUpdate;
 
-  { Выбираем первый элемент, если список не пуст }
-  if FListBoxStyles.Items.Count > 0 then
-    FListBoxStyles.ItemIndex := 0;
+  { Инициализируем имя текущего стиля из реального указателя чертежа }
+  if FCurrentStyleName = '' then
+  begin
+    if DrawingPtr^.GetCurrentDimStyle <> nil then
+      FCurrentStyleName := DrawingPtr^.GetCurrentDimStyle^.Name
+    else if FListBoxStyles.Items.Count > 0 then
+      FCurrentStyleName := FListBoxStyles.Items[0];
+  end;
 
-  { Инициализируем текущий стиль первым из списка, если не задан }
-  if (FCurrentStyleName = '') and (FListBoxStyles.Items.Count > 0) then
-    FCurrentStyleName := FListBoxStyles.Items[0];
+  { Выбираем в списке элемент, соответствующий текущему стилю }
+  if FListBoxStyles.Items.Count > 0 then
+  begin
+    FListBoxStyles.ItemIndex :=
+      FListBoxStyles.Items.IndexOf(FCurrentStyleName);
+    if FListBoxStyles.ItemIndex < 0 then
+      FListBoxStyles.ItemIndex := 0;
+  end;
 
   UpdateCurrentStyleLabel;
   UpdatePreviewLabel;
@@ -756,9 +766,12 @@ begin
 
   FCurrentStyleName := StylePtr^.Name;
 
-  { Обновляем системную переменную текущего размерного стиля }
+  { Устанавливаем текущий стиль в системной переменной и данных чертежа }
   if SysVar.dwg.DWG_CDimStyle <> nil then
     SysVar.dwg.DWG_CDimStyle^ := StylePtr;
+
+  { Обновляем интерфейс: панель инструментов должна отобразить новый стиль }
+  zcUI.Do_GUIaction(nil, zcMsgUIActionRebuild);
 
   UpdateCurrentStyleLabel;
 
