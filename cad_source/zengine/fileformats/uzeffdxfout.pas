@@ -273,10 +273,38 @@ begin
 end;
 
 
-{ Добавляет маппинги старых хэндлов из MLEADERSTYLE
-  в OldHandele2NewHandle, разрешая ссылки по именам объектов.
+{ Разрешает хэндлы ссылок (340-343) в стилях мультивыносок.
+  Заменяет старые хэндлы из исходного файла на новые,
+  соответствующие объектам в выходном файле.
   Вызывается после обработки шаблона (когда p2h содержит
-  все хэндлы из TABLES) и перед WriteObjectsSectionBody. }
+  все хэндлы из TABLES) и перед WriteMLeaderStylesToDXFObjects. }
+{ Обновляет хэндл-поле стиля мультивыноски: находит
+  объект по имени через p2h и заменяет старый хэндл
+  на новый, совпадающий с фактическим хэндлом в выходном
+  файле. Регистрирует identity-маппинг (NewH → NewH)
+  в OldHandele2NewHandle, чтобы WriteObjectsSectionBody
+  не перенумеровал значение повторно. }
+procedure ResolveOneHandle(
+  Ptr: Pointer;
+  var HandleField: string;
+  var IODXFContext: TIODXFSaveContext;
+  OldHandele2NewHandle: TMapHandleToHandle);
+var
+  NewH: TDWGHandle;
+begin
+  if Ptr = nil then
+    Exit;
+  IODXFContext.p2h.MyGetOrCreateValue(
+    Ptr, IODXFContext.handle, NewH);
+  { Заменяем хэндл на новый — теперь в RawObjectsSection
+    будет записано корректное значение }
+  HandleField := UpperCase(IntToHex(NewH, 0));
+  { Регистрируем identity-маппинг: WriteObjectsSectionBody
+    увидит хэндл NewH и оставит его без изменений }
+  if OldHandele2NewHandle.MyGetValue(NewH) = 0 then
+    OldHandele2NewHandle.Add(NewH, NewH);
+end;
+
 procedure PrePopulateMLeaderHandles(
   var drawing: TSimpleDrawing;
   var IODXFContext: TIODXFSaveContext;
@@ -284,8 +312,6 @@ procedure PrePopulateMLeaderHandles(
 var
   StyleIter: itrec;
   Style: PTGDBDXFMLeaderStyle;
-  OldH: TDWGHandle;
-  NewH: TDWGHandle;
   Ptr: Pointer;
 begin
   if drawing.DXFMLeaderStyleTable.count = 0 then
@@ -295,86 +321,68 @@ begin
     StyleIter);
   while Style <> nil do
   begin
-    { Разрешаем тип линии (код 340) }
-    if (Style^.LeaderLinetypeName <> '')
-      and (Style^.LeaderLinetypeHandle <> '') then
-    begin
+    { Разрешаем тип линии (код 340) по имени.
+      Если имя не было разрешено при импорте — используем
+      ByBlock как значение по умолчанию для MLEADERSTYLE }
+    if Style^.LeaderLinetypeName <> '' then
       Ptr := drawing.LTypeStyleTable.getAddres(
-        Style^.LeaderLinetypeName);
-      if Ptr <> nil then
-      begin
-        IODXFContext.p2h.MyGetOrCreateValue(
-          Ptr, IODXFContext.handle, NewH);
-        OldH := StrToQWord(
-          '$' + Style^.LeaderLinetypeHandle);
-        if (OldH > 0) and
-           (OldHandele2NewHandle.MyGetValue(OldH)
-             = 0) then
-          OldHandele2NewHandle.Add(OldH, NewH);
-      end;
-    end;
+        Style^.LeaderLinetypeName)
+    else
+      Ptr := drawing.LTypeStyleTable.getAddres(
+        'ByBlock');
+    ResolveOneHandle(Ptr,
+      Style^.LeaderLinetypeHandle,
+      IODXFContext, OldHandele2NewHandle);
 
-    { Разрешаем блок стрелки (код 341) }
-    if (Style^.ArrowHeadBlockName <> '')
-      and (Style^.ArrowHeadBlockHandle <> '') then
+    { Разрешаем блок стрелки (код 341) по имени.
+      Если блок не найден — очищаем хэндл, чтобы
+      не записывать ссылку на несуществующий объект }
+    if Style^.ArrowHeadBlockName <> '' then
     begin
       Ptr := drawing.BlockDefArray.getblockdef(
         Style^.ArrowHeadBlockName);
       if Ptr <> nil then
-      begin
-        IODXFContext.p2h.MyGetOrCreateValue(
-          Ptr, IODXFContext.handle, NewH);
-        OldH := StrToQWord(
-          '$' + Style^.ArrowHeadBlockHandle);
-        if (OldH > 0) and
-           (OldHandele2NewHandle.MyGetValue(OldH)
-             = 0) then
-          OldHandele2NewHandle.Add(OldH, NewH);
-      end;
+        ResolveOneHandle(Ptr,
+          Style^.ArrowHeadBlockHandle,
+          IODXFContext, OldHandele2NewHandle)
+      else
+        Style^.ArrowHeadBlockHandle := '';
     end;
 
-    { Разрешаем текстовый стиль (код 342) }
-    if (Style^.TextStyleName <> '')
-      and (Style^.TextStyleHandle <> '') then
-    begin
+    { Разрешаем текстовый стиль (код 342) по имени.
+      Если имя не было разрешено — используем Standard }
+    if Style^.TextStyleName <> '' then
       Ptr := drawing.TextStyleTable.FindStyle(
-        Style^.TextStyleName, False);
-      if Ptr <> nil then
-      begin
-        IODXFContext.p2h.MyGetOrCreateValue(
-          Ptr, IODXFContext.handle, NewH);
-        OldH := StrToQWord(
-          '$' + Style^.TextStyleHandle);
-        if (OldH > 0) and
-           (OldHandele2NewHandle.MyGetValue(OldH)
-             = 0) then
-          OldHandele2NewHandle.Add(OldH, NewH);
-      end;
-    end;
+        Style^.TextStyleName, False)
+    else
+      Ptr := drawing.TextStyleTable.FindStyle(
+        'Standard', False);
+    ResolveOneHandle(Ptr,
+      Style^.TextStyleHandle,
+      IODXFContext, OldHandele2NewHandle);
 
-    { Разрешаем блок содержимого (код 343) }
-    if (Style^.BlockContentName <> '')
-      and (Style^.BlockContentHandle <> '') then
+    { Разрешаем блок содержимого (код 343) по имени.
+      Если блок не найден — очищаем хэндл }
+    if Style^.BlockContentName <> '' then
     begin
       Ptr := drawing.BlockDefArray.getblockdef(
         Style^.BlockContentName);
       if Ptr <> nil then
-      begin
-        IODXFContext.p2h.MyGetOrCreateValue(
-          Ptr, IODXFContext.handle, NewH);
-        OldH := StrToQWord(
-          '$' + Style^.BlockContentHandle);
-        if (OldH > 0) and
-           (OldHandele2NewHandle.MyGetValue(OldH)
-             = 0) then
-          OldHandele2NewHandle.Add(OldH, NewH);
-      end;
+        ResolveOneHandle(Ptr,
+          Style^.BlockContentHandle,
+          IODXFContext, OldHandele2NewHandle)
+      else
+        Style^.BlockContentHandle := '';
     end;
 
     programlog.LogOutFormatStr(
-      'uzeffdxfout: MLeaderStyle "%s" '
-      + 'хэндлы предзаполнены',
-      [Style^.Name], LM_Info);
+      'uzeffdxfout: MLeaderStyle "%s": '
+      + '340=%s 341=%s 342=%s 343=%s',
+      [Style^.Name,
+       Style^.LeaderLinetypeHandle,
+       Style^.ArrowHeadBlockHandle,
+       Style^.TextStyleHandle,
+       Style^.BlockContentHandle], LM_Info);
 
     Style := drawing.DXFMLeaderStyleTable.iterate(
       StyleIter);
@@ -454,18 +462,19 @@ begin
     inobjectssec:=False;
     inclassessec:=False;
 
-    { Обновляем секцию OBJECTS стилями таблиц из DXFTableStyleTable.
-      Если RawObjectsSection пустая (новый чертёж без загруженного DXF),
-      WriteTableStylesToDXFObjects просто не будет вызвана — нечего записывать. }
+    { Обновляем секцию OBJECTS стилями таблиц.
+      Стили мультивыносок добавляются позже (перед записью
+      OBJECTS в файл), после того как хэндлы ссылок
+      будут разрешены через PrePopulateMLeaderHandles. }
     updatedObjectsSection := drawing.RawObjectsSection;
     if drawing.DXFTableStyleTable.count > 0 then
-      WriteTableStylesToDXFObjects(drawing.DXFTableStyleTable, updatedObjectsSection);
-    { Обновляем секцию OBJECTS стилями мультивыносок из DXFMLeaderStyleTable. }
-    if drawing.DXFMLeaderStyleTable.count > 0 then
-      WriteMLeaderStylesToDXFObjects(drawing.DXFMLeaderStyleTable, updatedObjectsSection);
+      WriteTableStylesToDXFObjects(
+        drawing.DXFTableStyleTable,
+        updatedObjectsSection);
     programlog.LogOutFormatStr(
-      'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц, %d стилей мультивыносок)',
-      [drawing.DXFTableStyleTable.count, drawing.DXFMLeaderStyleTable.count], LM_Info);
+      'uzeffdxfout: обновлена секция OBJECTS '
+      + '(%d стилей таблиц)',
+      [drawing.DXFTableStyleTable.count], LM_Info);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
@@ -549,11 +558,20 @@ begin
             с перенумерацией хэндлов через IODXFContext для предотвращения дублей. }
           inobjectssec:=False;
           ignoredsource:=False;
-          { Предзаполняем маппинг хэндлов MLEADERSTYLE перед
-            перенумерацией: разрешаем ссылки на LTYPE, STYLE,
-            BLOCK_RECORD по именам из таблиц чертежа. }
+          { Разрешаем хэндлы ссылок MLEADERSTYLE (340-343):
+            заменяем старые хэндлы из исходного файла на
+            новые, соответствующие объектам в выходном файле.
+            Это необходимо делать ПОСЛЕ обработки секции
+            TABLES, когда все p2h-маппинги уже заполнены. }
           PrePopulateMLeaderHandles(
             drawing, IODXFContext, OldHandele2NewHandle);
+          { Теперь записываем стили мультивыносок в секцию
+            OBJECTS — хэндлы уже содержат корректные
+            значения после PrePopulateMLeaderHandles. }
+          if drawing.DXFMLeaderStyleTable.count > 0 then
+            WriteMLeaderStylesToDXFObjects(
+              drawing.DXFMLeaderStyleTable,
+              updatedObjectsSection);
           WriteObjectsSectionBody(
             ExtractDXFSectionBody(updatedObjectsSection),
             outstream, IODXFContext, OldHandele2NewHandle);
