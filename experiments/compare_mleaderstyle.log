@@ -1,0 +1,46 @@
+Original file: 5 MLEADERSTYLE objects
+Exported file: 5 MLEADERSTYLE objects
+
+=== ORIGINAL object 0 ===
+  0
+MLEADERSTYLE
+  5
+14D
+102
+{ACAD_REACTORS
+330
+D7
+102
+}
+330
+D7
+100
+AcDbMLeaderStyle
+170
+     2
+171
+     1
+172
+
+
+=== EXPORTED object 0 ===
+  0
+MLEADERSTYLE
+  5
+76
+102
+{ACAD_REACTORS
+330
+71
+102
+}
+330
+71
+100
+AcDbMLeaderStyle
+170
+2
+171
+1
+172
+

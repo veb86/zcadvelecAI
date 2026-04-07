@@ -86,8 +86,27 @@ begin
   end;
 end;
 
+{ Проверяет, является ли код группы DXF ссылкой на хэндл.
+  Согласно спецификации DXF, коды хэндлов:
+    5     — хэндл объекта
+    105   — хэндл DIMASSOC
+    320–329 — мягкие указатели
+    330–339 — жёсткие указатели (владение)
+    340–349 — жёсткие указатели (ссылки)
+    350–359 — мягкие указатели (владение)
+    360–369 — жёсткие владельцы
+    390–399 — хэндлы стилей печати
+    1005  — хэндл расширенных данных }
+function IsHandleGroupCode(Code: Integer): Boolean;
+begin
+  Result :=
+    (Code = 5) or (Code = 105) or (Code = 1005) or
+    ((Code >= 320) and (Code <= 369)) or
+    ((Code >= 390) and (Code <= 399));
+end;
+
 { Записывает тело секции OBJECTS с перенумерацией хэндлов.
-  Все хэндлы (группы 5, 105, 320, 330, 340, 350, 360, 390, 1005)
+  Все хэндлы-ссылки (определяемые IsHandleGroupCode)
   заменяются на уникальные значения из IODXFContext.handle, чтобы
   исключить конфликты с хэндлами из секции TABLES/HEADER/BLOCKS.
   OldHandele2NewHandle используется совместно с шаблонной частью —
@@ -115,12 +134,7 @@ begin
       ValueStr := Lines[I + 1];
       GroupCode := StrToIntDef(Trim(GroupStr), -1);
       { Проверяем, является ли код группы хэндлом }
-      IsHandleCode :=
-        (GroupCode = 5) or (GroupCode = 105) or
-        (GroupCode = 320) or (GroupCode = 330) or
-        (GroupCode = 340) or (GroupCode = 350) or
-        (GroupCode = 360) or (GroupCode = 390) or
-        (GroupCode = 1005);
+      IsHandleCode := IsHandleGroupCode(GroupCode);
       if IsHandleCode then
       begin
         OldHandle := StrToInt('$' + Trim(ValueStr));
@@ -367,8 +381,7 @@ begin
           variablenotprocessed:=True;
       end;
       if variablenotprocessed then
-        if (groupi=5)  or (groupi=320)  or (groupi=330)  or (groupi=340)  or (groupi=350)  or  (groupi=1005)  or
-          (groupi=390)  or (groupi=360)  or (groupi=105) then begin
+        if IsHandleGroupCode(groupi) then begin
           valuei:=StrToInt('$'+values);
           if valuei=0 then begin
             if not ignoredsource then begin
