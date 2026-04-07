@@ -192,6 +192,7 @@ uses
   uzccommand_loadlayout,uzccommand_savelayout,
   uzccommand_quit,
   uzccommand_units,uzccommand_layer,uzccommand_textstyles,uzccommand_dimstyles,
+  uzccommand_dimstylemanager,
   uzccommand_linetypes,uzccommand_colors,
 
   uzccommand_clearfilehistory,
