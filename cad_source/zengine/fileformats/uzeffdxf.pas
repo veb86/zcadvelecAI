@@ -28,7 +28,8 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf,
+  uzestylesmleaderdxf;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -1423,6 +1424,13 @@ begin
         ReadTableStylesFromDXFObjects(
           dwgCtx.PDrawing^.RawObjectsSection,
           dwgCtx.PDrawing^.DXFTableStyleTable);
+
+        { Загружаем стили мультивыносок из секции OBJECTS.
+          MLEADERSTYLE объекты находятся в OBJECTS, а не в TABLES,
+          поэтому обрабатываем их аналогично стилям таблиц. }
+        ReadMLeaderStylesFromDXFObjects(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          dwgCtx.PDrawing^.DXFMLeaderStyleTable);
 
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);

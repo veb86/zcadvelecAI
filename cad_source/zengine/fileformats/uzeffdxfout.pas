@@ -29,7 +29,8 @@ uses
   uzegeometrytypes,SysUtils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,uzestylestablesdxf,uzclog,Classes;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,uzestylestablesdxf,
+  uzestylesmleaderdxf,uzclog,Classes;
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
@@ -337,9 +338,12 @@ begin
     updatedObjectsSection := drawing.RawObjectsSection;
     if drawing.DXFTableStyleTable.count > 0 then
       WriteTableStylesToDXFObjects(drawing.DXFTableStyleTable, updatedObjectsSection);
+    { Обновляем секцию OBJECTS стилями мультивыносок из DXFMLeaderStyleTable. }
+    if drawing.DXFMLeaderStyleTable.count > 0 then
+      WriteMLeaderStylesToDXFObjects(drawing.DXFMLeaderStyleTable, updatedObjectsSection);
     programlog.LogOutFormatStr(
-      'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц)',
-      [drawing.DXFTableStyleTable.count], LM_Info);
+      'uzeffdxfout: обновлена секция OBJECTS для сохранения (%d стилей таблиц, %d стилей мультивыносок)',
+      [drawing.DXFTableStyleTable.count, drawing.DXFMLeaderStyleTable.count], LM_Info);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
