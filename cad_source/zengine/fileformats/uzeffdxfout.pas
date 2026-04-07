@@ -396,7 +396,7 @@ var
   outstream:TZctnrVectorBytes;
   groups,values,ts:string;
   groupi,valuei,intable,attr:integer;
-  temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle:TDWGHandle;
+  temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle,blocktablehandle:TDWGHandle;
   i:integer;
   OldHandele2NewHandle:TMapHandleToHandle;
 
@@ -459,6 +459,7 @@ begin
     inlttypetable:=False;
     indimstyletable:=False;
     inappidtable:=False;
+    blocktablehandle:=0;
     inobjectssec:=False;
     inclassessec:=False;
 
@@ -528,6 +529,11 @@ begin
               plottablefansdle:=lasthandle;  {поймать плоттабле}
             if indimstyletable and (groupi=5) then
               dimtablehandle:=lasthandle;  {поймать dimtable}
+            { Захватываем хэндл таблицы BLOCK_RECORD —
+              первый код 5 после TABLE/BLOCK_RECORD }
+            if inblocktable and (groupi=5)
+              and (blocktablehandle=0) then
+              blocktablehandle:=lasthandle;
           end;
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
@@ -594,11 +600,25 @@ begin
           if drawing.BlockDefArray.Count>0 then
             for i:=0 to drawing.BlockDefArray.Count-1 do begin
               zDebugLn('{D}[DXF_CONTENTS]write BlockDef '+PBlockdefArray(drawing.BlockDefArray.parray)^[i].Name);
+
+              { Получаем хэндл BLOCK_RECORD для текущего
+                блока — он был сохранён в p2h при записи
+                секции TABLES. Код 330 связывает BLOCK
+                и ENDBLK с их BLOCK_RECORD-владельцем. }
+              IODXFContext.p2h.MyGetOrCreateValue(
+                @(PBlockdefArray(
+                  drawing.BlockDefArray.parray)^[i]),
+                IODXFContext.handle, temphandle);
+
               outstream.TXTAddStringEOL(dxfGroupCode(0));
               outstream.TXTAddStringEOL('BLOCK');
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(IODXFContext.handle{temphandle},0));
               Inc(IODXFContext.handle);
+              { Владелец BLOCK — ссылка на BLOCK_RECORD }
+              outstream.TXTAddStringEOL(dxfGroupCode(330));
+              outstream.TXTAddStringEOL(
+                inttohex(temphandle, 0));
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbEntity);
               outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -627,6 +647,10 @@ begin
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(IODXFContext.handle,0));
               Inc(IODXFContext.handle);
+              { Владелец ENDBLK — ссылка на BLOCK_RECORD }
+              outstream.TXTAddStringEOL(dxfGroupCode(330));
+              outstream.TXTAddStringEOL(
+                inttohex(temphandle, 0));
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbEntity);
               outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -808,6 +832,14 @@ begin
               IODXFContext.p2h.MyGetOrCreateValue(@(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),IODXFContext.handle,temphandle);
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(temphandle,0));
+              { Владелец BLOCK_RECORD — таблица
+                BLOCK_RECORD (код 330) }
+              if blocktablehandle<>0 then begin
+                outstream.TXTAddStringEOL(
+                  dxfGroupCode(330));
+                outstream.TXTAddStringEOL(
+                  inttohex(blocktablehandle, 0));
+              end;
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
               outstream.TXTAddStringEOL(dxfGroupCode(100));
