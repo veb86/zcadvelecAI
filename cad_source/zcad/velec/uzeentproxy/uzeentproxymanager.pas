@@ -78,6 +78,8 @@ type
     HasVertices: Boolean;
     { Флаг: контур замкнут (круг, полигон, эллипс и т.д.) }
     Closed: Boolean;
+    { Флаг: контур заполнен (SOLID заливка) }
+    Filled: Boolean;
     { Минимальная точка BBox примитива }
     BBoxMin: TzePoint3d;
     { Максимальная точка BBox примитива }
@@ -244,6 +246,7 @@ begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.Closed := False;
+  HandlerResult.Filled := False;
   HandlerResult.HasBBox := False;
   HandlerResult.HasTextItem := False;
 

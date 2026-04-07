@@ -199,8 +199,12 @@ begin
         FirstVertex := Vertex;
     end;
 
-    { Замыкаем контур грани }
-    HandlerResult.Vertices.PushBackData(FirstVertex);
+    { Замыкаем контур грани: добавляем первую вершину, если
+      последняя вершина отличается от первой }
+    if (Abs(Vertex.x - FirstVertex.x) > 1e-9)
+      or (Abs(Vertex.y - FirstVertex.y) > 1e-9)
+      or (Abs(Vertex.z - FirstVertex.z) > 1e-9) then
+      HandlerResult.Vertices.PushBackData(FirstVertex);
   end;
 
   { Пропускаем оставшиеся данные (traits рёбер, граней, вершин).
