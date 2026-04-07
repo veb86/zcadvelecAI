@@ -97,62 +97,75 @@ begin
     Result := False;
 end;
 
+{ Извлекает сырой текст секции из загруженных строк DXF.
+  Ищет секцию SectionName (CLASSES, OBJECTS, TABLES и т.д.)
+  и возвращает её содержимое включая 0/SECTION..0/ENDSEC.
+  Используется для сохранения секций, которые ZCAD
+  не обрабатывает напрямую. }
+function ExtractDxfRawSectionFromLines(
+  Lines: TStringList;
+  const SectionName: string): string;
+var
+  I, SectionStart, SectionEnd: Integer;
+begin
+  Result := '';
+  SectionStart := -1;
+  SectionEnd := -1;
+  I := 0;
+  while I < Lines.Count - 3 do
+  begin
+    if (Trim(Lines[I]) = '0') and
+       (Trim(Lines[I + 1]) = 'SECTION') and
+       (Trim(Lines[I + 2]) = '2') and
+       (Trim(Lines[I + 3]) = SectionName) then
+    begin
+      SectionStart := I;
+      Break;
+    end;
+    Inc(I);
+  end;
+  if SectionStart < 0 then
+    Exit;
+  I := SectionStart + 4;
+  while I < Lines.Count - 1 do
+  begin
+    if (Trim(Lines[I]) = '0') and
+       (Trim(Lines[I + 1]) = 'ENDSEC') then
+    begin
+      SectionEnd := I + 1;
+      Break;
+    end;
+    Inc(I);
+  end;
+  if SectionEnd < 0 then
+    Exit;
+  for I := SectionStart to SectionEnd do
+  begin
+    if I > SectionStart then
+      Result := Result + LineEnding;
+    Result := Result + Lines[I];
+  end;
+  programlog.LogOutFormatStr(
+    'uzeffdxf: ExtractDxfRawSectionFromLines: '
+    + 'секция %s извлечена (%d строк)',
+    [SectionName, SectionEnd - SectionStart + 1],
+    LM_Info);
+end;
+
 { Извлекает сырой текст секции из DXF-файла.
-  Ищет секцию SectionName (CLASSES, OBJECTS и т.д.) и возвращает её содержимое
-  включая строки 0/SECTION, 2/SectionName, ..., 0/ENDSEC.
-  Используется для сохранения секций, которые ZCAD не обрабатывает. }
+  Обёртка над ExtractDxfRawSectionFromLines —
+  загружает файл и ищет секцию по имени. }
 function ExtractDxfRawSection(const AFileName: string;
   const SectionName: string): string;
 var
   Lines: TStringList;
-  I, SectionStart, SectionEnd: Integer;
 begin
   Result := '';
   Lines := TStringList.Create;
   try
     Lines.LoadFromFile(AFileName);
-    SectionStart := -1;
-    SectionEnd := -1;
-    I := 0;
-    while I < Lines.Count - 3 do
-    begin
-      { Ищем начало секции: 0 / SECTION / 2 / SectionName }
-      if (Trim(Lines[I]) = '0') and
-         (Trim(Lines[I + 1]) = 'SECTION') and
-         (Trim(Lines[I + 2]) = '2') and
-         (Trim(Lines[I + 3]) = SectionName) then
-      begin
-        SectionStart := I;
-        Break;
-      end;
-      Inc(I);
-    end;
-    if SectionStart < 0 then
-      Exit;
-    { Ищем конец секции: 0 / ENDSEC }
-    I := SectionStart + 4;
-    while I < Lines.Count - 1 do
-    begin
-      if (Trim(Lines[I]) = '0') and
-         (Trim(Lines[I + 1]) = 'ENDSEC') then
-      begin
-        SectionEnd := I + 1;
-        Break;
-      end;
-      Inc(I);
-    end;
-    if SectionEnd < 0 then
-      Exit;
-    { Собираем строки секции }
-    for I := SectionStart to SectionEnd do
-    begin
-      if I > SectionStart then
-        Result := Result + LineEnding;
-      Result := Result + Lines[I];
-    end;
-    programlog.LogOutFormatStr(
-      'uzeffdxf: ExtractDxfRawSection: секция %s извлечена (%d строк)',
-      [SectionName, SectionEnd - SectionStart + 1], LM_Info);
+    Result := ExtractDxfRawSectionFromLines(
+      Lines, SectionName);
   finally
     Lines.Free;
   end;
@@ -1357,6 +1370,7 @@ var
   lph:TLPSHandle;
   DxfStream:TZMVSMemoryMappedFile;
   rdr:TZMemReader;
+  DxfLines:TStringList;
   globalTimer: TTimeMeter;
 const
    ffs='%s (%s)';
@@ -1417,28 +1431,40 @@ begin
     end;
 
     { Извлекаем сырые секции CLASSES, OBJECTS и TABLES
-      из исходного файла. Выполняется ПОСЛЕ освобождения
-      DxfStream, чтобы избежать блокировки файла
-      (memory-mapped файл держит блокировку на Windows). }
+      из исходного файла. Файл загружается однократно
+      в TStringList, из которого извлекаются все секции.
+      Это исключает повторное открытие файла и ошибки
+      блокировки на Windows (memory-mapped файл может
+      удерживать блокировку даже после Free). }
     if result.iVersion > 0 then
     begin
-      dwgCtx.PDrawing^.RawClassesSection :=
-        ExtractDxfRawSection(AFileName, 'CLASSES');
-      dwgCtx.PDrawing^.RawObjectsSection :=
-        ExtractDxfRawSection(AFileName, 'OBJECTS');
+      DxfLines := TStringList.Create;
+      try
+        DxfLines.LoadFromFile(AFileName);
+        dwgCtx.PDrawing^.RawClassesSection :=
+          ExtractDxfRawSectionFromLines(
+            DxfLines, 'CLASSES');
+        dwgCtx.PDrawing^.RawObjectsSection :=
+          ExtractDxfRawSectionFromLines(
+            DxfLines, 'OBJECTS');
 
-      { Загружаем стили таблиц из секции OBJECTS. }
-      ReadTableStylesFromDXFObjects(
-        dwgCtx.PDrawing^.RawObjectsSection,
-        dwgCtx.PDrawing^.DXFTableStyleTable);
+        { Загружаем стили таблиц из секции OBJECTS. }
+        ReadTableStylesFromDXFObjects(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          dwgCtx.PDrawing^.DXFTableStyleTable);
 
-      { Загружаем стили мультивыносок из секции OBJECTS.
-        Дополнительно передаём секцию TABLES для разрешения
-        хэндлов ссылок (340-343) в имена объектов. }
-      ReadMLeaderStylesFromDXFObjects(
-        dwgCtx.PDrawing^.RawObjectsSection,
-        ExtractDxfRawSection(AFileName, 'TABLES'),
-        dwgCtx.PDrawing^.DXFMLeaderStyleTable);
+        { Загружаем стили мультивыносок из секции
+          OBJECTS. Секция TABLES извлекается из тех же
+          загруженных строк для разрешения хэндлов
+          ссылок (340-343) в имена объектов. }
+        ReadMLeaderStylesFromDXFObjects(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          ExtractDxfRawSectionFromLines(
+            DxfLines, 'TABLES'),
+          dwgCtx.PDrawing^.DXFMLeaderStyleTable);
+      finally
+        DxfLines.Free;
+      end;
     end;
   finally
     // Завершаем измерение общего времени загрузки и выводим результат
