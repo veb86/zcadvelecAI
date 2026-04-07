@@ -64,8 +64,8 @@ type
     FirstSegAngle: Double;
     { Угол второго сегмента (код 41) }
     SecondSegAngle: Double;
-    { Хэндл текстового стиля (код 340) }
-    TextStyleHandle: string;
+    { Хэндл типа линии выноски (код 340, LTYPE) }
+    LeaderLinetypeHandle: string;
     { Тип присоединения текста слева (код 174) }
     TextAttachmentLeft: Integer;
     { Тип присоединения текста справа (код 178) }
@@ -88,14 +88,14 @@ type
     LandingGap: Double;
     { Имя стиля мультивыноски (код 3) }
     Description: string;
-    { Хэндл блока содержимого (код 341) }
-    BlockContentHandle: string;
+    { Хэндл блока стрелки (код 341, BLOCK_RECORD) }
+    ArrowHeadBlockHandle: string;
     { Масштаб содержимого (код 44) }
     TextHeight: Double;
     { Имя текстового стиля по умолчанию (код 300) }
     DefaultTextContent: string;
-    { Хэндл стрелки (код 342) }
-    ArrowHeadHandle: string;
+    { Хэндл текстового стиля (код 342, STYLE) }
+    TextStyleHandle: string;
     { Цвет текста мультивыноски (код 93) }
     TextColor: Integer;
     { Расстояние от площадки (код 45) }
@@ -106,8 +106,8 @@ type
     AlignSpace: Boolean;
     { Масштаб блока (код 46) }
     BlockContentScale: Double;
-    { Хэндл стрелки второго типа (код 343) }
-    ArrowHeadHandle2: string;
+    { Хэндл блока содержимого (код 343, BLOCK_RECORD) }
+    BlockContentHandle: string;
     { Цвет блока содержимого (код 94) }
     BlockContentColor: Integer;
     { Множитель масштаба (код 47) }
@@ -189,7 +189,7 @@ begin
   FirstSegAngle := 0.0;
   SecondSegAngle := 0.0;
   { Инициализируем строки через nil для raw memory }
-  pointer(TextStyleHandle) := nil;
+  pointer(LeaderLinetypeHandle) := nil;
   TextAttachmentLeft := 1;
   TextAttachmentRight := 1;
   TextAngleType := 1;
@@ -201,16 +201,16 @@ begin
   EnableLanding := True;
   LandingGap := 0.36;
   pointer(Description) := nil;
-  pointer(BlockContentHandle) := nil;
+  pointer(ArrowHeadBlockHandle) := nil;
   TextHeight := 0.18;
   pointer(DefaultTextContent) := nil;
-  pointer(ArrowHeadHandle) := nil;
+  pointer(TextStyleHandle) := nil;
   TextColor := -1056964608;
   ArrowHeadSize := 0.18;
   TextAlignAlwaysLeft := False;
   AlignSpace := False;
   BlockContentScale := 0.18;
-  pointer(ArrowHeadHandle2) := nil;
+  pointer(BlockContentHandle) := nil;
   BlockContentColor := -1056964608;
   BlockContentScaleX := 1.0;
   BlockContentScaleY := 1.0;
@@ -230,12 +230,12 @@ end;
 destructor TGDBDXFMLeaderStyle.Done;
 begin
   inherited Done;
-  TextStyleHandle := '';
+  LeaderLinetypeHandle := '';
   Description := '';
-  BlockContentHandle := '';
+  ArrowHeadBlockHandle := '';
   DefaultTextContent := '';
-  ArrowHeadHandle := '';
-  ArrowHeadHandle2 := '';
+  TextStyleHandle := '';
+  BlockContentHandle := '';
   XDictHandle := '';
 end;
 
@@ -538,13 +538,13 @@ begin
       300:
         Style^.DefaultTextContent := Value;
       340:
-        Style^.TextStyleHandle := Value;
+        Style^.LeaderLinetypeHandle := Value;
       341:
-        Style^.BlockContentHandle := Value;
+        Style^.ArrowHeadBlockHandle := Value;
       342:
-        Style^.ArrowHeadHandle := Value;
+        Style^.TextStyleHandle := Value;
       343:
-        Style^.ArrowHeadHandle2 := Value;
+        Style^.BlockContentHandle := Value;
     end;
 
     Inc(I, 2);
@@ -794,9 +794,9 @@ begin
     Lines.Add(' 91');
     Lines.Add(IntToStr(Style^.LeaderLineColor));
 
-    { Хэндл текстового стиля (код 340) }
+    { Хэндл типа линии выноски (код 340) }
     Lines.Add('340');
-    Lines.Add(Style^.TextStyleHandle);
+    Lines.Add(Style^.LeaderLinetypeHandle);
 
     { Тип линии соединения (код 92) }
     Lines.Add(' 92');
@@ -828,11 +828,11 @@ begin
     Lines.Add('  3');
     Lines.Add(Style^.Description);
 
-    { Хэндл блока (код 341) — необязательный }
-    if Style^.BlockContentHandle <> '' then
+    { Хэндл блока стрелки (код 341) — необязательный }
+    if Style^.ArrowHeadBlockHandle <> '' then
     begin
       Lines.Add('341');
-      Lines.Add(Style^.BlockContentHandle);
+      Lines.Add(Style^.ArrowHeadBlockHandle);
     end;
 
     { Масштаб текста (код 44) }
@@ -843,9 +843,9 @@ begin
     Lines.Add('300');
     Lines.Add(Style^.DefaultTextContent);
 
-    { Хэндл стрелки (код 342) }
+    { Хэндл текстового стиля (код 342) }
     Lines.Add('342');
-    Lines.Add(Style^.ArrowHeadHandle);
+    Lines.Add(Style^.TextStyleHandle);
 
     { Присоединение текста слева (код 174) }
     Lines.Add('174');
@@ -889,11 +889,11 @@ begin
     Lines.Add(' 46');
     Lines.Add(FloatToStr(Style^.BlockContentScale));
 
-    { Хэндл второй стрелки (код 343) — необязательный }
-    if Style^.ArrowHeadHandle2 <> '' then
+    { Хэндл блока содержимого (код 343) — необязательный }
+    if Style^.BlockContentHandle <> '' then
     begin
       Lines.Add('343');
-      Lines.Add(Style^.ArrowHeadHandle2);
+      Lines.Add(Style^.BlockContentHandle);
     end;
 
     { Цвет блока (код 94) }
