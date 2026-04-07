@@ -38,6 +38,7 @@ uses
   uzedrawingsimple,
   uzcsysvars,
   uzcinterface,
+  uzcui_dimstyleedit,
   gzctnrVectorTypes,
   Classes, SysUtils, Forms, Controls, Graphics,
   ExtCtrls, StdCtrls, Dialogs;
@@ -848,14 +849,31 @@ begin
   end;
 end;
 
-{ Кнопка «Редактировать...» — заглушка }
+{ Кнопка «Редактировать...» — открывает диалог редактирования }
 procedure TDimStyleManagerForm.OnEditClick(Sender: TObject);
+var
+  StylePtr: PGDBDimStyle;
+  EditForm: TDimStyleEditDialog;
 begin
-  ShowMessage('Редактирование стиля пока не реализовано');
+  StylePtr := GetSelectedStyle;
+  if StylePtr = nil then
+    Exit;
+
+  EditForm := TDimStyleEditDialog.Create(Self);
+  try
+    EditForm.SetDimStyle(StylePtr);
+    if EditForm.ShowModal = mrOk then
+    begin
+      { Обновляем предпросмотр в менеджере }
+      RefreshStyleList;
+    end;
+  finally
+    EditForm.Free;
+  end;
 
   programlog.LogOutFormatStr(
-    'uzcui_dimstylemanager: редактирование — заглушка',
-    [], LM_Info);
+    'uzcui_dimstylemanager: редактирование стиля "%s"',
+    [StylePtr^.Name], LM_Info);
 end;
 
 { Кнопка «Удалить» — удаляет выбранный стиль с подтверждением }
