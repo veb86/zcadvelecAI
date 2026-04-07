@@ -61,6 +61,8 @@ type
     Vertices: GDBPoint3DArray;
     { Флаг: контур замкнут (полигон, круг, эллипс) }
     Closed: Boolean;
+    { Флаг: контур заполнен (SOLID заливка, штриховка) }
+    Filled: Boolean;
   end;
 
   { Итоговый результат разбора одного Proxy Graphic блока }
@@ -86,6 +88,11 @@ type
   private
     FStream: TProxyByteStream;
     FResult: TProxyGraphicParseResult;
+
+    { Текущее состояние заливки (SetFill OpCode=20).
+      Устанавливается командой SetFill(1), сбрасывается после
+      каждого графического примитива (как в ezdxf). }
+    FFillActive: Boolean;
 
     { Стек матриц трансформации для PushMatrix/PopMatrix.
       Когда PushMatrix встречается — матрица читается и помещается
@@ -119,7 +126,7 @@ type
 
     { Добавляет контур (набор вершин одного примитива) в массив контуров }
     procedure AppendContour(var Src: GDBPoint3DArray;
-      const IsClosed: Boolean);
+      const IsClosed: Boolean; const IsFilled: Boolean);
 
     { Расширяет суммарный BBox данными из одного примитива }
     procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
@@ -177,6 +184,7 @@ begin
   inherited Create;
   FStream := TProxyByteStream.Create(Data);
   FillChar(FResult, SizeOf(FResult), 0);
+  FFillActive := False;
   FMatrixStackDepth := 0;
   SetLength(FMatrixStack, 0);
 end;
@@ -190,7 +198,7 @@ end;
 { Добавляет контур (вершины одного примитива) как отдельный элемент.
   Каждый примитив хранится в своём контуре для раздельной отрисовки. }
 procedure TProxyGraphicParser.AppendContour(var Src: GDBPoint3DArray;
-  const IsClosed: Boolean);
+  const IsClosed: Boolean; const IsFilled: Boolean);
 var
   Idx: Integer;
   ir: itrec;
@@ -200,6 +208,7 @@ begin
   SetLength(FResult.Contours, Idx + 1);
   FResult.Contours[Idx].Vertices.init(Src.Count);
   FResult.Contours[Idx].Closed := IsClosed;
+  FResult.Contours[Idx].Filled := IsFilled;
   pV := Src.beginiterate(ir);
   while pV <> nil do
   begin
@@ -335,6 +344,11 @@ begin
       for Col := 0 to 3 do
         NewMatrix.mtr.v[Row].v[Col] := MatrixData[Col * 4 + Row];
 
+    { Явно устанавливаем тип матрицы «общая трансформация».
+      Без этого поле t содержит мусор из стека, и если он совпадает
+      с CMTIdentity, то VectorTransform3D пропускает умножение. }
+    NewMatrix.t := CMTTransform;
+
     { Добавляем матрицу в стек }
     Inc(FMatrixStackDepth);
     if FMatrixStackDepth > Length(FMatrixStack) then
@@ -447,11 +461,19 @@ begin
   end;
 end;
 
-{ Системный обработчик: SetFill — читает флаг заливки }
+{ Системный обработчик: SetFill — читает и сохраняет флаг заливки.
+  Значение 1 = заливка включена, 0 = выключена.
+  Флаг сбрасывается после каждого графического примитива. }
 procedure TProxyGraphicParser.HandleSetFill;
+var
+  FillValue: Integer;
 begin
   try
-    FStream.ReadInt32;
+    FillValue := FStream.ReadInt32;
+    FFillActive := (FillValue = 1);
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetFill value=%d active=%s',
+      [FillValue, BoolToStr(FFillActive, True)], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -596,10 +618,15 @@ begin
         { Обновляем суммарный BBox }
         MergeHandlerBBox(HandlerResult);
 
-        { Сохраняем контур как отдельный элемент для раздельной отрисовки }
+        { Определяем заливку: флаг FFillActive применяется
+          к замкнутым контурам (Polygon, Shell и др.).
+          Аналогично ezdxf: SetFill(1) → Polygon/Shell = SOLID. }
         if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0) then
         begin
-          AppendContour(HandlerResult.Vertices, HandlerResult.Closed);
+          if FFillActive and HandlerResult.Closed then
+            HandlerResult.Filled := True;
+          AppendContour(HandlerResult.Vertices,
+            HandlerResult.Closed, HandlerResult.Filled);
           Inc(FResult.ContourCount);
           HandlerResult.Vertices.done;
         end;
@@ -609,6 +636,10 @@ begin
           AppendTextItem(HandlerResult.TextItem);
 
         Inc(FResult.PrimitiveCount);
+
+        { Сбрасываем флаг заливки после каждого примитива
+          (аналогично ezdxf: fill auto-reset после entity) }
+        FFillActive := False;
       end
       else
       begin

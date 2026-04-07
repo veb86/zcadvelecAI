@@ -95,6 +95,7 @@ uses
   uzeentproxyparserlwpolyline, { OpCode=33: LwPolyline (LWPOLYLINE) }
   uzeentproxyparserellipse,  { OpCode=44: EllipticArc (ELLIPSE) }
   uzeentproxyparsershell,    { OpCode=9: Shell/PolyFace }
+  uzeTriangulator,           { Триангулятор для SOLID заливки }
   UGDBSelectedObjArray,
   uzesnap,
   gzctnrVectorTypes,
@@ -465,6 +466,7 @@ begin
       for I := 0 to FContourCount - 1 do
       begin
         FContours[I].Closed := ParseResult.Contours[I].Closed;
+        FContours[I].Filled := ParseResult.Contours[I].Filled;
         FContours[I].Vertices.init(
           ParseResult.Contours[I].Vertices.Count);
         pV := ParseResult.Contours[I].Vertices.beginiterate(ir);
@@ -630,11 +632,17 @@ end;
 { Рассчитывает визуальное представление объекта.
   Аналогично GDBObjCircle:
   - EFCalcEntityCS: устанавливает BBox, вызывает разбор данных
-  - EFDraw: заполняет Representation через DrawPolyLineWithLT }
+  - EFDraw: заполняет Representation через DrawPolyLineWithLT
+  Заполненные контуры (Filled=True) отрисовываются через Triangulator
+  аналогично GDBObjHatch для SOLID заливки. }
 procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
 var
   I: Integer;
+  HatchTess: TTriangulator.TTesselator;
+  ir: itrec;
+  pV: PzePoint3d;
+  HasFilledContours: Boolean;
 begin
   if Assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
@@ -678,21 +686,71 @@ begin
   begin
     Representation.Clear;
 
-    { Рисуем каждый контур отдельно через DrawPolyLineWithLT.
-      Это исправляет проблему, когда все примитивы рисовались одной
-      непрерывной полилинией, создавая ложные соединения между ними. }
+    { Проверяем наличие заполненных контуров }
+    HasFilledContours := False;
     for I := 0 to FContourCount - 1 do
+      if FContours[I].Filled then
+      begin
+        HasFilledContours := True;
+        Break;
+      end;
+
+    { Если есть заполненные контуры — используем Triangulator
+      для SOLID заливки (аналогично GDBObjHatch) }
+    if HasFilledContours then
     begin
-      if FContours[I].Vertices.Count > 0 then
-        Representation.DrawPolyLineWithLT(
-          DC, FContours[I].Vertices, vp,
-          FContours[I].Closed, True);
+      Representation.Geometry.Lock;
+      HatchTess := Triangulator.NewTesselator;
+      try
+        for I := 0 to FContourCount - 1 do
+        begin
+          if FContours[I].Vertices.Count = 0 then
+            Continue;
+
+          if FContours[I].Filled
+            and (FContours[I].Vertices.Count >= 3) then
+          begin
+            { Заполненный контур: триангулируем для SOLID заливки }
+            Triangulator.BeginPolygon(
+              @Representation, HatchTess);
+            Triangulator.BeginContour(HatchTess);
+            pV := FContours[I].Vertices.beginiterate(ir);
+            while pV <> nil do
+            begin
+              Triangulator.TessVertex(HatchTess, pV^);
+              pV := FContours[I].Vertices.iterate(ir);
+            end;
+            Triangulator.EndContour(HatchTess);
+            Triangulator.EndPolygon(HatchTess);
+          end;
+
+          { Рисуем контур полилинией (обводка или обычный контур) }
+          Representation.DrawPolyLineWithLT(
+            DC, FContours[I].Vertices, vp,
+            FContours[I].Closed, True);
+        end;
+      finally
+        Triangulator.DeleteTess(HatchTess);
+        Representation.Geometry.UnLock;
+      end;
+    end
+    else
+    begin
+      { Нет заполненных контуров — рисуем только полилинии }
+      for I := 0 to FContourCount - 1 do
+      begin
+        if FContours[I].Vertices.Count > 0 then
+          Representation.DrawPolyLineWithLT(
+            DC, FContours[I].Vertices, vp,
+            FContours[I].Closed, True);
+      end;
     end;
 
     if FContourCount > 0 then
       programlog.LogOutFormatStr(
-        'uzeentacdproxy: FormatEntity drew %d contours',
-        [FContourCount], LM_Info)
+        'uzeentacdproxy: FormatEntity drew %d contours (%s)',
+        [FContourCount,
+         BoolToStr(HasFilledContours, True)], LM_Info)
     else if not FBBoxLoaded then
       programlog.LogOutFormatStr(
         'uzeentacdproxy: FormatEntity no supported primitives',
