@@ -1409,34 +1409,36 @@ begin
         result:=fileCtx.Header;
         fileCtx.Done;
 
-        { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
-          Эти секции ZCAD не обрабатывает при загрузке, но AutoCAD
-          требует их наличие при открытии — без них файл считается
-          повреждённым. Сохраняем их для записи обратно при сохранении. }
-        dwgCtx.PDrawing^.RawClassesSection :=
-          ExtractDxfRawSection(AFileName, 'CLASSES');
-        dwgCtx.PDrawing^.RawObjectsSection :=
-          ExtractDxfRawSection(AFileName, 'OBJECTS');
-
-        { Загружаем стили таблиц из секции OBJECTS.
-          TABLESTYLE объекты находятся в OBJECTS, а не в TABLES,
-          поэтому обрабатываем их отдельно после извлечения сырой секции. }
-        ReadTableStylesFromDXFObjects(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          dwgCtx.PDrawing^.DXFTableStyleTable);
-
-        { Загружаем стили мультивыносок из секции OBJECTS.
-          MLEADERSTYLE объекты находятся в OBJECTS, а не в TABLES,
-          поэтому обрабатываем их аналогично стилям таблиц. }
-        ReadMLeaderStylesFromDXFObjects(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          dwgCtx.PDrawing^.DXFMLeaderStyleTable);
-
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally
       DxfStream.Free;
       rdr.Free;
+    end;
+
+    { Извлекаем сырые секции CLASSES, OBJECTS и TABLES
+      из исходного файла. Выполняется ПОСЛЕ освобождения
+      DxfStream, чтобы избежать блокировки файла
+      (memory-mapped файл держит блокировку на Windows). }
+    if result.iVersion > 0 then
+    begin
+      dwgCtx.PDrawing^.RawClassesSection :=
+        ExtractDxfRawSection(AFileName, 'CLASSES');
+      dwgCtx.PDrawing^.RawObjectsSection :=
+        ExtractDxfRawSection(AFileName, 'OBJECTS');
+
+      { Загружаем стили таблиц из секции OBJECTS. }
+      ReadTableStylesFromDXFObjects(
+        dwgCtx.PDrawing^.RawObjectsSection,
+        dwgCtx.PDrawing^.DXFTableStyleTable);
+
+      { Загружаем стили мультивыносок из секции OBJECTS.
+        Дополнительно передаём секцию TABLES для разрешения
+        хэндлов ссылок (340-343) в имена объектов. }
+      ReadMLeaderStylesFromDXFObjects(
+        dwgCtx.PDrawing^.RawObjectsSection,
+        ExtractDxfRawSection(AFileName, 'TABLES'),
+        dwgCtx.PDrawing^.DXFMLeaderStyleTable);
     end;
   finally
     // Завершаем измерение общего времени загрузки и выводим результат
