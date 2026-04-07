@@ -34,6 +34,7 @@ uses
   uzestylestablesdxf,
   uzcdrawings,
   uzedrawingsimple,
+  gzctnrVectorTypes,
   Classes, SysUtils, Forms, Controls, Graphics,
   ExtCtrls, StdCtrls, Dialogs;
 
@@ -148,7 +149,7 @@ type
     { Создаёт одну ячейку (формат строки) со значениями по умолчанию }
     function MakeDefaultCellStyle: TGDBDXFTableCellStyle;
     { Рисует заглушку предпросмотра: серый фон, рамка, текст по центру }
-    procedure DrawPreviewStub(Canvas: TCanvas; const Bounds: TRect);
+    procedure DrawPreviewStub(myCanvas: TCanvas; const Bounds: TRect);
 
   public
     constructor Create(AOwner: TComponent); override;
@@ -229,9 +230,9 @@ begin
   FButtonClose.Height   := CButtonHeight;
   FButtonClose.Anchors  := [akRight, akBottom];
   FButtonClose.AnchorSide[akRight].Control := PanelBottom;
-  FButtonClose.AnchorSide[akRight].Side    := asRight;
+  FButtonClose.AnchorSide[akRight].Side    := asrRight;
   FButtonClose.AnchorSide[akBottom].Control := PanelBottom;
-  FButtonClose.AnchorSide[akBottom].Side    := asBottom;
+  FButtonClose.AnchorSide[akBottom].Side    := asrBottom;
   FButtonClose.BorderSpacing.Right  := CButtonMargin;
   FButtonClose.BorderSpacing.Bottom := 8;
   FButtonClose.OnClick  := @OnCloseClick;
@@ -243,9 +244,9 @@ begin
   FButtonHelp.Height   := CButtonHeight;
   FButtonHelp.Anchors  := [akRight, akBottom];
   FButtonHelp.AnchorSide[akRight].Control := FButtonClose;
-  FButtonHelp.AnchorSide[akRight].Side    := asLeft;
+  FButtonHelp.AnchorSide[akRight].Side    := asrLeft;
   FButtonHelp.AnchorSide[akBottom].Control := PanelBottom;
-  FButtonHelp.AnchorSide[akBottom].Side    := asBottom;
+  FButtonHelp.AnchorSide[akBottom].Side    := asrBottom;
   FButtonHelp.BorderSpacing.Right  := 6;
   FButtonHelp.BorderSpacing.Bottom := 8;
   { Справка не реализована на данном этапе }
@@ -468,7 +469,7 @@ end;
 { --- Заглушка предпросмотра --- }
 
 { Рисует на Canvas серый прямоугольник с надписью «Предпросмотр недоступен» }
-procedure TTableStyleManagerForm.DrawPreviewStub(Canvas: TCanvas;
+procedure TTableStyleManagerForm.DrawPreviewStub(myCanvas: TCanvas;
   const Bounds: TRect);
 const
   CPreviewText   = 'Предпросмотр недоступен';
@@ -477,19 +478,19 @@ var
   TextWidth, TextHeight: Integer;
   TextX, TextY: Integer;
 begin
-  Canvas.Brush.Color := clSilver;
-  Canvas.FillRect(Bounds);
+  myCanvas.Brush.Color := clSilver;
+  myCanvas.FillRect(Bounds);
 
-  Canvas.Pen.Color := clGray;
-  Canvas.Rectangle(Bounds);
+  myCanvas.Pen.Color := clGray;
+  myCanvas.Rectangle(Bounds);
 
-  Canvas.Font.Color := clBlack;
-  Canvas.Font.Size  := CPreviewFontSz;
-  TextWidth  := Canvas.TextWidth(CPreviewText);
-  TextHeight := Canvas.TextHeight(CPreviewText);
+  myCanvas.Font.Color := clBlack;
+  myCanvas.Font.Size  := CPreviewFontSz;
+  TextWidth  := myCanvas.TextWidth(CPreviewText);
+  TextHeight := myCanvas.TextHeight(CPreviewText);
   TextX := Bounds.Left + (Bounds.Right  - Bounds.Left - TextWidth)  div 2;
   TextY := Bounds.Top  + (Bounds.Bottom - Bounds.Top  - TextHeight) div 2;
-  Canvas.TextOut(TextX, TextY, CPreviewText);
+  myCanvas.TextOut(TextX, TextY, CPreviewText);
 end;
 
 { --- Обработчики событий --- }

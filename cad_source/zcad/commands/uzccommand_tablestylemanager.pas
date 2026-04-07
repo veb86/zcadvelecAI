@@ -35,6 +35,7 @@ uses
   uzcui_tablestylemanager,
   uzcsysvars,
   uzcinterface,
+  uzctreenode,
   uzccommandsabstract,
   uzccommandsimpl;
 

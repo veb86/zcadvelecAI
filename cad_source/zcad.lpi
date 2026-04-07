@@ -1297,32 +1297,6 @@
         <Filename Value="zcad/commands/uzccommand_dataexport.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit180>
-      <Unit181>
-        <Filename Value="zcad/gui/forms/uzcftablestylecreate.pas"/>
-        <IsPartOfProject Value="True"/>
-        <ComponentName Value="TableStyleCreateForm"/>
-        <HasResources Value="True"/>
-        <ResourceBaseClass Value="Form"/>
-      </Unit181>
-      <Unit182>
-        <Filename Value="zcad/gui/forms/uzcftablestyles.pas"/>
-        <IsPartOfProject Value="True"/>
-        <ComponentName Value="TableStylesForm"/>
-        <HasResources Value="True"/>
-        <ResourceBaseClass Value="Form"/>
-      </Unit182>
-      <Unit183>
-        <Filename Value="zcad/commands/uzccommand_tablestyles.pas"/>
-        <IsPartOfProject Value="True"/>
-      </Unit183>
-      <Unit184>
-        <Filename Value="zcad/gui/uzcui_tablestylemanager.pas"/>
-        <IsPartOfProject Value="True"/>
-      </Unit184>
-      <Unit185>
-        <Filename Value="zcad/commands/uzccommand_tablestylemanager.pas"/>
-        <IsPartOfProject Value="True"/>
-      </Unit185>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
