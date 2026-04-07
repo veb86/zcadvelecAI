@@ -695,55 +695,44 @@ begin
         Break;
       end;
 
-    { Если есть заполненные контуры — используем Triangulator
-      для SOLID заливки (аналогично GDBObjHatch) }
+    { Заливка заполненных контуров через Triangulator.
+      Аналогично GDBObjHatch.FormatEntity для SOLID заливки:
+      Lock → NewTesselator → BeginPolygon → BeginContour/EndContour →
+      EndPolygon → UnLock → DeleteTess.
+      Каждый заполненный контур — отдельный полигон, так как они
+      представляют независимые фигуры (стрелки, прямоугольники и т.д.). }
     if HasFilledContours then
     begin
       Representation.Geometry.Lock;
       HatchTess := Triangulator.NewTesselator;
-      try
-        for I := 0 to FContourCount - 1 do
-        begin
-          if FContours[I].Vertices.Count = 0 then
-            Continue;
-
-          if FContours[I].Filled
-            and (FContours[I].Vertices.Count >= 3) then
-          begin
-            { Заполненный контур: триангулируем для SOLID заливки }
-            Triangulator.BeginPolygon(
-              @Representation, HatchTess);
-            Triangulator.BeginContour(HatchTess);
-            pV := FContours[I].Vertices.beginiterate(ir);
-            while pV <> nil do
-            begin
-              Triangulator.TessVertex(HatchTess, pV^);
-              pV := FContours[I].Vertices.iterate(ir);
-            end;
-            Triangulator.EndContour(HatchTess);
-            Triangulator.EndPolygon(HatchTess);
-          end;
-
-          { Рисуем контур полилинией (обводка или обычный контур) }
-          Representation.DrawPolyLineWithLT(
-            DC, FContours[I].Vertices, vp,
-            FContours[I].Closed, True);
-        end;
-      finally
-        Triangulator.DeleteTess(HatchTess);
-        Representation.Geometry.UnLock;
-      end;
-    end
-    else
-    begin
-      { Нет заполненных контуров — рисуем только полилинии }
       for I := 0 to FContourCount - 1 do
       begin
-        if FContours[I].Vertices.Count > 0 then
-          Representation.DrawPolyLineWithLT(
-            DC, FContours[I].Vertices, vp,
-            FContours[I].Closed, True);
+        if not FContours[I].Filled then
+          Continue;
+        if FContours[I].Vertices.Count < 3 then
+          Continue;
+        Triangulator.BeginPolygon(@Representation, HatchTess);
+        Triangulator.BeginContour(HatchTess);
+        pV := FContours[I].Vertices.beginiterate(ir);
+        while pV <> nil do
+        begin
+          Triangulator.TessVertex(HatchTess, pV^);
+          pV := FContours[I].Vertices.iterate(ir);
+        end;
+        Triangulator.EndContour(HatchTess);
+        Triangulator.EndPolygon(HatchTess);
       end;
+      Representation.Geometry.UnLock;
+      Triangulator.DeleteTess(HatchTess);
+    end;
+
+    { Обводка всех контуров полилиниями (включая заполненные) }
+    for I := 0 to FContourCount - 1 do
+    begin
+      if FContours[I].Vertices.Count > 0 then
+        Representation.DrawPolyLineWithLT(
+          DC, FContours[I].Vertices, vp,
+          FContours[I].Closed, True);
     end;
 
     if FContourCount > 0 then
