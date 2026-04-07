@@ -46,6 +46,10 @@ type
   end;
   PTGDBTableStyle=^TGDBTableStyle;
 
+  {Тип-указатель для инспектора объектов — стиль таблицы}
+  PGDBTableStyleObjInsp=Pointer;
+  PPGDBTableStyleObjInsp=^PGDBTableStyleObjInsp;
+
 
 
 

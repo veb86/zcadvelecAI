@@ -177,6 +177,11 @@ function DimStyleDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pins
 begin
      result:=NamedObjectsDecoratorCreateEditor(TheOwner,rect,pinstance,psa,FreeOnLostFocus,PTD,@drawings.GetCurrentDWG.DimStyleTable,f);
 end;
+{Создание редактора для выбора стиля таблицы в инспекторе}
+function TableStyleDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
+begin
+     result:=NamedObjectsDecoratorCreateEditor(TheOwner,rect,pinstance,psa,FreeOnLostFocus,PTD,@drawings.GetCurrentDWG.TableStyleTable,f);
+end;
 procedure _3SBooleanDrawFastEditor(canvas:TCanvas;r:trect;PInstance:Pointer;state:TFastEditorState;boundr:trect);
 var
   Details: TThemedElementDetails;
@@ -674,6 +679,7 @@ begin
     DecorateType(SysUnit.TypeName2PTD('PGDBLtypePropObjInsp'),NamedObjectsDecorator,LTypeDecoratorCreateEditor,drawLTProp);
     DecorateType(SysUnit.TypeName2PTD('PGDBTextStyleObjInsp'),NamedObjectsDecorator,TextStyleDecoratorCreateEditor,nil);
     DecorateType(SysUnit.TypeName2PTD('PGDBDimStyleObjInsp'),NamedObjectsDecorator,DimStyleDecoratorCreateEditor,nil);
+    DecorateType(SysUnit.TypeName2PTD('PGDBTableStyleObjInsp'),NamedObjectsDecorator,TableStyleDecoratorCreateEditor,nil);
     DecorateType(SysUnit.TypeName2PTD('TGDBPaletteColor'),PaletteColorDecorator,ColorDecoratorCreateEditor,drawIndexColorProp);
     DecorateType(SysUnit.TypeName2PTD('TGDBOSMode'),nil,CreateEmptyEditor,nil);
     DecorateType(SysUnit.TypeName2PTD('TColor'),TColorDecorator,TColorDecoratorCreateEditor,nil);

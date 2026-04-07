@@ -32,7 +32,7 @@ uses
   uzeentcircle,uzeentarc,uzeentline,uzeentblockinsert,uzeenttext,
   uzeentmtext,uzeentpolyline,uzcentelleader,uzeentdimension,uzeentellipse,
   uzeEntSpline,
-  uzeenthatch,
+  uzeenthatch,uzeenttable,
   uzegeometry,uzcoimultiproperties,uzcLog,
   uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,
   uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
@@ -544,6 +544,110 @@ begin
      Double2SumEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
+{Процедура получения ширины таблицы для инспектора}
+procedure TableWidthEntIterateProc(
+  pdata: Pointer;
+  ChangedData: TChangedData;
+  mp: TMultiProperty;
+  fistrun: boolean;
+  ecp: TEntChangeProc;
+  const f: TzeUnitsFormat);
+var
+  tableWidth: Double;
+begin
+  tableWidth := PGDBObjTable(ChangedData.PEntity)^.Width;
+  ChangedData.PGetDataInEtity := @tableWidth;
+  GeneralEntIterateProc(pdata, ChangedData, mp, fistrun, ecp, f);
+end;
+
+{Процедура получения высоты таблицы для инспектора}
+procedure TableHeightEntIterateProc(
+  pdata: Pointer;
+  ChangedData: TChangedData;
+  mp: TMultiProperty;
+  fistrun: boolean;
+  ecp: TEntChangeProc;
+  const f: TzeUnitsFormat);
+var
+  tableHeight: Double;
+begin
+  tableHeight := PGDBObjTable(ChangedData.PEntity)^.Height;
+  ChangedData.PGetDataInEtity := @tableHeight;
+  GeneralEntIterateProc(pdata, ChangedData, mp, fistrun, ecp, f);
+end;
+
+{Процедура получения количества строк таблицы для инспектора}
+procedure TableRowCountEntIterateProc(
+  pdata: Pointer;
+  ChangedData: TChangedData;
+  mp: TMultiProperty;
+  fistrun: boolean;
+  ecp: TEntChangeProc;
+  const f: TzeUnitsFormat);
+var
+  PVD: pvardesk;
+  rowCount: TArrayIndex;
+begin
+  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  if @ecp = nil then
+    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+  rowCount := PGDBObjTable(ChangedData.PEntity)^.tbl.Count;
+  if fistrun then begin
+    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
+    mp.MPType.CopyValueToInstance(
+      @rowCount, PVD.data.Addr.Instance);
+    PTOneVarData(pdata).StrValue :=
+      mp.MPType.GetDecoratedValueAsString(@rowCount, f);
+  end else begin
+    if mp.MPType.Compare(
+      @rowCount, PVD.data.Addr.Instance) <> CREqual then
+      ProcessVariableAttributes(
+        PVD.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata).StrValue <>
+      mp.MPType.GetDecoratedValueAsString(@rowCount, f) then
+      ProcessVariableAttributes(
+        PVD.attrib, vda_different, vda_approximately);
+  end;
+end;
+
+{Процедура получения количества столбцов таблицы для инспектора}
+procedure TableColCountEntIterateProc(
+  pdata: Pointer;
+  ChangedData: TChangedData;
+  mp: TMultiProperty;
+  fistrun: boolean;
+  ecp: TEntChangeProc;
+  const f: TzeUnitsFormat);
+var
+  PVD: pvardesk;
+  colCount: TArrayIndex;
+begin
+  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  if @ecp = nil then
+    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+  if PGDBObjTable(ChangedData.PEntity)^.PTableStyle <> nil then
+    colCount := PGDBObjTable(
+      ChangedData.PEntity)^.PTableStyle^.tblformat.Count
+  else
+    colCount := 0;
+  if fistrun then begin
+    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
+    mp.MPType.CopyValueToInstance(
+      @colCount, PVD.data.Addr.Instance);
+    PTOneVarData(pdata).StrValue :=
+      mp.MPType.GetDecoratedValueAsString(@colCount, f);
+  end else begin
+    if mp.MPType.Compare(
+      @colCount, PVD.data.Addr.Instance) <> CREqual then
+      ProcessVariableAttributes(
+        PVD.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata).StrValue <>
+      mp.MPType.GetDecoratedValueAsString(@colCount, f) then
+      ProcessVariableAttributes(
+        PVD.attrib, vda_different, vda_approximately);
+  end;
+end;
+
 procedure finalize;
 begin
 end;
@@ -563,6 +667,7 @@ const
      pelleader:PGDBObjElLeader=nil;
      pdim:PGDBObjDimension=nil;
      pellipse:PGDBObjEllipse=nil;
+     ptable:PGDBObjTable=nil;
      LayerControlExtender:TLayerControlExtender=nil;
      SmartTextEntExtender:TSmartTextEntExtender=nil;
      ReportExtender:TReportExtender=nil;
@@ -829,6 +934,77 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_X','Pattern origin X',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.x),PtrInt(@phatch^.Origin.x),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Y','Pattern origin Y',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.y),PtrInt(@phatch^.Origin.y),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Z','Pattern origin Z',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.z),PtrInt(@phatch^.Origin.z),OneVarDataMIPD,OneVarDataEIPD);
+
+    {Table — геометрия}
+    MultiPropertiesManager.RestartMultipropertySortID;
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'INSERT_X', 'X',
+      sysunit^.TypeName2PTD('TzeXUnits'),
+      MPCGeometry, GDBTableID, nil,
+      PtrInt(@ptable^.P_insert_in_WCS.x),
+      PtrInt(@ptable^.Local.P_insert.x),
+      OneVarDataMIPD, OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'INSERT_Y', 'Y',
+      sysunit^.TypeName2PTD('TzeYUnits'),
+      MPCGeometry, GDBTableID, nil,
+      PtrInt(@ptable^.P_insert_in_WCS.y),
+      PtrInt(@ptable^.Local.P_insert.y),
+      OneVarDataMIPD, OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'INSERT_Z', 'Z',
+      sysunit^.TypeName2PTD('TzeZUnits'),
+      MPCGeometry, GDBTableID, nil,
+      PtrInt(@ptable^.P_insert_in_WCS.z),
+      PtrInt(@ptable^.Local.P_insert.z),
+      OneVarDataMIPD, OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableWidth', 'Width',
+      sysunit^.TypeName2PTD('Double'),
+      MPCGeometry, GDBTableID, nil,
+      0, 0,
+      OneVarDataMIPD,
+      TEntIterateProcsData.Create(
+        nil, @TableWidthEntIterateProc, nil));
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableHeight', 'Height',
+      sysunit^.TypeName2PTD('Double'),
+      MPCGeometry, GDBTableID, nil,
+      0, 0,
+      OneVarDataMIPD,
+      TEntIterateProcsData.Create(
+        nil, @TableHeightEntIterateProc, nil));
+    {Table — основные свойства}
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableStyle', 'Table style',
+      sysunit^.TypeName2PTD('PGDBTableStyleObjInsp'),
+      MPCMisc, GDBTableID, nil,
+      PtrInt(@ptable^.PTableStyle),
+      PtrInt(@ptable^.PTableStyle),
+      OneVarDataMIPD, OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableScale', 'Scale',
+      sysunit^.TypeName2PTD('Double'),
+      MPCMisc, GDBTableID, nil,
+      PtrInt(@ptable^.scale),
+      PtrInt(@ptable^.scale),
+      OneVarDataMIPD, OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableRowCount', 'Rows',
+      sysunit^.TypeName2PTD('TArrayIndex'),
+      MPCMisc, GDBTableID, nil,
+      0, 0,
+      OneVarDataMIPD,
+      TEntIterateProcsData.Create(
+        nil, @TableRowCountEntIterateProc, nil));
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'TableColCount', 'Columns',
+      sysunit^.TypeName2PTD('TArrayIndex'),
+      MPCMisc, GDBTableID, nil,
+      0, 0,
+      OneVarDataMIPD,
+      TEntIterateProcsData.Create(
+        nil, @TableColCountEntIterateProc, nil));
 
     {ElLeader uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;
