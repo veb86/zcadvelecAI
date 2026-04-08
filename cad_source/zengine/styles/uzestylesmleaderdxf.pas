@@ -666,15 +666,23 @@ const
 
 { Проверяет строки объекта MLEADERSTYLE на признаки
   блочного содержимого ДО добавления стиля в таблицу.
-  Блочный стиль определяется по ContentType = 1 (код 90)
-  или по наличию непустого хэндла блока (код 343) }
+  Блочный стиль определяется по:
+  - ContentType = 1 (код 90)
+  - или наличию непустого хэндла блока (код 343)
+    совместно с флагом IsBlockContent (код 295 = 1)
+  В AutoCAD 2008 ContentType часто равен 2 даже
+  для блочных стилей, поэтому проверяем оба признака }
 function HasBlockContentInLines(
   ObjectLines: TStringList): Boolean;
 var
   J, CodeJ, IntVal: Integer;
   ValJ: string;
+  HasBlockHandle: Boolean;
+  IsBlockFlag: Boolean;
 begin
   Result := False;
+  HasBlockHandle := False;
+  IsBlockFlag := False;
   J := 0;
   while J < ObjectLines.Count - 1 do
   begin
@@ -689,16 +697,19 @@ begin
         Exit;
       end;
     end;
-    { Код 343 — хэндл блока содержимого.
-      Непустое значение означает блочный стиль
-      (характерно для AutoCAD 2008) }
+    { Код 343 — хэндл блока содержимого }
     if (CodeJ = 343) and (ValJ <> '') then
-    begin
-      Result := True;
-      Exit;
-    end;
+      HasBlockHandle := True;
+    { Код 295 — флаг блочного содержимого }
+    if (CodeJ = 295) and TryStrToInt(ValJ, IntVal) then
+      IsBlockFlag := IntVal <> 0;
     Inc(J, 2);
   end;
+  { Блочный стиль: есть хэндл блока И флаг IsBlockContent.
+    Это характерно для AutoCAD 2008, где ContentType=2
+    для всех стилей }
+  if HasBlockHandle and IsBlockFlag then
+    Result := True;
 end;
 
 { Основная функция загрузки стилей мультивыносок
@@ -959,6 +970,18 @@ end;
 
 { === Функции экспорта MLEADERSTYLE в DXF === }
 
+{ Преобразует вещественное число в строку формата DXF.
+  DXF требует наличия десятичной точки в значениях
+  вещественных групп (40-59, 140-149 и др.).
+  Если FloatToStr вернул целое число (без точки),
+  добавляем '.0' для совместимости с AutoCAD }
+function DXFFloatToStr(Value: Double): string;
+begin
+  Result := FloatToStr(Value);
+  if Pos('.', Result) = 0 then
+    Result := Result + '.0';
+end;
+
 { Добавляет строки из многострочного текста в список.
   Убирает пустые строки с конца, чтобы не нарушить
   разбор пар (код, значение) в DXF. }
@@ -1050,11 +1073,11 @@ begin
 
     { Угол первого сегмента (код 40) }
     Lines.Add(' 40');
-    Lines.Add(FloatToStr(Style^.FirstSegAngle));
+    Lines.Add(DXFFloatToStr(Style^.FirstSegAngle));
 
     { Угол второго сегмента (код 41) }
     Lines.Add(' 41');
-    Lines.Add(FloatToStr(Style^.SecondSegAngle));
+    Lines.Add(DXFFloatToStr(Style^.SecondSegAngle));
 
     { Ограничение второго сегмента (код 173) }
     Lines.Add('173');
@@ -1082,7 +1105,7 @@ begin
 
     { Расстояние площадки (код 42) }
     Lines.Add(' 42');
-    Lines.Add(FloatToStr(Style^.DoglegLength));
+    Lines.Add(DXFFloatToStr(Style^.DoglegLength));
 
     { Наличие рамки (код 291) }
     Lines.Add('291');
@@ -1093,7 +1116,7 @@ begin
 
     { Длина площадки (код 43) }
     Lines.Add(' 43');
-    Lines.Add(FloatToStr(Style^.LandingGap));
+    Lines.Add(DXFFloatToStr(Style^.LandingGap));
 
     { Описание стиля (код 3) }
     Lines.Add('  3');
@@ -1108,7 +1131,7 @@ begin
 
     { Масштаб текста (код 44) }
     Lines.Add(' 44');
-    Lines.Add(FloatToStr(Style^.TextHeight));
+    Lines.Add(DXFFloatToStr(Style^.TextHeight));
 
     { Текст по умолчанию (код 300) }
     Lines.Add('300');
@@ -1140,7 +1163,7 @@ begin
 
     { Размер стрелки (код 45) }
     Lines.Add(' 45');
-    Lines.Add(FloatToStr(Style^.ArrowHeadSize));
+    Lines.Add(DXFFloatToStr(Style^.ArrowHeadSize));
 
     { Выравнивание слева (код 292) }
     Lines.Add('292');
@@ -1158,7 +1181,7 @@ begin
 
     { Масштаб блока (код 46) }
     Lines.Add(' 46');
-    Lines.Add(FloatToStr(Style^.BlockContentScale));
+    Lines.Add(DXFFloatToStr(Style^.BlockContentScale));
 
     { Хэндл блока содержимого (код 343) — необязательный }
     if Style^.BlockContentHandle <> '' then
@@ -1173,15 +1196,15 @@ begin
 
     { Масштаб X (код 47) }
     Lines.Add(' 47');
-    Lines.Add(FloatToStr(Style^.BlockContentScaleX));
+    Lines.Add(DXFFloatToStr(Style^.BlockContentScaleX));
 
     { Масштаб Y (код 49) }
     Lines.Add(' 49');
-    Lines.Add(FloatToStr(Style^.BlockContentScaleY));
+    Lines.Add(DXFFloatToStr(Style^.BlockContentScaleY));
 
     { Общий масштаб (код 140) }
     Lines.Add('140');
-    Lines.Add(FloatToStr(Style^.OverallScale));
+    Lines.Add(DXFFloatToStr(Style^.OverallScale));
 
     { Аннотативный (код 293) }
     Lines.Add('293');
@@ -1192,7 +1215,7 @@ begin
 
     { Расстояние разрыва (код 141) }
     Lines.Add('141');
-    Lines.Add(FloatToStr(Style^.BreakGapSize));
+    Lines.Add(DXFFloatToStr(Style^.BreakGapSize));
 
     { Текст по направлению (код 294) }
     Lines.Add('294');
@@ -1208,7 +1231,7 @@ begin
 
     { Масштаб Z (код 142) }
     Lines.Add('142');
-    Lines.Add(FloatToStr(Style^.BlockContentScaleZ));
+    Lines.Add(DXFFloatToStr(Style^.BlockContentScaleZ));
 
     { Содержимое — блок (код 295) }
     Lines.Add('295');
@@ -1226,7 +1249,7 @@ begin
 
     { Поворот блока (код 143) }
     Lines.Add('143');
-    Lines.Add(FloatToStr(Style^.BlockContentRotation));
+    Lines.Add(DXFFloatToStr(Style^.BlockContentRotation));
 
     { Расширенные данные: версия мультивыноски }
     Lines.Add('1001');
