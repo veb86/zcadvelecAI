@@ -206,6 +206,8 @@ type
     function ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
     // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle
     procedure ApplyDXFTableStyle(var ADrawing: TDrawingDef);
+    // Возвращает имя стиля таблицы
+    function GetTableStyleName: String;
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -229,6 +231,20 @@ type
     function GetObjType: TObjID; virtual;
     function GetObjTypeName: String; virtual;
     function DXFDelayedBuildGeometry: Boolean; virtual;
+
+    // Публичные свойства для инспектора объектов
+    // Точка вставки таблицы
+    property InsertPoint: TzePoint3d read FInsertPoint;
+    // Количество строк
+    property RowCount: Integer read FRowCount;
+    // Количество столбцов
+    property ColCount: Integer read FColCount;
+    // Суммарная ширина всех столбцов
+    property Width: Double read GetTotalWidth;
+    // Суммарная высота всех строк
+    property Height: Double read GetTotalHeight;
+    // Имя стиля таблицы
+    property TableStyleName: String read GetTableStyleName;
   end;
 
 function AllocAcadTable: Pointer;
@@ -277,6 +293,12 @@ begin
   Result := 0;
   for ColIdx := 0 to FColCount - 1 do
     Result := Result + GetColWidth(ColIdx);
+end;
+
+// Возвращает имя стиля таблицы.
+function GDBObjAcadTable.GetTableStyleName: String;
+begin
+  Result := FTableStyle.Name;
 end;
 
 // Возвращает текст ячейки по координатам строки и столбца.
