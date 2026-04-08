@@ -544,21 +544,42 @@ begin
           outstream.TXTAddStringEOL(values);
           inblocksec:=True;
         end else if (groupi=2) and (values='OBJECTS') then begin
-          { Секция OBJECTS: заголовок 0/SECTION уже записан на предыдущем шаге.
-            Заголовок 2/OBJECTS также записываем — он нужен в выходном файле.
-            Содержимое секции из шаблона игнорируется — вместо него записывается
-            тело updatedObjectsSection (без заголовка и ENDSEC, они добавляются отдельно). }
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
-          inobjectssec:=True;
-          ignoredsource:=True;
+          { Замена секции OBJECTS на RawObjectsSection выполняется
+            только если секция была загружена из файла.
+            Для нового чертежа (RawObjectsSection пуста) шаблон
+            проходит без изменений — иначе секция будет пустой. }
+          if updatedObjectsSection <> '' then
+          begin
+            inobjectssec:=True;
+            ignoredsource:=True;
+            programlog.LogOutFormatStr(
+              'uzeffdxfout: секция OBJECTS будет заменена '
+              + 'из RawObjectsSection', [], LM_Info);
+          end
+          else
+            programlog.LogOutFormatStr(
+              'uzeffdxfout: секция OBJECTS пуста — '
+              + 'используется шаблон', [], LM_Info);
         end else if (groupi=2) and (values='CLASSES') then begin
-          { Секция CLASSES: аналогично OBJECTS — заголовок записывается, тело — из
-            RawClassesSection исходного файла, шаблон игнорируется. }
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
-          inclassessec:=True;
-          ignoredsource:=True;
+          { Замена секции CLASSES на RawClassesSection выполняется
+            только если секция была загружена из файла.
+            Для нового чертежа шаблон проходит без изменений. }
+          if drawing.RawClassesSection <> '' then
+          begin
+            inclassessec:=True;
+            ignoredsource:=True;
+            programlog.LogOutFormatStr(
+              'uzeffdxfout: секция CLASSES будет заменена '
+              + 'из RawClassesSection', [], LM_Info);
+          end
+          else
+            programlog.LogOutFormatStr(
+              'uzeffdxfout: секция CLASSES пуста — '
+              + 'используется шаблон', [], LM_Info);
         end else if (inobjectssec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
           { Конец секции OBJECTS шаблона — записываем тело updatedObjectsSection
             с перенумерацией хэндлов через IODXFContext для предотвращения дублей. }
