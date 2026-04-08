@@ -29,7 +29,8 @@ uses
   uzegeometrytypes,SysUtils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
+  uzestylestablesdxf,uzclog;
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
@@ -70,6 +71,162 @@ begin
   }
 end;
 
+
+{ Преобразует вещественное число в строку DXF с гарантией десятичной точки }
+function DXFFloatStr(Value: Double): string;
+begin
+  Result := FloatToStr(Value);
+  if Pos('.', Result) = 0 then
+    Result := Result + '.0';
+end;
+
+{ Записывает блок границ ячейки в поток (коды 274-279, 284-289, 64-69).
+  Значения по умолчанию: тип линии = -2, видимость = 1, цвет = 0 }
+procedure WriteCellBordersToStream(
+  var outstream: TZctnrVectorBytes);
+var
+  BorderCode, VisCode, ColorCode: Integer;
+begin
+  for BorderCode := 274 to 279 do
+  begin
+    VisCode := BorderCode + 10;
+    ColorCode := BorderCode - 210;
+    outstream.TXTAddStringEOL(dxfGroupCode(BorderCode));
+    outstream.TXTAddStringEOL('-2');
+    outstream.TXTAddStringEOL(dxfGroupCode(VisCode));
+    outstream.TXTAddStringEOL('1');
+    outstream.TXTAddStringEOL(dxfGroupCode(ColorCode));
+    outstream.TXTAddStringEOL('0');
+  end;
+end;
+
+{ Записывает один блок стиля ячейки (title/header/data) в поток }
+procedure WriteCellStyleToStream(
+  var outstream: TZctnrVectorBytes;
+  const CS: TGDBDXFTableCellStyle;
+  const TextStyleName: string);
+begin
+  outstream.TXTAddStringEOL(dxfGroupCode(7));
+  if TextStyleName <> '' then
+    outstream.TXTAddStringEOL(TextStyleName)
+  else
+    outstream.TXTAddStringEOL('Standard');
+  outstream.TXTAddStringEOL(dxfGroupCode(140));
+  outstream.TXTAddStringEOL(DXFFloatStr(CS.TextHeight));
+  outstream.TXTAddStringEOL(dxfGroupCode(170));
+  outstream.TXTAddStringEOL(IntToStr(CS.Alignment));
+  outstream.TXTAddStringEOL(dxfGroupCode(62));
+  outstream.TXTAddStringEOL(IntToStr(CS.TextColor));
+  outstream.TXTAddStringEOL(dxfGroupCode(63));
+  outstream.TXTAddStringEOL(IntToStr(CS.BackgroundColor));
+  outstream.TXTAddStringEOL(dxfGroupCode(283));
+  if CS.BackgroundColorEnabled then
+    outstream.TXTAddStringEOL('1')
+  else
+    outstream.TXTAddStringEOL('0');
+  outstream.TXTAddStringEOL(dxfGroupCode(90));
+  outstream.TXTAddStringEOL('512');
+  outstream.TXTAddStringEOL(dxfGroupCode(91));
+  outstream.TXTAddStringEOL('0');
+  outstream.TXTAddStringEOL(dxfGroupCode(1));
+  outstream.TXTAddStringEOL('');
+  WriteCellBordersToStream(outstream);
+end;
+
+{ Записывает один объект TABLESTYLE в выходной поток DXF.
+  StyleHandle — заранее назначенный хэндл объекта.
+  OwnerHandle — хэндл словаря ACAD_TABLESTYLE (владелец). }
+procedure WriteTableStyleObjectToStream(
+  var outstream: TZctnrVectorBytes;
+  Style: PTGDBDXFTableStyle;
+  const StyleHandle: TDWGHandle;
+  const OwnerHandle: TDWGHandle);
+var
+  PCellStyle: PTGDBDXFTableCellStyle;
+  DefaultCS: TGDBDXFTableCellStyle;
+  DefaultAlignments: array[0..2] of Integer;
+  CellIdx: Integer;
+  Iter: itrec;
+begin
+  DefaultAlignments[0] := 2;
+  DefaultAlignments[1] := 5;
+  DefaultAlignments[2] := 5;
+
+  outstream.TXTAddStringEOL(dxfGroupCode(0));
+  outstream.TXTAddStringEOL('TABLESTYLE');
+  outstream.TXTAddStringEOL(dxfGroupCode(5));
+  outstream.TXTAddStringEOL(inttohex(StyleHandle, 0));
+
+  { Блок ACAD_XDICTIONARY }
+  if Style^.XDictHandle <> '' then
+  begin
+    outstream.TXTAddStringEOL(dxfGroupCode(102));
+    outstream.TXTAddStringEOL('{ACAD_XDICTIONARY');
+    outstream.TXTAddStringEOL(dxfGroupCode(360));
+    outstream.TXTAddStringEOL(Style^.XDictHandle);
+    outstream.TXTAddStringEOL(dxfGroupCode(102));
+    outstream.TXTAddStringEOL('}');
+  end;
+
+  { Блок ACAD_REACTORS — принадлежность словарю }
+  outstream.TXTAddStringEOL(dxfGroupCode(102));
+  outstream.TXTAddStringEOL('{ACAD_REACTORS');
+  outstream.TXTAddStringEOL(dxfGroupCode(330));
+  outstream.TXTAddStringEOL(inttohex(OwnerHandle, 0));
+  outstream.TXTAddStringEOL(dxfGroupCode(102));
+  outstream.TXTAddStringEOL('}');
+  outstream.TXTAddStringEOL(dxfGroupCode(330));
+  outstream.TXTAddStringEOL(inttohex(OwnerHandle, 0));
+
+  { AcDbTableStyle }
+  outstream.TXTAddStringEOL(dxfGroupCode(100));
+  outstream.TXTAddStringEOL('AcDbTableStyle');
+  outstream.TXTAddStringEOL(dxfGroupCode(3));
+  outstream.TXTAddStringEOL(Style^.Name);
+  outstream.TXTAddStringEOL(dxfGroupCode(70));
+  outstream.TXTAddStringEOL(IntToStr(Style^.Flags70));
+  outstream.TXTAddStringEOL(dxfGroupCode(71));
+  outstream.TXTAddStringEOL(IntToStr(Style^.Flags71));
+  outstream.TXTAddStringEOL(dxfGroupCode(40));
+  outstream.TXTAddStringEOL(DXFFloatStr(Style^.HorzCellMargin));
+  outstream.TXTAddStringEOL(dxfGroupCode(41));
+  outstream.TXTAddStringEOL(DXFFloatStr(Style^.VertCellMargin));
+  outstream.TXTAddStringEOL(dxfGroupCode(280));
+  if Style^.TitleSuppressed then
+    outstream.TXTAddStringEOL('1')
+  else
+    outstream.TXTAddStringEOL('0');
+  outstream.TXTAddStringEOL(dxfGroupCode(281));
+  if Style^.ColumnHeadingSuppressed then
+    outstream.TXTAddStringEOL('1')
+  else
+    outstream.TXTAddStringEOL('0');
+
+  { Записываем блоки ячеек (title, header, data) }
+  CellIdx := 0;
+  PCellStyle := Style^.CellFormats.beginiterate(Iter);
+  while (PCellStyle <> nil) and (CellIdx < 3) do
+  begin
+    WriteCellStyleToStream(outstream, PCellStyle^,
+      Style^.CellTextStyleName[CellIdx]);
+    Inc(CellIdx);
+    PCellStyle := Style^.CellFormats.iterate(Iter);
+  end;
+  { Добиваем до трёх блоков значениями по умолчанию }
+  while CellIdx < 3 do
+  begin
+    FillChar(DefaultCS, SizeOf(DefaultCS), 0);
+    DefaultCS.TextHeight := 2.5;
+    DefaultCS.Alignment := DefaultAlignments[CellIdx];
+    DefaultCS.BackgroundColor := 7;
+    WriteCellStyleToStream(outstream, DefaultCS, 'Standard');
+    Inc(CellIdx);
+  end;
+
+  programlog.LogOutFormatStr(
+    'uzeffdxfout: записан TABLESTYLE "%s" handle=%s',
+    [Style^.Name, inttohex(StyleHandle, 0)], LM_Info);
+end;
 
 procedure saveentitiesdxf2000(pva:PGDBObjEntityOpenArray;var outStream:TZctnrVectorBytes;var drawing:TSimpleDrawing;var IODXFContext:TIODXFSaveContext);
 var
@@ -165,6 +322,17 @@ var
   variablenotprocessed:boolean;
   processedvarscount:integer;
   lph:TLPSHandle;
+
+  { Переменные для сохранения стилей таблиц в секции OBJECTS }
+  inobjectssec: boolean;
+  tablestyledicthandle: TDWGHandle;
+  tablestyleiter: itrec;
+  ptablestyle: PTGDBDXFTableStyle;
+  writtenstylecount: integer;
+  intablestyledict: boolean;
+  { Массивы предварительно выделенных хэндлов для стилей таблиц }
+  tsHandles: array of TDWGHandle;
+  tsCount: integer;
 begin
   intable:=0;
   IODXFContext.InitRec;
@@ -195,6 +363,12 @@ begin
     inlttypetable:=False;
     indimstyletable:=False;
     inappidtable:=False;
+    inobjectssec:=False;
+    intablestyledict:=False;
+    tablestyledicthandle:=0;
+    writtenstylecount:=0;
+    tsCount:=0;
+    SetLength(tsHandles, 0);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
@@ -249,6 +423,11 @@ begin
               plottablefansdle:=lasthandle;  {поймать плоттабле}
             if indimstyletable and (groupi=5) then
               dimtablehandle:=lasthandle;  {поймать dimtable}
+            { Обнаружение словаря ACAD_TABLESTYLE по хэндлу }
+            if inobjectssec and (groupi=5)
+               and (tablestyledicthandle>0)
+               and (lasthandle=tablestyledicthandle) then
+              intablestyledict:=True;
           end;
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
@@ -1001,6 +1180,184 @@ begin
           IgnoredSource:=True;
         end else if (groupi=0) and (values=dxfName_DIMSTYLE)and indimstyletable then begin
           IgnoredSource:=True;
+
+        { === Обработка секции OBJECTS: сохранение стилей таблиц === }
+        end else if (groupi=2) and (values='OBJECTS') then begin
+          { Вход в секцию OBJECTS.
+            Предварительно выделяем хэндлы для всех стилей таблиц из чертежа,
+            чтобы потом использовать их и в словаре, и в объектах TABLESTYLE. }
+          inobjectssec:=True;
+          tsCount:=drawing.DXFTableStyleTable.count;
+          if tsCount>0 then begin
+            SetLength(tsHandles, tsCount);
+            for i:=0 to tsCount-1 do begin
+              tsHandles[i]:=IODXFContext.handle;
+              Inc(IODXFContext.handle);
+            end;
+            programlog.LogOutFormatStr(
+              'uzeffdxfout: выделены хэндлы для %d стилей таблиц',
+              [tsCount], LM_Info);
+          end;
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+        end else if inobjectssec and (groupi=3) and (values='ACAD_TABLESTYLE') then begin
+          { Нашли запись ACAD_TABLESTYLE в корневом словаре.
+            Следующая пара (350, handle) — хэндл словаря стилей таблиц.
+            Сохраняем оба хэндла (старый и перемапленный) для дальнейшего
+            отслеживания объекта словаря. }
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+          groups:=templatefile.readString;
+          values:=templatefile.readString;
+          groupi:=StrToInt(groups);
+          if groupi=350 then begin
+            valuei:=StrToInt('$'+values);
+            intable:=OldHandele2NewHandle.MyGetValue(valuei);
+            if intable>0 then begin
+              tablestyledicthandle:=intable;
+              lasthandle:=intable;
+            end else begin
+              OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
+              tablestyledicthandle:=IODXFContext.handle;
+              lasthandle:=IODXFContext.handle;
+              Inc(IODXFContext.handle);
+            end;
+            outstream.TXTAddStringEOL(groups);
+            outstream.TXTAddStringEOL(inttohex(tablestyledicthandle,0));
+          end else begin
+            outstream.TXTAddStringEOL(groups);
+            outstream.TXTAddStringEOL(values);
+          end;
+        end else if inobjectssec and intablestyledict and (tsCount>0) and (groupi=3) then begin
+          { Внутри словаря ACAD_TABLESTYLE: пропускаем шаблонные записи (3/350 пары).
+            Они будут заменены нашими записями. }
+          groups:=templatefile.readString;
+          values:=templatefile.readString;
+          { Пропускаем пару 350/handle шаблонной записи }
+        end else if inobjectssec and intablestyledict and (groupi=0) then begin
+          { Конец словаря ACAD_TABLESTYLE. Записываем записи для стилей из чертежа. }
+          intablestyledict:=False;
+          if tsCount>0 then begin
+            i:=0;
+            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
+            while (ptablestyle<>nil) and (i<tsCount) do begin
+              outstream.TXTAddStringEOL(dxfGroupCode(3));
+              outstream.TXTAddStringEOL(ptablestyle^.Name);
+              outstream.TXTAddStringEOL(dxfGroupCode(350));
+              outstream.TXTAddStringEOL(inttohex(tsHandles[i],0));
+              Inc(i);
+              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
+            end;
+          end;
+          { Если следующий объект — TABLESTYLE, обрабатываем его отдельно }
+          if values='TABLESTYLE' then begin
+            { Не записываем 0/TABLESTYLE — он будет заменён нашими стилями.
+              Пропускаем содержимое до следующего объекта. }
+            while True do begin
+              repeat
+                groups:=templatefile.readString;
+                values:=templatefile.readString;
+                groupi:=StrToInt(groups);
+                if (groupi=5) or (groupi=320) or (groupi=330) or (groupi=340)
+                   or (groupi=350) or (groupi=1005) or (groupi=390)
+                   or (groupi=360) or (groupi=105) then begin
+                  valuei:=StrToInt('$'+values);
+                  if valuei<>0 then begin
+                    intable:=OldHandele2NewHandle.MyGetValue(valuei);
+                    if intable<=0 then begin
+                      OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
+                      Inc(IODXFContext.handle);
+                    end;
+                  end;
+                end;
+              until (groupi=0) or (not templatefile.notEOF);
+              if values<>'TABLESTYLE' then
+                Break;
+            end;
+            { Записываем стили из чертежа }
+            if tsCount>0 then begin
+              i:=0;
+              ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
+              while (ptablestyle<>nil) and (i<tsCount) do begin
+                WriteTableStyleObjectToStream(
+                  outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+                Inc(writtenstylecount);
+                Inc(i);
+                ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
+              end;
+            end;
+            if values=dxfName_ENDSEC then
+              inobjectssec:=False;
+            outstream.TXTAddStringEOL(dxfGroupCode(0));
+            outstream.TXTAddStringEOL(values);
+          end else begin
+            { Записываем текущую пару (начало следующего объекта) }
+            outstream.TXTAddStringEOL(groups);
+            outstream.TXTAddStringEOL(values);
+          end;
+        end else if inobjectssec and (tsCount>0) and (groupi=0) and (values='TABLESTYLE') then begin
+          { Начало объекта TABLESTYLE из шаблона.
+            Пропускаем все шаблонные TABLESTYLE и заменяем стилями из чертежа. }
+          while True do begin
+            repeat
+              groups:=templatefile.readString;
+              values:=templatefile.readString;
+              groupi:=StrToInt(groups);
+              { Хэндлы внутри пропускаемого объекта регистрируем в маппинге }
+              if (groupi=5) or (groupi=320) or (groupi=330) or (groupi=340)
+                 or (groupi=350) or (groupi=1005) or (groupi=390)
+                 or (groupi=360) or (groupi=105) then begin
+                valuei:=StrToInt('$'+values);
+                if valuei<>0 then begin
+                  intable:=OldHandele2NewHandle.MyGetValue(valuei);
+                  if intable<=0 then begin
+                    OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
+                    Inc(IODXFContext.handle);
+                  end;
+                end;
+              end;
+            until (groupi=0) or (not templatefile.notEOF);
+            if values<>'TABLESTYLE' then
+              Break;
+          end;
+
+          { Записываем все стили таблиц из чертежа с предварительно
+            выделенными хэндлами }
+          if tsCount>0 then begin
+            i:=0;
+            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
+            while (ptablestyle<>nil) and (i<tsCount) do begin
+              WriteTableStyleObjectToStream(
+                outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+              Inc(writtenstylecount);
+              Inc(i);
+              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
+            end;
+          end;
+          { Записываем текущую пару (начало следующего объекта) }
+          if values=dxfName_ENDSEC then
+            inobjectssec:=False;
+          outstream.TXTAddStringEOL(dxfGroupCode(0));
+          outstream.TXTAddStringEOL(values);
+        end else if inobjectssec and (groupi=0) and (values=dxfName_ENDSEC) then begin
+          { Конец секции OBJECTS. Если шаблон не содержал TABLESTYLE,
+            записываем стили из чертежа перед ENDSEC. }
+          if (writtenstylecount=0) and (tsCount>0)
+             and (tablestyledicthandle>0) then begin
+            i:=0;
+            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
+            while (ptablestyle<>nil) and (i<tsCount) do begin
+              WriteTableStyleObjectToStream(
+                outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+              Inc(writtenstylecount);
+              Inc(i);
+              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
+            end;
+          end;
+          inobjectssec:=False;
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+
         end else begin
           if not ignoredsource then begin
             outstream.TXTAddStringEOL(groups);
