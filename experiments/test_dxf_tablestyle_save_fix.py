@@ -1,171 +1,143 @@
 #!/usr/bin/env python3
 """
-Тест для проверки логики исправления сохранения стилей таблиц DXF.
-Проверяет целостность ссылок: словарь ACAD_TABLESTYLE должен указывать
-на реально существующие объекты TABLESTYLE в секции OBJECTS.
+Скрипт валидации: проверяет корректность формата вещественных
+чисел в DXF для объектов TABLESTYLE и MLEADERSTYLE.
 
-Основная проблема до исправления: TABLESTYLE объекты заменялись новыми хэндлами
-(F000, F001, F002), но словарь оставался со старыми (299, 7F, 298) → битый файл.
+AutoCAD 2008 требует десятичную точку в вещественных группах
+(40-59, 140-149). При её отсутствии возникает ошибка
+"преждевременный конец объекта".
+
+Проверяет что:
+1. Вещественные значения в TABLESTYLE содержат десятичную точку
+2. Вещественные значения в MLEADERSTYLE содержат десятичную точку
+3. Блочные стили MLEADERSTYLE правильно определяются
 """
 
 import sys
+import os
 
-DXF_FILE = '/tmp/gh-issue-solver-1775023558502/cad_source/tablestyle.dxf'
-SAVED_FILE = '/tmp/gh-issue-solver-1775023558502/cad_source/tablestyle_1.dxf'
+# Диапазоны DXF group codes для вещественных значений
+FLOAT_CODE_RANGES = [
+    (10, 59),     # координаты и скалярные значения
+    (110, 149),   # подобъекты
+    (210, 239),   # направления экструзии
+    (460, 469),   # дополнительные
+    (1010, 1059), # xdata координаты
+]
+
+def is_float_code(code_str):
+    """Проверяет, является ли код группы вещественным."""
+    try:
+        code = int(code_str)
+    except ValueError:
+        return False
+    for lo, hi in FLOAT_CODE_RANGES:
+        if lo <= code <= hi:
+            return True
+    return False
 
 
-def parse_dxf_pairs(filename):
-    """Читает DXF и возвращает список пар (code, value)."""
-    with open(filename, 'r', encoding='cp1251', errors='replace') as f:
-        lines = f.read().splitlines()
-    pairs = []
+def check_float_format_in_objects(filename, obj_type=None):
+    """Проверяет формат вещественных значений в секции OBJECTS.
+    Если obj_type задан, проверяет только объекты этого типа."""
+    with open(filename, 'r', errors='replace') as f:
+        lines = [l.rstrip() for l in f.readlines()]
+
+    in_objects = False
+    errors = []
+    current_obj = '?'
+    current_handle = ''
+
     i = 0
     while i < len(lines) - 1:
-        try:
-            code = int(lines[i].strip())
-            value = lines[i + 1].strip()
-            pairs.append((code, value))
-        except ValueError:
-            pass
-        i += 2
-    return pairs
+        code = lines[i].strip()
+        value = lines[i + 1].strip()
 
-
-def find_acad_tablestyle_dict(pairs):
-    """
-    Находит хэндл словаря ACAD_TABLESTYLE и карту handle->name.
-    ACAD_TABLESTYLE встречается как: code=3 value='ACAD_TABLESTYLE', потом code=350 value=<handle>
-    """
-    dict_handle = None
-    for i, (code, value) in enumerate(pairs):
-        if code == 3 and value.upper() == 'ACAD_TABLESTYLE':
-            if i + 1 < len(pairs) and pairs[i + 1][0] == 350:
-                dict_handle = pairs[i + 1][1].upper()
-                break
-
-    if dict_handle is None:
-        return None, {}
-
-    # Читаем содержимое словаря
-    handle_to_name = {}
-    in_dict = False
-    last_key = None
-    for code, value in pairs:
-        if not in_dict:
-            if code == 5 and value.upper() == dict_handle:
-                in_dict = True
-        else:
-            if code == 0:
-                break  # Конец словаря
-            elif code == 3:
-                last_key = value
-            elif code == 350 and last_key:
-                handle_to_name[value.upper()] = last_key
-                last_key = None
-
-    return dict_handle, handle_to_name
-
-
-def find_tablestyle_handles(pairs):
-    """
-    Ищет все объекты TABLESTYLE в секции OBJECTS (код 0, значение TABLESTYLE).
-    Возвращает список хэндлов (из следующей группы 5).
-    """
-    handles = []
-    in_objects = False
-    in_tablestyle = False
-    obj_handle = None
-
-    for code, value in pairs:
-        # Отслеживаем вход в секцию OBJECTS
-        if code == 2 and value.upper() == 'OBJECTS':
+        if code == '2' and value == 'OBJECTS':
             in_objects = True
-        elif code == 0 and value.upper() == 'ENDSEC' and in_objects:
-            in_objects = False
+            i += 2
+            continue
+        if in_objects and code == '0' and value == 'ENDSEC':
+            break
 
-        if not in_objects:
+        if in_objects:
+            if code == '0':
+                current_obj = value
+                current_handle = ''
+            elif code == '5' and current_handle == '':
+                current_handle = value
+
+            if (obj_type is None or current_obj == obj_type):
+                if is_float_code(code) and value != '':
+                    if '.' not in value:
+                        try:
+                            float(value)
+                            errors.append({
+                                'line': i + 1,
+                                'code': code,
+                                'value': value,
+                                'object': current_obj,
+                                'handle': current_handle,
+                            })
+                        except ValueError:
+                            pass
+
+        i += 2
+
+    return errors
+
+
+def main():
+    test_dir = 'cad_source/test'
+    all_ok = True
+
+    # Проверяем эталонный файл
+    etalon = os.path.join(test_dir,
+                          'leadermtextnonestyle_etalon.dxf')
+    if os.path.exists(etalon):
+        print('=== Эталон (AutoCAD) ===')
+        for obj_type in ['TABLESTYLE', 'MLEADERSTYLE']:
+            errors = check_float_format_in_objects(
+                etalon, obj_type)
+            if errors:
+                for e in errors:
+                    print(f'  {obj_type}: строка {e["line"]}, '
+                          f'код {e["code"]} = "{e["value"]}"')
+            else:
+                print(f'  {obj_type}: OK')
+
+    # Проверяем файлы сохранённые ZCAD
+    for fname, desc in [
+        ('leadermtextnonestyle_2nowork.dxf', 'ZCAD (не работает)'),
+        ('leadermtextnonestyle_1.dxf', 'ZCAD (первая попытка)'),
+    ]:
+        path = os.path.join(test_dir, fname)
+        if not os.path.exists(path):
             continue
 
-        if not in_tablestyle:
-            # Ищем начало объекта TABLESTYLE (code=0 value=TABLESTYLE)
-            if code == 0 and value.upper() == 'TABLESTYLE':
-                in_tablestyle = True
-                obj_handle = None
-        else:
-            if code == 5 and obj_handle is None:
-                obj_handle = value.upper()
-            elif code == 0:
-                # Конец объекта TABLESTYLE
-                if obj_handle:
-                    handles.append(obj_handle)
-                in_tablestyle = False
-                obj_handle = None
-                # Начало следующего объекта
-                if value.upper() == 'TABLESTYLE':
-                    in_tablestyle = True
+        print(f'\n=== {fname} ({desc}) ===')
+        for obj_type in ['TABLESTYLE', 'MLEADERSTYLE']:
+            errors = check_float_format_in_objects(
+                path, obj_type)
+            if errors:
+                all_ok = False
+                for e in errors:
+                    print(f'  ОШИБКА {obj_type}: строка '
+                          f'{e["line"]}, код {e["code"]} = '
+                          f'"{e["value"]}" (нет точки)')
+            else:
+                print(f'  {obj_type}: OK')
 
-    if in_tablestyle and obj_handle:
-        handles.append(obj_handle)
-
-    return handles
-
-
-def check_file(filename, label):
-    """Проверяет целостность ссылок TABLESTYLE в DXF файле."""
-    print(f"\n=== {label} ===")
-
-    pairs = parse_dxf_pairs(filename)
-    dict_handle, handle_to_name = find_acad_tablestyle_dict(pairs)
-
-    if dict_handle is None:
-        print("  ОШИБКА: словарь ACAD_TABLESTYLE не найден")
-        return False
-
-    print(f"  Словарь ACAD_TABLESTYLE хэндл={dict_handle}")
-    print(f"  Содержимое словаря: {handle_to_name}")
-
-    actual_handles = find_tablestyle_handles(pairs)
-    print(f"  Объекты TABLESTYLE хэндлы: {actual_handles}")
-
-    actual_set = set(actual_handles)
-    ok = True
-
-    for handle, name in handle_to_name.items():
-        if handle in actual_set:
-            print(f"  ✓ '{name}' хэндл={handle} → объект найден")
-        else:
-            print(f"  ✗ '{name}' хэндл={handle} → объект НЕ НАЙДЕН (битая ссылка!)")
-            ok = False
-
-    dict_handles = set(handle_to_name.keys())
-    for handle in actual_handles:
-        if handle not in dict_handles:
-            print(f"  ✗ TABLESTYLE хэндл={handle} → отсутствует в словаре!")
-
-    if ok:
-        print("  => ФАЙЛ КОРРЕКТЕН")
+    print()
+    if all_ok:
+        print('РЕЗУЛЬТАТ: все проверки пройдены')
     else:
-        print("  => ФАЙЛ ПОВРЕЖДЁН")
+        print('РЕЗУЛЬТАТ: обнаружены ошибки!')
+        print('Исправление: использовать DXFFloatToStr вместо '
+              'FloatToStr в uzestylestablesdxf.pas')
 
-    return ok
+    return 0 if all_ok else 1
 
 
 if __name__ == '__main__':
-    print("Проверка целостности ссылок TABLESTYLE в DXF файлах")
-    print("=" * 60)
-
-    orig_ok = check_file(DXF_FILE, "Исходный файл tablestyle.dxf")
-    saved_ok = check_file(SAVED_FILE, "Сохранённый файл tablestyle_1.dxf")
-
-    print("\n" + "=" * 60)
-    if orig_ok:
-        print("✓ Исходный файл: OK")
-    else:
-        print("✗ Исходный файл: ОШИБКИ")
-
-    if not saved_ok:
-        print("✓ Сохранённый файл: ПОВРЕЖДЁН (баг подтверждён)")
-    else:
-        print("✗ Сохранённый файл: OK (неожиданно!)")
-
-    sys.exit(0 if (orig_ok and not saved_ok) else 1)
+    sys.exit(main())

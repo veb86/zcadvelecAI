@@ -519,6 +519,18 @@ begin
   end;
 end;
 
+{ Преобразует вещественное число в строку формата DXF.
+  DXF требует наличия десятичной точки в значениях
+  вещественных групп (40-59, 140-149 и др.).
+  Если FloatToStr вернул целое число (без точки),
+  добавляем '.0' для совместимости с AutoCAD }
+function DXFFloatToStr(Value: Double): string;
+begin
+  Result := FloatToStr(Value);
+  if Pos('.', Result) = 0 then
+    Result := Result + '.0';
+end;
+
 { Добавляет строки из многострочного текста Text в список Lines.
   Необходимо для вставки результата BuildTableStyleObjectText (который использует
   Lines.Text, оканчивающийся на #10) в ResultLines по одной строке, чтобы избежать
@@ -557,7 +569,7 @@ begin
     Lines.Add('Standard');
 
   Lines.Add('140');
-  Lines.Add(FloatToStr(CS.TextHeight));
+  Lines.Add(DXFFloatToStr(CS.TextHeight));
 
   Lines.Add('170');
   Lines.Add(IntToStr(CS.Alignment));
@@ -672,9 +684,9 @@ begin
     Lines.Add(' 71');
     Lines.Add(IntToStr(Style^.Flags71));
     Lines.Add(' 40');
-    Lines.Add(FloatToStr(Style^.HorzCellMargin));
+    Lines.Add(DXFFloatToStr(Style^.HorzCellMargin));
     Lines.Add(' 41');
-    Lines.Add(FloatToStr(Style^.VertCellMargin));
+    Lines.Add(DXFFloatToStr(Style^.VertCellMargin));
     Lines.Add('280');
     if Style^.TitleSuppressed then
       Lines.Add('     1')
