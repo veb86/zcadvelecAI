@@ -36,7 +36,7 @@ uses
   uzegeometry,uzcoimultiproperties,uzcLog,
   uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,
   uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
-  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport,
+  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport,gzctnrVectorTypes,
   uzeentpolyfacemesh;
 implementation
 var
@@ -588,25 +588,25 @@ var
   PVD: pvardesk;
   rowCount: TArrayIndex;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   rowCount := PGDBObjTable(ChangedData.PEntity)^.tbl.Count;
   if fistrun then begin
-    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
-    mp.MPType.CopyValueToInstance(
-      @rowCount, PVD.data.Addr.Instance);
-    PTOneVarData(pdata).StrValue :=
-      mp.MPType.GetDecoratedValueAsString(@rowCount, f);
+    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    mp.MPType^.CopyValueToInstance(
+      @rowCount, PVD^.data.Addr.Instance);
+    PTOneVarData(pdata)^.StrValue :=
+      mp.MPType^.GetDecoratedValueAsString(@rowCount, f);
   end else begin
-    if mp.MPType.Compare(
-      @rowCount, PVD.data.Addr.Instance) <> CREqual then
+    if mp.MPType^.Compare(
+      @rowCount, PVD^.data.Addr.Instance) <> CREqual then
       ProcessVariableAttributes(
-        PVD.attrib, vda_approximately, 0);
-    if PTOneVarData(pdata).StrValue <>
-      mp.MPType.GetDecoratedValueAsString(@rowCount, f) then
+        PVD^.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata)^.StrValue <>
+      mp.MPType^.GetDecoratedValueAsString(@rowCount, f) then
       ProcessVariableAttributes(
-        PVD.attrib, vda_different, vda_approximately);
+        PVD^.attrib, vda_different, vda_approximately);
   end;
 end;
 
@@ -622,29 +622,29 @@ var
   PVD: pvardesk;
   colCount: TArrayIndex;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   if PGDBObjTable(ChangedData.PEntity)^.PTableStyle <> nil then
     colCount := PGDBObjTable(
       ChangedData.PEntity)^.PTableStyle^.tblformat.Count
   else
     colCount := 0;
   if fistrun then begin
-    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
-    mp.MPType.CopyValueToInstance(
-      @colCount, PVD.data.Addr.Instance);
-    PTOneVarData(pdata).StrValue :=
-      mp.MPType.GetDecoratedValueAsString(@colCount, f);
+    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    mp.MPType^.CopyValueToInstance(
+      @colCount, PVD^.data.Addr.Instance);
+    PTOneVarData(pdata)^.StrValue :=
+      mp.MPType^.GetDecoratedValueAsString(@colCount, f);
   end else begin
-    if mp.MPType.Compare(
-      @colCount, PVD.data.Addr.Instance) <> CREqual then
+    if mp.MPType^.Compare(
+      @colCount, PVD^.data.Addr.Instance) <> CREqual then
       ProcessVariableAttributes(
-        PVD.attrib, vda_approximately, 0);
-    if PTOneVarData(pdata).StrValue <>
-      mp.MPType.GetDecoratedValueAsString(@colCount, f) then
+        PVD^.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata)^.StrValue <>
+      mp.MPType^.GetDecoratedValueAsString(@colCount, f) then
       ProcessVariableAttributes(
-        PVD.attrib, vda_different, vda_approximately);
+        PVD^.attrib, vda_different, vda_approximately);
   end;
 end;
 
@@ -660,9 +660,9 @@ var
   PVD: pvardesk;
   tableWidth: Double;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   tableWidth := PGDBObjAcadTable(ChangedData.PEntity)^.Width;
   ChangedData.PGetDataInEtity := @tableWidth;
   GeneralEntIterateProc(
@@ -681,9 +681,9 @@ var
   PVD: pvardesk;
   tableHeight: Double;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   tableHeight := PGDBObjAcadTable(ChangedData.PEntity)^.Height;
   ChangedData.PGetDataInEtity := @tableHeight;
   GeneralEntIterateProc(
@@ -702,25 +702,25 @@ var
   PVD: pvardesk;
   rowCount: TArrayIndex;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   rowCount := PGDBObjAcadTable(ChangedData.PEntity)^.RowCount;
   if fistrun then begin
-    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
-    mp.MPType.CopyValueToInstance(
-      @rowCount, PVD.data.Addr.Instance);
-    PTOneVarData(pdata).StrValue :=
-      mp.MPType.GetDecoratedValueAsString(@rowCount, f);
+    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    mp.MPType^.CopyValueToInstance(
+      @rowCount, PVD^.data.Addr.Instance);
+    PTOneVarData(pdata)^.StrValue :=
+      mp.MPType^.GetDecoratedValueAsString(@rowCount, f);
   end else begin
-    if mp.MPType.Compare(
-      @rowCount, PVD.data.Addr.Instance) <> CREqual then
+    if mp.MPType^.Compare(
+      @rowCount, PVD^.data.Addr.Instance) <> CREqual then
       ProcessVariableAttributes(
-        PVD.attrib, vda_approximately, 0);
-    if PTOneVarData(pdata).StrValue <>
-      mp.MPType.GetDecoratedValueAsString(@rowCount, f) then
+        PVD^.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata)^.StrValue <>
+      mp.MPType^.GetDecoratedValueAsString(@rowCount, f) then
       ProcessVariableAttributes(
-        PVD.attrib, vda_different, vda_approximately);
+        PVD^.attrib, vda_different, vda_approximately);
   end;
 end;
 
@@ -736,25 +736,25 @@ var
   PVD: pvardesk;
   colCount: TArrayIndex;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   colCount := PGDBObjAcadTable(ChangedData.PEntity)^.ColCount;
   if fistrun then begin
-    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
-    mp.MPType.CopyValueToInstance(
-      @colCount, PVD.data.Addr.Instance);
-    PTOneVarData(pdata).StrValue :=
-      mp.MPType.GetDecoratedValueAsString(@colCount, f);
+    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    mp.MPType^.CopyValueToInstance(
+      @colCount, PVD^.data.Addr.Instance);
+    PTOneVarData(pdata)^.StrValue :=
+      mp.MPType^.GetDecoratedValueAsString(@colCount, f);
   end else begin
-    if mp.MPType.Compare(
-      @colCount, PVD.data.Addr.Instance) <> CREqual then
+    if mp.MPType^.Compare(
+      @colCount, PVD^.data.Addr.Instance) <> CREqual then
       ProcessVariableAttributes(
-        PVD.attrib, vda_approximately, 0);
-    if PTOneVarData(pdata).StrValue <>
-      mp.MPType.GetDecoratedValueAsString(@colCount, f) then
+        PVD^.attrib, vda_approximately, 0);
+    if PTOneVarData(pdata)^.StrValue <>
+      mp.MPType^.GetDecoratedValueAsString(@colCount, f) then
       ProcessVariableAttributes(
-        PVD.attrib, vda_different, vda_approximately);
+        PVD^.attrib, vda_different, vda_approximately);
   end;
 end;
 
@@ -770,23 +770,23 @@ var
   PVD: pvardesk;
   styleName: AnsiString;
 begin
-  PVD := PTOneVarData(pdata).VDAddr.Instance;
+  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD.attrib, vda_RO, 0);
+    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
   styleName := PGDBObjAcadTable(
     ChangedData.PEntity)^.TableStyleName;
   if fistrun then begin
-    ProcessVariableAttributes(PVD.attrib, 0, vda_different);
-    mp.MPType.CopyValueToInstance(
-      @styleName, PVD.data.Addr.Instance);
-    PTOneVarData(pdata).StrValue :=
-      mp.MPType.GetDecoratedValueAsString(@styleName, f);
+    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    mp.MPType^.CopyValueToInstance(
+      @styleName, PVD^.data.Addr.Instance);
+    PTOneVarData(pdata)^.StrValue :=
+      mp.MPType^.GetDecoratedValueAsString(@styleName, f);
   end else begin
-    if (PVD.attrib and vda_different) = 0 then begin
-      if mp.MPType.Compare(
-        @styleName, PVD.data.Addr.Instance) <> CREqual then
+    if (PVD^.attrib and vda_different) = 0 then begin
+      if mp.MPType^.Compare(
+        @styleName, PVD^.data.Addr.Instance) <> CREqual then
         ProcessVariableAttributes(
-          PVD.attrib, vda_different, 0);
+          PVD^.attrib, vda_different, 0);
     end;
   end;
 end;
