@@ -340,6 +340,7 @@ uses
   //uzccomexample2,
   uzventsuperline,
   uzeentacdproxy,    { Поддержка прокси-объектов ACAD_PROXY_ENTITY }
+  uzvproxytoblock,   { Конвертация прокси-объектов в блоки }
   //uzccomobjectinspector,
   //uzccomexperimental,
 
