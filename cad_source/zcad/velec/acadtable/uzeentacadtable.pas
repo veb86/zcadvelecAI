@@ -49,6 +49,8 @@ const
   CAcadTableMaxDimension = 1000;
   // Максимальное количество ячеек — защита памяти
   CAcadTableMaxCells = 100000;
+  // Отступ текста от границ ячейки по умолчанию (в единицах чертежа)
+  CAcadTableDefaultCellMargin = 1.5;
 
 type
   // Типы данных ячеек
@@ -109,6 +111,9 @@ type
     // Размеры по умолчанию
     DefaultRowHeight: Double;
     DefaultColWidth: Double;
+    // Отступы текста от границ ячейки (из DXF-стиля)
+    HorzCellMargin: Double;
+    VertCellMargin: Double;
   end;
 
   // Строка таблицы
@@ -455,8 +460,7 @@ begin
 end;
 
 // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle.
-// Ищет первый стиль в DXFTableStyleTable чертежа (таблица обычно содержит
-// один стиль — тот, что использует данная таблица).
+// Ищет стиль по имени в DXFTableStyleTable чертежа.
 // Если стиль найден — заполняет FTableStyle его данными для корректного
 // отображения выравнивания, цветов и других параметров форматирования.
 procedure GDBObjAcadTable.ApplyDXFTableStyle(var ADrawing: TDrawingDef);
@@ -485,10 +489,20 @@ begin
     Exit;
   end;
 
-  // Берём первый стиль из таблицы (в большинстве файлов стиль один)
-  StylePtr := DXFStyleTable^.beginiterate(IterRec);
+  // Ищем стиль по имени, которое уже задано в FTableStyle.Name
+  // Если имя пустое — берём первый стиль из таблицы
+  StylePtr := nil;
+  if FTableStyle.Name <> '' then
+    StylePtr := PTGDBDXFTableStyle(
+      DXFStyleTable^.getAddres(FTableStyle.Name));
+
+  // Если по имени не нашли — перебираем все стили
   if StylePtr = nil then
-    Exit;
+  begin
+    StylePtr := DXFStyleTable^.beginiterate(IterRec);
+    if StylePtr = nil then
+      Exit;
+  end;
 
   programlog.LogOutFormatStr(
     'uzeentacadtable: ApplyDXFTableStyle применяем стиль "%s" (хэндл=%s)',
@@ -521,13 +535,22 @@ begin
     CellStylePtr := StylePtr^.CellFormats.iterate(CellFormatsIter);
   end;
 
+  // Извлекаем отступы ячеек из DXF-стиля
+  if StylePtr^.HorzCellMargin > 0 then
+    FTableStyle.HorzCellMargin := StylePtr^.HorzCellMargin;
+  if StylePtr^.VertCellMargin > 0 then
+    FTableStyle.VertCellMargin := StylePtr^.VertCellMargin;
+
   programlog.LogOutFormatStr(
     'uzeentacadtable: ApplyDXFTableStyle OK стиль="%s" ' +
-    'title_height=%.2f header_height=%.2f data_height=%.2f',
+    'title_height=%.2f header_height=%.2f data_height=%.2f ' +
+    'hMargin=%.2f vMargin=%.2f',
     [FTableStyle.Name,
      FTableStyle.TitleCell.TextHeight,
      FTableStyle.HeaderCell.TextHeight,
-     FTableStyle.DataCell.TextHeight], LM_Info);
+     FTableStyle.DataCell.TextHeight,
+     FTableStyle.HorzCellMargin,
+     FTableStyle.VertCellMargin], LM_Info);
 end;
 
 // Резолвит итоговый стиль ячейки с учётом иерархии.
@@ -665,6 +688,8 @@ begin
   InitCellStyle(FTableStyle.DataCell);
   FTableStyle.DefaultRowHeight := CAcadTableDefaultRowHeight;
   FTableStyle.DefaultColWidth := CAcadTableDefaultColWidth;
+  FTableStyle.HorzCellMargin := CAcadTableDefaultCellMargin;
+  FTableStyle.VertCellMargin := CAcadTableDefaultCellMargin;
   System.SetLength(FRows, 0);
   System.SetLength(FCols, 0);
   System.SetLength(FCells, 0, 0);
@@ -704,6 +729,13 @@ var
   InCellData: Boolean;
   CellTextRead: Boolean;
   RowHeightCount, ColWidthCount: Integer;
+  // Переменные для разбора переопределений ячеек
+  FCellAlignOverride: Boolean;
+  FCellAlignValue: Integer;
+  FCellMergeFlag: Integer;
+  // Временные массивы для хранения переопределений ячеек (параллельно FCellTexts)
+  CellAlignFlags: array of Boolean;
+  CellAlignValues: array of Integer;
 begin
   programlog.LogOutStr('uzeentacadtable: LoadFromDXF START', LM_Info);
 
@@ -715,6 +747,9 @@ begin
   CellTextRead := False;
   RowHeightCount := 0;
   ColWidthCount := 0;
+  FCellAlignOverride := False;
+  FCellAlignValue := 0;
+  FCellMergeFlag := 0;
 
   // Пропускаем до первого 100
   while (GroupCode <> 0) and (GroupCode <> 100) do
@@ -843,7 +878,38 @@ begin
         begin
           InCellData := True;
           CellTextRead := False;
+          // Сбрасываем переопределения для новой ячейки
+          FCellAlignOverride := False;
+          FCellAlignValue := 0;
+          FCellMergeFlag := 0;
           ARdr.SkipString;
+        end;
+
+        // Флаг переопределения выравнивания ячейки
+        173:
+        begin
+          if InCellData then
+            FCellAlignOverride := (ARdr.ParseInteger <> 0)
+          else
+            ARdr.SkipString;
+        end;
+
+        // Значение выравнивания ячейки (читаем при наличии флага)
+        174:
+        begin
+          if InCellData then
+            FCellAlignValue := ARdr.ParseInteger
+          else
+            ARdr.SkipString;
+        end;
+
+        // Статус объединения ячейки (0=обычная, 1=merged, 2=другой тип)
+        175:
+        begin
+          if InCellData then
+            FCellMergeFlag := ARdr.ParseInteger
+          else
+            ARdr.SkipString;
         end;
 
         // Текст ячейки — код 302 (DXF 2007+) — приоритет
@@ -853,9 +919,17 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            // Сохраняем переопределение выравнивания для ячейки
+            if CellIndex >= Length(CellAlignFlags) then
+            begin
+              System.SetLength(CellAlignFlags, CellIndex + 1);
+              System.SetLength(CellAlignValues, CellIndex + 1);
+            end;
+            CellAlignFlags[CellIndex] := FCellAlignOverride;
+            CellAlignValues[CellIndex] := FCellAlignValue;
             programlog.LogOutFormatStr(
-              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
-              [CellIndex, CellText], LM_Info);
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s" align_override=%d align_val=%d',
+              [CellIndex, CellText, Ord(FCellAlignOverride), FCellAlignValue], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
@@ -870,9 +944,17 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            // Сохраняем переопределение выравнивания для ячейки
+            if CellIndex >= Length(CellAlignFlags) then
+            begin
+              System.SetLength(CellAlignFlags, CellIndex + 1);
+              System.SetLength(CellAlignValues, CellIndex + 1);
+            end;
+            CellAlignFlags[CellIndex] := FCellAlignOverride;
+            CellAlignValues[CellIndex] := FCellAlignValue;
             programlog.LogOutFormatStr(
-              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
-              [CellIndex, CellText], LM_Info);
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s" align_override=%d align_val=%d',
+              [CellIndex, CellText, Ord(FCellAlignOverride), FCellAlignValue], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
@@ -890,7 +972,7 @@ begin
         end;
 
         // Пропускаем служебные коды ячеек
-        11, 21, 31, 90, 93, 94, 95, 96, 170, 172, 173, 174, 175, 176, 177, 178,
+        11, 21, 31, 90, 93, 94, 95, 96, 170, 172, 176, 177, 178,
         145, 300, 301, 304, 274, 275, 276, 278, 279, 280, 281, 283, 284, 285, 286,
         288, 289, 63, 64, 65, 66, 68, 69, 70, 40, 41, 343, 344, 340:
           ARdr.SkipString;
@@ -915,6 +997,8 @@ begin
   InitCellStyle(FTableStyle.DataCell);
   FTableStyle.DefaultRowHeight := CAcadTableDefaultRowHeight;
   FTableStyle.DefaultColWidth := CAcadTableDefaultColWidth;
+  FTableStyle.HorzCellMargin := CAcadTableDefaultCellMargin;
+  FTableStyle.VertCellMargin := CAcadTableDefaultCellMargin;
 
   // Инициализируем массивы строк и столбцов
   if (FRowCount > 0) and (FColCount > 0) then
@@ -935,17 +1019,34 @@ begin
       InitCellStyle(FCols[ColWidthCount].Style);
     end;
 
-    // Инициализируем ячейки (2D массив)
+    // Инициализируем ячейки (2D массив) с учётом переопределений
     System.SetLength(FCells, FRowCount, FColCount);
     for RowHeightCount := 0 to FRowCount - 1 do
       for ColWidthCount := 0 to FColCount - 1 do
       begin
+        CellIndex := RowHeightCount * FColCount + ColWidthCount;
         FCells[RowHeightCount][ColWidthCount].DataType := cdtText;
-        FCells[RowHeightCount][ColWidthCount].Text := GetCellText(RowHeightCount, ColWidthCount);
+        FCells[RowHeightCount][ColWidthCount].Text :=
+          GetCellText(RowHeightCount, ColWidthCount);
         FCells[RowHeightCount][ColWidthCount].Value := 0;
         FCells[RowHeightCount][ColWidthCount].Formula := '';
         FCells[RowHeightCount][ColWidthCount].BlockName := '';
         InitCellStyle(FCells[RowHeightCount][ColWidthCount].Style);
+        // Применяем переопределение выравнивания из DXF
+        if (CellIndex < Length(CellAlignFlags)) and
+           CellAlignFlags[CellIndex] then
+        begin
+          FCells[RowHeightCount][ColWidthCount].Style.HorzAlign :=
+            DXFAlignToHorz(CellAlignValues[CellIndex]);
+          FCells[RowHeightCount][ColWidthCount].Style.VertAlign :=
+            DXFAlignToVert(CellAlignValues[CellIndex]);
+          Include(
+            FCells[RowHeightCount][ColWidthCount].Style.Overrides,
+            soHAlign);
+          Include(
+            FCells[RowHeightCount][ColWidthCount].Style.Overrides,
+            soVAlign);
+        end;
       end;
 
     // Инициализируем пустой массив объединений
@@ -1079,7 +1180,6 @@ begin
       // Проверяем, не объединена ли ячейка — рисуем только главную ячейку
       if IsCellMerged(RowIdx, ColIdx) then
       begin
-        // Ячейка в объединённом диапазоне — пропускаем, если не главная
         if not ((RowIdx = GetMergeRoot(RowIdx, ColIdx).Y) and
                 (ColIdx = GetMergeRoot(RowIdx, ColIdx).X)) then
         begin
@@ -1095,28 +1195,29 @@ begin
       else
         CellStr := GetCellText(RowIdx, ColIdx);
 
-      // Резолвим стиль ячейки с учётом иерархии
-      // Пока структуры пустые — используем значения по умолчанию
       programlog.LogOutFormatStr(
         'uzeentacadtable: BuildVisualRepresentation Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f',
         [RowIdx, ColIdx, CellStr, ColW, RowH], LM_Info);
 
       if CellStr <> '' then
       begin
-        // Резолвим стиль
+        // Резолвим стиль с учётом иерархии
         CellStyle := ResolveCellStyle(RowIdx, ColIdx);
 
         pointer(PMText) := ConstObjArray.CreateInitObj(GDBMTextID, @Self);
         PMText^.Template := UTF8ToString(CellStr);
 
-        // Используем текст высоту из стиля
+        // Высота текста из стиля
         if CellStyle.TextHeight > 0 then
           PMText^.textprop.size := CellStyle.TextHeight
         else
           PMText^.textprop.size := CAcadTableDefaultTextHeight;
 
         PMText^.linespacef := 1;
-        PMText^.Width := ColW * 0.9;
+        // Ширина текстового блока = ширина ячейки минус отступы с двух сторон
+        PMText^.Width := ColW - FTableStyle.HorzCellMargin * 2;
+        if PMText^.Width < 0 then
+          PMText^.Width := ColW * 0.9;
 
         // Выравнивание по горизонтали
         case CellStyle.HorzAlign of
@@ -1127,28 +1228,33 @@ begin
           PMText^.textprop.justify := jstl;
         end;
 
-        // Вычисляем позицию текста с учётом выравнивания
         TextHeightLocal := PMText^.textprop.size;
 
+        // Горизонтальная позиция текста с учётом отступов из стиля
         case CellStyle.HorzAlign of
           haLeft:
-            PMText^.Local.P_insert.x := CurrentX + TextHeightLocal * 0.5;
+            PMText^.Local.P_insert.x :=
+              CurrentX + FTableStyle.HorzCellMargin;
           haCenter:
             PMText^.Local.P_insert.x := CurrentX + ColW / 2;
           haRight:
-            PMText^.Local.P_insert.x := CurrentX + ColW - TextHeightLocal * 0.5;
+            PMText^.Local.P_insert.x :=
+              CurrentX + ColW - FTableStyle.HorzCellMargin;
         else
-          PMText^.Local.P_insert.x := CurrentX + TextHeightLocal * 0.5;
+          PMText^.Local.P_insert.x :=
+            CurrentX + FTableStyle.HorzCellMargin;
         end;
 
-        // Выравнивание по вертикали
+        // Вертикальная позиция текста с учётом отступов из стиля
         case CellStyle.VertAlign of
           vaTop:
-            PMText^.Local.P_insert.y := -(CurrentY + TextHeightLocal * 0.5);
+            PMText^.Local.P_insert.y :=
+              -(CurrentY + FTableStyle.VertCellMargin);
           vaMiddle:
             PMText^.Local.P_insert.y := -(CurrentY + RowH / 2);
           vaBottom:
-            PMText^.Local.P_insert.y := -(CurrentY + RowH - TextHeightLocal * 0.5);
+            PMText^.Local.P_insert.y :=
+              -(CurrentY + RowH - FTableStyle.VertCellMargin);
         else
           PMText^.Local.P_insert.y := -(CurrentY + RowH / 2);
         end;
@@ -1157,12 +1263,13 @@ begin
         PMText^.TXTStyle :=
           pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
 
-        // TODO: Применить цвет текста из стиля (когда будет реализована поддержка цвета)
-
         programlog.LogOutFormatStr(
-          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) text="%s" halign=%d valign=%d',
-          [RowIdx, ColIdx, PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
-           PMText^.Template, Ord(CellStyle.HorzAlign), Ord(CellStyle.VertAlign)], LM_Info);
+          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] ' +
+          'insert(%.2f,%.2f) size=%.2f text="%s" halign=%d valign=%d',
+          [RowIdx, ColIdx, PMText^.Local.P_insert.x,
+           PMText^.Local.P_insert.y, PMText^.textprop.size,
+           PMText^.Template, Ord(CellStyle.HorzAlign),
+           Ord(CellStyle.VertAlign)], LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
         Inc(TextCount);
