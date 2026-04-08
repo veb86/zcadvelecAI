@@ -29,151 +29,11 @@ uses
   uzegeometrytypes,SysUtils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,uzestylestablesdxf,
-  uzestylesmleaderdxf,uzclog,Classes;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils;
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
 implementation
-
-{ Извлекает тело секции DXF (строки между заголовком и ENDSEC).
-  Входная строка RawSection имеет формат:
-    0\nSECTION\n2\n<NAME>\n<body>\n0\nENDSEC
-  Функция возвращает только <body> без заголовка и без ENDSEC.
-  Если RawSection пустая или имеет неверный формат — возвращает пустую строку. }
-function ExtractDXFSectionBody(const RawSection: string): string;
-var
-  Lines: TStringList;
-  BodyStart, BodyEnd, I: Integer;
-begin
-  Result := '';
-  if RawSection = '' then
-    Exit;
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawSection;
-
-    { Заголовок занимает 4 строки: 0, SECTION, 2, <NAME>.
-      Тело начинается с индекса 4. }
-    BodyStart := 4;
-    if Lines.Count <= BodyStart then
-      Exit;
-
-    { Конец тела — строки перед последним 0/ENDSEC.
-      Ищем последнее вхождение '0' с последующим 'ENDSEC'. }
-    BodyEnd := Lines.Count - 1;
-    I := Lines.Count - 2;
-    while I >= BodyStart do
-    begin
-      if (Trim(Lines[I]) = '0') and (Trim(Lines[I + 1]) = 'ENDSEC') then
-      begin
-        BodyEnd := I - 1;
-        Break;
-      end;
-      Dec(I);
-    end;
-
-    { Собираем тело секции }
-    for I := BodyStart to BodyEnd do
-    begin
-      if Result <> '' then
-        Result := Result + LineEnding;
-      Result := Result + Lines[I];
-    end;
-  finally
-    Lines.Free;
-  end;
-end;
-
-{ Проверяет, является ли код группы DXF ссылкой на хэндл.
-  Согласно спецификации DXF, коды хэндлов:
-    5     — хэндл объекта
-    105   — хэндл DIMASSOC
-    320–329 — мягкие указатели
-    330–339 — жёсткие указатели (владение)
-    340–349 — жёсткие указатели (ссылки)
-    350–359 — мягкие указатели (владение)
-    360–369 — жёсткие владельцы
-    390–399 — хэндлы стилей печати
-    1005  — хэндл расширенных данных }
-function IsHandleGroupCode(Code: Integer): Boolean;
-begin
-  Result :=
-    (Code = 5) or (Code = 105) or (Code = 1005) or
-    ((Code >= 320) and (Code <= 369)) or
-    ((Code >= 390) and (Code <= 399));
-end;
-
-{ Записывает тело секции OBJECTS с перенумерацией хэндлов.
-  Все хэндлы-ссылки (определяемые IsHandleGroupCode)
-  заменяются на уникальные значения из IODXFContext.handle, чтобы
-  исключить конфликты с хэндлами из секции TABLES/HEADER/BLOCKS.
-  OldHandele2NewHandle используется совместно с шаблонной частью —
-  если хэндл уже известен, он будет использован повторно. }
-procedure WriteObjectsSectionBody(
-  const SectionBody: string;
-  var outstream: TZctnrVectorBytes;
-  var IODXFContext: TIODXFSaveContext;
-  OldHandele2NewHandle: TMapHandleToHandle);
-var
-  Lines: TStringList;
-  I, GroupCode, OldHandle, NewHandle: Integer;
-  GroupStr, ValueStr: string;
-  IsHandleCode: Boolean;
-begin
-  if SectionBody = '' then
-    Exit;
-  Lines := TStringList.Create;
-  try
-    Lines.Text := SectionBody;
-    I := 0;
-    while I < Lines.Count - 1 do
-    begin
-      GroupStr := Lines[I];
-      ValueStr := Lines[I + 1];
-      GroupCode := StrToIntDef(Trim(GroupStr), -1);
-      { Проверяем, является ли код группы хэндлом }
-      IsHandleCode := IsHandleGroupCode(GroupCode);
-      if IsHandleCode then
-      begin
-        OldHandle := StrToInt('$' + Trim(ValueStr));
-        if OldHandle = 0 then
-        begin
-          { Нулевой хэндл — записываем как есть }
-          outstream.TXTAddStringEOL(GroupStr);
-          outstream.TXTAddStringEOL('0');
-        end
-        else
-        begin
-          { Ищем уже назначенный хэндл или создаём новый }
-          NewHandle := OldHandele2NewHandle.MyGetValue(OldHandle);
-          if NewHandle > 0 then
-          begin
-            outstream.TXTAddStringEOL(GroupStr);
-            outstream.TXTAddStringEOL(IntToHex(NewHandle, 0));
-          end
-          else
-          begin
-            OldHandele2NewHandle.Add(OldHandle, IODXFContext.handle);
-            outstream.TXTAddStringEOL(GroupStr);
-            outstream.TXTAddStringEOL(IntToHex(IODXFContext.handle, 0));
-            Inc(IODXFContext.handle);
-          end;
-        end;
-      end
-      else
-      begin
-        { Обычная пара код/значение — копируем без изменений }
-        outstream.TXTAddStringEOL(GroupStr);
-        outstream.TXTAddStringEOL(ValueStr);
-      end;
-      Inc(I, 2);
-    end;
-  finally
-    Lines.Free;
-  end;
-end;
 
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 begin
@@ -273,122 +133,6 @@ begin
 end;
 
 
-{ Разрешает хэндлы ссылок (340-343) в стилях мультивыносок.
-  Заменяет старые хэндлы из исходного файла на новые,
-  соответствующие объектам в выходном файле.
-  Вызывается после обработки шаблона (когда p2h содержит
-  все хэндлы из TABLES) и перед WriteMLeaderStylesToDXFObjects. }
-{ Обновляет хэндл-поле стиля мультивыноски: находит
-  объект по имени через p2h и заменяет старый хэндл
-  на новый, совпадающий с фактическим хэндлом в выходном
-  файле. Регистрирует identity-маппинг (NewH → NewH)
-  в OldHandele2NewHandle, чтобы WriteObjectsSectionBody
-  не перенумеровал значение повторно. }
-procedure ResolveOneHandle(
-  Ptr: Pointer;
-  var HandleField: string;
-  var IODXFContext: TIODXFSaveContext;
-  OldHandele2NewHandle: TMapHandleToHandle);
-var
-  NewH: TDWGHandle;
-begin
-  if Ptr = nil then
-    Exit;
-  IODXFContext.p2h.MyGetOrCreateValue(
-    Ptr, IODXFContext.handle, NewH);
-  { Заменяем хэндл на новый — теперь в RawObjectsSection
-    будет записано корректное значение }
-  HandleField := UpperCase(IntToHex(NewH, 0));
-  { Регистрируем identity-маппинг: WriteObjectsSectionBody
-    увидит хэндл NewH и оставит его без изменений }
-  if OldHandele2NewHandle.MyGetValue(NewH) = 0 then
-    OldHandele2NewHandle.Add(NewH, NewH);
-end;
-
-procedure PrePopulateMLeaderHandles(
-  var drawing: TSimpleDrawing;
-  var IODXFContext: TIODXFSaveContext;
-  OldHandele2NewHandle: TMapHandleToHandle);
-var
-  StyleIter: itrec;
-  Style: PTGDBDXFMLeaderStyle;
-  Ptr: Pointer;
-begin
-  if drawing.DXFMLeaderStyleTable.count = 0 then
-    Exit;
-
-  Style := drawing.DXFMLeaderStyleTable.beginiterate(
-    StyleIter);
-  while Style <> nil do
-  begin
-    { Разрешаем тип линии (код 340) по имени.
-      Если имя не было разрешено при импорте — используем
-      ByBlock как значение по умолчанию для MLEADERSTYLE }
-    if Style^.LeaderLinetypeName <> '' then
-      Ptr := drawing.LTypeStyleTable.getAddres(
-        Style^.LeaderLinetypeName)
-    else
-      Ptr := drawing.LTypeStyleTable.getAddres(
-        'ByBlock');
-    ResolveOneHandle(Ptr,
-      Style^.LeaderLinetypeHandle,
-      IODXFContext, OldHandele2NewHandle);
-
-    { Разрешаем блок стрелки (код 341) по имени.
-      Если блок не найден — очищаем хэндл, чтобы
-      не записывать ссылку на несуществующий объект }
-    if Style^.ArrowHeadBlockName <> '' then
-    begin
-      Ptr := drawing.BlockDefArray.getblockdef(
-        Style^.ArrowHeadBlockName);
-      if Ptr <> nil then
-        ResolveOneHandle(Ptr,
-          Style^.ArrowHeadBlockHandle,
-          IODXFContext, OldHandele2NewHandle)
-      else
-        Style^.ArrowHeadBlockHandle := '';
-    end;
-
-    { Разрешаем текстовый стиль (код 342) по имени.
-      Если имя не было разрешено — используем Standard }
-    if Style^.TextStyleName <> '' then
-      Ptr := drawing.TextStyleTable.FindStyle(
-        Style^.TextStyleName, False)
-    else
-      Ptr := drawing.TextStyleTable.FindStyle(
-        'Standard', False);
-    ResolveOneHandle(Ptr,
-      Style^.TextStyleHandle,
-      IODXFContext, OldHandele2NewHandle);
-
-    { Разрешаем блок содержимого (код 343) по имени.
-      Если блок не найден — очищаем хэндл }
-    if Style^.BlockContentName <> '' then
-    begin
-      Ptr := drawing.BlockDefArray.getblockdef(
-        Style^.BlockContentName);
-      if Ptr <> nil then
-        ResolveOneHandle(Ptr,
-          Style^.BlockContentHandle,
-          IODXFContext, OldHandele2NewHandle)
-      else
-        Style^.BlockContentHandle := '';
-    end;
-
-    programlog.LogOutFormatStr(
-      'uzeffdxfout: MLeaderStyle "%s": '
-      + '340=%s 341=%s 342=%s 343=%s',
-      [Style^.Name,
-       Style^.LeaderLinetypeHandle,
-       Style^.ArrowHeadBlockHandle,
-       Style^.TextStyleHandle,
-       Style^.BlockContentHandle], LM_Info);
-
-    Style := drawing.DXFMLeaderStyleTable.iterate(
-      StyleIter);
-  end;
-end;
-
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 var
   sysfilename:rawbytestring;
@@ -396,7 +140,7 @@ var
   outstream:TZctnrVectorBytes;
   groups,values,ts:string;
   groupi,valuei,intable,attr:integer;
-  temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle,blocktablehandle:TDWGHandle;
+  temphandle,temphandle2,lasthandle,vporttablehandle,plottablefansdle,dimtablehandle:TDWGHandle;
   i:integer;
   OldHandele2NewHandle:TMapHandleToHandle;
 
@@ -405,14 +149,6 @@ var
   ignoredsource:boolean;
   instyletable:boolean;
   invporttable:boolean;
-  { Признак нахождения в секции OBJECTS шаблона — содержимое шаблона игнорируется,
-    вместо него записывается RawObjectsSection с обновлёнными стилями таблиц. }
-  inobjectssec:boolean;
-  { Признак нахождения в секции CLASSES шаблона — содержимое шаблона игнорируется,
-    вместо него записывается RawClassesSection из исходного файла. }
-  inclassessec:boolean;
-  { Обновлённый сырой текст секции OBJECTS со стилями таблиц }
-  updatedObjectsSection:string;
 
   pltp:PGDBLtypeProp;
   plp:PGDBLayerProp;
@@ -459,23 +195,6 @@ begin
     inlttypetable:=False;
     indimstyletable:=False;
     inappidtable:=False;
-    blocktablehandle:=0;
-    inobjectssec:=False;
-    inclassessec:=False;
-
-    { Обновляем секцию OBJECTS стилями таблиц.
-      Стили мультивыносок добавляются позже (перед записью
-      OBJECTS в файл), после того как хэндлы ссылок
-      будут разрешены через PrePopulateMLeaderHandles. }
-    updatedObjectsSection := drawing.RawObjectsSection;
-    if drawing.DXFTableStyleTable.count > 0 then
-      WriteTableStylesToDXFObjects(
-        drawing.DXFTableStyleTable,
-        updatedObjectsSection);
-    programlog.LogOutFormatStr(
-      'uzeffdxfout: обновлена секция OBJECTS '
-      + '(%d стилей таблиц)',
-      [drawing.DXFTableStyleTable.count], LM_Info);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
@@ -499,7 +218,8 @@ begin
           variablenotprocessed:=True;
       end;
       if variablenotprocessed then
-        if IsHandleGroupCode(groupi) then begin
+        if (groupi=5)  or (groupi=320)  or (groupi=330)  or (groupi=340)  or (groupi=350)  or  (groupi=1005)  or
+          (groupi=390)  or (groupi=360)  or (groupi=105) then begin
           valuei:=StrToInt('$'+values);
           if valuei=0 then begin
             if not ignoredsource then begin
@@ -529,11 +249,6 @@ begin
               plottablefansdle:=lasthandle;  {поймать плоттабле}
             if indimstyletable and (groupi=5) then
               dimtablehandle:=lasthandle;  {поймать dimtable}
-            { Захватываем хэндл таблицы BLOCK_RECORD —
-              первый код 5 после TABLE/BLOCK_RECORD }
-            if inblocktable and (groupi=5)
-              and (blocktablehandle=0) then
-              blocktablehandle:=lasthandle;
           end;
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
@@ -543,103 +258,15 @@ begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
           inblocksec:=True;
-        end else if (groupi=2) and (values='OBJECTS') then begin
-          outstream.TXTAddStringEOL(groups);
-          outstream.TXTAddStringEOL(values);
-          { Замена секции OBJECTS на RawObjectsSection выполняется
-            только если секция была загружена из файла.
-            Для нового чертежа (RawObjectsSection пуста) шаблон
-            проходит без изменений — иначе секция будет пустой. }
-          if updatedObjectsSection <> '' then
-          begin
-            inobjectssec:=True;
-            ignoredsource:=True;
-            programlog.LogOutFormatStr(
-              'uzeffdxfout: секция OBJECTS будет заменена '
-              + 'из RawObjectsSection', [], LM_Info);
-          end
-          else
-            programlog.LogOutFormatStr(
-              'uzeffdxfout: секция OBJECTS пуста — '
-              + 'используется шаблон', [], LM_Info);
-        end else if (groupi=2) and (values='CLASSES') then begin
-          outstream.TXTAddStringEOL(groups);
-          outstream.TXTAddStringEOL(values);
-          { Замена секции CLASSES на RawClassesSection выполняется
-            только если секция была загружена из файла.
-            Для нового чертежа шаблон проходит без изменений. }
-          if drawing.RawClassesSection <> '' then
-          begin
-            inclassessec:=True;
-            ignoredsource:=True;
-            programlog.LogOutFormatStr(
-              'uzeffdxfout: секция CLASSES будет заменена '
-              + 'из RawClassesSection', [], LM_Info);
-          end
-          else
-            programlog.LogOutFormatStr(
-              'uzeffdxfout: секция CLASSES пуста — '
-              + 'используется шаблон', [], LM_Info);
-        end else if (inobjectssec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
-          { Конец секции OBJECTS шаблона — записываем тело updatedObjectsSection
-            с перенумерацией хэндлов через IODXFContext для предотвращения дублей. }
-          inobjectssec:=False;
-          ignoredsource:=False;
-          { Разрешаем хэндлы ссылок MLEADERSTYLE (340-343):
-            заменяем старые хэндлы из исходного файла на
-            новые, соответствующие объектам в выходном файле.
-            Это необходимо делать ПОСЛЕ обработки секции
-            TABLES, когда все p2h-маппинги уже заполнены. }
-          PrePopulateMLeaderHandles(
-            drawing, IODXFContext, OldHandele2NewHandle);
-          { Теперь записываем стили мультивыносок в секцию
-            OBJECTS — хэндлы уже содержат корректные
-            значения после PrePopulateMLeaderHandles. }
-          if drawing.DXFMLeaderStyleTable.count > 0 then
-            WriteMLeaderStylesToDXFObjects(
-              drawing.DXFMLeaderStyleTable,
-              updatedObjectsSection);
-          WriteObjectsSectionBody(
-            ExtractDXFSectionBody(updatedObjectsSection),
-            outstream, IODXFContext, OldHandele2NewHandle);
-          outstream.TXTAddStringEOL(dxfGroupCode(0));
-          outstream.TXTAddStringEOL(dxfName_ENDSEC);
-          programlog.LogOutFormatStr(
-            'uzeffdxfout: секция OBJECTS записана в файл',
-            [], LM_Info);
-        end else if (inclassessec) and (groupi=0) and (values=dxfName_ENDSEC) then begin
-          { Конец секции CLASSES шаблона — записываем тело RawClassesSection. }
-          inclassessec:=False;
-          ignoredsource:=False;
-          outstream.TXTAddStringEOL(ExtractDXFSectionBody(drawing.RawClassesSection));
-          outstream.TXTAddStringEOL(dxfGroupCode(0));
-          outstream.TXTAddStringEOL(dxfName_ENDSEC);
-          programlog.LogOutFormatStr(
-            'uzeffdxfout: секция CLASSES записана в файл',
-            [], LM_Info);
         end else if (inblocksec) and ((groupi=0) and (values=dxfName_ENDSEC)) then begin
           if drawing.BlockDefArray.Count>0 then
             for i:=0 to drawing.BlockDefArray.Count-1 do begin
               zDebugLn('{D}[DXF_CONTENTS]write BlockDef '+PBlockdefArray(drawing.BlockDefArray.parray)^[i].Name);
-
-              { Получаем хэндл BLOCK_RECORD для текущего
-                блока — он был сохранён в p2h при записи
-                секции TABLES. Код 330 связывает BLOCK
-                и ENDBLK с их BLOCK_RECORD-владельцем. }
-              IODXFContext.p2h.MyGetOrCreateValue(
-                @(PBlockdefArray(
-                  drawing.BlockDefArray.parray)^[i]),
-                IODXFContext.handle, temphandle);
-
               outstream.TXTAddStringEOL(dxfGroupCode(0));
               outstream.TXTAddStringEOL('BLOCK');
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(IODXFContext.handle{temphandle},0));
               Inc(IODXFContext.handle);
-              { Владелец BLOCK — ссылка на BLOCK_RECORD }
-              outstream.TXTAddStringEOL(dxfGroupCode(330));
-              outstream.TXTAddStringEOL(
-                inttohex(temphandle, 0));
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbEntity);
               outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -668,10 +295,6 @@ begin
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(IODXFContext.handle,0));
               Inc(IODXFContext.handle);
-              { Владелец ENDBLK — ссылка на BLOCK_RECORD }
-              outstream.TXTAddStringEOL(dxfGroupCode(330));
-              outstream.TXTAddStringEOL(
-                inttohex(temphandle, 0));
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbEntity);
               outstream.TXTAddStringEOL(dxfGroupCode(8));
@@ -853,14 +476,6 @@ begin
               IODXFContext.p2h.MyGetOrCreateValue(@(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),IODXFContext.handle,temphandle);
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(temphandle,0));
-              { Владелец BLOCK_RECORD — таблица
-                BLOCK_RECORD (код 330) }
-              if blocktablehandle<>0 then begin
-                outstream.TXTAddStringEOL(
-                  dxfGroupCode(330));
-                outstream.TXTAddStringEOL(
-                  inttohex(blocktablehandle, 0));
-              end;
               outstream.TXTAddStringEOL(dxfGroupCode(100));
               outstream.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
               outstream.TXTAddStringEOL(dxfGroupCode(100));
