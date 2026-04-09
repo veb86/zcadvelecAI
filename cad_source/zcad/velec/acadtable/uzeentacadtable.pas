@@ -135,7 +135,7 @@ type
     // Переопределение стиля (applied on top of table/row/column style)
     Style: TCellStyle;
     // Тип строкового стиля из DXF (group 170 в данных ячейки).
-    // 0 = не задан (наследуется от строки), 1 = Data, 2 = Title, 3 = Header.
+    // 0 = не задан (наследуется от строки), 1 = Title, 2 = Header, 3+ = Data.
     // Используется ResolveCellStyle для применения явного стиля строки.
     RowStyleType: Integer;
   end;
@@ -664,7 +664,7 @@ begin
   // Если ячейка имеет явно заданный тип строкового стиля (group 170 в DXF),
   // он переопределяет стиль, определённый по позиции строки.
   // Это позволяет корректно применять стиль независимо от FTableFlags.
-  // 1=Data, 2=Title, 3=Header (Название).
+  // 1=Title, 2=Header (Название), 3+=Data (Заголовок/данные).
   if (RowIdx >= 0) and (RowIdx < FRowCount) and
      (ColIdx >= 0) and (ColIdx < FColCount) and
      (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
@@ -672,11 +672,17 @@ begin
     TableCell := FCells[RowIdx][ColIdx];
     if TableCell.RowStyleType > 0 then
     begin
+      // Соответствие RowStyleType из group code 170 (AcDbTable) и типа стиля:
+      //   1 = Title  (первый блок в TABLESTYLE, group 7)
+      //   2 = Header (второй блок)
+      //   3 = Data   (третий блок)
+      // Значения подтверждены анализом DXF-файла +testtable.dxf:
+      // ячейки с данными (Заголовок) имеют 170=3 и ожидаемую высоту из DataCell.
       case TableCell.RowStyleType of
-        2: BaseStyle := FTableStyle.TitleCell;   // TITLE
-        3: BaseStyle := FTableStyle.HeaderCell;  // HEADER / Название
+        1: BaseStyle := FTableStyle.TitleCell;   // TITLE
+        2: BaseStyle := FTableStyle.HeaderCell;  // HEADER / Название
       else
-        BaseStyle := FTableStyle.DataCell;       // DATA (включая RowStyleType=1)
+        BaseStyle := FTableStyle.DataCell;       // DATA (включая RowStyleType=3+)
       end;
       if BaseStyle.Overrides = [] then
         BaseStyle := FTableStyle.DefaultCell;
@@ -1010,7 +1016,7 @@ begin
         end;
 
         // Тип строкового стиля ячейки — код 170 (в контексте данных ячейки).
-        // Явно задаёт стиль ячейки: 1=Data, 2=Title, 3=Header.
+        // Явно задаёт стиль ячейки: 1=Title, 2=Header, 3+=Data.
         // Читается только внутри блока ячейки (после 171), вне — пропускается.
         170:
         begin
@@ -1410,16 +1416,41 @@ begin
         PMText^.linespacef := 1;
         PMText^.Width := ColW * 0.9;
 
-        // Выравнивание по горизонтали
-        case CellStyle.HorzAlign of
-          haLeft:   PMText^.textprop.justify := jstl;
-          haCenter: PMText^.textprop.justify := jstc;
-          haRight:  PMText^.textprop.justify := jstr;
+        // Выравнивание по горизонтали и вертикали задаётся комбинированным значением.
+        // Необходимо использовать полное значение justify (H+V), чтобы MText корректно
+        // позиционировал точку вставки относительно текста.
+        // jstl/jstc/jstr — Top, jsml/jsmc/jsmr — Middle, jsbl/jsbc/jsbr — Bottom.
+        case CellStyle.VertAlign of
+          vaTop:
+            case CellStyle.HorzAlign of
+              haLeft:   PMText^.textprop.justify := jstl;
+              haCenter: PMText^.textprop.justify := jstc;
+              haRight:  PMText^.textprop.justify := jstr;
+            else
+              PMText^.textprop.justify := jstl;
+            end;
+          vaMiddle:
+            case CellStyle.HorzAlign of
+              haLeft:   PMText^.textprop.justify := jsml;
+              haCenter: PMText^.textprop.justify := jsmc;
+              haRight:  PMText^.textprop.justify := jsmr;
+            else
+              PMText^.textprop.justify := jsml;
+            end;
+          vaBottom:
+            case CellStyle.HorzAlign of
+              haLeft:   PMText^.textprop.justify := jsbl;
+              haCenter: PMText^.textprop.justify := jsbc;
+              haRight:  PMText^.textprop.justify := jsbr;
+            else
+              PMText^.textprop.justify := jsbl;
+            end;
         else
           PMText^.textprop.justify := jstl;
         end;
 
-        // Вычисляем позицию текста с учётом выравнивания и ширины ячейки
+        // Вычисляем позицию текста с учётом выравнивания и ширины ячейки.
+        // Для jstX точка вставки — верх текста, для jsmX — середина, для jsbX — низ.
         TextHeightLocal := PMText^.textprop.size;
 
         case CellStyle.HorzAlign of
@@ -1433,7 +1464,8 @@ begin
           PMText^.Local.P_insert.x := CurrentX + TextHeightLocal * 0.5;
         end;
 
-        // Выравнивание по вертикали
+        // Вертикальная позиция: для jstX insert = верх ячейки + отступ,
+        // для jsmX insert = центр ячейки, для jsbX insert = низ ячейки - отступ.
         case CellStyle.VertAlign of
           vaTop:
             PMText^.Local.P_insert.y := -(CurrentY + TextHeightLocal * 0.5);
@@ -1453,10 +1485,10 @@ begin
 
         programlog.LogOutFormatStr(
           'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) ' +
-          'text="%s" halign=%d valign=%d height=%.2f',
+          'text="%s" halign=%d valign=%d justify=%d height=%.2f',
           [RowIdx, ColIdx, PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
            PMText^.Template, Ord(CellStyle.HorzAlign), Ord(CellStyle.VertAlign),
-           PMText^.textprop.size], LM_Info);
+           Ord(PMText^.textprop.justify), PMText^.textprop.size], LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
         Inc(TextCount);
