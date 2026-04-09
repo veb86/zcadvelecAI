@@ -448,44 +448,23 @@ begin
   end;
 end;
 
-// Определяет базовый стиль строки с учётом флага подавления строки заголовка (title).
-// FTableFlags (group 90 в AcDbTable):
-//   бит 1 (2) = строка «Название» (title) подавлена в данной таблице.
-//   Когда title-строка подавлена, первый видимый ряд (RowIdx=0) относится к
-//   стилю Header («Название» = CellFormats[1], высота 38).
-//   Иначе RowIdx=0 — Title, RowIdx=1 — Header, RowIdx>=2 — Data.
-// NOTE: header-suppressed флаг намеренно не обрабатывается здесь, так как
-// подавление header (Заголовок) не изменяет стиль первого видимого ряда,
-// а лишь скрывает строку имён столбцов при стандартном отображении.
+// Определяет базовый стиль строки по позиции строки в таблице.
+// Стиль назначается только по индексу строки, независимо от FTableFlags:
+//   RowIdx=0 — Title (Название, высота 38)
+//   RowIdx=1 — Header (Заголовок, высота 28)
+//   RowIdx>=2 — Data (Данные, высота 18)
+// FTableFlags управляет отображением (скрытие строк), но не изменяет
+// стилевую принадлежность строк: каждая строка сохраняет свой стиль
+// независимо от флагов подавления. Для явного переопределения стиля
+// на уровне ячейки используется RowStyleType (group 170 в DXF).
 function GDBObjAcadTable.GetBaseRowStyle(RowIdx: Integer): TCellStyle;
-const
-  CTitleSuppressed = 2; // бит 1 в флагах таблицы: строка title подавлена
-var
-  TitleSuppressed: Boolean;
-  AdjustedIdx: Integer;
 begin
-  TitleSuppressed := (FTableFlags and CTitleSuppressed) <> 0;
-
-  // AdjustedIdx — логический индекс строки с учётом подавления title.
-  // Без подавления: idx 0 = title, 1 = header, 2+ = data.
-  // С подавлением:  idx 0 = header, 1+ = data.
-  AdjustedIdx := RowIdx;
-  if not TitleSuppressed then
-  begin
-    if AdjustedIdx = 0 then
-    begin
-      Result := FTableStyle.TitleCell;
-      Exit;
-    end;
-    Dec(AdjustedIdx);
+  case RowIdx of
+    0: Result := FTableStyle.TitleCell;
+    1: Result := FTableStyle.HeaderCell;
+  else
+    Result := FTableStyle.DataCell;
   end;
-  // idx 0 (после вычета title если она не подавлена) — Header/Название
-  if AdjustedIdx = 0 then
-  begin
-    Result := FTableStyle.HeaderCell;
-    Exit;
-  end;
-  Result := FTableStyle.DataCell;
 end;
 
 // Преобразует числовое значение выравнивания AutoCAD в горизонтальный алиас.
@@ -609,26 +588,31 @@ begin
 
   FTableStyle.Name := StylePtr^.Name;
 
-  // Заполняем стили ячеек перебором CellFormats (title=0, header=1, data=2)
+  // Заполняем стили ячеек перебором CellFormats.
+  // Порядок хранения в DXF (TABLESTYLE): 0=Data, 1=Title, 2=Header.
+  // Это соответствует порядку блоков с group 7 в объекте TABLESTYLE.
   CellIdx := 0;
   CellStylePtr := StylePtr^.CellFormats.beginiterate(CellFormatsIter);
   while (CellStylePtr <> nil) and (CellIdx < 3) do
   begin
     case CellIdx of
       0:
-        FillCellStyleFromDXF(FTableStyle.TitleCell, CellStylePtr^,
-          StylePtr^.CellTextStyleName[0]);
-      1:
-        FillCellStyleFromDXF(FTableStyle.HeaderCell, CellStylePtr^,
-          StylePtr^.CellTextStyleName[1]);
-      2:
         begin
+          // Первый блок в DXF — стиль Data (данные)
           FillCellStyleFromDXF(FTableStyle.DataCell, CellStylePtr^,
-            StylePtr^.CellTextStyleName[2]);
+            StylePtr^.CellTextStyleName[0]);
           // Стиль данных используется как базовый по умолчанию
           FillCellStyleFromDXF(FTableStyle.DefaultCell, CellStylePtr^,
-            StylePtr^.CellTextStyleName[2]);
+            StylePtr^.CellTextStyleName[0]);
         end;
+      1:
+        // Второй блок в DXF — стиль Title (название)
+        FillCellStyleFromDXF(FTableStyle.TitleCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[1]);
+      2:
+        // Третий блок в DXF — стиль Header (заголовок)
+        FillCellStyleFromDXF(FTableStyle.HeaderCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[2]);
     end;
     Inc(CellIdx);
     CellStylePtr := StylePtr^.CellFormats.iterate(CellFormatsIter);
@@ -652,9 +636,8 @@ var
   ColStyle: TCellStyle;
   BaseStyle: TCellStyle;
 begin
-  // Выбираем базовый стиль по типу строки с учётом флагов подавления
-  // title/header (FTableFlags). Функция GetBaseRowStyle корректно определяет,
-  // к какому типу (TitleCell/HeaderCell/DataCell) относится строка с данным индексом.
+  // Выбираем базовый стиль по позиции строки:
+  // RowIdx=0 → TitleCell, RowIdx=1 → HeaderCell, RowIdx>=2 → DataCell.
   BaseStyle := GetBaseRowStyle(RowIdx);
 
   // Если базовый стиль пуст (нет переопределений) — используем DefaultCell
@@ -663,8 +646,7 @@ begin
 
   // Если ячейка имеет явно заданный тип строкового стиля (group 170 в DXF),
   // он переопределяет стиль, определённый по позиции строки.
-  // Это позволяет корректно применять стиль независимо от FTableFlags.
-  // 1=Title, 2=Header (Название), 3+=Data (Заголовок/данные).
+  // Соответствие RowStyleType: 2=Title, 3=Header, остальные=Data.
   if (RowIdx >= 0) and (RowIdx < FRowCount) and
      (ColIdx >= 0) and (ColIdx < FColCount) and
      (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
@@ -672,17 +654,20 @@ begin
     TableCell := FCells[RowIdx][ColIdx];
     if TableCell.RowStyleType > 0 then
     begin
-      // Соответствие RowStyleType из group code 170 (AcDbTable) и типа стиля:
-      //   1 = Title  (первый блок в TABLESTYLE, group 7)
-      //   2 = Header (второй блок)
-      //   3 = Data   (третий блок)
+      // Соответствие RowStyleType из group code 170 (AcDbTable) и типа стиля.
+      // RowStyleType задаёт индекс в TABLESTYLE CellFormats (1-based):
+      //   1 = CellFormats[0] = Data   (данные, первый блок в TABLESTYLE)
+      //   2 = CellFormats[1] = Title  (название, второй блок)
+      //   3 = CellFormats[2] = Header (заголовок, третий блок)
+      //   4+ = Data (выход за пределы массива — используем Data как запасной)
       // Значения подтверждены анализом DXF-файла +testtable.dxf:
-      // ячейки с данными (Заголовок) имеют 170=3 и ожидаемую высоту из DataCell.
+      //   ячейки строки Header имеют 170=3 (height=28)
+      //   ячейки строки Data   имеют 170=4 (height=18)
       case TableCell.RowStyleType of
-        1: BaseStyle := FTableStyle.TitleCell;   // TITLE
-        2: BaseStyle := FTableStyle.HeaderCell;  // HEADER / Название
+        2: BaseStyle := FTableStyle.TitleCell;   // TITLE
+        3: BaseStyle := FTableStyle.HeaderCell;  // HEADER / Название
       else
-        BaseStyle := FTableStyle.DataCell;       // DATA (включая RowStyleType=3+)
+        BaseStyle := FTableStyle.DataCell;       // DATA (включая RowStyleType=1,4+)
       end;
       if BaseStyle.Overrides = [] then
         BaseStyle := FTableStyle.DefaultCell;

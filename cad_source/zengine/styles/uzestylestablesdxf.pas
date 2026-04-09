@@ -65,7 +65,7 @@ type
     Содержит все параметры, необходимые для записи/чтения TABLESTYLE в DXF.
     Намеренно не зависит от uzestylestables. }
   TGDBDXFTableStyle = object(GDBNamedObject)
-    { Массив стилей ячеек: 0=title, 1=header, 2=data }
+    { Массив стилей ячеек: 0=data, 1=title, 2=header (порядок блоков в DXF TABLESTYLE) }
     CellFormats: GDBDXFCellFormatArray;
     { Флаги стиля таблицы (группа DXF 70) }
     Flags70: Integer;
@@ -317,7 +317,7 @@ var
   I, Code, IntVal: Integer;
   Value: string;
   CellStyle: TGDBDXFTableCellStyle;
-  { Индекс текущего блока строки таблицы: 0=title, 1=header, 2=data }
+  { Индекс текущего блока строки таблицы: 0=data, 1=title, 2=header (порядок DXF) }
   CellIdx: Integer;
   { Признак нахождения внутри блока ACAD_XDICTIONARY }
   InXDict: Boolean;
@@ -674,11 +674,11 @@ var
   DefaultCS: TGDBDXFTableCellStyle;
   PCellStyle: PTGDBDXFTableCellStyle;
   Iter: itrec;
-  { Значения выравнивания по умолчанию для строк: title(0), header(1), data(2) }
+  { Значения выравнивания по умолчанию для строк в DXF-порядке: data(0), title(1), header(2) }
   DefaultAlignments: array[0..2] of Integer;
   CellIdx: Integer;
 begin
-  { Выравнивание по умолчанию: title=TopLeft(2), header=MiddleCenter(5), data=MiddleCenter(5) }
+  { Выравнивание по умолчанию: data=TopCenter(2), title=MiddleCenter(5), header=MiddleCenter(5) }
   DefaultAlignments[0] := 2;
   DefaultAlignments[1] := 5;
   DefaultAlignments[2] := 5;
