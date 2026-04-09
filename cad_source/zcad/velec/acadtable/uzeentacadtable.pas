@@ -134,6 +134,10 @@ type
     BlockName: String;
     // Переопределение стиля (applied on top of table/row/column style)
     Style: TCellStyle;
+    // Тип строкового стиля из DXF (group 170 в данных ячейки).
+    // 0 = не задан (наследуется от строки), 1 = Data, 2 = Title, 3 = Header.
+    // Используется ResolveCellStyle для применения явного стиля строки.
+    RowStyleType: Integer;
   end;
 
   // Диапазон объединённых ячеек
@@ -169,6 +173,12 @@ type
     // Хэндл DXF-стиля таблицы (group code 342) — читается при загрузке из DXF
     FTableStyleHandle: String;
 
+    // Флаги свойств таблицы (group code 90):
+    //   бит 1 (2)  = строка заголовка (title) подавлена
+    //   бит 2 (4)  = строка имён столбцов (header/Название) подавлена
+    //   бит 4 (16) = направление таблицы (снизу вверх)
+    FTableFlags: Integer;
+
     // Новая модель данных (этап 2)
     // Стиль таблицы
     FTableStyle: TTableStyle;
@@ -202,12 +212,22 @@ type
     function IsCellMerged(RowIdx, ColIdx: Integer): Boolean;
     // Возвращает координаты главной ячейки объединённого диапазона
     function GetMergeRoot(RowIdx, ColIdx: Integer): TPoint;
+    // Возвращает ширину объединённой ячейки в единицах чертежа.
+    // Для необъединённой — ширина одного столбца. Для главной в merge — сумма столбцов.
+    function GetMergedCellWidth(RowIdx, ColIdx: Integer): Double;
+    // Проверяет, нужна ли вертикальная линия между ColIdx и ColIdx+1 на данной строке.
+    // Возвращает False, если граница попадает внутрь объединённого диапазона.
+    function IsColBorderVisible(RowIdx, ColIdx: Integer): Boolean;
     // Резолвит итоговый стиль ячейки с учётом иерархии
     function ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
     // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle
     procedure ApplyDXFTableStyle(var ADrawing: TDrawingDef);
     // Возвращает имя стиля таблицы
     function GetTableStyleName: String;
+    // Определяет базовый стиль строки с учётом флагов подавления title/header.
+    // Если title-строка подавлена, индекс 0 относится к Header (Название),
+    // если обе подавлены — к Data.
+    function GetBaseRowStyle(RowIdx: Integer): TCellStyle;
 
   public
     constructor initnul(AOwner: PGDBObjGenericWithSubordinated);
@@ -386,6 +406,88 @@ begin
   end;
 end;
 
+// Возвращает суммарную ширину объединённой ячейки (главной или необъединённой).
+// Для главной ячейки слияния — сумма ширин всех входящих столбцов.
+// Для обычной ячейки — ширина одного столбца.
+function GDBObjAcadTable.GetMergedCellWidth(RowIdx, ColIdx: Integer): Double;
+var
+  i, Col2: Integer;
+begin
+  Col2 := ColIdx; // по умолчанию — только свой столбец
+  for i := 0 to High(FMerges) do
+  begin
+    if (RowIdx >= FMerges[i].Row1) and (RowIdx <= FMerges[i].Row2) and
+       (ColIdx = FMerges[i].Col1) then
+    begin
+      Col2 := FMerges[i].Col2;
+      Break;
+    end;
+  end;
+  Result := 0;
+  for i := ColIdx to Col2 do
+    Result := Result + GetColWidth(i);
+end;
+
+// Проверяет видимость вертикальной границы между столбцами ColIdx и ColIdx+1
+// на строке RowIdx. Граница скрыта, если она находится внутри объединённого диапазона.
+function GDBObjAcadTable.IsColBorderVisible(RowIdx, ColIdx: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := True;
+  // Граница ColIdx/ColIdx+1 скрыта, если существует диапазон, который
+  // включает строку RowIdx и содержит ColIdx < Col2 (т.е. граница внутри)
+  for i := 0 to High(FMerges) do
+  begin
+    if (RowIdx >= FMerges[i].Row1) and (RowIdx <= FMerges[i].Row2) and
+       (ColIdx >= FMerges[i].Col1) and (ColIdx < FMerges[i].Col2) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
+// Определяет базовый стиль строки с учётом флага подавления строки заголовка (title).
+// FTableFlags (group 90 в AcDbTable):
+//   бит 1 (2) = строка «Название» (title) подавлена в данной таблице.
+//   Когда title-строка подавлена, первый видимый ряд (RowIdx=0) относится к
+//   стилю Header («Название» = CellFormats[1], высота 38).
+//   Иначе RowIdx=0 — Title, RowIdx=1 — Header, RowIdx>=2 — Data.
+// NOTE: header-suppressed флаг намеренно не обрабатывается здесь, так как
+// подавление header (Заголовок) не изменяет стиль первого видимого ряда,
+// а лишь скрывает строку имён столбцов при стандартном отображении.
+function GDBObjAcadTable.GetBaseRowStyle(RowIdx: Integer): TCellStyle;
+const
+  CTitleSuppressed = 2; // бит 1 в флагах таблицы: строка title подавлена
+var
+  TitleSuppressed: Boolean;
+  AdjustedIdx: Integer;
+begin
+  TitleSuppressed := (FTableFlags and CTitleSuppressed) <> 0;
+
+  // AdjustedIdx — логический индекс строки с учётом подавления title.
+  // Без подавления: idx 0 = title, 1 = header, 2+ = data.
+  // С подавлением:  idx 0 = header, 1+ = data.
+  AdjustedIdx := RowIdx;
+  if not TitleSuppressed then
+  begin
+    if AdjustedIdx = 0 then
+    begin
+      Result := FTableStyle.TitleCell;
+      Exit;
+    end;
+    Dec(AdjustedIdx);
+  end;
+  // idx 0 (после вычета title если она не подавлена) — Header/Название
+  if AdjustedIdx = 0 then
+  begin
+    Result := FTableStyle.HeaderCell;
+    Exit;
+  end;
+  Result := FTableStyle.DataCell;
+end;
+
 // Преобразует числовое значение выравнивания AutoCAD в горизонтальный алиас.
 // AutoCAD: 1=TopLeft,2=TopCenter,3=TopRight,4-6=Middle*,7-9=Bottom*
 function DXFAlignToHorz(Alignment: Integer): THorzAlign;
@@ -550,18 +652,39 @@ var
   ColStyle: TCellStyle;
   BaseStyle: TCellStyle;
 begin
-  // Выбираем базовый стиль по типу строки (title=0, header=1, data=2+)
-  // Это соответствует поведению AutoCAD: каждый тип строки имеет свой стиль
-  if RowIdx = 0 then
-    BaseStyle := FTableStyle.TitleCell
-  else if RowIdx = 1 then
-    BaseStyle := FTableStyle.HeaderCell
-  else
-    BaseStyle := FTableStyle.DataCell;
+  // Выбираем базовый стиль по типу строки с учётом флагов подавления
+  // title/header (FTableFlags). Функция GetBaseRowStyle корректно определяет,
+  // к какому типу (TitleCell/HeaderCell/DataCell) относится строка с данным индексом.
+  BaseStyle := GetBaseRowStyle(RowIdx);
 
   // Если базовый стиль пуст (нет переопределений) — используем DefaultCell
   if BaseStyle.Overrides = [] then
     BaseStyle := FTableStyle.DefaultCell;
+
+  // Если ячейка имеет явно заданный тип строкового стиля (group 170 в DXF),
+  // он переопределяет стиль, определённый по позиции строки.
+  // Это позволяет корректно применять стиль независимо от FTableFlags.
+  // 1=Data, 2=Title, 3=Header (Название).
+  if (RowIdx >= 0) and (RowIdx < FRowCount) and
+     (ColIdx >= 0) and (ColIdx < FColCount) and
+     (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
+  begin
+    TableCell := FCells[RowIdx][ColIdx];
+    if TableCell.RowStyleType > 0 then
+    begin
+      case TableCell.RowStyleType of
+        2: BaseStyle := FTableStyle.TitleCell;   // TITLE
+        3: BaseStyle := FTableStyle.HeaderCell;  // HEADER / Название
+      else
+        BaseStyle := FTableStyle.DataCell;       // DATA (включая RowStyleType=1)
+      end;
+      if BaseStyle.Overrides = [] then
+        BaseStyle := FTableStyle.DefaultCell;
+      programlog.LogOutFormatStr(
+        'uzeentacadtable: ResolveCellStyle Cell[%d,%d] RowStyleType=%d TextHeight=%.2f',
+        [RowIdx, ColIdx, TableCell.RowStyleType, BaseStyle.TextHeight], LM_Info);
+    end;
+  end;
 
   // Применяем стиль строки
   if (RowIdx >= 0) and (RowIdx <= High(FRows)) then
@@ -668,6 +791,7 @@ begin
   System.SetLength(FCellTexts, 0);
   FGeometryBuilt := False;
   FTableStyleHandle := '';
+  FTableFlags := 0;
 
   // Инициализация новых структур данных (этап 2)
   InitCellStyle(FTableStyle.DefaultCell);
@@ -715,6 +839,17 @@ var
   InCellData: Boolean;
   CellTextRead: Boolean;
   RowHeightCount, ColWidthCount: Integer;
+  // Флаг: текущая ячейка является виртуальной (объединённой, не главной)
+  CellIsVirtual: Boolean;
+  // Тип строкового стиля текущей ячейки из group code 170
+  CellRowStyleType: Integer;
+  // Плоский массив флагов виртуальности ячеек (индекс = строка * FColCount + столбец)
+  CellVirtualFlags: array of Boolean;
+  // Плоский массив типов строкового стиля ячеек (group 170)
+  CellRowStyleTypes: array of Integer;
+  MergeRow1, MergeCol1: Integer;
+  MergeRow2, MergeCol2: Integer;
+  MergeRange: TMergeRange;
 begin
   programlog.LogOutStr('uzeentacadtable: LoadFromDXF START', LM_Info);
 
@@ -724,8 +859,12 @@ begin
   ColWidthsRead := False;
   InCellData := False;
   CellTextRead := False;
+  CellIsVirtual := False;
+  CellRowStyleType := 0;
   RowHeightCount := 0;
   ColWidthCount := 0;
+  System.SetLength(CellVirtualFlags, 0);
+  System.SetLength(CellRowStyleTypes, 0);
 
   // Пропускаем до первого 100
   while (GroupCode <> 0) and (GroupCode <> 100) do
@@ -854,7 +993,31 @@ begin
         begin
           InCellData := True;
           CellTextRead := False;
+          CellIsVirtual := False;    // сбрасываем флаг виртуальности для новой ячейки
+          CellRowStyleType := 0;     // сбрасываем тип строкового стиля
           ARdr.SkipString;
+        end;
+
+        // Флаг виртуальной (объединённой вспомогательной) ячейки — код 173.
+        // Значение 1 означает, что ячейка является частью объединения и не является
+        // главной ячейкой диапазона. Такие ячейки не отображаются отдельно.
+        173:
+        begin
+          if InCellData then
+            CellIsVirtual := ARdr.ParseInteger <> 0
+          else
+            ARdr.SkipString;
+        end;
+
+        // Тип строкового стиля ячейки — код 170 (в контексте данных ячейки).
+        // Явно задаёт стиль ячейки: 1=Data, 2=Title, 3=Header.
+        // Читается только внутри блока ячейки (после 171), вне — пропускается.
+        170:
+        begin
+          if InCellData then
+            CellRowStyleType := ARdr.ParseInteger
+          else
+            ARdr.SkipString;
         end;
 
         // Текст ячейки — код 302 (DXF 2007+) — приоритет
@@ -864,9 +1027,16 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            // Сохраняем флаг виртуальности и тип строкового стиля
+            if CellIndex >= Length(CellVirtualFlags) then
+              System.SetLength(CellVirtualFlags, CellIndex + 1);
+            CellVirtualFlags[CellIndex] := CellIsVirtual;
+            if CellIndex >= Length(CellRowStyleTypes) then
+              System.SetLength(CellRowStyleTypes, CellIndex + 1);
+            CellRowStyleTypes[CellIndex] := CellRowStyleType;
             programlog.LogOutFormatStr(
-              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
-              [CellIndex, CellText], LM_Info);
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s" virtual=%d rowStyle=%d',
+              [CellIndex, CellText, Ord(CellIsVirtual), CellRowStyleType], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
@@ -881,14 +1051,40 @@ begin
           begin
             dxfLoadString(ARdr, CellText, AContext.Header);
             SetCellTextByIndex(CellIndex, CellText);
+            // Сохраняем флаг виртуальности и тип строкового стиля
+            if CellIndex >= Length(CellVirtualFlags) then
+              System.SetLength(CellVirtualFlags, CellIndex + 1);
+            CellVirtualFlags[CellIndex] := CellIsVirtual;
+            if CellIndex >= Length(CellRowStyleTypes) then
+              System.SetLength(CellRowStyleTypes, CellIndex + 1);
+            CellRowStyleTypes[CellIndex] := CellRowStyleType;
             programlog.LogOutFormatStr(
-              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s"',
-              [CellIndex, CellText], LM_Info);
+              'uzeentacadtable: LoadFromDXF Cell[%d] text="%s" virtual=%d rowStyle=%d',
+              [CellIndex, CellText, Ord(CellIsVirtual), CellRowStyleType], LM_Info);
             Inc(CellIndex);
             CellTextRead := True;
           end
           else
             ARdr.SkipString;
+        end;
+
+        // Флаги свойств таблицы (group code 90):
+        //   бит 1 (2)  = строка заголовка (title) подавлена
+        //   бит 2 (4)  = строка имён столбцов (header/Название) подавлена
+        //   бит 4 (16) = направление потока таблицы (снизу вверх)
+        // Читаем только до RowHeightsRead: после него 90 означает флаги ячейки.
+        90:
+        begin
+          if not RowHeightsRead then
+          begin
+            FTableFlags := ARdr.ParseInteger;
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF TableFlags=0x%x (titleSup=%d headerSup=%d)',
+              [FTableFlags, Ord((FTableFlags and 2) <> 0),
+               Ord((FTableFlags and 4) <> 0)], LM_Info);
+          end
+          else
+            ARdr.SkipString; // Флаг содержимого ячейки — пропускаем
         end;
 
         // Хэндл стиля таблицы (ссылка на объект TABLESTYLE)
@@ -901,7 +1097,8 @@ begin
         end;
 
         // Пропускаем служебные коды ячеек
-        11, 21, 31, 90, 93, 94, 95, 96, 170, 172, 173, 174, 175, 176, 177, 178,
+        // (170 и 173 обрабатываются выше отдельно)
+        11, 21, 31, 93, 94, 95, 96, 172, 174, 175, 176, 177, 178,
         145, 300, 301, 304, 274, 275, 276, 278, 279, 280, 281, 283, 284, 285, 286,
         288, 289, 63, 64, 65, 66, 68, 69, 70, 40, 41, 343, 344, 340:
           ARdr.SkipString;
@@ -956,16 +1153,71 @@ begin
         FCells[RowHeightCount][ColWidthCount].Value := 0;
         FCells[RowHeightCount][ColWidthCount].Formula := '';
         FCells[RowHeightCount][ColWidthCount].BlockName := '';
+        FCells[RowHeightCount][ColWidthCount].RowStyleType := 0;
         InitCellStyle(FCells[RowHeightCount][ColWidthCount].Style);
+        // Копируем тип строкового стиля из временного массива (group code 170)
+        CellIndex := RowHeightCount * FColCount + ColWidthCount;
+        if CellIndex < Length(CellRowStyleTypes) then
+          FCells[RowHeightCount][ColWidthCount].RowStyleType := CellRowStyleTypes[CellIndex];
       end;
 
-    // Инициализируем пустой массив объединений
+    // Строим массив объединений FMerges из CellVirtualFlags.
+    // Алгоритм: перебираем все ячейки по строкам. Если ячейка [r,c] не виртуальна,
+    // а следующие ячейки в той же строке [r,c+1], [r,c+2] ... виртуальны,
+    // то это горизонтальное объединение. Аналогично для вертикального.
+    // Пока реализовано только горизонтальное объединение в пределах строки
+    // (наиболее распространённый случай для заголовков таблиц).
     System.SetLength(FMerges, 0);
+    for RowHeightCount := 0 to FRowCount - 1 do
+    begin
+      ColWidthCount := 0;
+      while ColWidthCount < FColCount do
+      begin
+        CellIndex := RowHeightCount * FColCount + ColWidthCount;
+        // Если ячейка не виртуальна, проверяем следующие — являются ли они виртуальными
+        if (CellIndex < Length(CellVirtualFlags)) and
+           not CellVirtualFlags[CellIndex] then
+        begin
+          MergeRow1 := RowHeightCount;
+          MergeCol1 := ColWidthCount;
+          MergeCol2 := ColWidthCount;
+          // Расширяем вправо по виртуальным ячейкам той же строки
+          while MergeCol2 + 1 < FColCount do
+          begin
+            CellIndex := RowHeightCount * FColCount + MergeCol2 + 1;
+            if (CellIndex < Length(CellVirtualFlags)) and
+               CellVirtualFlags[CellIndex] then
+              Inc(MergeCol2)
+            else
+              Break;
+          end;
+          // Если есть хотя бы одна виртуальная ячейка справа — это объединение
+          if MergeCol2 > MergeCol1 then
+          begin
+            MergeRow2 := MergeRow1;
+            MergeRange.Row1 := MergeRow1;
+            MergeRange.Col1 := MergeCol1;
+            MergeRange.Row2 := MergeRow2;
+            MergeRange.Col2 := MergeCol2;
+            System.SetLength(FMerges, Length(FMerges) + 1);
+            FMerges[High(FMerges)] := MergeRange;
+            programlog.LogOutFormatStr(
+              'uzeentacadtable: LoadFromDXF Merge[%d] (%d,%d)-(%d,%d)',
+              [High(FMerges), MergeRow1, MergeCol1, MergeRow2, MergeCol2], LM_Info);
+            // Пропускаем все объединённые столбцы
+            ColWidthCount := MergeCol2 + 1;
+            Continue;
+          end;
+        end;
+        Inc(ColWidthCount);
+      end;
+    end;
   end;
 
   programlog.LogOutFormatStr(
-    'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d row_heights=%d col_widths=%d',
-    [FRowCount, FColCount, Length(FCellTexts), FRowHeights.Count, FColWidths.Count], LM_Info);
+    'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d row_heights=%d col_widths=%d merges=%d',
+    [FRowCount, FColCount, Length(FCellTexts), FRowHeights.Count, FColWidths.Count,
+     Length(FMerges)], LM_Info);
   programlog.LogOutFormatStr(
     'uzeentacadtable: LoadFromDXF new structures: FRows=%d FCols=%d FCells[0,0] initialized',
     [Length(FRows), Length(FCols)], LM_Info);
@@ -1048,31 +1300,60 @@ begin
     'uzeentacadtable: BuildVisualRepresentation created %d horizontal lines',
     [LineCount], LM_Info);
 
-  // --- Вертикальные линии (левая, разделители, правая) ---
-  CurrentX := 0;
+  // --- Вертикальные линии с учётом объединённых ячеек ---
+  // Для каждого граничного положения по X рисуем вертикальные отрезки только
+  // там, где граница не попадает внутрь объединённого диапазона.
+  // Крайние линии (ColIdx=0 и ColIdx=FColCount) всегда рисуются полностью.
   LineCount := 0;
+  CurrentX := 0;
   for ColIdx := 0 to FColCount do
   begin
-    pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
-    PLine^.CoordInOCS.lBegin.x := CurrentX;
-    PLine^.CoordInOCS.lBegin.y := 0;
-    PLine^.CoordInOCS.lBegin.z := 0;
-    PLine^.CoordInOCS.lEnd.x := CurrentX;
-    PLine^.CoordInOCS.lEnd.y := -TotalHeight;
-    PLine^.CoordInOCS.lEnd.z := 0;
-    programlog.LogOutFormatStr(
-      'uzeentacadtable: BuildVisualRepresentation VLine[%d] from(%.2f,%.2f) to(%.2f,%.2f)',
-      [ColIdx, PLine^.CoordInOCS.lBegin.x, PLine^.CoordInOCS.lBegin.y,
-       PLine^.CoordInOCS.lEnd.x, PLine^.CoordInOCS.lEnd.y], LM_Info);
-    CopyVPto(PLine^);
-    PLine^.FormatEntity(ADrawing, ADC);
-    Inc(LineCount);
+    // Крайние линии (левая/правая рамка) — рисуем всегда полностью
+    if (ColIdx = 0) or (ColIdx = FColCount) then
+    begin
+      pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
+      PLine^.CoordInOCS.lBegin.x := CurrentX;
+      PLine^.CoordInOCS.lBegin.y := 0;
+      PLine^.CoordInOCS.lBegin.z := 0;
+      PLine^.CoordInOCS.lEnd.x   := CurrentX;
+      PLine^.CoordInOCS.lEnd.y   := -TotalHeight;
+      PLine^.CoordInOCS.lEnd.z   := 0;
+      CopyVPto(PLine^);
+      PLine^.FormatEntity(ADrawing, ADC);
+      Inc(LineCount);
+    end
+    else
+    begin
+      // Внутренняя граница: рисуем отрезками, разрывая там, где есть объединение.
+      // Для каждой строки проверяем, видна ли граница ColIdx-1/ColIdx.
+      CurrentY := 0;
+      for RowIdx := 0 to FRowCount - 1 do
+      begin
+        RowH := GetRowHeight(RowIdx);
+        // IsColBorderVisible проверяет, что граница ColIdx-1/ColIdx в строке RowIdx
+        // не попадает внутрь объединённого диапазона
+        if IsColBorderVisible(RowIdx, ColIdx - 1) then
+        begin
+          pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
+          PLine^.CoordInOCS.lBegin.x := CurrentX;
+          PLine^.CoordInOCS.lBegin.y := -CurrentY;
+          PLine^.CoordInOCS.lBegin.z := 0;
+          PLine^.CoordInOCS.lEnd.x   := CurrentX;
+          PLine^.CoordInOCS.lEnd.y   := -(CurrentY + RowH);
+          PLine^.CoordInOCS.lEnd.z   := 0;
+          CopyVPto(PLine^);
+          PLine^.FormatEntity(ADrawing, ADC);
+          Inc(LineCount);
+        end;
+        CurrentY := CurrentY + RowH;
+      end;
+    end;
 
     if ColIdx < FColCount then
       CurrentX := CurrentX + GetColWidth(ColIdx);
   end;
   programlog.LogOutFormatStr(
-    'uzeentacadtable: BuildVisualRepresentation created %d vertical lines',
+    'uzeentacadtable: BuildVisualRepresentation created %d vertical line segments',
     [LineCount], LM_Info);
 
   // --- Текст ячеек ---
@@ -1087,10 +1368,9 @@ begin
     begin
       ColW := GetColWidth(ColIdx);
 
-      // Проверяем, не объединена ли ячейка — рисуем только главную ячейку
+      // Если ячейка объединённая и не является главной — пропускаем
       if IsCellMerged(RowIdx, ColIdx) then
       begin
-        // Ячейка в объединённом диапазоне — пропускаем, если не главная
         if not ((RowIdx = GetMergeRoot(RowIdx, ColIdx).Y) and
                 (ColIdx = GetMergeRoot(RowIdx, ColIdx).X)) then
         begin
@@ -1106,8 +1386,9 @@ begin
       else
         CellStr := GetCellText(RowIdx, ColIdx);
 
-      // Резолвим стиль ячейки с учётом иерархии
-      // Пока структуры пустые — используем значения по умолчанию
+      // Ширина ячейки с учётом объединения (для главной ячейки — сумма столбцов)
+      ColW := GetMergedCellWidth(RowIdx, ColIdx);
+
       programlog.LogOutFormatStr(
         'uzeentacadtable: BuildVisualRepresentation Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f',
         [RowIdx, ColIdx, CellStr, ColW, RowH], LM_Info);
@@ -1120,7 +1401,7 @@ begin
         pointer(PMText) := ConstObjArray.CreateInitObj(GDBMTextID, @Self);
         PMText^.Template := UTF8ToString(CellStr);
 
-        // Используем текст высоту из стиля
+        // Используем высоту текста из стиля
         if CellStyle.TextHeight > 0 then
           PMText^.textprop.size := CellStyle.TextHeight
         else
@@ -1131,14 +1412,14 @@ begin
 
         // Выравнивание по горизонтали
         case CellStyle.HorzAlign of
-          haLeft: PMText^.textprop.justify := jstl;
+          haLeft:   PMText^.textprop.justify := jstl;
           haCenter: PMText^.textprop.justify := jstc;
-          haRight: PMText^.textprop.justify := jstr;
+          haRight:  PMText^.textprop.justify := jstr;
         else
           PMText^.textprop.justify := jstl;
         end;
 
-        // Вычисляем позицию текста с учётом выравнивания
+        // Вычисляем позицию текста с учётом выравнивания и ширины ячейки
         TextHeightLocal := PMText^.textprop.size;
 
         case CellStyle.HorzAlign of
@@ -1171,15 +1452,17 @@ begin
         // TODO: Применить цвет текста из стиля (когда будет реализована поддержка цвета)
 
         programlog.LogOutFormatStr(
-          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) text="%s" halign=%d valign=%d',
+          'uzeentacadtable: BuildVisualRepresentation MText[%d,%d] insert(%.2f,%.2f) ' +
+          'text="%s" halign=%d valign=%d height=%.2f',
           [RowIdx, ColIdx, PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
-           PMText^.Template, Ord(CellStyle.HorzAlign), Ord(CellStyle.VertAlign)], LM_Info);
+           PMText^.Template, Ord(CellStyle.HorzAlign), Ord(CellStyle.VertAlign),
+           PMText^.textprop.size], LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
         Inc(TextCount);
       end;
 
-      CurrentX := CurrentX + ColW;
+      CurrentX := CurrentX + GetColWidth(ColIdx);
     end;
 
     CurrentY := CurrentY + RowH;
