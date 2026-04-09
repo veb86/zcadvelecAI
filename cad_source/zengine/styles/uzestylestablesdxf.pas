@@ -87,6 +87,9 @@ type
       Сохраняется при чтении и восстанавливается при записи, чтобы AutoCAD
       не считал файл повреждённым из-за отсутствия XDICTIONARY-ссылок. }
     XDictHandle: string;
+    { Хэндл самого объекта TABLESTYLE в DXF (группа 5).
+      Используется для сопоставления со ссылкой из ACAD_TABLE (группа 342). }
+    DXFHandle: string;
     constructor init(const StyleName: string);
     destructor Done; virtual;
   end;
@@ -99,6 +102,9 @@ type
     constructor initnul;
     { Добавляет стиль с заданным именем или возвращает существующий }
     function AddStyle(const StyleName: string): PTGDBDXFTableStyle;
+    { Ищет стиль по DXF-хэндлу объекта TABLESTYLE (группа 5).
+      Возвращает nil если стиль с таким хэндлом не найден. }
+    function GetStyleByHandle(const AHandle: string): PTGDBDXFTableStyle;
   end;
   PGDBDXFTableStyleArray = ^GDBDXFTableStyleArray;
 
@@ -142,6 +148,7 @@ begin
   for I := 0 to 2 do
     pointer(CellTextStyleName[I]) := nil;
   pointer(XDictHandle) := nil;
+  pointer(DXFHandle) := nil;
 end;
 
 destructor TGDBDXFTableStyle.Done;
@@ -154,6 +161,7 @@ begin
   for I := 0 to 2 do
     CellTextStyleName[I] := '';
   XDictHandle := '';
+  DXFHandle := '';
 end;
 
 { === Методы GDBDXFTableStyleArray === }
@@ -183,6 +191,32 @@ begin
       StylePtr := nil;
   end;
   Result := StylePtr;
+end;
+
+{ Ищет стиль по DXF-хэндлу объекта TABLESTYLE.
+  Перебирает все стили и возвращает тот, чей DXFHandle совпадает с AHandle.
+  Сравнение ведётся без учёта регистра. Возвращает nil если не найден. }
+function GDBDXFTableStyleArray.GetStyleByHandle(
+  const AHandle: string): PTGDBDXFTableStyle;
+var
+  IterRec: itrec;
+  StylePtr: PTGDBDXFTableStyle;
+  UpperHandle: string;
+begin
+  Result := nil;
+  if AHandle = '' then
+    Exit;
+  UpperHandle := UpperCase(AHandle);
+  StylePtr := beginiterate(IterRec);
+  while StylePtr <> nil do
+  begin
+    if UpperCase(StylePtr^.DXFHandle) = UpperHandle then
+    begin
+      Result := StylePtr;
+      Exit;
+    end;
+    StylePtr := iterate(IterRec);
+  end;
 end;
 
 { === Вспомогательные функции разбора DXF === }
@@ -471,7 +505,11 @@ begin
                 [StyleName, ObjHandle], LM_Info);
               Style := TableStyleTable.AddStyle(StyleName);
               if Style <> nil then
+              begin
                 ParseTableStyleObject(StyleName, ObjectLines, Style);
+                { Сохраняем хэндл объекта для поиска по ссылке из ACAD_TABLE (группа 342) }
+                Style^.DXFHandle := ObjHandle;
+              end;
             end
             else
               programlog.LogOutFormatStr(
@@ -505,7 +543,11 @@ begin
       begin
         Style := TableStyleTable.AddStyle(StyleName);
         if Style <> nil then
+        begin
           ParseTableStyleObject(StyleName, ObjectLines, Style);
+          { Сохраняем хэндл объекта для поиска по ссылке из ACAD_TABLE (группа 342) }
+          Style^.DXFHandle := ObjHandle;
+        end;
       end;
     end;
 

@@ -455,10 +455,11 @@ begin
 end;
 
 // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle.
-// Ищет первый стиль в DXFTableStyleTable чертежа (таблица обычно содержит
-// один стиль — тот, что использует данная таблица).
+// Ищет стиль по хэндлу FTableStyleHandle (группа DXF 342 в ACAD_TABLE).
+// Если стиль с нужным хэндлом не найден — берёт первый из таблицы как запасной
+// вариант для совместимости с файлами без явной ссылки.
 // Если стиль найден — заполняет FTableStyle его данными для корректного
-// отображения выравнивания, цветов и других параметров форматирования.
+// отображения выравнивания, высоты текста и других параметров форматирования.
 procedure GDBObjAcadTable.ApplyDXFTableStyle(var ADrawing: TDrawingDef);
 var
   DXFStyleTable: PGDBDXFTableStyleArray;
@@ -485,10 +486,20 @@ begin
     Exit;
   end;
 
-  // Берём первый стиль из таблицы (в большинстве файлов стиль один)
-  StylePtr := DXFStyleTable^.beginiterate(IterRec);
+  // Ищем стиль по хэндлу из ACAD_TABLE (группа 342).
+  // При наличии нескольких стилей это гарантирует применение правильного стиля.
+  StylePtr := DXFStyleTable^.GetStyleByHandle(FTableStyleHandle);
   if StylePtr = nil then
-    Exit;
+  begin
+    // Хэндл не совпал ни с одним стилем — используем первый как запасной
+    programlog.LogOutFormatStr(
+      'uzeentacadtable: ApplyDXFTableStyle — стиль с хэндлом "%s" не найден, ' +
+      'используем первый стиль',
+      [FTableStyleHandle], LM_Info);
+    StylePtr := DXFStyleTable^.beginiterate(IterRec);
+    if StylePtr = nil then
+      Exit;
+  end;
 
   programlog.LogOutFormatStr(
     'uzeentacadtable: ApplyDXFTableStyle применяем стиль "%s" (хэндл=%s)',
