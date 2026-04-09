@@ -92,6 +92,8 @@ type
                        function GetTableStyleTable:PGDBTableStyleArray;virtual;
                        function GetTextStyleTable:PGDBTextStyleArray;virtual;
                        function GetDimStyleTable:PGDBDimStyleArray;virtual;
+                       { Возвращает таблицу DXF-стилей таблиц для DXF-обмена }
+                       function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;
                        function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
                        procedure RotateCameraInLocalCSXY(ux,uy:Double);virtual;
                        procedure MoveCameraInLocalCSXY(oldx,oldy:Double;ax:TzePoint3d);virtual;
@@ -665,6 +667,10 @@ end;
 function TSimpleDrawing.GetDimStyleTable:PGDBDimStyleArray;
 begin
      result:=@self.DimStyleTable;
+end;
+function TSimpleDrawing.GetDXFTableStyleTable:PGDBDXFTableStyleArray;
+begin
+     result:=@DXFTableStyleTable;
 end;
 procedure TSimpleDrawing.SetCurrentDWG;
 begin
