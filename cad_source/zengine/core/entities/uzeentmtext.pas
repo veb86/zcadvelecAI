@@ -251,10 +251,12 @@ begin
         lastsymspace:=0;
         lastlinewidth:=linewidth;
       end else begin
+        if not canbreak then
+          lastlinewidth:=linewidth+lastsymspace;
         linewidth:=lastsymspace+linewidth+psyminfo.SymMaxX;
         lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
       end;
-      if canbreak then
+      if canbreak then begin
         if maxlinewidth<=linewidth then begin
           currline:=copy(content,lastbreak,lastcanbreak-lastbreak);
           linewidth:=0;
@@ -272,6 +274,20 @@ begin
           end;
           Text.PushBackData(swp);
         end;
+      end else begin
+        // Перенос по символам: если пробелов нет и текст не умещается
+        if (maxlinewidth>0)and(maxlinewidth<=linewidth)
+          and(currsymbol>lastbreak) then begin
+          currline:=copy(content,lastbreak,currsymbol-lastbreak);
+          swp.Str:=currline;
+          swp.w:=lastlinewidth;
+          Text.PushBackData(swp);
+          lastbreak:=currsymbol;
+          linewidth:=psyminfo.SymMaxX-psyminfo.SymMinX;
+          lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
+          newline:=False;
+        end;
+      end;
       Inc(currsymbol,l);
     until currsymbol>length(content);
   end;
