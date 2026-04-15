@@ -30,11 +30,14 @@ interface
 
 uses
   SysUtils,
+  Math,
+  Classes,
   fpcunit,
   testregistry,
   // Сущности для регистрации в фабрике
   uzeentacdproxy,
   uzeentline,
+  uzeentproxygraphicparser,
   // Основной загрузчик DXF
   uzeffdxf,
   // Инфраструктура чертежа
@@ -54,6 +57,8 @@ type
     procedure CustomEntityLoadedAsProxy;
     { Проверяет, что обычная известная сущность LINE загружается корректно }
     procedure KnownEntityLoadedNormally;
+    { Проверяет поддержку OpCode=32 в proxy графике mleaderblock.dxf }
+    procedure MLeaderBlockProxyContainsShelfDivider;
   end;
 
 implementation
@@ -141,6 +146,83 @@ begin
   end;
 end;
 
+function ExtractProxyGraphicHexFromDXF(const FileName, EntityName: string): string;
+var
+  Lines: TStringList;
+  I: Integer;
+  InsideEntity: Boolean;
+  ExpectHexValue: Boolean;
+begin
+  Result := '';
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(FileName);
+    InsideEntity := False;
+    ExpectHexValue := False;
+    I := 0;
+    while I < Lines.Count do
+    begin
+      if not InsideEntity then
+      begin
+        if (Trim(Lines[I]) = '0') and (I + 1 < Lines.Count)
+          and (Trim(Lines[I + 1]) = EntityName) then
+        begin
+          InsideEntity := True;
+          Inc(I, 2);
+          Continue;
+        end;
+      end
+      else
+      begin
+        if ExpectHexValue then
+        begin
+          Result := Result + Trim(Lines[I]);
+          ExpectHexValue := False;
+        end
+        else if Trim(Lines[I]) = '310' then
+          ExpectHexValue := True
+        else if (Trim(Lines[I]) = '100') and (I + 1 < Lines.Count)
+          and (Trim(Lines[I + 1]) = 'AcDbMLeader') then
+          Break;
+      end;
+      Inc(I);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function HexToBytes(const Hex: string): TBytes;
+var
+  I: Integer;
+begin
+  SetLength(Result, Length(Hex) div 2);
+  for I := 0 to High(Result) do
+    Result[I] := StrToInt('$' + Copy(Hex, I * 2 + 1, 2));
+end;
+
+function ContourHasSegment(const Contour: TProxyContour;
+  const X1, Y1, X2, Y2: Double): Boolean;
+var
+  I: Integer;
+  P1, P2: GDBvertex;
+const
+  EPS = 1e-6;
+begin
+  Result := False;
+  for I := 0 to Contour.Vertices.Count - 2 do
+  begin
+    P1 := Contour.Vertices.getDataMutable(I)^;
+    P2 := Contour.Vertices.getDataMutable(I + 1)^;
+    if SameValue(P1.x, X1, EPS) and SameValue(P1.y, Y1, EPS)
+      and SameValue(P2.x, X2, EPS) and SameValue(P2.y, Y2, EPS) then
+      Exit(True);
+    if SameValue(P1.x, X2, EPS) and SameValue(P1.y, Y2, EPS)
+      and SameValue(P2.x, X1, EPS) and SameValue(P2.y, Y1, EPS) then
+      Exit(True);
+  end;
+end;
+
 { Проверяет, что кастомная сущность SPDSPOLYMORPHMARK загружается как прокси-объект.
   До исправления: сущность игнорировалась, ObjArray.Count = 0.
   После исправления: сущность загружается как GDBObjAcdProxy, Count = 1. }
@@ -181,6 +263,38 @@ begin
   finally
     drawing.done;
   end;
+end;
+
+procedure TProxyEntityLoadTest.MLeaderBlockProxyContainsShelfDivider;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  I: Integer;
+  FoundShelf: Boolean;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF('cad_source/test/mleaderblock.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData, 'Не удалось извлечь proxy graphic из mleaderblock.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  FoundShelf := False;
+  for I := 0 to High(ParseResult.Contours) do
+    if ContourHasSegment(ParseResult.Contours[I],
+      1097.291017048187, 1381.615369802081,
+      1113.291017048187, 1381.615369802081) then
+    begin
+      FoundShelf := True;
+      Break;
+    end;
+
+  CheckTrue(FoundShelf,
+    'Proxy graphic должен содержать полку-разделитель из mleaderblock.dxf');
 end;
 
 begin
