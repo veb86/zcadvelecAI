@@ -91,6 +91,7 @@ uses
   uzeentproxyparsertext,     { OpCode=10,38: Text, UnicodeText2 }
   uzeentproxyparserarc,      { OpCode=4: CircularArc (ARC) }
   uzeentproxyparserpolyline, { OpCode=6: Polyline/Line }
+  uzeentproxyparserpolylinewithnormals, { OpCode=32: PolylineWithNormals }
   uzeentproxyparserpolygon,  { OpCode=7: Polygon/Hatch }
   uzeentproxyparserlwpolyline, { OpCode=33: LwPolyline (LWPOLYLINE) }
   uzeentproxyparserellipse,  { OpCode=44: EllipticArc (ELLIPSE) }
