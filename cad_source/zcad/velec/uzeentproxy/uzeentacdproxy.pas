@@ -319,26 +319,27 @@ begin
   Code := rdr.ParseInteger;
   while Code <> 0 do
   begin
-    case Code of
-      90:
-        FProxyClassID := StrToIntDef(rdr.ParseString, 498);
-      91:
-        FAppClassID := StrToIntDef(rdr.ParseString, 499);
-      92, 160:
-        rdr.SkipString; { Размер вычисляется из FProxyDataBytes }
-      93:
-        FEntityDataSize := StrToIntDef(rdr.ParseString, 0);
-      94:
-        FObjectDataSize := StrToIntDef(rdr.ParseString, 0);
-      95:
-        FDrawingFormat := StrToIntDef(rdr.ParseString, 15);
-      70:
-        FOriginalDataFormat := StrToIntDef(rdr.ParseString, 0);
-      310:
-        HexAccum := HexAccum + rdr.ParseString;
-    else
-      rdr.SkipString;
-    end;
+    if not LoadFromDXFObjShared(rdr, Code, ptu, drawing, context) then
+      case Code of
+        90:
+          FProxyClassID := StrToIntDef(rdr.ParseString, 498);
+        91:
+          FAppClassID := StrToIntDef(rdr.ParseString, 499);
+        92, 160:
+          rdr.SkipString; { Размер вычисляется из FProxyDataBytes }
+        93:
+          FEntityDataSize := StrToIntDef(rdr.ParseString, 0);
+        94:
+          FObjectDataSize := StrToIntDef(rdr.ParseString, 0);
+        95:
+          FDrawingFormat := StrToIntDef(rdr.ParseString, 15);
+        70:
+          FOriginalDataFormat := StrToIntDef(rdr.ParseString, 0);
+        310:
+          HexAccum := HexAccum + rdr.ParseString;
+      else
+        rdr.SkipString;
+      end;
     Code := rdr.ParseInteger;
   end;
 

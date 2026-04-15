@@ -59,6 +59,8 @@ type
     procedure KnownEntityLoadedNormally;
     { Проверяет поддержку OpCode=32 в proxy графике mleaderblock.dxf }
     procedure MLeaderBlockProxyContainsShelfDivider;
+    { Проверяет сохранение слоя у кастомного proxy-объекта SPDSDOOR }
+    procedure SpdsDoorProxyKeepsEntityLayer;
   end;
 
 implementation
@@ -295,6 +297,33 @@ begin
 
   CheckTrue(FoundShelf,
     'Proxy graphic должен содержать полку-разделитель из mleaderblock.dxf');
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxyKeepsEntityLayer;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+
+    CheckEquals(1, drawing.pObjRoot^.ObjArray.Count,
+      'spdsdoor.dxf должен загружать один proxy-объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    CheckEquals(ObjN_GDBObjAcdProxy, entity^.GetObjTypeName,
+      'SPDSDOOR должен загружаться как proxy-объект');
+    CheckNotNull(entity^.vp.Layer, 'У proxy-объекта должен быть назначен слой');
+    CheckEquals('АР ДВЕРИ', entity^.vp.Layer^.Name,
+      'Proxy-объект должен сохранять слой из DXF-сущности');
+  finally
+    drawing.done;
+  end;
 end;
 
 begin
