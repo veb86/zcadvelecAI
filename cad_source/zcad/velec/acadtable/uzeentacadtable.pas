@@ -155,6 +155,13 @@ type
     Row2, Col2: Integer;
   end;
 
+  TAcadTableRenderSegment = record
+    StartRow: Integer;
+    EndRow: Integer;
+    OffsetX: Double;
+    OffsetY: Double;
+  end;
+
   // Тип указателя на GDBObjAcadTable
   PGDBObjAcadTable = ^GDBObjAcadTable;
 
@@ -248,6 +255,9 @@ type
       var ADrawing: TDrawingDef): PGDBTextStyle;
     // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle
     procedure ApplyDXFTableStyle(var ADrawing: TDrawingDef);
+    // Вычисляет сегменты визуализации для разорванной таблицы.
+    procedure BuildRenderSegments(out ASegments: array of TAcadTableRenderSegment;
+      out ASegmentCount: Integer);
     // Возвращает имя стиля таблицы
     function GetTableStyleName: String;
     // Определяет базовый стиль строки с учётом флагов подавления title/header.
@@ -698,6 +708,104 @@ begin
      FTableStyle.TitleCell.TextHeight,
      FTableStyle.HeaderCell.TextHeight,
      FTableStyle.DataCell.TextHeight], LM_Info);
+end;
+
+procedure GDBObjAcadTable.BuildRenderSegments(
+  out ASegments: array of TAcadTableRenderSegment; out ASegmentCount: Integer);
+var
+  TitleSuppressed, HeaderSuppressed: Boolean;
+  RepeatRowCount: Integer;
+  BaseSegmentHeight: Double;
+  RowIdx, SegmentIdx, SegmentStart, SegmentEnd: Integer;
+  CurrentSegmentHeight, RemainingHeight, HeaderHeight: Double;
+  SegmentHeightWithRepeats, SegmentWidth, DirectionSign: Double;
+begin
+  ASegmentCount := 0;
+  if (FRowCount <= 0) or (Length(ASegments) = 0) then
+    Exit;
+
+  TitleSuppressed := (FTableFlags and 2) <> 0;
+  HeaderSuppressed := (FTableFlags and 4) <> 0;
+
+  RepeatRowCount := 0;
+  if FBreakRepeatTopLabels then
+  begin
+    if (not TitleSuppressed) and (FRowCount > 0) then
+      Inc(RepeatRowCount);
+    if (not HeaderSuppressed) and (FRowCount > 1) then
+      Inc(RepeatRowCount);
+  end;
+
+  BaseSegmentHeight := GetTotalHeight;
+  if FBreakEnabled and (not FBreakManualHeight) and (RepeatRowCount > 0) then
+  begin
+    HeaderHeight := 0;
+    for RowIdx := 0 to RepeatRowCount - 1 do
+      HeaderHeight := HeaderHeight + GetRowHeight(RowIdx);
+    BaseSegmentHeight := BaseSegmentHeight - HeaderHeight;
+    if BaseSegmentHeight <= 0 then
+      BaseSegmentHeight := GetTotalHeight;
+  end;
+
+  SegmentIdx := 0;
+  SegmentStart := 0;
+  while (SegmentStart < FRowCount) and (SegmentIdx < Length(ASegments)) do
+  begin
+    SegmentEnd := SegmentStart;
+    CurrentSegmentHeight := 0;
+    while SegmentEnd < FRowCount do
+    begin
+      RemainingHeight := CurrentSegmentHeight + GetRowHeight(SegmentEnd);
+      if SegmentEnd > SegmentStart then
+      begin
+        SegmentHeightWithRepeats := RemainingHeight;
+        if SegmentStart > 0 then
+          SegmentHeightWithRepeats := SegmentHeightWithRepeats +
+            (GetTotalHeight - BaseSegmentHeight);
+        if FBreakEnabled and (not FBreakManualHeight) and
+           (SegmentHeightWithRepeats > BaseSegmentHeight + 1e-9) then
+          Break;
+      end;
+      CurrentSegmentHeight := RemainingHeight;
+      Inc(SegmentEnd);
+    end;
+
+    if SegmentEnd = SegmentStart then
+      Inc(SegmentEnd);
+
+    ASegments[SegmentIdx].StartRow := SegmentStart;
+    ASegments[SegmentIdx].EndRow := SegmentEnd - 1;
+    ASegments[SegmentIdx].OffsetX := 0;
+    ASegments[SegmentIdx].OffsetY := 0;
+
+    if SegmentIdx > 0 then
+    begin
+      case FBreakDirection of
+        atbdDown:
+          ASegments[SegmentIdx].OffsetY :=
+            -SegmentIdx * (BaseSegmentHeight + FBreakSpacing);
+        atbdLeft:
+          begin
+            SegmentWidth := GetTotalWidth;
+            DirectionSign := -1;
+            ASegments[SegmentIdx].OffsetX :=
+              DirectionSign * SegmentIdx * (SegmentWidth + FBreakSpacing);
+          end;
+      else
+        begin
+          SegmentWidth := GetTotalWidth;
+          DirectionSign := 1;
+          ASegments[SegmentIdx].OffsetX :=
+            DirectionSign * SegmentIdx * (SegmentWidth + FBreakSpacing);
+        end;
+      end;
+    end;
+
+    Inc(SegmentIdx);
+    SegmentStart := SegmentEnd;
+  end;
+
+  ASegmentCount := SegmentIdx;
 end;
 
 // Резолвит итоговый стиль ячейки с учётом иерархии.
@@ -1422,9 +1530,9 @@ procedure GDBObjAcadTable.BuildVisualRepresentation(
   var ADrawing: TDrawingDef;
   var ADC: TDrawContext);
 var
-  RowIdx, ColIdx: Integer;
+  RowIdx, ColIdx, SegmentIdx, SegmentCount: Integer;
   CurrentY, CurrentX: Double;
-  TotalWidth, TotalHeight: Double;
+  TotalWidth, TotalHeight, SegmentHeight: Double;
   RowH, ColW: Double;
   PLine: PGDBObjLine;
   PMText: PGDBObjMText;
@@ -1432,6 +1540,8 @@ var
   LineCount, TextCount: Integer;
   CellStyle: TCellStyle;
   TextHeightLocal: Double;
+  RenderSegments: array[0..255] of TAcadTableRenderSegment;
+  SegmentOffsetX, SegmentOffsetY: Double;
 begin
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation START rows=%d cols=%d',
@@ -1461,262 +1571,266 @@ begin
 
   LineCount := 0;
   TextCount := 0;
+  BuildRenderSegments(RenderSegments, SegmentCount);
+  if SegmentCount <= 0 then
+    Exit;
 
-  // --- Горизонтальные линии с учётом вертикально объединённых ячеек ---
-  // Верхняя и нижняя границы (RowIdx=0, RowIdx=FRowCount) рисуются полностью.
-  // Внутренние границы разрываются в местах вертикальных объединений.
-  CurrentY := 0;
-  for RowIdx := 0 to FRowCount do
+  // --- Горизонтальные линии с учётом разрывов и объединённых ячеек ---
+  for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    if (RowIdx = 0) or (RowIdx = FRowCount) then
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    CurrentY := 0;
+    for RowIdx := RenderSegments[SegmentIdx].StartRow to
+                  RenderSegments[SegmentIdx].EndRow + 1 do
     begin
-      // Крайние линии — рисуем полностью
-      pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
-      PLine^.CoordInOCS.lBegin.x := 0;
-      PLine^.CoordInOCS.lBegin.y := -CurrentY;
-      PLine^.CoordInOCS.lBegin.z := 0;
-      PLine^.CoordInOCS.lEnd.x := TotalWidth;
-      PLine^.CoordInOCS.lEnd.y := -CurrentY;
-      PLine^.CoordInOCS.lEnd.z := 0;
-      CopyVPto(PLine^);
-      PLine^.FormatEntity(ADrawing, ADC);
-      Inc(LineCount);
-    end
-    else
-    begin
-      // Внутренняя горизонтальная граница — разрываем при вертикальных объединениях
-      CurrentX := 0;
-      for ColIdx := 0 to FColCount - 1 do
+      if (RowIdx = RenderSegments[SegmentIdx].StartRow) or
+         (RowIdx = RenderSegments[SegmentIdx].EndRow + 1) then
       begin
-        ColW := GetColWidth(ColIdx);
-        // IsRowBorderVisible проверяет, что граница RowIdx-1/RowIdx в столбце ColIdx
-        // не попадает внутрь вертикально объединённого диапазона
-        if IsRowBorderVisible(RowIdx - 1, ColIdx) then
+        pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
+        PLine^.CoordInOCS.lBegin.x := SegmentOffsetX;
+        PLine^.CoordInOCS.lBegin.y := SegmentOffsetY - CurrentY;
+        PLine^.CoordInOCS.lBegin.z := 0;
+        PLine^.CoordInOCS.lEnd.x := SegmentOffsetX + TotalWidth;
+        PLine^.CoordInOCS.lEnd.y := SegmentOffsetY - CurrentY;
+        PLine^.CoordInOCS.lEnd.z := 0;
+        CopyVPto(PLine^);
+        PLine^.FormatEntity(ADrawing, ADC);
+        Inc(LineCount);
+      end
+      else
+      begin
+        CurrentX := 0;
+        for ColIdx := 0 to FColCount - 1 do
         begin
-          pointer(PLine) := ConstObjArray.CreateInitObj(
-            GDBLineID, @Self);
-          PLine^.CoordInOCS.lBegin.x := CurrentX;
-          PLine^.CoordInOCS.lBegin.y := -CurrentY;
-          PLine^.CoordInOCS.lBegin.z := 0;
-          PLine^.CoordInOCS.lEnd.x := CurrentX + ColW;
-          PLine^.CoordInOCS.lEnd.y := -CurrentY;
-          PLine^.CoordInOCS.lEnd.z := 0;
-          CopyVPto(PLine^);
-          PLine^.FormatEntity(ADrawing, ADC);
-          Inc(LineCount);
+          ColW := GetColWidth(ColIdx);
+          if IsRowBorderVisible(RowIdx - 1, ColIdx) then
+          begin
+            pointer(PLine) := ConstObjArray.CreateInitObj(
+              GDBLineID, @Self);
+            PLine^.CoordInOCS.lBegin.x := SegmentOffsetX + CurrentX;
+            PLine^.CoordInOCS.lBegin.y := SegmentOffsetY - CurrentY;
+            PLine^.CoordInOCS.lBegin.z := 0;
+            PLine^.CoordInOCS.lEnd.x := SegmentOffsetX + CurrentX + ColW;
+            PLine^.CoordInOCS.lEnd.y := SegmentOffsetY - CurrentY;
+            PLine^.CoordInOCS.lEnd.z := 0;
+            CopyVPto(PLine^);
+            PLine^.FormatEntity(ADrawing, ADC);
+            Inc(LineCount);
+          end;
+          CurrentX := CurrentX + ColW;
         end;
-        CurrentX := CurrentX + ColW;
       end;
-    end;
 
-    if RowIdx < FRowCount then
-      CurrentY := CurrentY + GetRowHeight(RowIdx);
+      if RowIdx <= RenderSegments[SegmentIdx].EndRow then
+        CurrentY := CurrentY + GetRowHeight(RowIdx);
+    end;
   end;
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation ' +
     'created %d horizontal line segments',
     [LineCount], LM_Info);
 
-  // --- Вертикальные линии с учётом объединённых ячеек ---
-  // Для каждого граничного положения по X рисуем вертикальные отрезки только
-  // там, где граница не попадает внутрь объединённого диапазона.
-  // Крайние линии (ColIdx=0 и ColIdx=FColCount) всегда рисуются полностью.
+  // --- Вертикальные линии с учётом разрывов и объединённых ячеек ---
   LineCount := 0;
-  CurrentX := 0;
-  for ColIdx := 0 to FColCount do
+  for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    // Крайние линии (левая/правая рамка) — рисуем всегда полностью
-    if (ColIdx = 0) or (ColIdx = FColCount) then
-    begin
-      pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
-      PLine^.CoordInOCS.lBegin.x := CurrentX;
-      PLine^.CoordInOCS.lBegin.y := 0;
-      PLine^.CoordInOCS.lBegin.z := 0;
-      PLine^.CoordInOCS.lEnd.x   := CurrentX;
-      PLine^.CoordInOCS.lEnd.y   := -TotalHeight;
-      PLine^.CoordInOCS.lEnd.z   := 0;
-      CopyVPto(PLine^);
-      PLine^.FormatEntity(ADrawing, ADC);
-      Inc(LineCount);
-    end
-    else
-    begin
-      // Внутренняя граница: рисуем отрезками, разрывая там, где есть объединение.
-      // Для каждой строки проверяем, видна ли граница ColIdx-1/ColIdx.
-      CurrentY := 0;
-      for RowIdx := 0 to FRowCount - 1 do
-      begin
-        RowH := GetRowHeight(RowIdx);
-        // IsColBorderVisible проверяет, что граница ColIdx-1/ColIdx в строке RowIdx
-        // не попадает внутрь объединённого диапазона
-        if IsColBorderVisible(RowIdx, ColIdx - 1) then
-        begin
-          pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
-          PLine^.CoordInOCS.lBegin.x := CurrentX;
-          PLine^.CoordInOCS.lBegin.y := -CurrentY;
-          PLine^.CoordInOCS.lBegin.z := 0;
-          PLine^.CoordInOCS.lEnd.x   := CurrentX;
-          PLine^.CoordInOCS.lEnd.y   := -(CurrentY + RowH);
-          PLine^.CoordInOCS.lEnd.z   := 0;
-          CopyVPto(PLine^);
-          PLine^.FormatEntity(ADrawing, ADC);
-          Inc(LineCount);
-        end;
-        CurrentY := CurrentY + RowH;
-      end;
-    end;
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    SegmentHeight := 0;
+    for RowIdx := RenderSegments[SegmentIdx].StartRow to
+                  RenderSegments[SegmentIdx].EndRow do
+      SegmentHeight := SegmentHeight + GetRowHeight(RowIdx);
 
-    if ColIdx < FColCount then
-      CurrentX := CurrentX + GetColWidth(ColIdx);
+    CurrentX := 0;
+    for ColIdx := 0 to FColCount do
+    begin
+      if (ColIdx = 0) or (ColIdx = FColCount) then
+      begin
+        pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
+        PLine^.CoordInOCS.lBegin.x := SegmentOffsetX + CurrentX;
+        PLine^.CoordInOCS.lBegin.y := SegmentOffsetY;
+        PLine^.CoordInOCS.lBegin.z := 0;
+        PLine^.CoordInOCS.lEnd.x   := SegmentOffsetX + CurrentX;
+        PLine^.CoordInOCS.lEnd.y   := SegmentOffsetY - SegmentHeight;
+        PLine^.CoordInOCS.lEnd.z   := 0;
+        CopyVPto(PLine^);
+        PLine^.FormatEntity(ADrawing, ADC);
+        Inc(LineCount);
+      end
+      else
+      begin
+        CurrentY := 0;
+        for RowIdx := RenderSegments[SegmentIdx].StartRow to
+                      RenderSegments[SegmentIdx].EndRow do
+        begin
+          RowH := GetRowHeight(RowIdx);
+          if IsColBorderVisible(RowIdx, ColIdx - 1) then
+          begin
+            pointer(PLine) := ConstObjArray.CreateInitObj(GDBLineID, @Self);
+            PLine^.CoordInOCS.lBegin.x := SegmentOffsetX + CurrentX;
+            PLine^.CoordInOCS.lBegin.y := SegmentOffsetY - CurrentY;
+            PLine^.CoordInOCS.lBegin.z := 0;
+            PLine^.CoordInOCS.lEnd.x   := SegmentOffsetX + CurrentX;
+            PLine^.CoordInOCS.lEnd.y   := SegmentOffsetY - (CurrentY + RowH);
+            PLine^.CoordInOCS.lEnd.z   := 0;
+            CopyVPto(PLine^);
+            PLine^.FormatEntity(ADrawing, ADC);
+            Inc(LineCount);
+          end;
+          CurrentY := CurrentY + RowH;
+        end;
+      end;
+
+      if ColIdx < FColCount then
+        CurrentX := CurrentX + GetColWidth(ColIdx);
+    end;
   end;
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation created %d vertical line segments',
     [LineCount], LM_Info);
 
   // --- Текст ячеек ---
-  CurrentY := 0;
   TextCount := 0;
-  for RowIdx := 0 to FRowCount - 1 do
+  for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    RowH := GetRowHeight(RowIdx);
-    CurrentX := 0;
-
-    for ColIdx := 0 to FColCount - 1 do
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    CurrentY := 0;
+    for RowIdx := RenderSegments[SegmentIdx].StartRow to
+                  RenderSegments[SegmentIdx].EndRow do
     begin
-      ColW := GetColWidth(ColIdx);
+      RowH := GetRowHeight(RowIdx);
+      CurrentX := 0;
 
-      // Если ячейка объединённая и не является главной — пропускаем
-      if IsCellMerged(RowIdx, ColIdx) then
+      for ColIdx := 0 to FColCount - 1 do
       begin
-        if not ((RowIdx = GetMergeRoot(RowIdx, ColIdx).Y) and
-                (ColIdx = GetMergeRoot(RowIdx, ColIdx).X)) then
+        ColW := GetColWidth(ColIdx);
+
+        if IsCellMerged(RowIdx, ColIdx) then
         begin
-          CurrentX := CurrentX + ColW;
-          Continue;
-        end;
-      end;
-
-      // Получаем текст из новой структуры FCells или из старой FCellTexts
-      CellStr := '';
-      if (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
-        CellStr := FCells[RowIdx][ColIdx].Text
-      else
-        CellStr := GetCellText(RowIdx, ColIdx);
-
-      // Размеры ячейки с учётом объединения (сумма столбцов и строк)
-      ColW := GetMergedCellWidth(RowIdx, ColIdx);
-      RowH := GetMergedCellHeight(RowIdx, ColIdx);
-
-      programlog.LogOutFormatStr(
-        'uzeentacadtable: BuildVisualRepresentation ' +
-        'Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f',
-        [RowIdx, ColIdx, CellStr, ColW, RowH], LM_Info);
-
-      if CellStr <> '' then
-      begin
-        // Резолвим стиль
-        CellStyle := ResolveCellStyle(RowIdx, ColIdx);
-
-        pointer(PMText) :=
-          ConstObjArray.CreateInitObj(GDBMTextID, @Self);
-        PMText^.Template := UTF8ToString(CellStr);
-
-        // Используем высоту текста из стиля
-        if CellStyle.TextHeight > 0 then
-          PMText^.textprop.size := CellStyle.TextHeight
-        else
-          PMText^.textprop.size := CAcadTableDefaultTextHeight;
-
-        PMText^.linespacef := 1;
-        PMText^.WrapMode := mwmByWordThenChar;
-        PMText^.Width := ColW * 0.9;
-
-        // Выравнивание: комбинация горизонтальной и вертикальной составляющих.
-        // jstl/jstc/jstr — Top, jsml/jsmc/jsmr — Middle, jsbl/jsbc/jsbr — Bottom.
-        case CellStyle.VertAlign of
-          vaTop:
-            case CellStyle.HorzAlign of
-              haLeft:   PMText^.textprop.justify := jstl;
-              haCenter: PMText^.textprop.justify := jstc;
-              haRight:  PMText^.textprop.justify := jstr;
-            else
-              PMText^.textprop.justify := jstl;
-            end;
-          vaMiddle:
-            case CellStyle.HorzAlign of
-              haLeft:   PMText^.textprop.justify := jsml;
-              haCenter: PMText^.textprop.justify := jsmc;
-              haRight:  PMText^.textprop.justify := jsmr;
-            else
-              PMText^.textprop.justify := jsml;
-            end;
-          vaBottom:
-            case CellStyle.HorzAlign of
-              haLeft:   PMText^.textprop.justify := jsbl;
-              haCenter: PMText^.textprop.justify := jsbc;
-              haRight:  PMText^.textprop.justify := jsbr;
-            else
-              PMText^.textprop.justify := jsbl;
-            end;
-        else
-          PMText^.textprop.justify := jstl;
+          if not ((RowIdx = GetMergeRoot(RowIdx, ColIdx).Y) and
+                  (ColIdx = GetMergeRoot(RowIdx, ColIdx).X)) then
+          begin
+            CurrentX := CurrentX + ColW;
+            Continue;
+          end;
         end;
 
-        // Позиция текста с учётом выравнивания и размеров ячейки
-        TextHeightLocal := PMText^.textprop.size;
-
-        case CellStyle.HorzAlign of
-          haLeft:
-            PMText^.Local.P_insert.x :=
-              CurrentX + TextHeightLocal * 0.5;
-          haCenter:
-            PMText^.Local.P_insert.x := CurrentX + ColW / 2;
-          haRight:
-            PMText^.Local.P_insert.x :=
-              CurrentX + ColW - TextHeightLocal * 0.5;
+        CellStr := '';
+        if (Length(FCells) > RowIdx) and (Length(FCells[RowIdx]) > ColIdx) then
+          CellStr := FCells[RowIdx][ColIdx].Text
         else
-          PMText^.Local.P_insert.x :=
-            CurrentX + TextHeightLocal * 0.5;
-        end;
+          CellStr := GetCellText(RowIdx, ColIdx);
 
-        // Вертикальная позиция с учётом объединённой высоты ячейки
-        case CellStyle.VertAlign of
-          vaTop:
-            PMText^.Local.P_insert.y :=
-              -(CurrentY + TextHeightLocal * 0.5);
-          vaMiddle:
-            PMText^.Local.P_insert.y :=
-              -(CurrentY + RowH / 2);
-          vaBottom:
-            PMText^.Local.P_insert.y :=
-              -(CurrentY + RowH - TextHeightLocal * 0.5);
-        else
-          PMText^.Local.P_insert.y := -(CurrentY + RowH / 2);
-        end;
-
-        PMText^.Local.P_insert.z := 0;
-        PMText^.TXTStyle := ResolveTextStyle(CellStyle.TextStyle, ADrawing);
+        ColW := GetMergedCellWidth(RowIdx, ColIdx);
+        RowH := GetMergedCellHeight(RowIdx, ColIdx);
 
         programlog.LogOutFormatStr(
           'uzeentacadtable: BuildVisualRepresentation ' +
-          'MText[%d,%d] insert(%.2f,%.2f) text="%s" ' +
-          'halign=%d valign=%d justify=%d height=%.2f style="%s"',
-          [RowIdx, ColIdx,
-           PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
-           PMText^.Template, Ord(CellStyle.HorzAlign),
-           Ord(CellStyle.VertAlign),
-           Ord(PMText^.textprop.justify), PMText^.textprop.size,
-           CellStyle.TextStyle],
-          LM_Info);
-        CopyVPto(PMText^);
-        PMText^.FormatEntity(ADrawing, ADC);
-        Inc(TextCount);
+          'Cell[%d,%d] text="%s" ColW=%.2f RowH=%.2f segment=%d',
+          [RowIdx, ColIdx, CellStr, ColW, RowH, SegmentIdx], LM_Info);
+
+        if CellStr <> '' then
+        begin
+          CellStyle := ResolveCellStyle(RowIdx, ColIdx);
+
+          pointer(PMText) :=
+            ConstObjArray.CreateInitObj(GDBMTextID, @Self);
+          PMText^.Template := UTF8ToString(CellStr);
+
+          if CellStyle.TextHeight > 0 then
+            PMText^.textprop.size := CellStyle.TextHeight
+          else
+            PMText^.textprop.size := CAcadTableDefaultTextHeight;
+
+          PMText^.linespacef := 1;
+          PMText^.WrapMode := mwmByWordThenChar;
+          PMText^.Width := ColW * 0.9;
+
+          case CellStyle.VertAlign of
+            vaTop:
+              case CellStyle.HorzAlign of
+                haLeft:   PMText^.textprop.justify := jstl;
+                haCenter: PMText^.textprop.justify := jstc;
+                haRight:  PMText^.textprop.justify := jstr;
+              else
+                PMText^.textprop.justify := jstl;
+              end;
+            vaMiddle:
+              case CellStyle.HorzAlign of
+                haLeft:   PMText^.textprop.justify := jsml;
+                haCenter: PMText^.textprop.justify := jsmc;
+                haRight:  PMText^.textprop.justify := jsmr;
+              else
+                PMText^.textprop.justify := jsml;
+              end;
+            vaBottom:
+              case CellStyle.HorzAlign of
+                haLeft:   PMText^.textprop.justify := jsbl;
+                haCenter: PMText^.textprop.justify := jsbc;
+                haRight:  PMText^.textprop.justify := jsbr;
+              else
+                PMText^.textprop.justify := jsbl;
+              end;
+          else
+            PMText^.textprop.justify := jstl;
+          end;
+
+          TextHeightLocal := PMText^.textprop.size;
+
+          case CellStyle.HorzAlign of
+            haLeft:
+              PMText^.Local.P_insert.x :=
+                SegmentOffsetX + CurrentX + TextHeightLocal * 0.5;
+            haCenter:
+              PMText^.Local.P_insert.x := SegmentOffsetX + CurrentX + ColW / 2;
+            haRight:
+              PMText^.Local.P_insert.x :=
+                SegmentOffsetX + CurrentX + ColW - TextHeightLocal * 0.5;
+          else
+            PMText^.Local.P_insert.x :=
+              SegmentOffsetX + CurrentX + TextHeightLocal * 0.5;
+          end;
+
+          case CellStyle.VertAlign of
+            vaTop:
+              PMText^.Local.P_insert.y :=
+                SegmentOffsetY - (CurrentY + TextHeightLocal * 0.5);
+            vaMiddle:
+              PMText^.Local.P_insert.y :=
+                SegmentOffsetY - (CurrentY + RowH / 2);
+            vaBottom:
+              PMText^.Local.P_insert.y :=
+                SegmentOffsetY - (CurrentY + RowH - TextHeightLocal * 0.5);
+          else
+            PMText^.Local.P_insert.y := SegmentOffsetY - (CurrentY + RowH / 2);
+          end;
+
+          PMText^.Local.P_insert.z := 0;
+          PMText^.TXTStyle := ResolveTextStyle(CellStyle.TextStyle, ADrawing);
+
+          programlog.LogOutFormatStr(
+            'uzeentacadtable: BuildVisualRepresentation ' +
+            'MText[%d,%d] insert(%.2f,%.2f) text="%s" ' +
+            'halign=%d valign=%d justify=%d height=%.2f style="%s"',
+            [RowIdx, ColIdx,
+             PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
+             PMText^.Template, Ord(CellStyle.HorzAlign),
+             Ord(CellStyle.VertAlign),
+             Ord(PMText^.textprop.justify), PMText^.textprop.size,
+             CellStyle.TextStyle],
+            LM_Info);
+          CopyVPto(PMText^);
+          PMText^.FormatEntity(ADrawing, ADC);
+          Inc(TextCount);
+        end;
+
+        CurrentX := CurrentX + GetColWidth(ColIdx);
       end;
 
-      CurrentX := CurrentX + GetColWidth(ColIdx);
+      CurrentY := CurrentY + GetRowHeight(RowIdx);
     end;
-
-    CurrentY := CurrentY + GetRowHeight(RowIdx);
   end;
   programlog.LogOutFormatStr(
     'uzeentacadtable: BuildVisualRepresentation created %d text objects',

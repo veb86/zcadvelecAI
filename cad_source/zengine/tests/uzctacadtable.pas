@@ -16,6 +16,7 @@ interface
 
 uses
   SysUtils,
+  Math,
   Classes,
   fpcunit,
   testregistry,
@@ -39,6 +40,7 @@ type
   published
     procedure LoadsCellTextStylesFromDXFTableStyle;
     procedure LoadsBreakSettingsFromDXF;
+    procedure RendersBrokenTableAsSeparatedFragments;
   end;
 
 implementation
@@ -88,6 +90,67 @@ begin
           AStyles.Add(PMText^.TXTStyle^.Name);
     end;
     PEntity := ARoot^.ObjArray.iterate(IR);
+  end;
+end;
+
+procedure CollectLineBounds(const ARoot: PGDBObjGenericSubEntry;
+  out AMinX, AMaxX: Double; out AHasGap: Boolean);
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PLine: PGDBObjLine;
+  MinSegX, MaxSegX: Double;
+  Segments: array of record
+    MinX: Double;
+    MaxX: Double;
+  end;
+  SegCount, i, j: Integer;
+  TmpMin, TmpMax: Double;
+begin
+  AMinX := 0;
+  AMaxX := 0;
+  AHasGap := False;
+  SegCount := 0;
+
+  PEntity := ARoot^.ObjArray.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBLineID then
+    begin
+      PLine := PGDBObjLine(PEntity);
+      MinSegX := Min(PLine^.CoordInWCS.lBegin.x, PLine^.CoordInWCS.lEnd.x);
+      MaxSegX := Max(PLine^.CoordInWCS.lBegin.x, PLine^.CoordInWCS.lEnd.x);
+      SetLength(Segments, SegCount + 1);
+      Segments[SegCount].MinX := MinSegX;
+      Segments[SegCount].MaxX := MaxSegX;
+      Inc(SegCount);
+    end;
+    PEntity := ARoot^.ObjArray.iterate(IR);
+  end;
+
+  if SegCount = 0 then
+    Exit;
+
+  for i := 0 to SegCount - 2 do
+    for j := i + 1 to SegCount - 1 do
+      if Segments[i].MinX > Segments[j].MinX then
+      begin
+        TmpMin := Segments[i].MinX;
+        TmpMax := Segments[i].MaxX;
+        Segments[i].MinX := Segments[j].MinX;
+        Segments[i].MaxX := Segments[j].MaxX;
+        Segments[j].MinX := TmpMin;
+        Segments[j].MaxX := TmpMax;
+      end;
+
+  AMinX := Segments[0].MinX;
+  AMaxX := Segments[0].MaxX;
+  for i := 1 to SegCount - 1 do
+  begin
+    if Segments[i].MinX > AMaxX + 1e-6 then
+      AHasGap := True;
+    if Segments[i].MaxX > AMaxX then
+      AMaxX := Segments[i].MaxX;
   end;
 end;
 
@@ -145,6 +208,25 @@ begin
       'Ручная высота частей таблицы должна читаться из DXF');
     CheckEquals(1.0, AcadTable^.BreakSpacing, 1e-9,
       'Интервал между частями таблицы должен читаться из DXF');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.RendersBrokenTableAsSeparatedFragments;
+var
+  Drawing: TSimpleDrawing;
+  MinX, MaxX: Double;
+  HasGap: Boolean;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    CollectLineBounds(Drawing.pObjRoot, MinX, MaxX, HasGap);
+    Check(HasGap,
+      'После применения правил разбиения у AcadTable должны быть разрывы между фрагментами');
+    Check(MaxX - MinX > 20.0,
+      'Ширина визуализации должна включать несколько разнесённых фрагментов таблицы');
   finally
     Drawing.done;
   end;
