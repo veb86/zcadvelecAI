@@ -63,6 +63,8 @@ type
     Closed: Boolean;
     { Флаг: контур заполнен (SOLID заливка, штриховка) }
     Filled: Boolean;
+    { Вес линии, действовавший на момент создания примитива }
+    LineWeight: Integer;
   end;
 
   { Итоговый результат разбора одного Proxy Graphic блока }
@@ -126,7 +128,8 @@ type
 
     { Добавляет контур (набор вершин одного примитива) в массив контуров }
     procedure AppendContour(var Src: GDBPoint3DArray;
-      const IsClosed: Boolean; const IsFilled: Boolean);
+      const IsClosed: Boolean; const IsFilled: Boolean;
+      const LineWeight: Integer);
 
     { Расширяет суммарный BBox данными из одного примитива }
     procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
@@ -198,7 +201,7 @@ end;
 { Добавляет контур (вершины одного примитива) как отдельный элемент.
   Каждый примитив хранится в своём контуре для раздельной отрисовки. }
 procedure TProxyGraphicParser.AppendContour(var Src: GDBPoint3DArray;
-  const IsClosed: Boolean; const IsFilled: Boolean);
+  const IsClosed: Boolean; const IsFilled: Boolean; const LineWeight: Integer);
 var
   Idx: Integer;
   ir: itrec;
@@ -209,6 +212,7 @@ begin
   FResult.Contours[Idx].Vertices.init(Src.Count);
   FResult.Contours[Idx].Closed := IsClosed;
   FResult.Contours[Idx].Filled := IsFilled;
+  FResult.Contours[Idx].LineWeight := LineWeight;
   pV := Src.beginiterate(ir);
   while pV <> nil do
   begin
@@ -497,9 +501,15 @@ end;
 
 { Системный обработчик: SetLineweight — читает вес линии }
 procedure TProxyGraphicParser.HandleSetLineweight;
+var
+  LineWeight: Integer;
 begin
   try
-    FStream.ReadInt32;
+    LineWeight := FStream.ReadInt32;
+    FStream.State.LineWeight := LineWeight;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetLineweight value=%d',
+      [LineWeight], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -626,7 +636,8 @@ begin
           if FFillActive and HandlerResult.Closed then
             HandlerResult.Filled := True;
           AppendContour(HandlerResult.Vertices,
-            HandlerResult.Closed, HandlerResult.Filled);
+            HandlerResult.Closed, HandlerResult.Filled,
+            FStream.State.LineWeight);
           Inc(FResult.ContourCount);
           HandlerResult.Vertices.done;
         end;

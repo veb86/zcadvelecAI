@@ -140,6 +140,8 @@ type
     FContours: array of TProxyContour;
     { Число заполненных контуров }
     FContourCount: Integer;
+    { Текущий индекс контура при формировании Representation }
+    FCurrentContourIndex: Integer;
 
     { Текстовые примитивы, собранные при разборе }
     FTextItems: array of TProxyTextItem;
@@ -275,6 +277,7 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  FCurrentContourIndex := -1;
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -293,6 +296,7 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  FCurrentContourIndex := -1;
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -469,6 +473,7 @@ begin
       begin
         FContours[I].Closed := ParseResult.Contours[I].Closed;
         FContours[I].Filled := ParseResult.Contours[I].Filled;
+        FContours[I].LineWeight := ParseResult.Contours[I].LineWeight;
         FContours[I].Vertices.init(
           ParseResult.Contours[I].Vertices.Count);
         pV := ParseResult.Contours[I].Vertices.beginiterate(ir);
@@ -732,10 +737,14 @@ begin
     for I := 0 to FContourCount - 1 do
     begin
       if FContours[I].Vertices.Count > 0 then
+      begin
+        FCurrentContourIndex := I;
         Representation.DrawPolyLineWithLT(
           DC, FContours[I].Vertices, vp,
           FContours[I].Closed, True);
+      end;
     end;
+    FCurrentContourIndex := -1;
 
     if FContourCount > 0 then
       programlog.LogOutFormatStr(
@@ -758,8 +767,19 @@ end;
 { Отрисовывает геометрию через Representation (стандартный путь ZCAD) }
 procedure GDBObjAcdProxy.DrawGeometry(lw: integer; var DC: TDrawContext;
   const inFrustumState: TInBoundingVolume);
+var
+  ContourLineWeight: Integer;
+  OldLineWeight: SmallInt;
 begin
+  OldLineWeight := vp.LineWeight;
+  if (FCurrentContourIndex >= 0) and (FCurrentContourIndex < FContourCount) then
+  begin
+    ContourLineWeight := FContours[FCurrentContourIndex].LineWeight;
+    if ContourLineWeight <> LnWtByBlock then
+      vp.LineWeight := ContourLineWeight;
+  end;
   Representation.DrawGeometry(DC, vp.BoundingBox, inFrustumState);
+  vp.LineWeight := OldLineWeight;
   inherited;
 end;
 
