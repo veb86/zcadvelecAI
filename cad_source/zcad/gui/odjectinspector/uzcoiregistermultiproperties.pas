@@ -43,6 +43,23 @@ var
   ptdTHAlign:PUserTypeDescriptor;
   ptdTVAlign:PUserTypeDescriptor;
   ptdboolean:PUserTypeDescriptor;
+
+function GetTEnumDataForAcadTableBreakDirection(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+var
+  PVD:pvardesk;
+  t:PTEnumData;
+begin
+  result:=GetTEnumData(mp,pu);
+  PVD:=PTOneVarData(result).VDAddr.Instance;
+  if PVD<>nil then begin
+    t:=PVD^.data.Addr.Instance;
+    t^.Enums.PushBackData('Right');
+    t^.Enums.PushBackData('Down');
+    t^.Enums.PushBackData('Left');
+    t^.Selected:=0;
+  end;
+end;
+
 procedure DoubleDeltaEntIterateProc(pdata:Pointer;ChangedData:TChangedData;mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc; const f:TzeUnitsFormat);
 var
     l1,l2:Double;
@@ -791,6 +808,21 @@ begin
   end;
 end;
 
+procedure AcadTableBreakDirectionEntIterateProc(
+  pdata: Pointer;
+  ChangedData: TChangedData;
+  mp: TMultiProperty;
+  fistrun: boolean;
+  ecp: TEntChangeProc;
+  const f: TzeUnitsFormat);
+var
+  EnumValue: Integer;
+begin
+  EnumValue := Ord(PGDBObjAcadTable(ChangedData.PEntity)^.BreakDirection);
+  ChangedData.PGetDataInEtity := @EnumValue;
+  GeneralEntIterateProc(pdata, ChangedData, mp, fistrun, ecp, f);
+end;
+
 procedure finalize;
 begin
 end;
@@ -1214,6 +1246,55 @@ begin
       OneVarDataMIPD,
       TEntIterateProcsData.Create(
         nil, @AcadTableColCountEntIterateProc, nil));
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakEnabled', 'Break enabled',
+      sysunit^.TypeName2PTD('Boolean'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakEnabled),
+      PtrInt(@pacadtable^.BreakEnabled),
+      OneVarDataMIPD, OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakDirection', 'Break direction',
+      sysunit^.TypeName2PTD('TEnumData'),
+      MPCMisc, GDBAcadTableID, nil,
+      0, 0,
+      TMainIterateProcsData.Create(@GetTEnumDataForAcadTableBreakDirection,@FreeTEnumData),
+      TEntIterateProcsData.Create(nil, @AcadTableBreakDirectionEntIterateProc, nil));
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakRepeatTopLabels', 'Repeat top labels',
+      sysunit^.TypeName2PTD('Boolean'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakRepeatTopLabels),
+      PtrInt(@pacadtable^.BreakRepeatTopLabels),
+      OneVarDataMIPD, OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakRepeatBottomLabels', 'Repeat bottom labels',
+      sysunit^.TypeName2PTD('Boolean'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakRepeatBottomLabels),
+      PtrInt(@pacadtable^.BreakRepeatBottomLabels),
+      OneVarDataMIPD, OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakManualPosition', 'Manual position',
+      sysunit^.TypeName2PTD('Boolean'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakManualPosition),
+      PtrInt(@pacadtable^.BreakManualPosition),
+      OneVarDataMIPD, OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakManualHeight', 'Manual height',
+      sysunit^.TypeName2PTD('Boolean'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakManualHeight),
+      PtrInt(@pacadtable^.BreakManualHeight),
+      OneVarDataMIPD, OneVarRODataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty(
+      'AcadTableBreakSpacing', 'Break spacing',
+      sysunit^.TypeName2PTD('Double'),
+      MPCMisc, GDBAcadTableID, nil,
+      PtrInt(@pacadtable^.BreakSpacing),
+      PtrInt(@pacadtable^.BreakSpacing),
+      OneVarDataMIPD, OneVarRODataEIPD);
 
     {ElLeader uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;
@@ -1264,4 +1345,3 @@ finalization
   ProgramLog.LogOutFormatStr('Unit "%s" finalization',[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
   finalize;
 end.
-
