@@ -40,6 +40,7 @@ type
   published
     procedure LoadsCellTextStylesFromDXFTableStyle;
     procedure LoadsBreakSettingsFromDXF;
+    procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
   end;
 
@@ -208,6 +209,36 @@ begin
       'Ручная высота частей таблицы должна читаться из DXF');
     CheckEquals(1.0, AcadTable^.BreakSpacing, 1e-9,
       'Интервал между частями таблицы должен читаться из DXF');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.LoadsBreakSettingsFromSecondSample;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel2.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckTrue(AcadTable^.BreakEnabled,
+      'Признак включенного разрыва должен читаться из DXF');
+    CheckEquals(Ord(atbdRight), Ord(AcadTable^.BreakDirection),
+      'Направление разрыва должно читаться из второго DXF-образца');
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Повторение верхних меток должно читаться из второго DXF-образца');
+    CheckTrue(AcadTable^.BreakRepeatBottomLabels,
+      'Повторение нижних меток должно читаться из второго DXF-образца');
+    CheckTrue(AcadTable^.BreakManualPosition,
+      'Ручное положение частей должно читаться из второго DXF-образца');
+    CheckFalse(AcadTable^.BreakManualHeight,
+      'Ручная высота частей должна читаться из второго DXF-образца');
+    CheckEquals(0.0, AcadTable^.BreakSpacing, 1e-9,
+      'Интервал между частями таблицы должен читаться из второго DXF-образца');
   finally
     Drawing.done;
   end;
