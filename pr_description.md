@@ -1,15 +1,16 @@
 ## Summary
-- restrict generic `MTEXT` wrapping to word boundaries by default
-- enable word-then-character wrapping explicitly for AcadTable cell text
-- add unit tests covering both plain MTEXT and table-cell wrapping behavior
+Fixes AcadTable cell text styles loaded from DXF table styles.
 
-## Reproduction
-- open `cad_source\test+testtable.dxf`
-- inspect the table cell containing `35` in row 2, column 3
-- before this change, long unspaced text used generic MTEXT character wrapping everywhere, which caused incorrect behavior outside the table-specific case
+## Root Cause
+`GDBObjAcadTable.ResolveCellStyle` correctly resolved the per-row DXF table text style (`title`, `header`, `data`), but `BuildVisualRepresentation` ignored that result and assigned every generated `MText` the first text style in the drawing. As a result, all cells rendered with the same style, typically `Standard`.
 
-## Testing
-- added `TMTextWrapTest` in `cad_source/zengine/tests/uzctmtextwrap.pas`
-- local execution of `cad_source/zengine/tests` is blocked in this environment because `lazbuild` is not installed (`/workspace/lazarus/lazbuild: not found`)
+## Changes
+- resolve `MText.TXTStyle` from the style name calculated for each cell
+- keep a fallback chain: requested style -> `Standard` -> first available text style
+- add a regression test that loads `cad_source/test/tablerazdel.dxf` and checks that table text uses multiple styles, including `newtext`
 
-Fixes veb86/zcadvelecAI#895
+## Verification
+- Added automated regression test in `cad_source/zengine/tests/uzctacadtable.pas`
+- Local test execution is blocked in this environment because the repo test Makefile requires Lazarus `lazbuild` at `/workspace/lazarus/lazbuild`, which is not installed here
+
+Fixes veb86/zcadvelecAI#902
