@@ -38,9 +38,25 @@ type
   TAcadTableStyleTest = class(TTestCase)
   published
     procedure LoadsCellTextStylesFromDXFTableStyle;
+    procedure LoadsBreakSettingsFromDXF;
   end;
 
 implementation
+
+function FindFirstAcadTable(const ARoot: PGDBObjGenericSubEntry): PGDBObjAcadTable;
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+begin
+  Result := nil;
+  PEntity := ARoot^.ObjArray.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBAcadTableID then
+      Exit(PGDBObjAcadTable(PEntity));
+    PEntity := ARoot^.ObjArray.iterate(IR);
+  end;
+end;
 
 function LoadDrawingFromDXF(const AFileName: string; var ADrawing: TSimpleDrawing): Integer;
 var
@@ -100,6 +116,35 @@ begin
     finally
       StyleNames.Free;
     end;
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.LoadsBreakSettingsFromDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckFalse(AcadTable^.BreakEnabled, 'Разрыв таблицы должен читаться из DXF');
+    CheckEquals(Ord(atbdRight), Ord(AcadTable^.BreakDirection),
+      'Направление разрыва должно читаться из DXF');
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Повторение верхних меток должно читаться из DXF');
+    CheckTrue(AcadTable^.BreakRepeatBottomLabels,
+      'Повторение нижних меток должно читаться из DXF');
+    CheckTrue(AcadTable^.BreakManualPosition,
+      'Ручное положение частей таблицы должно читаться из DXF');
+    CheckFalse(AcadTable^.BreakManualHeight,
+      'Ручная высота частей таблицы должна читаться из DXF');
+    CheckEquals(1.0, AcadTable^.BreakSpacing, 1e-9,
+      'Интервал между частями таблицы должен читаться из DXF');
   finally
     Drawing.done;
   end;

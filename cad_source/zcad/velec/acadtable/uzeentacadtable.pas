@@ -51,6 +51,8 @@ const
   CAcadTableMaxCells = 100000;
 
 type
+  TAcadTableBreakDirection = (atbdRight, atbdDown, atbdLeft);
+
   // Типы данных ячеек
   TCellDataType = (cdtText, cdtNumber, cdtFormula, cdtBlock);
 
@@ -185,6 +187,14 @@ type
     //   бит 2 (4)  = строка имён столбцов (header/Название) подавлена
     //   бит 4 (16) = направление таблицы (снизу вверх)
     FTableFlags: Integer;
+    // Параметры разрыва таблицы, считанные из DXF.
+    FBreakEnabled: Boolean;
+    FBreakDirection: TAcadTableBreakDirection;
+    FBreakRepeatTopLabels: Boolean;
+    FBreakRepeatBottomLabels: Boolean;
+    FBreakManualPosition: Boolean;
+    FBreakManualHeight: Boolean;
+    FBreakSpacing: Double;
 
     // Новая модель данных (этап 2)
     // Стиль таблицы
@@ -281,6 +291,13 @@ type
     property Height: Double read GetTotalHeight;
     // Имя стиля таблицы
     property TableStyleName: String read GetTableStyleName;
+    property BreakEnabled: Boolean read FBreakEnabled;
+    property BreakDirection: TAcadTableBreakDirection read FBreakDirection;
+    property BreakRepeatTopLabels: Boolean read FBreakRepeatTopLabels;
+    property BreakRepeatBottomLabels: Boolean read FBreakRepeatBottomLabels;
+    property BreakManualPosition: Boolean read FBreakManualPosition;
+    property BreakManualHeight: Boolean read FBreakManualHeight;
+    property BreakSpacing: Double read FBreakSpacing;
   end;
 
 function AllocAcadTable: Pointer;
@@ -839,6 +856,13 @@ begin
   FGeometryBuilt := False;
   FTableStyleHandle := '';
   FTableFlags := 0;
+  FBreakEnabled := False;
+  FBreakDirection := atbdRight;
+  FBreakRepeatTopLabels := False;
+  FBreakRepeatBottomLabels := False;
+  FBreakManualPosition := False;
+  FBreakManualHeight := False;
+  FBreakSpacing := 0;
 
   // Инициализация новых структур данных (этап 2)
   InitCellStyle(FTableStyle.DefaultCell);
@@ -1016,6 +1040,70 @@ begin
           end
           else
             ARdr.SkipString; // Это флаг override ячейки
+        end;
+
+        // Параметры разрыва таблицы из основного блока AcDbTable.
+        292:
+        begin
+          if not InCellData then
+            FBreakEnabled := ARdr.ParseInteger <> 0;
+          else
+            ARdr.SkipString;
+        end;
+
+        282:
+        begin
+          if not InCellData then
+          begin
+            case ARdr.ParseInteger of
+              2: FBreakDirection := atbdDown;
+              3: FBreakDirection := atbdLeft;
+            else
+              FBreakDirection := atbdRight;
+            end;
+          end
+          else
+            ARdr.SkipString;
+        end;
+
+        291:
+        begin
+          if not InCellData then
+            FBreakRepeatTopLabels := ARdr.ParseInteger <> 0
+          else
+            ARdr.SkipString;
+        end;
+
+        294:
+        begin
+          if not InCellData then
+            FBreakRepeatBottomLabels := ARdr.ParseInteger <> 0
+          else
+            ARdr.SkipString;
+        end;
+
+        293:
+        begin
+          if not InCellData then
+            FBreakManualPosition := ARdr.ParseInteger <> 0
+          else
+            ARdr.SkipString;
+        end;
+
+        295:
+        begin
+          if not InCellData then
+            FBreakManualHeight := ARdr.ParseInteger <> 0
+          else
+            ARdr.SkipString;
+        end;
+
+        146:
+        begin
+          if not InCellData then
+            FBreakSpacing := ARdr.ParseDouble
+          else
+            ARdr.SkipString;
         end;
 
         // Высота строки (повторяется FRowCount раз)
@@ -1313,6 +1401,11 @@ begin
     'uzeentacadtable: LoadFromDXF END rows=%d cols=%d cells=%d row_heights=%d col_widths=%d merges=%d',
     [FRowCount, FColCount, Length(FCellTexts), FRowHeights.Count, FColWidths.Count,
      Length(FMerges)], LM_Info);
+  programlog.LogOutFormatStr(
+    'uzeentacadtable: BreakData enabled=%d dir=%d repeatTop=%d repeatBottom=%d manualPos=%d manualHeight=%d spacing=%.3f',
+    [Ord(FBreakEnabled), Ord(FBreakDirection), Ord(FBreakRepeatTopLabels),
+     Ord(FBreakRepeatBottomLabels), Ord(FBreakManualPosition),
+     Ord(FBreakManualHeight), FBreakSpacing], LM_Info);
   programlog.LogOutFormatStr(
     'uzeentacadtable: LoadFromDXF new structures: FRows=%d FCols=%d FCells[0,0] initialized',
     [Length(FRows), Length(FCols)], LM_Info);
