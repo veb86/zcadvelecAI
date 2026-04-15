@@ -233,6 +233,9 @@ type
     function IsRowBorderVisible(RowIdx, ColIdx: Integer): Boolean;
     // Резолвит итоговый стиль ячейки с учётом иерархии
     function ResolveCellStyle(RowIdx, ColIdx: Integer): TCellStyle;
+    // Резолвит указатель на текстовый стиль по имени с fallback к Standard/первому.
+    function ResolveTextStyle(const AStyleName: String;
+      var ADrawing: TDrawingDef): PGDBTextStyle;
     // Применяет DXF-стиль таблицы к внутренней структуре FTableStyle
     procedure ApplyDXFTableStyle(var ADrawing: TDrawingDef);
     // Возвращает имя стиля таблицы
@@ -804,6 +807,21 @@ begin
        Ord(Result.HorzAlign), Ord(Result.VertAlign),
        Result.TextHeight], LM_Info);
   end;
+end;
+
+function GDBObjAcadTable.ResolveTextStyle(const AStyleName: String;
+  var ADrawing: TDrawingDef): PGDBTextStyle;
+begin
+  Result := nil;
+
+  if AStyleName <> '' then
+    Result := ADrawing.GetTextStyleTable^.FindStyle(AStyleName, False);
+
+  if Result = nil then
+    Result := ADrawing.GetTextStyleTable^.FindStyle('Standard', False);
+
+  if (Result = nil) and (ADrawing.GetTextStyleTable^.Count > 0) then
+    Result := PGDBTextStyle(pointer(ADrawing.GetTextStyleTable^.getDataMutable(0)));
 end;
 
 // --- Конструктор и деструктор ---
@@ -1584,18 +1602,18 @@ begin
         end;
 
         PMText^.Local.P_insert.z := 0;
-        PMText^.TXTStyle :=
-          pointer(ADrawing.GetTextStyleTable^.getDataMutable(0));
+        PMText^.TXTStyle := ResolveTextStyle(CellStyle.TextStyle, ADrawing);
 
         programlog.LogOutFormatStr(
           'uzeentacadtable: BuildVisualRepresentation ' +
           'MText[%d,%d] insert(%.2f,%.2f) text="%s" ' +
-          'halign=%d valign=%d justify=%d height=%.2f',
+          'halign=%d valign=%d justify=%d height=%.2f style="%s"',
           [RowIdx, ColIdx,
            PMText^.Local.P_insert.x, PMText^.Local.P_insert.y,
            PMText^.Template, Ord(CellStyle.HorzAlign),
            Ord(CellStyle.VertAlign),
-           Ord(PMText^.textprop.justify), PMText^.textprop.size],
+           Ord(PMText^.textprop.justify), PMText^.textprop.size,
+           CellStyle.TextStyle],
           LM_Info);
         CopyVPto(PMText^);
         PMText^.FormatEntity(ADrawing, ADC);
