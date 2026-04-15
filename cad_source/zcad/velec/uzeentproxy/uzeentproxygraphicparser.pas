@@ -49,6 +49,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxytypes,
   uzegeometrytypes,
   uzegeometry,
   gzctnrVectorTypes,
@@ -90,6 +91,7 @@ type
   private
     FStream: TProxyByteStream;
     FResult: TProxyGraphicParseResult;
+    FState: TProxyGraphicState;
 
     { Текущее состояние заливки (SetFill OpCode=20).
       Устанавливается командой SetFill(1), сбрасывается после
@@ -187,6 +189,7 @@ begin
   inherited Create;
   FStream := TProxyByteStream.Create(Data);
   FillChar(FResult, SizeOf(FResult), 0);
+  InitProxyState(FState);
   FFillActive := False;
   FMatrixStackDepth := 0;
   SetLength(FMatrixStack, 0);
@@ -506,7 +509,7 @@ var
 begin
   try
     LineWeight := FStream.ReadInt32;
-    FStream.State.LineWeight := LineWeight;
+    FState.LineWeight := LineWeight;
     programlog.LogOutFormatStr(
       'uzeentproxygraphicparser: SetLineweight value=%d',
       [LineWeight], LM_Info);
@@ -637,7 +640,7 @@ begin
             HandlerResult.Filled := True;
           AppendContour(HandlerResult.Vertices,
             HandlerResult.Closed, HandlerResult.Filled,
-            FStream.State.LineWeight);
+            FState.LineWeight);
           Inc(FResult.ContourCount);
           HandlerResult.Vertices.done;
         end;
