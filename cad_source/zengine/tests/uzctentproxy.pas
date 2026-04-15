@@ -61,6 +61,8 @@ type
     procedure MLeaderBlockProxyContainsShelfDivider;
     { Проверяет сохранение слоя у кастомного proxy-объекта SPDSDOOR }
     procedure SpdsDoorProxyKeepsEntityLayer;
+    { Проверяет сохранение lineweight внутри proxy graphic SPDSDOOR }
+    procedure SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
   end;
 
 implementation
@@ -324,6 +326,36 @@ begin
   finally
     drawing.done;
   end;
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  I: Integer;
+  FoundExplicitLineweight: Boolean;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF('cad_source/test/spdsdoor.dxf', 'SPDSDOOR');
+  CheckNotEquals('', HexData, 'Не удалось извлечь proxy graphic из spdsdoor.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  FoundExplicitLineweight := False;
+  for I := 0 to High(ParseResult.Contours) do
+    if ParseResult.Contours[I].LineWeight = 60 then
+    begin
+      FoundExplicitLineweight := True;
+      Break;
+    end;
+
+  CheckTrue(FoundExplicitLineweight,
+    'Proxy graphic SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
 end;
 
 begin
