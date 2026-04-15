@@ -96,6 +96,7 @@ function GetExtenderCounterData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
 function GetVertex3DControlData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
 function GetTEnumDataForHAlign(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
 function GetTEnumDataForVAlign(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+function GetTEnumData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
 
 procedure FreeOneVarData(piteratedata:Pointer;mp:TMultiProperty);
 procedure FreeStringCounterData(piteratedata:Pointer;mp:TMultiProperty);

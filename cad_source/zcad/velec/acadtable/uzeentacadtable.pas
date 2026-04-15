@@ -1046,7 +1046,7 @@ begin
         292:
         begin
           if not InCellData then
-            FBreakEnabled := ARdr.ParseInteger <> 0;
+            FBreakEnabled := ARdr.ParseInteger <> 0
           else
             ARdr.SkipString;
         end;

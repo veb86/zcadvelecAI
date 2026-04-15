@@ -50,7 +50,7 @@ var
   t:PTEnumData;
 begin
   result:=GetTEnumData(mp,pu);
-  PVD:=PTOneVarData(result).VDAddr.Instance;
+  PVD:=PTOneVarData(result)^.VDAddr.Instance;
   if PVD<>nil then begin
     t:=PVD^.data.Addr.Instance;
     t^.Enums.PushBackData('Right');
