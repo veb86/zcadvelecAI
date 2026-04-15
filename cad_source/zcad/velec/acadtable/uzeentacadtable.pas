@@ -36,7 +36,7 @@ uses
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
   uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble,
-  uzestylestablesdxf, gzctnrVectorTypes, Types;
+  uzestylestablesdxf, gzctnrVectorTypes, Types,uzestylestexts;
 
 const
   // Высота строки по умолчанию (в единицах чертежа)
