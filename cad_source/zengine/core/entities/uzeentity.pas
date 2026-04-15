@@ -1079,13 +1079,10 @@ begin
       Result:=True;
     end;
     8:begin
-      if vp.layer=@DefaultErrorLayer then begin
-        vp.Layer:=drawing.getlayertable.getAddres(
-          dxfDeCodeString(rdr.ParseShortString,Context.header));
-        if vp.Layer=nil then
-          vp.Layer:=vp.Layer;
-      end else
-        APP_NAME:=rdr.ParseString;
+      Name:=dxfDeCodeString(rdr.ParseShortString,Context.header);
+      vp.Layer:=drawing.getlayertable.getAddres(Name);
+      if vp.Layer=nil then
+        vp.Layer:=@DefaultErrorLayer;
       Result:=True;
     end;
     48:begin
