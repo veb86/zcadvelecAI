@@ -30,6 +30,8 @@ uses
   uzMVReader,uzcTextPreprocessorDXFImpl,uzefontbase;
 
 type
+  TMTextWrapMode = (mwmByWord, mwmByWordThenChar);
+
   PGDBXYZWStringArray=^XYZWStringArray;
 
   XYZWStringArray=object(GZVector<GDBStrWithPoint>)
@@ -39,6 +41,7 @@ type
   GDBObjMText=object(GDBObjText)
     Width:double;
     linespacef:double;
+    WrapMode: TMTextWrapMode;
     Text:XYZWStringArray;
     constructor init(own:Pointer;ALayer:PGDBLayerProp;LW:smallint;
       c:TDXFEntsInternalStringType;p:TzePoint3d;s,o,w,a:double;j:TTextJustify;
@@ -67,7 +70,8 @@ type
   end;
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
-  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray);
+  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
+  WrapMode: TMTextWrapMode = mwmByWordThenChar);
 function GetLinesH(linespace,size:double;var Lines:XYZWStringArray):double;
 function GetLinesW(var Lines:XYZWStringArray):double;
 function GetLineSpaceFromLineSpaceF(linespacef,size:double):double;
@@ -79,6 +83,7 @@ begin
   inherited;
   PGDBObjMText(refp)^.Width:=Width;
   PGDBObjMText(refp)^.linespacef:=linespacef;
+  PGDBObjMText(refp)^.WrapMode:=WrapMode;
 end;
 
 
@@ -124,6 +129,7 @@ constructor GDBObjMText.initnul;
 begin
   inherited initnul(owner);
   Width:=0;
+  WrapMode:=mwmByWordThenChar;
   Text.init(10);
 end;
 
@@ -132,6 +138,7 @@ begin
   inherited init(own,ALayer,lw,c,p,s,o,w,a,j);
   Width:=wi;
   linespacef:=l;
+  WrapMode:=mwmByWordThenChar;
   {TODO: тут расчет AAA ненужен}
   Local.basis.ox:=GetXfFromZ(Local.basis.oz);
 
@@ -178,7 +185,8 @@ begin
 end;
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
-  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray);
+  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
+  WrapMode: TMTextWrapMode = mwmByWordThenChar);
 var
   canbreak:boolean;
   currsymbol,lastbreak,lastcanbreak:integer;
@@ -275,8 +283,9 @@ begin
           Text.PushBackData(swp);
         end;
       end else begin
-        // Перенос по символам: если пробелов нет и текст не умещается
-        if (maxlinewidth>0)and(maxlinewidth<=linewidth)
+        // Для таблиц допускаем посимвольный перенос, обычный MTEXT переносим только по пробелам.
+        if (WrapMode=mwmByWordThenChar)
+          and (maxlinewidth>0)and(maxlinewidth<=linewidth)
           and(currsymbol>lastbreak) then begin
           currline:=copy(content,lastbreak,currsymbol-lastbreak);
           swp.Str:=currline;
@@ -355,7 +364,8 @@ begin
   end else
     ActualContent:=Content;
 
-  FormatMtext(pfont,Width,textprop.size,textprop.wfactor,ActualContent,Text);
+  FormatMtext(
+    pfont,Width,textprop.size,textprop.wfactor,ActualContent,Text,WrapMode);
 
   h:=GetLinesH(linespace,textprop.size,Text);
 
@@ -701,6 +711,7 @@ begin
   tvo^.content:=content;
   tvo^.Width:=Width;
   tvo^.linespacef:=linespacef;
+  tvo^.WrapMode:=WrapMode;
   tvo^.bp.ListPos.Owner:=own;
   tvo^.TXTStyle:=TXTStyle;
   Result:=tvo;

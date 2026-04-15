@@ -1517,6 +1517,7 @@ begin
           PMText^.textprop.size := CAcadTableDefaultTextHeight;
 
         PMText^.linespacef := 1;
+        PMText^.WrapMode := mwmByWordThenChar;
         PMText^.Width := ColW * 0.9;
 
         // Выравнивание: комбинация горизонтальной и вертикальной составляющих.
