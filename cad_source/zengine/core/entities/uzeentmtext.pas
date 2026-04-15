@@ -71,7 +71,7 @@ type
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
   const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
-  WrapMode: TMTextWrapMode = mwmByWordThenChar);
+  WrapMode: TMTextWrapMode = mwmByWord);
 function GetLinesH(linespace,size:double;var Lines:XYZWStringArray):double;
 function GetLinesW(var Lines:XYZWStringArray):double;
 function GetLineSpaceFromLineSpaceF(linespacef,size:double):double;
@@ -129,7 +129,7 @@ constructor GDBObjMText.initnul;
 begin
   inherited initnul(owner);
   Width:=0;
-  WrapMode:=mwmByWordThenChar;
+  WrapMode:=mwmByWord;
   Text.init(10);
 end;
 
@@ -138,7 +138,7 @@ begin
   inherited init(own,ALayer,lw,c,p,s,o,w,a,j);
   Width:=wi;
   linespacef:=l;
-  WrapMode:=mwmByWordThenChar;
+  WrapMode:=mwmByWord;
   {TODO: тут расчет AAA ненужен}
   Local.basis.ox:=GetXfFromZ(Local.basis.oz);
 
@@ -186,7 +186,7 @@ end;
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
   const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
-  WrapMode: TMTextWrapMode = mwmByWordThenChar);
+  WrapMode: TMTextWrapMode = mwmByWord);
 var
   canbreak:boolean;
   currsymbol,lastbreak,lastcanbreak:integer;
