@@ -66,6 +66,18 @@ type
     Filled: Boolean;
     { Вес линии, действовавший на момент создания примитива }
     LineWeight: Integer;
+    { Цвет, действовавший на момент создания примитива }
+    Color: Integer;
+    { Слой, действовавший на момент создания примитива }
+    Layer: string;
+    { Тип линии, действовавший на момент создания примитива }
+    Linetype: string;
+    { Масштаб типа линии, действовавший на момент создания примитива }
+    LtScale: Double;
+    { Толщина, действовавшая на момент создания примитива }
+    Thickness: Double;
+    { TrueColor, действовавший на момент создания примитива }
+    TrueColor: Integer;
   end;
 
   { Итоговый результат разбора одного Proxy Graphic блока }
@@ -234,15 +246,18 @@ begin
 
   if HasVertex then
     programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: AppendContour[%d] vertices=%d closed=%s filled=%s lineweight=%d first=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)',
+      'uzeentproxygraphicparser: AppendContour[%d] vertices=%d closed=%s filled=%s lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f first=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)',
       [Idx, FResult.Contours[Idx].Vertices.Count,
        BoolToStr(IsClosed, True), BoolToStr(IsFilled, True), LineWeight,
+       FState.Color, FState.TrueColor, FState.Layer, FState.Linetype,
+       FState.LtScale, FState.Thickness,
        FirstV.x, FirstV.y, FirstV.z, LastV.x, LastV.y, LastV.z],
       LM_Info)
   else
     programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: AppendContour[%d] empty lineweight=%d',
-      [Idx, LineWeight], LM_Info);
+      'uzeentproxygraphicparser: AppendContour[%d] empty lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f',
+      [Idx, LineWeight, FState.Color, FState.TrueColor, FState.Layer,
+       FState.Linetype, FState.LtScale, FState.Thickness], LM_Info);
 end;
 
 { Добавляет текстовый элемент в список TextItems результата }
@@ -253,6 +268,19 @@ begin
   NewLen := Length(FResult.TextItems) + 1;
   SetLength(FResult.TextItems, NewLen);
   FResult.TextItems[NewLen - 1] := Item;
+  FResult.TextItems[NewLen - 1].LineWeight := FState.LineWeight;
+  FResult.TextItems[NewLen - 1].Color := FState.Color;
+  FResult.TextItems[NewLen - 1].Layer := FState.Layer;
+  FResult.TextItems[NewLen - 1].Linetype := FState.Linetype;
+  FResult.TextItems[NewLen - 1].LtScale := FState.LtScale;
+  FResult.TextItems[NewLen - 1].Thickness := FState.Thickness;
+  FResult.TextItems[NewLen - 1].TrueColor := FState.TrueColor;
+  programlog.LogOutFormatStr(
+    'uzeentproxygraphicparser: AppendTextItem[%d] text="%s" height=%.3f widthFactor=%.3f angle=%.3f lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f font="%s"',
+    [NewLen - 1, Item.Text, Item.Height, Item.WidthFactor, Item.Angle,
+     FState.LineWeight, FState.Color, FState.TrueColor, FState.Layer,
+     FState.Linetype, FState.LtScale, FState.Thickness, Item.FontName],
+    LM_Info);
 end;
 
 { Расширяет суммарный BBox данными из результата обработчика }
@@ -326,11 +354,16 @@ begin
   end;
 end;
 
-{ Системный обработчик: SetColor — читает и игнорирует значение цвета }
+{ Системный обработчик: SetColor — читает и сохраняет значение цвета }
 procedure TProxyGraphicParser.HandleSetColor;
+var
+  Color: Integer;
 begin
   try
-    FStream.ReadInt32; { Значение цвета — пока не применяется }
+    Color := FStream.ReadInt32;
+    FState.Color := Color;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetColor value=%d', [Color], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -338,11 +371,16 @@ begin
   end;
 end;
 
-{ Системный обработчик: SetLayer — читает и игнорирует индекс слоя }
+{ Системный обработчик: SetLayer — читает и сохраняет индекс слоя }
 procedure TProxyGraphicParser.HandleSetLayer;
+var
+  LayerIndex: Integer;
 begin
   try
-    FStream.ReadInt32; { Индекс слоя — пока не применяется }
+    LayerIndex := FStream.ReadInt32;
+    FState.Layer := IntToStr(LayerIndex);
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetLayer index=%d', [LayerIndex], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -465,9 +503,15 @@ end;
 
 { Системный обработчик: SetLinetype — читает индекс типа линии }
 procedure TProxyGraphicParser.HandleSetLinetype;
+var
+  LinetypeIndex: Integer;
 begin
   try
-    FStream.ReadInt32;
+    LinetypeIndex := FStream.ReadInt32;
+    FState.Linetype := IntToStr(LinetypeIndex);
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetLinetype index=%d',
+      [LinetypeIndex], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -512,9 +556,15 @@ end;
 
 { Системный обработчик: SetTrueColor — читает значение RGB цвета }
 procedure TProxyGraphicParser.HandleSetTrueColor;
+var
+  TrueColor: Integer;
 begin
   try
-    FStream.ReadInt32;
+    TrueColor := FStream.ReadInt32;
+    FState.TrueColor := TrueColor;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetTrueColor value=%d',
+      [TrueColor], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -544,9 +594,15 @@ end;
 
 { Системный обработчик: SetLtScale — читает масштаб типа линии }
 procedure TProxyGraphicParser.HandleSetLtScale;
+var
+  LtScale: Double;
 begin
   try
-    FStream.ReadDouble;
+    LtScale := FStream.ReadDouble;
+    FState.LtScale := LtScale;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetLtScale value=%.3f',
+      [LtScale], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
@@ -557,9 +613,15 @@ end;
 
 { Системный обработчик: SetThickness — читает толщину }
 procedure TProxyGraphicParser.HandleSetThickness;
+var
+  Thickness: Double;
 begin
   try
-    FStream.ReadDouble;
+    Thickness := FStream.ReadDouble;
+    FState.Thickness := Thickness;
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: SetThickness value=%.3f',
+      [Thickness], LM_Info);
   except
     on E: Exception do
       programlog.LogOutFormatStr(
