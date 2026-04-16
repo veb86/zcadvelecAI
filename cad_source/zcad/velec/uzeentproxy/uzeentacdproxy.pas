@@ -737,7 +737,9 @@ begin
       begin
         OldLineWeight := vp.LineWeight;
         ContourLineWeight := FContours[I].LineWeight;
-        if ContourLineWeight <> LnWtByLwDefault then
+        if (ContourLineWeight <> LnWtByLayer)
+          and (ContourLineWeight <> LnWtByBlock)
+          and (ContourLineWeight <> LnWtByLwDefault) then
           vp.LineWeight := ContourLineWeight;
         pV := FContours[I].Vertices.getDataMutable(0);
         programlog.LogOutFormatStr(

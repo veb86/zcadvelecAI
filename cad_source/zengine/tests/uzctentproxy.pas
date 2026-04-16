@@ -61,6 +61,8 @@ type
     procedure MLeaderBlockProxyContainsShelfDivider;
     { Проверяет сохранение слоя у кастомного proxy-объекта SPDSDOOR }
     procedure SpdsDoorProxyKeepsEntityLayer;
+    { Проверяет, что контуры без SetLineweight остаются ByLayer }
+    procedure ProxyGraphicDefaultLineweightIsByLayer;
     { Проверяет сохранение lineweight внутри proxy graphic SPDSDOOR }
     procedure SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
   end;
@@ -225,6 +227,30 @@ begin
       and SameValue(P2.x, X1, EPS) and SameValue(P2.y, Y1, EPS) then
       Exit(True);
   end;
+end;
+
+procedure TProxyEntityLoadTest.ProxyGraphicDefaultLineweightIsByLayer;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  I: Integer;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF('cad_source/test/mleaderblock.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData, 'Не удалось извлечь proxy graphic из mleaderblock.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  Check(ParseResult.ContourCount > 0,
+    'Proxy graphic mleaderblock.dxf должен содержать контуры');
+  for I := 0 to High(ParseResult.Contours) do
+    CheckEquals(LnWtByLayer, ParseResult.Contours[I].LineWeight,
+      'Контуры без явного SetLineweight должны сохранять LineWeight=ByLayer');
 end;
 
 { Проверяет, что кастомная сущность SPDSPOLYMORPHMARK загружается как прокси-объект.
