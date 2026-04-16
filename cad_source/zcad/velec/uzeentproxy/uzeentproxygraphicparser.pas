@@ -230,6 +230,12 @@ begin
   FResult.Contours[Idx].Closed := IsClosed;
   FResult.Contours[Idx].Filled := IsFilled;
   FResult.Contours[Idx].LineWeight := LineWeight;
+  FResult.Contours[Idx].Color := FState.Color;
+  FResult.Contours[Idx].Layer := FState.Layer;
+  FResult.Contours[Idx].Linetype := FState.Linetype;
+  FResult.Contours[Idx].LtScale := FState.LtScale;
+  FResult.Contours[Idx].Thickness := FState.Thickness;
+  FResult.Contours[Idx].TrueColor := FState.TrueColor;
   HasVertex := False;
   pV := Src.beginiterate(ir);
   while pV <> nil do
