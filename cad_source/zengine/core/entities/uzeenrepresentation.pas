@@ -232,10 +232,16 @@ var
   ptv,ptvprev,ptvfisrt:PzePoint3d;
   ir:itrec;
   gl:TGeomLine3D;
+  gp:TGeomProxy;
+  dr:TLLDrawResult;
   segcounter:integer;
 begin
-  Graphix.DrawPolyLineWithLT(rc,points,vp,closed,ltgen);
+  dr:=Graphix.DrawPolyLineWithLT(rc,points,vp,closed,ltgen);
   Geometry.Lock;
+  if dr.Appearance<>TAMatching then begin
+    gp.init(dr.LLPStart,dr.LLPEndi-1,dr.BB);
+    Geometry.AddObjectToNodeTree(gp);
+  end;
   Geometry.SetSize(Points.Count*sizeof(TGeomLine3D));
   ptv:=Points.beginiterate(ir);
   ptvfisrt:=ptv;
