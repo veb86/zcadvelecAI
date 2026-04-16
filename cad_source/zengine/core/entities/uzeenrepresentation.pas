@@ -24,7 +24,7 @@ uses
   uzgldrawcontext,uzgldrawerabstract,uzglvectorobject,SysUtils,uzegeometrytypes,
   uzegeometry,uzglgeometry,uzefont,uzeentitiesprop,UGDBPoint3DArray,
   uzeentsubordinated,uzegeomentitiestree,uzeTypes,gzctnrVectorTypes,
-  uzgeomline3d,uzgeomproxy;
+  uzgeomline3d,uzgeomproxy,uzbLogIntf;
 
 type
   PTZEntityRepresentation=^TZEntityRepresentation;
@@ -237,6 +237,14 @@ var
   segcounter:integer;
 begin
   dr:=Graphix.DrawPolyLineWithLT(rc,points,vp,closed,ltgen);
+  programlog.LogOutFormatStr(
+    'uzeenrepresentation: DrawPolyLineWithLT points=%d closed=%s ltgen=%s lineweight=%d ltscale=%.3f appearance=%d llpStart=%d llpEnd=%d llpCount=%d bboxLBN=(%.3f,%.3f,%.3f) bboxRTF=(%.3f,%.3f,%.3f)',
+    [Points.Count, BoolToStr(closed, True), BoolToStr(ltgen, True),
+     vp.LineWeight, vp.LineTypeScale, Ord(dr.Appearance), dr.LLPStart,
+     dr.LLPEndi, dr.LLPCount,
+     dr.BB.LBN.x, dr.BB.LBN.y, dr.BB.LBN.z,
+     dr.BB.RTF.x, dr.BB.RTF.y, dr.BB.RTF.z],
+    LM_Info);
   Geometry.Lock;
   if dr.Appearance<>TAMatching then begin
     gp.init(dr.LLPStart,dr.LLPEndi-1,dr.BB);
