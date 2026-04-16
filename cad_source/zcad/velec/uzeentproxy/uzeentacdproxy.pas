@@ -469,6 +469,12 @@ begin
         FContours[I].Closed := ParseResult.Contours[I].Closed;
         FContours[I].Filled := ParseResult.Contours[I].Filled;
         FContours[I].LineWeight := ParseResult.Contours[I].LineWeight;
+        FContours[I].Color := ParseResult.Contours[I].Color;
+        FContours[I].Layer := ParseResult.Contours[I].Layer;
+        FContours[I].Linetype := ParseResult.Contours[I].Linetype;
+        FContours[I].LtScale := ParseResult.Contours[I].LtScale;
+        FContours[I].Thickness := ParseResult.Contours[I].Thickness;
+        FContours[I].TrueColor := ParseResult.Contours[I].TrueColor;
         FContours[I].Vertices.init(
           ParseResult.Contours[I].Vertices.Count);
         pV := ParseResult.Contours[I].Vertices.beginiterate(ir);
@@ -626,8 +632,11 @@ begin
       TextOutbound);
 
     programlog.LogOutFormatStr(
-      'uzeentacdproxy: DrawTextItems[%d] drew text "%s" at (%.3f,%.3f)',
-      [I, Item.Text, Item.Insert.x, Item.Insert.y], LM_Info);
+      'uzeentacdproxy: DrawTextItems[%d] text="%s" at=(%.3f,%.3f,%.3f) height=%.3f widthFactor=%.3f angle=%.3f font="%s" lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f',
+      [I, Item.Text, Item.Insert.x, Item.Insert.y, Item.Insert.z,
+       Item.Height, Item.WidthFactor, Item.Angle, Item.FontName,
+       Item.LineWeight, Item.Color, Item.TrueColor, Item.Layer,
+       Item.Linetype, Item.LtScale, Item.Thickness], LM_Info);
   end;
 end;
 
@@ -743,11 +752,14 @@ begin
           vp.LineWeight := ContourLineWeight;
         pV := FContours[I].Vertices.getDataMutable(0);
         programlog.LogOutFormatStr(
-          'uzeentacdproxy: DrawContour[%d] vertices=%d closed=%s filled=%s proxyLineWeight=%d entityLineWeight=%d appliedLineWeight=%d first=(%.3f,%.3f,%.3f)',
+          'uzeentacdproxy: DrawContour[%d] vertices=%d closed=%s filled=%s proxyLineWeight=%d entityLineWeight=%d appliedLineWeight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f first=(%.3f,%.3f,%.3f)',
           [I, FContours[I].Vertices.Count,
            BoolToStr(FContours[I].Closed, True),
            BoolToStr(FContours[I].Filled, True),
            ContourLineWeight, OldLineWeight, vp.LineWeight,
+           FContours[I].Color, FContours[I].TrueColor, FContours[I].Layer,
+           FContours[I].Linetype, FContours[I].LtScale,
+           FContours[I].Thickness,
            pV^.x, pV^.y, pV^.z],
           LM_Info);
         Representation.DrawPolyLineWithLT(

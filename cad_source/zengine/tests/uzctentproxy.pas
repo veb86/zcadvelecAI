@@ -65,6 +65,8 @@ type
     procedure ProxyGraphicDefaultLineweightIsByLayer;
     { Проверяет сохранение lineweight внутри proxy graphic SPDSDOOR }
     procedure SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
+    { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
+    procedure ProxyGraphicContourStoresDrawingAttributesForLog;
   end;
 
 implementation
@@ -227,6 +229,131 @@ begin
       and SameValue(P2.x, X1, EPS) and SameValue(P2.y, Y1, EPS) then
       Exit(True);
   end;
+end;
+
+procedure AppendBytes(var Data: TBytes; const Count: Integer);
+var
+  OldLen: Integer;
+begin
+  OldLen := Length(Data);
+  SetLength(Data, OldLen + Count);
+end;
+
+procedure AppendInt32(var Data: TBytes; const Value: Integer);
+var
+  OldLen: Integer;
+begin
+  OldLen := Length(Data);
+  AppendBytes(Data, SizeOf(Value));
+  Move(Value, Data[OldLen], SizeOf(Value));
+end;
+
+procedure AppendDouble(var Data: TBytes; const Value: Double);
+var
+  OldLen: Integer;
+begin
+  OldLen := Length(Data);
+  AppendBytes(Data, SizeOf(Value));
+  Move(Value, Data[OldLen], SizeOf(Value));
+end;
+
+procedure AppendVertex(var Data: TBytes; const X, Y, Z: Double);
+begin
+  AppendDouble(Data, X);
+  AppendDouble(Data, Y);
+  AppendDouble(Data, Z);
+end;
+
+procedure AppendCommand(var Data: TBytes; const OpCode: Integer;
+  const Payload: TBytes);
+begin
+  AppendInt32(Data, Length(Payload) + 8);
+  AppendInt32(Data, OpCode);
+  if Length(Payload) > 0 then
+  begin
+    AppendBytes(Data, Length(Payload));
+    Move(Payload[0], Data[Length(Data) - Length(Payload)], Length(Payload));
+  end;
+end;
+
+function BuildProxyGraphicWithAttributedPolyline: TBytes;
+var
+  Body, Payload: TBytes;
+begin
+  SetLength(Body, 0);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 7);
+  AppendCommand(Body, 14, Payload);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 5);
+  AppendCommand(Body, 16, Payload);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 3);
+  AppendCommand(Body, 18, Payload);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 1122867);
+  AppendCommand(Body, 22, Payload);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 60);
+  AppendCommand(Body, 23, Payload);
+
+  SetLength(Payload, 0);
+  AppendDouble(Payload, 2.5);
+  AppendCommand(Body, 24, Payload);
+
+  SetLength(Payload, 0);
+  AppendDouble(Payload, 1.25);
+  AppendCommand(Body, 25, Payload);
+
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 2);
+  AppendVertex(Payload, 1.0, 2.0, 0.0);
+  AppendVertex(Payload, 3.0, 4.0, 0.0);
+  AppendCommand(Body, 6, Payload);
+
+  SetLength(Result, 0);
+  AppendInt32(Result, Length(Body) + 8);
+  AppendInt32(Result, 8);
+  if Length(Body) > 0 then
+  begin
+    AppendBytes(Result, Length(Body));
+    Move(Body[0], Result[Length(Result) - Length(Body)], Length(Body));
+  end;
+end;
+
+procedure TProxyEntityLoadTest.ProxyGraphicContourStoresDrawingAttributesForLog;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  Parser := TProxyGraphicParser.Create(BuildProxyGraphicWithAttributedPolyline);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(1, ParseResult.ContourCount,
+    'Тестовый proxy graphic должен содержать один контур');
+  CheckEquals(60, ParseResult.Contours[0].LineWeight,
+    'Контур должен хранить вес линии для детального лога');
+  CheckEquals(7, ParseResult.Contours[0].Color,
+    'Контур должен хранить текущий цвет');
+  CheckEquals(1122867, ParseResult.Contours[0].TrueColor,
+    'Контур должен хранить текущий true color');
+  CheckEquals('5', ParseResult.Contours[0].Layer,
+    'Контур должен хранить индекс слоя из proxy graphic');
+  CheckEquals('3', ParseResult.Contours[0].Linetype,
+    'Контур должен хранить индекс типа линии из proxy graphic');
+  CheckEquals(2.5, ParseResult.Contours[0].LtScale, 1e-9,
+    'Контур должен хранить масштаб типа линии');
+  CheckEquals(1.25, ParseResult.Contours[0].Thickness, 1e-9,
+    'Контур должен хранить толщину');
 end;
 
 procedure TProxyEntityLoadTest.ProxyGraphicDefaultLineweightIsByLayer;
