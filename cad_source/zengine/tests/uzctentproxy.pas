@@ -338,7 +338,7 @@ var
   Parser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
   I: Integer;
-  FoundExplicitLineweight: Boolean;
+  ExplicitLineweightCount: Integer;
 begin
   drawing.init(nil);
   try
@@ -366,16 +366,15 @@ begin
     Parser.Free;
   end;
 
-  FoundExplicitLineweight := False;
+  ExplicitLineweightCount := 0;
   for I := 0 to High(ParseResult.Contours) do
     if ParseResult.Contours[I].LineWeight = 60 then
-    begin
-      FoundExplicitLineweight := True;
-      Break;
-    end;
+      Inc(ExplicitLineweightCount);
 
-  CheckTrue(FoundExplicitLineweight,
-    'Proxy graphic SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
+  CheckEquals(4, ParseResult.ContourCount,
+    'Proxy graphic SPDSDOOR должен содержать 4 контура двери');
+  CheckEquals(ParseResult.ContourCount, ExplicitLineweightCount,
+    'Каждый контур SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
 end;
 
 begin
