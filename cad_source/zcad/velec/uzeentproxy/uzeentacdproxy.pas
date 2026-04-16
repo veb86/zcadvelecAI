@@ -737,8 +737,17 @@ begin
       begin
         OldLineWeight := vp.LineWeight;
         ContourLineWeight := FContours[I].LineWeight;
-        if ContourLineWeight <> LnWtByBlock then
+        if ContourLineWeight <> LnWtByLwDefault then
           vp.LineWeight := ContourLineWeight;
+        pV := FContours[I].Vertices.getDataMutable(0);
+        programlog.LogOutFormatStr(
+          'uzeentacdproxy: DrawContour[%d] vertices=%d closed=%s filled=%s proxyLineWeight=%d entityLineWeight=%d appliedLineWeight=%d first=(%.3f,%.3f,%.3f)',
+          [I, FContours[I].Vertices.Count,
+           BoolToStr(FContours[I].Closed, True),
+           BoolToStr(FContours[I].Filled, True),
+           ContourLineWeight, OldLineWeight, vp.LineWeight,
+           pV^.x, pV^.y, pV^.z],
+          LM_Info);
         Representation.DrawPolyLineWithLT(
           DC, FContours[I].Vertices, vp,
           FContours[I].Closed, True);

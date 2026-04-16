@@ -209,6 +209,8 @@ var
   Idx: Integer;
   ir: itrec;
   pV: PzePoint3d;
+  FirstV, LastV: TzePoint3d;
+  HasVertex: Boolean;
 begin
   Idx := Length(FResult.Contours);
   SetLength(FResult.Contours, Idx + 1);
@@ -216,12 +218,31 @@ begin
   FResult.Contours[Idx].Closed := IsClosed;
   FResult.Contours[Idx].Filled := IsFilled;
   FResult.Contours[Idx].LineWeight := LineWeight;
+  HasVertex := False;
   pV := Src.beginiterate(ir);
   while pV <> nil do
   begin
+    if not HasVertex then
+    begin
+      FirstV := pV^;
+      HasVertex := True;
+    end;
+    LastV := pV^;
     FResult.Contours[Idx].Vertices.PushBackData(pV^);
     pV := Src.iterate(ir);
   end;
+
+  if HasVertex then
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: AppendContour[%d] vertices=%d closed=%s filled=%s lineweight=%d first=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)',
+      [Idx, FResult.Contours[Idx].Vertices.Count,
+       BoolToStr(IsClosed, True), BoolToStr(IsFilled, True), LineWeight,
+       FirstV.x, FirstV.y, FirstV.z, LastV.x, LastV.y, LastV.z],
+      LM_Info)
+  else
+    programlog.LogOutFormatStr(
+      'uzeentproxygraphicparser: AppendContour[%d] empty lineweight=%d',
+      [Idx, LineWeight], LM_Info);
 end;
 
 { Добавляет текстовый элемент в список TextItems результата }
