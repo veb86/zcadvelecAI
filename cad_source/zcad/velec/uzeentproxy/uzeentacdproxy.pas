@@ -651,11 +651,11 @@ procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
 var
   I: Integer;
   ContourLineWeight: Integer;
+  ContourVP: GDBObjVisualProp;
   HatchTess: TTriangulator.TTesselator;
   ir: itrec;
   pV: PzePoint3d;
   HasFilledContours: Boolean;
-  OldLineWeight: SmallInt;
 begin
   if Assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
@@ -744,28 +744,27 @@ begin
     begin
       if FContours[I].Vertices.Count > 0 then
       begin
-        OldLineWeight := vp.LineWeight;
+        ContourVP := vp;
         ContourLineWeight := FContours[I].LineWeight;
         if (ContourLineWeight <> LnWtByLayer)
           and (ContourLineWeight <> LnWtByBlock)
           and (ContourLineWeight <> LnWtByLwDefault) then
-          vp.LineWeight := ContourLineWeight;
+          ContourVP.LineWeight := ContourLineWeight;
         pV := FContours[I].Vertices.getDataMutable(0);
         programlog.LogOutFormatStr(
           'uzeentacdproxy: DrawContour[%d] vertices=%d closed=%s filled=%s proxyLineWeight=%d entityLineWeight=%d appliedLineWeight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f first=(%.3f,%.3f,%.3f)',
           [I, FContours[I].Vertices.Count,
            BoolToStr(FContours[I].Closed, True),
            BoolToStr(FContours[I].Filled, True),
-           ContourLineWeight, OldLineWeight, vp.LineWeight,
+           ContourLineWeight, vp.LineWeight, ContourVP.LineWeight,
            FContours[I].Color, FContours[I].TrueColor, FContours[I].Layer,
            FContours[I].Linetype, FContours[I].LtScale,
            FContours[I].Thickness,
            pV^.x, pV^.y, pV^.z],
           LM_Info);
         Representation.DrawPolyLineWithLT(
-          DC, FContours[I].Vertices, vp,
+          DC, FContours[I].Vertices, ContourVP,
           FContours[I].Closed, True);
-        vp.LineWeight := OldLineWeight;
       end;
     end;
 
