@@ -330,12 +330,32 @@ end;
 
 procedure TProxyEntityLoadTest.SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
 var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
   HexData: string;
   Parser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
   I: Integer;
   FoundExplicitLineweight: Boolean;
 begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+
+    CheckEquals(1, drawing.pObjRoot^.ObjArray.Count,
+      'spdsdoor.dxf должен загружать один proxy-объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    CheckEquals(LnWtByLayer, entity^.vp.LineWeight,
+      'Сама DXF-сущность SPDSDOOR остаётся ByLayer; явный вес хранится внутри proxy graphic');
+  finally
+    drawing.done;
+  end;
+
   HexData := ExtractProxyGraphicHexFromDXF('cad_source/test/spdsdoor.dxf', 'SPDSDOOR');
   CheckNotEquals('', HexData, 'Не удалось извлечь proxy graphic из spdsdoor.dxf');
 

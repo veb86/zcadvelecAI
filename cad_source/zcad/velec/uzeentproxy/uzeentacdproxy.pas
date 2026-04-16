@@ -140,9 +140,6 @@ type
     FContours: array of TProxyContour;
     { Число заполненных контуров }
     FContourCount: Integer;
-    { Текущий индекс контура при формировании Representation }
-    FCurrentContourIndex: Integer;
-
     { Текстовые примитивы, собранные при разборе }
     FTextItems: array of TProxyTextItem;
 
@@ -277,7 +274,6 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
-  FCurrentContourIndex := -1;
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -296,7 +292,6 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
-  FCurrentContourIndex := -1;
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -646,10 +641,12 @@ procedure GDBObjAcdProxy.FormatEntity(var drawing: TDrawingDef;
   var DC: TDrawContext; Stage: TEFStages);
 var
   I: Integer;
+  ContourLineWeight: Integer;
   HatchTess: TTriangulator.TTesselator;
   ir: itrec;
   pV: PzePoint3d;
   HasFilledContours: Boolean;
+  OldLineWeight: SmallInt;
 begin
   if Assigned(EntExtensions) then
     EntExtensions.RunOnBeforeEntityFormat(@self, drawing, DC);
@@ -738,13 +735,16 @@ begin
     begin
       if FContours[I].Vertices.Count > 0 then
       begin
-        FCurrentContourIndex := I;
+        OldLineWeight := vp.LineWeight;
+        ContourLineWeight := FContours[I].LineWeight;
+        if ContourLineWeight <> LnWtByBlock then
+          vp.LineWeight := ContourLineWeight;
         Representation.DrawPolyLineWithLT(
           DC, FContours[I].Vertices, vp,
           FContours[I].Closed, True);
+        vp.LineWeight := OldLineWeight;
       end;
     end;
-    FCurrentContourIndex := -1;
 
     if FContourCount > 0 then
       programlog.LogOutFormatStr(
@@ -767,19 +767,8 @@ end;
 { Отрисовывает геометрию через Representation (стандартный путь ZCAD) }
 procedure GDBObjAcdProxy.DrawGeometry(lw: integer; var DC: TDrawContext;
   const inFrustumState: TInBoundingVolume);
-var
-  ContourLineWeight: Integer;
-  OldLineWeight: SmallInt;
 begin
-  OldLineWeight := vp.LineWeight;
-  if (FCurrentContourIndex >= 0) and (FCurrentContourIndex < FContourCount) then
-  begin
-    ContourLineWeight := FContours[FCurrentContourIndex].LineWeight;
-    if ContourLineWeight <> LnWtByBlock then
-      vp.LineWeight := ContourLineWeight;
-  end;
   Representation.DrawGeometry(DC, vp.BoundingBox, inFrustumState);
-  vp.LineWeight := OldLineWeight;
   inherited;
 end;
 
