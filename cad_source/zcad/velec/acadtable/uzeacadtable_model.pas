@@ -667,9 +667,9 @@ begin
           CellStr := GetCellTextLocal(RowIdx, ColIdx);
 
         ColW := uzeacadtable_merge.GetMergedCellWidth(
-          RowIdx, ColIdx, FMerges, @GetColWidthLocal);
+          RowIdx, ColIdx, FMerges, GetColWidthLocal);
         RowH := uzeacadtable_merge.GetMergedCellHeight(
-          RowIdx, ColIdx, FMerges, @GetRowHeightLocal);
+          RowIdx, ColIdx, FMerges, GetRowHeightLocal);
 
         if CellStr <> '' then
         begin
