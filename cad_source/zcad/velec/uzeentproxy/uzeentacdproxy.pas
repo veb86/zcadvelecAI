@@ -525,7 +525,7 @@ begin
   pText^.textprop.size := Item.Height;
   pText^.textprop.wfactor := Item.WidthFactor;
   pText^.textprop.oblique := 0;
-  pText^.textprop.justify := jstl;
+  pText^.textprop.justify := jsbl;
 
   { Устанавливаем поворот через базис OX }
   if Abs(Item.Angle) > 1e-10 then
