@@ -293,8 +293,8 @@ uses
   uzCVCommand_SpaceAddPoly,
   uzvcommand_spaceshowhide, //команда показ спрятать
   //****//
-  {Сущность ACAD_TABLE — таблица AutoCAD из формата DXF}
-  uzeentacadtable,
+  {Подсистема ACAD_TABLE — таблица AutoCAD из формата DXF}
+  uzeacadtable_manager,
   //****//
   //FPSpreadsheet//
   uzvspreadsheet_register,

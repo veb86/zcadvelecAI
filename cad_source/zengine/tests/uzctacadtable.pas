@@ -33,7 +33,8 @@ uses
   uzeenttext,
   uzeentblockinsert,
   uzeenttable,
-  uzeentacadtable;
+  uzeacadtable_types,
+  uzeacadtable_model;
 
 type
   TAcadTableStyleTest = class(TTestCase)
