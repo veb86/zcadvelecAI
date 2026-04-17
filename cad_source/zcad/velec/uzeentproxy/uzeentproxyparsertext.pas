@@ -253,8 +253,16 @@ begin
   Stream.ReadUInt32;
   Stream.ReadUInt32;
 
-  FontName := Stream.ReadString(TEncoding.ANSI);
-  Stream.ReadString(TEncoding.ANSI); { BigFontName — пока не используется }
+  { Дополнительные поля OpCode=38: IsBold, IsItalic, Charset, Pitch }
+  Stream.ReadUInt32;
+  Stream.ReadUInt32;
+  Stream.ReadUInt32;
+  Stream.ReadUInt32;
+
+  { TypeFace, FontFilename, BigFontFilename — Unicode-строки с паддингом }
+  Stream.ReadPaddedUnicodeString;
+  FontName := Stream.ReadPaddedUnicodeString;
+  Stream.ReadPaddedUnicodeString;
 
   programlog.LogOutFormatStr(
     'uzeentproxyparsertext: UnicodeText2 Insert=(%.3f,%.3f,%.3f) H=%.3f' +
