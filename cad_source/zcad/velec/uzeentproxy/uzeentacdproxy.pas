@@ -199,6 +199,13 @@ type
     { Геометрический центр proxy graphic для ручки/точки вставки }
     function GetCenterPoint: TzePoint3d; virtual;
 
+    { Устанавливает ручку (grip) в геометрический центр BBox proxy graphic }
+    procedure addcontrolpoints(tdesc: Pointer); virtual;
+
+    { Обновляет экранные координаты ручки из геометрического центра BBox }
+    procedure remaponecontrolpoint(pdesc: pcontrolpointdesc;
+      ProjectProc: GDBProjectProc); virtual;
+
     { Создаёт новый инициализированный экземпляр }
     class function CreateInstance: PGDBObjAcdProxy; static;
   end;
@@ -661,6 +668,16 @@ begin
     vp.BoundingBox.LBN := FProxyBBoxMin;
     vp.BoundingBox.RTF := FProxyBBoxMax;
     ConstObjArray.ObjTree.BoundingBox := vp.BoundingBox;
+
+    { Выводим в лог координаты BBox и ручки (grip) для диагностики }
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: FormatEntity bbox min=(%.3f,%.3f,%.3f)'
+      + ' max=(%.3f,%.3f,%.3f)',
+      [FProxyBBoxMin.x, FProxyBBoxMin.y, FProxyBBoxMin.z,
+       FProxyBBoxMax.x, FProxyBBoxMax.y, FProxyBBoxMax.z], LM_Info);
+    programlog.LogOutFormatStr(
+      'uzeentacdproxy: FormatEntity grip center=(%.3f,%.3f,%.3f)',
+      [GetCenterPoint.x, GetCenterPoint.y, GetCenterPoint.z], LM_Info);
   end;
 
   if Assigned(EntExtensions) then
@@ -695,6 +712,44 @@ end;
 function GDBObjAcdProxy.GetCenterPoint: TzePoint3d;
 begin
   Result := Vertexmorph(vp.BoundingBox.LBN, vp.BoundingBox.RTF, 0.5);
+end;
+
+{ Устанавливает ручку управления (grip) в геометрический центр BBox.
+  Базовый GDBObjComplex использует P_insert_in_WCS, который для прокси
+  всегда равен (0,0,0). Переопределяем, чтобы ручка совпадала с центром
+  объекта. }
+procedure GDBObjAcdProxy.addcontrolpoints(tdesc: Pointer);
+var
+  pdesc: controlpointdesc;
+  GripCenter: TzePoint3d;
+begin
+  GripCenter := GetCenterPoint;
+  PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(1);
+  pdesc.selected := False;
+  pdesc.PDrawable := nil;
+  pdesc.pointtype := os_point;
+  pdesc.worldcoord := GripCenter;
+  PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(pdesc);
+
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: addcontrolpoints grip=(%.3f,%.3f,%.3f)',
+    [GripCenter.x, GripCenter.y, GripCenter.z], LM_Info);
+end;
+
+{ Пересчитывает экранные координаты ручки из геометрического центра BBox.
+  Базовый GDBObjComplex читает P_insert_in_WCS, что для прокси даёт (0,0,0).
+  Переопределяем, чтобы ручка всегда следовала за реальным центром объекта. }
+procedure GDBObjAcdProxy.remaponecontrolpoint(pdesc: pcontrolpointdesc;
+  ProjectProc: GDBProjectProc);
+var
+  tv: TzePoint3d;
+begin
+  if pdesc^.pointtype = os_point then
+  begin
+    pdesc.worldcoord := GetCenterPoint;
+    ProjectProc(pdesc.worldcoord, tv);
+    pdesc.dispcoord := ToTzePoint2i(tv);
+  end;
 end;
 
 { Создаёт копию прокси-объекта }
