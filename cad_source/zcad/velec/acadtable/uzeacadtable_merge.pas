@@ -35,6 +35,9 @@ uses
   Types,
   uzeacadtable_types, uzclog, uzbLogIntf;
 
+type
+  TAcadTableSizeGetter = function(Idx: Integer): Double of object;
+
 // Проверяет, находится ли ячейка в каком-либо объединённом диапазоне
 function IsCellMerged(
   ARowIdx, AColIdx: Integer;
@@ -51,14 +54,14 @@ function GetMergeRoot(
 function GetMergedCellWidth(
   ARowIdx, AColIdx: Integer;
   const AMerges: array of TMergeRange;
-  AGetColWidth: function(ColIdx: Integer): Double): Double;
+  AGetColWidth: TAcadTableSizeGetter): Double;
 
 // Возвращает суммарную высоту объединённой ячейки.
 // Для необъединённой — высота одной строки.
 function GetMergedCellHeight(
   ARowIdx, AColIdx: Integer;
   const AMerges: array of TMergeRange;
-  AGetRowHeight: function(RowIdx: Integer): Double): Double;
+  AGetRowHeight: TAcadTableSizeGetter): Double;
 
 // Проверяет видимость вертикальной границы между ColIdx и ColIdx+1
 // на строке RowIdx. Граница скрыта внутри объединённого диапазона.
@@ -125,7 +128,7 @@ end;
 function GetMergedCellWidth(
   ARowIdx, AColIdx: Integer;
   const AMerges: array of TMergeRange;
-  AGetColWidth: function(ColIdx: Integer): Double): Double;
+  AGetColWidth: TAcadTableSizeGetter): Double;
 var
   i, Col2: Integer;
 begin
@@ -146,7 +149,7 @@ end;
 function GetMergedCellHeight(
   ARowIdx, AColIdx: Integer;
   const AMerges: array of TMergeRange;
-  AGetRowHeight: function(RowIdx: Integer): Double): Double;
+  AGetRowHeight: TAcadTableSizeGetter): Double;
 var
   i, Row2: Integer;
 begin
