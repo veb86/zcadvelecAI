@@ -51,7 +51,7 @@ function ResolveCellStyle(
   const ATableStyle: TTableStyle;
   const ARows: array of TTableRow;
   const ACols: array of TTableColumn;
-  const ACells: array of array of TTableCell;
+  const ACells: TTableCellArray;
   ARowCount, AColCount: Integer;
   ATableFlags: Integer): TCellStyle;
 
@@ -141,7 +141,7 @@ function ResolveCellStyle(
   const ATableStyle: TTableStyle;
   const ARows: array of TTableRow;
   const ACols: array of TTableColumn;
-  const ACells: array of array of TTableCell;
+  const ACells: TTableCellArray;
   ARowCount, AColCount: Integer;
   ATableFlags: Integer): TCellStyle;
 var

@@ -35,7 +35,7 @@ uses
 
 // Устанавливает текст ячейки по координатам строки и столбца
 procedure SetCellText(
-  var ACells: array of array of TTableCell;
+  var ACells: TTableCellArray;
   ARowIdx, AColIdx: Integer;
   const AText: String);
 
@@ -44,7 +44,7 @@ procedure InitTableCell(var ACell: TTableCell);
 
 // Инициализирует двумерный массив ячеек из загруженных данных
 procedure InitCellsFromLoaded(
-  var ACells: array of array of TTableCell;
+  var ACells: TTableCellArray;
   const ACellTexts: array of String;
   const ACellAlignments: array of Integer;
   const ACellColSpans: array of Integer;
@@ -67,7 +67,7 @@ begin
 end;
 
 procedure SetCellText(
-  var ACells: array of array of TTableCell;
+  var ACells: TTableCellArray;
   ARowIdx, AColIdx: Integer;
   const AText: String);
 begin
@@ -82,7 +82,7 @@ begin
 end;
 
 procedure InitCellsFromLoaded(
-  var ACells: array of array of TTableCell;
+  var ACells: TTableCellArray;
   const ACellTexts: array of String;
   const ACellAlignments: array of Integer;
   const ACellColSpans: array of Integer;

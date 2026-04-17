@@ -33,7 +33,7 @@ interface
 
 uses
   uzeacadtable_types, uzeacadtable_styles,
-  uzedrawingdef, uzestylestablesdxf, uzestylestexts,
+  uzedrawingdef, uzestylestablesdxf, uzestylestexts,gzctnrVectorTypes,
   uzclog, uzbLogIntf;
 
 // Применяет DXF-стиль таблицы к внутренней структуре TTableStyle.

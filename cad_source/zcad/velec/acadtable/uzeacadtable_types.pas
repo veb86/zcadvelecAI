@@ -156,6 +156,8 @@ type
     OffsetY: Double;
   end;
 
+  TTableCellArray = array of array of TTableCell;
+
 implementation
 
 end.
