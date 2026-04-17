@@ -79,7 +79,7 @@ function IsRowBorderVisible(
 // Каждая невиртуальная ячейка с ColSpan>1 или RowSpan>1 формирует
 // диапазон. Виртуальные ячейки не создают диапазонов.
 procedure BuildMergeRanges(
-  const ACells: array of array of TTableCell;
+  const ACells: TTableCellArray;
   const ACellVirtualFlags: array of Boolean;
   ARowCount, AColCount: Integer;
   var AMerges: array of TMergeRange;
@@ -204,7 +204,7 @@ begin
 end;
 
 procedure BuildMergeRanges(
-  const ACells: array of array of TTableCell;
+  const ACells: TTableCellArray;
   const ACellVirtualFlags: array of Boolean;
   ARowCount, AColCount: Integer;
   var AMerges: array of TMergeRange;

@@ -41,7 +41,9 @@ uses
   uzcoimultipropertiesutil,
   uzsbVarmanDef,
   Varman,
+  uzbUnits,
   uzeTypes,
+  gzctnrVectorTypes,
   uzclog, uzbLogIntf;
 
 // Регистрирует свойства AcadTable в MultiPropertiesManager.
