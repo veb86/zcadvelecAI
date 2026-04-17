@@ -65,6 +65,8 @@ type
     procedure ProxyGraphicDefaultLineweightIsByLayer;
     { Проверяет сохранение lineweight внутри proxy graphic SPDSDOOR }
     procedure SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
+    { Проверяет BBox и ручку proxy-объекта SPDSDOOR }
+    procedure SpdsDoorProxyUsesGraphicBBoxForGripCenter;
     { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
     procedure ProxyGraphicContourStoresDrawingAttributesForLog;
   end;
@@ -528,6 +530,48 @@ begin
     'Proxy graphic SPDSDOOR должен содержать 4 контура двери');
   CheckEquals(ParseResult.ContourCount, ExplicitLineweightCount,
     'Каждый контур SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxyUsesGraphicBBoxForGripCenter;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  Center: GDBvertex;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+
+    CheckEquals(1, drawing.pObjRoot^.ObjArray.Count,
+      'spdsdoor.dxf должен загружать один proxy-объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    CheckEquals(ObjN_GDBObjAcdProxy, entity^.GetObjTypeName,
+      'SPDSDOOR должен загружаться как proxy-объект');
+
+    CheckEquals(1795.907681873614, entity^.vp.BoundingBox.LBN.x, 1e-6,
+      'BBox proxy-объекта SPDSDOOR не должен захватывать X=0');
+    CheckEquals(5921.182196811287, entity^.vp.BoundingBox.RTF.x, 1e-6,
+      'BBox proxy-объекта SPDSDOOR должен брать максимум из proxy graphic');
+    CheckEquals(858.0508144791978, entity^.vp.BoundingBox.LBN.y, 1e-6,
+      'BBox proxy-объекта SPDSDOOR не должен захватывать Y=0');
+    CheckEquals(1054.218138855069, entity^.vp.BoundingBox.RTF.y, 1e-6,
+      'BBox proxy-объекта SPDSDOOR должен брать максимум из proxy graphic');
+
+    Center := entity^.GetCenterPoint;
+    CheckEquals(3858.54493934245, Center.x, 1e-6,
+      'Ручка proxy-объекта SPDSDOOR должна быть в геометрическом центре BBox, а не в (0,0,0)');
+    CheckEquals(956.1344766671334, Center.y, 1e-6,
+      'Ручка proxy-объекта SPDSDOOR должна быть в геометрическом центре BBox, а не в (0,0,0)');
+    CheckEquals(0.0, Center.z, 1e-9,
+      'SPDSDOOR лежит в плоскости Z=0');
+  finally
+    drawing.done;
+  end;
 end;
 
 begin

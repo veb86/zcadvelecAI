@@ -125,6 +125,11 @@ type
     { Флаг: подпримитивы уже построены }
     FSubEntitiesBuilt: Boolean;
 
+    { BBox, рассчитанный из Proxy Graphic, до пересчёта подпримитивов }
+    FProxyBBoxLoaded: Boolean;
+    FProxyBBoxMin: TzePoint3d;
+    FProxyBBoxMax: TzePoint3d;
+
     { Разбирает FProxyDataBytes и создаёт подпримитивы в ConstObjArray }
     procedure BuildSubEntities(var drawing: TDrawingDef;
       var DC: TDrawContext);
@@ -191,6 +196,9 @@ type
     { Создаёт копию объекта }
     function Clone(own: Pointer): PGDBObjEntity; virtual;
 
+    { Геометрический центр proxy graphic для ручки/точки вставки }
+    function GetCenterPoint: TzePoint3d; virtual;
+
     { Создаёт новый инициализированный экземпляр }
     class function CreateInstance: PGDBObjAcdProxy; static;
   end;
@@ -239,6 +247,7 @@ constructor GDBObjAcdProxy.init;
 begin
   inherited init(own, layeraddres, LW);
   FSubEntitiesBuilt := False;
+  FProxyBBoxLoaded := False;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -252,6 +261,7 @@ begin
   inherited initnul;
   bp.ListPos.Owner := owner;
   FSubEntitiesBuilt := False;
+  FProxyBBoxLoaded := False;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -320,6 +330,7 @@ begin
   end;
 
   FSubEntitiesBuilt := False;
+  FProxyBBoxLoaded := False;
 end;
 
 { Сохраняет данные объекта в DXF-поток }
@@ -613,8 +624,11 @@ begin
     { Обновляем BBox }
     if ParseResult.BBoxLoaded then
     begin
-      vp.BoundingBox.LBN := TransformPoint(ParseResult.BBoxMin);
-      vp.BoundingBox.RTF := TransformPoint(ParseResult.BBoxMax);
+      FProxyBBoxMin := TransformPoint(ParseResult.BBoxMin);
+      FProxyBBoxMax := TransformPoint(ParseResult.BBoxMax);
+      FProxyBBoxLoaded := True;
+      vp.BoundingBox.LBN := FProxyBBoxMin;
+      vp.BoundingBox.RTF := FProxyBBoxMax;
     end;
 
   finally
@@ -641,6 +655,13 @@ begin
 
   { Делегируем форматирование подпримитивов GDBObjComplex }
   inherited FormatEntity(drawing, DC, Stage);
+
+  if FProxyBBoxLoaded then
+  begin
+    vp.BoundingBox.LBN := FProxyBBoxMin;
+    vp.BoundingBox.RTF := FProxyBBoxMax;
+    ConstObjArray.ObjTree.BoundingBox := vp.BoundingBox;
+  end;
 
   if Assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
@@ -671,6 +692,11 @@ begin
   Result := GDBAcdProxyID;
 end;
 
+function GDBObjAcdProxy.GetCenterPoint: TzePoint3d;
+begin
+  Result := Vertexmorph(vp.BoundingBox.LBN, vp.BoundingBox.RTF, 0.5);
+end;
+
 { Создаёт копию прокси-объекта }
 function GDBObjAcdProxy.Clone(own: Pointer): PGDBObjEntity;
 var
@@ -694,6 +720,9 @@ begin
 
   { Подпримитивы будут построены при первом FormatEntity }
   ClonePtr^.FSubEntitiesBuilt := False;
+  ClonePtr^.FProxyBBoxLoaded := FProxyBBoxLoaded;
+  ClonePtr^.FProxyBBoxMin := FProxyBBoxMin;
+  ClonePtr^.FProxyBBoxMax := FProxyBBoxMax;
 
   Result := PGDBObjEntity(ClonePtr);
 end;
