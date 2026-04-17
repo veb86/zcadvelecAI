@@ -129,6 +129,7 @@ type
     FProxyBBoxLoaded: Boolean;
     FProxyBBoxMin: TzePoint3d;
     FProxyBBoxMax: TzePoint3d;
+    FProxyGripOffset: TzePoint3d;
 
     { Разбирает FProxyDataBytes и создаёт подпримитивы в ConstObjArray }
     procedure BuildSubEntities(var drawing: TDrawingDef;
@@ -150,8 +151,8 @@ type
       const Item: TProxyTextItem;
       var drawing: TDrawingDef; var DC: TDrawContext);
 
-    { Применяет матрицу блока-владельца к точке }
-    function TransformPoint(
+    { Переводит точку proxy graphic в локальные координаты proxy entity }
+    function ToLocalPoint(
       const Pt: TzePoint3d): TzePoint3d;
 
     { Проверяет, объект находится внутри блока }
@@ -255,6 +256,7 @@ begin
   inherited init(own, layeraddres, LW);
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
+  FProxyGripOffset := NulVertex;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -269,6 +271,7 @@ begin
   bp.ListPos.Owner := owner;
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
+  FProxyGripOffset := NulVertex;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -391,14 +394,11 @@ begin
   Result := bp.ListPos.owner <> nil;
 end;
 
-{ Применяет матрицу блока-владельца к точке }
-function GDBObjAcdProxy.TransformPoint(
+{ Переводит точку proxy graphic в локальные координаты proxy entity }
+function GDBObjAcdProxy.ToLocalPoint(
   const Pt: TzePoint3d): TzePoint3d;
 begin
-  if HasOwnerMatrix then
-    Result := VectorTransform3D(Pt, bp.ListPos.owner^.GetMatrix^)
-  else
-    Result := Pt;
+  Result := VertexSub(Pt, FProxyGripOffset);
 end;
 
 { Создаёт подпримитив-линию из двух точек.
@@ -412,8 +412,8 @@ var
   SubEnt: PGDBObjEntity;
   ContourLW: TGDBLineWeight;
 begin
-  WP1 := TransformPoint(P1);
-  WP2 := TransformPoint(P2);
+  WP1 := ToLocalPoint(P1);
+  WP2 := ToLocalPoint(P2);
 
   ContourLW := Contour.LineWeight;
   if (ContourLW = LnWtByLayer) or (ContourLW = LnWtByBlock)
@@ -453,7 +453,7 @@ begin
   pV := Contour.Vertices.beginiterate(ir);
   while pV <> nil do
   begin
-    Points[I] := TransformPoint(pV^);
+    Points[I] := ToLocalPoint(pV^);
     Inc(I);
     pV := Contour.Vertices.iterate(ir);
   end;
@@ -488,7 +488,7 @@ var
   TXTStyle: PGDBTextStyle;
   InsertPt: TzePoint3d;
 begin
-  InsertPt := TransformPoint(Item.Insert);
+  InsertPt := ToLocalPoint(Item.Insert);
 
   { Получаем стиль текста }
   TXTStyle := nil;
@@ -631,9 +631,12 @@ begin
     { Обновляем BBox }
     if ParseResult.BBoxLoaded then
     begin
-      FProxyBBoxMin := TransformPoint(ParseResult.BBoxMin);
-      FProxyBBoxMax := TransformPoint(ParseResult.BBoxMax);
+      FProxyBBoxMin := ParseResult.BBoxMin;
+      FProxyBBoxMax := ParseResult.BBoxMax;
       FProxyBBoxLoaded := True;
+      FProxyGripOffset := Vertexmorph(FProxyBBoxMin, FProxyBBoxMax, 0.5);
+      if IsVectorNul(Local.P_insert) then
+        Local.P_insert := FProxyGripOffset;
       vp.BoundingBox.LBN := FProxyBBoxMin;
       vp.BoundingBox.RTF := FProxyBBoxMax;
     end;
@@ -659,6 +662,8 @@ begin
 
   if not FSubEntitiesBuilt then
     BuildSubEntities(drawing, DC);
+
+  CalcObjMatrix(@drawing);
 
   { Делегируем форматирование подпримитивов GDBObjComplex }
   inherited FormatEntity(drawing, DC, Stage);
@@ -696,7 +701,6 @@ procedure GDBObjAcdProxy.TransformAt(p: PGDBObjEntity;
   t_matrix: PzeTypedMatrix4d);
 begin
   inherited TransformAt(p, t_matrix);
-  FSubEntitiesBuilt := False;
 end;
 
 function GDBObjAcdProxy.GetObjTypeName: string;
@@ -711,7 +715,7 @@ end;
 
 function GDBObjAcdProxy.GetCenterPoint: TzePoint3d;
 begin
-  Result := Vertexmorph(vp.BoundingBox.LBN, vp.BoundingBox.RTF, 0.5);
+  Result := P_insert_in_WCS;
 end;
 
 { Устанавливает ручку управления (grip) в геометрический центр BBox.
@@ -778,6 +782,7 @@ begin
   ClonePtr^.FProxyBBoxLoaded := FProxyBBoxLoaded;
   ClonePtr^.FProxyBBoxMin := FProxyBBoxMin;
   ClonePtr^.FProxyBBoxMax := FProxyBBoxMax;
+  ClonePtr^.FProxyGripOffset := FProxyGripOffset;
 
   Result := PGDBObjEntity(ClonePtr);
 end;
