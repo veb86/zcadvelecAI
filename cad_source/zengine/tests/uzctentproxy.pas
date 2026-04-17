@@ -38,6 +38,8 @@ uses
   uzeentacdproxy,
   uzeentline,
   uzeentproxygraphicparser,
+  uzegeometry,
+  uzegeometrytypes,
   // Основной загрузчик DXF
   uzeffdxf,
   // Инфраструктура чертежа
@@ -67,6 +69,8 @@ type
     procedure SpdsDoorProxyGraphicKeepsPrimitiveLineweight;
     { Проверяет BBox и ручку proxy-объекта SPDSDOOR }
     procedure SpdsDoorProxyUsesGraphicBBoxForGripCenter;
+    { Проверяет локальную СК proxy-объекта относительно ручки }
+    procedure SpdsDoorProxySubEntitiesAreLocalToGripCenter;
     { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
     procedure ProxyGraphicContourStoresDrawingAttributesForLog;
   end;
@@ -569,6 +573,65 @@ begin
       'Ручка proxy-объекта SPDSDOOR должна быть в геометрическом центре BBox, а не в (0,0,0)');
     CheckEquals(0.0, Center.z, 1e-9,
       'SPDSDOOR лежит в плоскости Z=0');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxySubEntitiesAreLocalToGripCenter;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  line: PGDBObjLine;
+  center, delta: GDBvertex;
+  moveMatrix: TzeTypedMatrix4d;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+
+    CheckEquals(1, drawing.pObjRoot^.ObjArray.Count,
+      'spdsdoor.dxf должен загружать один proxy-объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    CheckEquals(ObjN_GDBObjAcdProxy, entity^.GetObjTypeName,
+      'SPDSDOOR должен загружаться как proxy-объект');
+
+    proxy := PGDBObjAcdProxy(entity);
+    Check(proxy^.ConstObjArray.Count > 0,
+      'Proxy graphic должен построить подпримитивы');
+
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+    center := proxy^.GetCenterPoint;
+
+    CheckEquals(line^.CoordInOCS.lBegin.x + center.x,
+      line^.CoordInWCS.lBegin.x, 1e-6,
+      'Начало подпримитива должно храниться локально относительно grip center');
+    CheckEquals(line^.CoordInOCS.lBegin.y + center.y,
+      line^.CoordInWCS.lBegin.y, 1e-6,
+      'Начало подпримитива должно храниться локально относительно grip center');
+
+    delta := CreateVertex(100.0, 50.0, 0.0);
+    moveMatrix := CreateTranslationMatrix(delta);
+    entity^.TransformAt(entity, @moveMatrix);
+    entity^.FormatEntity(drawing, dc);
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+
+    CheckEquals(center.x + delta.x, proxy^.GetCenterPoint.x, 1e-6,
+      'После смещения grip center должен смещаться на вектор трансформации');
+    CheckEquals(center.y + delta.y, proxy^.GetCenterPoint.y, 1e-6,
+      'После смещения grip center должен смещаться на вектор трансформации');
+    CheckEquals(line^.CoordInOCS.lBegin.x + proxy^.GetCenterPoint.x,
+      line^.CoordInWCS.lBegin.x, 1e-6,
+      'После смещения подпримитив должен оставаться локальным к grip center');
+    CheckEquals(line^.CoordInOCS.lBegin.y + proxy^.GetCenterPoint.y,
+      line^.CoordInWCS.lBegin.y, 1e-6,
+      'После смещения подпримитив должен оставаться локальным к grip center');
   finally
     drawing.done;
   end;
