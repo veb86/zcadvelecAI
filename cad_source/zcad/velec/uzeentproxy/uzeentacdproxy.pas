@@ -569,6 +569,27 @@ begin
     ParseResult := Parser.Parse;
     SubEntCount := 0;
 
+    { Вычисляем BBox и смещение ДО создания подпримитивов,
+      чтобы ToLocalPoint корректно пересчитывал координаты }
+    if ParseResult.BBoxLoaded then
+    begin
+      FProxyBBoxMin := ParseResult.BBoxMin;
+      FProxyBBoxMax := ParseResult.BBoxMax;
+      FProxyBBoxLoaded := True;
+      FProxyGripOffset := Vertexmorph(
+        FProxyBBoxMin, FProxyBBoxMax, 0.5);
+      if IsVectorNul(Local.P_insert) then
+        Local.P_insert := FProxyGripOffset;
+      vp.BoundingBox.LBN := FProxyBBoxMin;
+      vp.BoundingBox.RTF := FProxyBBoxMax;
+
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: BuildSubEntities gripOffset='
+        + '(%.3f,%.3f,%.3f)',
+        [FProxyGripOffset.x, FProxyGripOffset.y,
+         FProxyGripOffset.z], LM_Info);
+    end;
+
     { Создаём подпримитивы из контуров }
     for I := 0 to ParseResult.ContourCount - 1 do
     begin
@@ -627,19 +648,6 @@ begin
       + 'from %d contours and %d texts',
       [SubEntCount, ParseResult.ContourCount,
        Length(ParseResult.TextItems)], LM_Info);
-
-    { Обновляем BBox }
-    if ParseResult.BBoxLoaded then
-    begin
-      FProxyBBoxMin := ParseResult.BBoxMin;
-      FProxyBBoxMax := ParseResult.BBoxMax;
-      FProxyBBoxLoaded := True;
-      FProxyGripOffset := Vertexmorph(FProxyBBoxMin, FProxyBBoxMax, 0.5);
-      if IsVectorNul(Local.P_insert) then
-        Local.P_insert := FProxyGripOffset;
-      vp.BoundingBox.LBN := FProxyBBoxMin;
-      vp.BoundingBox.RTF := FProxyBBoxMax;
-    end;
 
   finally
     { Освобождаем контуры результата парсера }
