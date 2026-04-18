@@ -50,6 +50,41 @@ const
   PROXY_MAX_OPCODE = 255;
 
 type
+  { Контекст для построения подпримитивов внутри Proxy объекта.
+    Создаётся в GDBObjAcdProxy.BuildSubEntities и передаётся в builder
+    каждого зарегистрированного OpCode. Все поля-указатели типизируются
+    как Pointer, чтобы исключить циклическую зависимость между модулями
+    парсеров и модулем прокси-сущности: парсер приводит их к реальным
+    типам в своём implementation (см. uzeentproxyparser*.pas). }
+  TProxySubEntityContext = record
+    { Указатель на PGDBObjGenericSubEntry — владелец создаваемого подпримитива.
+      Обычно это сам GDBObjAcdProxy, приведённый к PGDBObjGenericSubEntry. }
+    OwnerEntity: Pointer;
+    { Указатель на PGDBObjEntityOpenArray — массив подпримитивов владельца
+      (обычно ConstObjArray прокси-объекта), куда добавляется новый
+      подпримитив. }
+    SubEntitiesArray: Pointer;
+    { Указатель на PDrawingDef — текущий чертёж (нужен для FormatEntity
+      подпримитивов и для доступа к таблицам стилей/шрифтов). }
+    Drawing: Pointer;
+    { Указатель на PDrawContext — контекст отрисовки (нужен для
+      FormatEntity подпримитивов). }
+    DC: Pointer;
+    { Слой владельца прокси-объекта (подпримитивам назначается этот слой). }
+    OwnerLayer: Pointer;
+    { Тип линии владельца прокси-объекта. }
+    OwnerLineType: Pointer;
+    { Вес линии владельца прокси-объекта (применяется, если в контуре
+      задан ByLayer/ByBlock/ByLwDefault). }
+    OwnerLineWeight: Integer;
+    { Цвет владельца прокси-объекта. }
+    OwnerColor: Integer;
+    { Смещение, которое нужно вычитать из координат proxy graphic,
+      чтобы получить локальные координаты относительно точки вставки. }
+    GripOffset: TzePoint3d;
+  end;
+  PProxySubEntityContext = ^TProxySubEntityContext;
+
   { Данные одного текстового примитива, переданные обработчиком.
     Используются в FormatEntity для вызова Representation.DrawTextContent. }
   TProxyTextItem = record
@@ -112,14 +147,31 @@ type
     Stream: TProxyByteStream;
     out HandlerResult: TProxyHandlerResult);
 
+  { Процедура-построитель подпримитивов для заданного OpCode.
+    Принимает результат парсинга (HandlerResult) и контекст
+    (указатели на владельца, массив подпримитивов, чертёж и DC)
+    и создаёт в ConstObjArray владельца соответствующие GDB-объекты
+    (GDBObjLine, GDBObjSolid, GDBObjMText и т.д.) с пересчётом
+    координат в локальную систему через Context.GripOffset.
+
+    Регистрируется вместе с Handler — каждый модуль-парсер сам
+    описывает, как его примитив превращается в подпримитивы
+    прокси-объекта. }
+  TProxyOpCodeBuilderProc = procedure(
+    const HandlerResult: TProxyHandlerResult;
+    const Context: TProxySubEntityContext);
+
   { Запись регистрации одного OpCode }
   TProxyOpCodeEntry = record
     { Флаг: запись заполнена }
     Registered: Boolean;
     { Читаемое название команды для логирования }
     Name: string;
-    { Обработчик }
+    { Обработчик парсинга бинарного потока }
     Handler: TProxyOpCodeHandlerProc;
+    { Построитель подпримитивов (может быть nil, если примитив
+      не создаёт собственных подпримитивов) }
+    Builder: TProxyOpCodeBuilderProc;
   end;
 
   { Диспетчер OpCode-обработчиков для Proxy Graphic команд.
@@ -137,12 +189,20 @@ type
     class procedure EnsureInitialized;
 
   public
-    { Регистрирует обработчик для заданного OpCode.
+    { Регистрирует обработчик для заданного OpCode без построителя.
+      Используется для команд, не создающих подпримитивов. }
+    class procedure RegisterOpCode(
+      const OpCode: Integer;
+      const Name: string;
+      const Handler: TProxyOpCodeHandlerProc); overload;
+
+    { Регистрирует обработчик и построитель подпримитивов для OpCode.
       Вызывается в секции initialization каждого модуля-парсера. }
     class procedure RegisterOpCode(
       const OpCode: Integer;
       const Name: string;
-      const Handler: TProxyOpCodeHandlerProc);
+      const Handler: TProxyOpCodeHandlerProc;
+      const Builder: TProxyOpCodeBuilderProc); overload;
 
     { Обрабатывает команду с заданным OpCode.
       Если обработчик зарегистрирован — вызывает его и возвращает результат.
@@ -151,6 +211,14 @@ type
       const OpCode: Integer;
       Stream: TProxyByteStream;
       out HandlerResult: TProxyHandlerResult): Boolean;
+
+    { Строит подпримитивы для заданного OpCode, если для него
+      зарегистрирован Builder. Возвращает True, если построение
+      было выполнено. }
+    class function BuildSubEntities(
+      const OpCode: Integer;
+      const HandlerResult: TProxyHandlerResult;
+      const Context: TProxySubEntityContext): Boolean;
 
     { Проверяет, зарегистрирован ли обработчик для OpCode }
     class function IsRegistered(const OpCode: Integer): Boolean;
@@ -222,6 +290,7 @@ begin
     FTable[I].Registered := False;
     FTable[I].Name := '';
     FTable[I].Handler := nil;
+    FTable[I].Builder := nil;
   end;
   FInitialized := True;
 end;
@@ -230,6 +299,15 @@ class procedure TProxyOpCodeDispatcher.RegisterOpCode(
   const OpCode: Integer;
   const Name: string;
   const Handler: TProxyOpCodeHandlerProc);
+begin
+  RegisterOpCode(OpCode, Name, Handler, nil);
+end;
+
+class procedure TProxyOpCodeDispatcher.RegisterOpCode(
+  const OpCode: Integer;
+  const Name: string;
+  const Handler: TProxyOpCodeHandlerProc;
+  const Builder: TProxyOpCodeBuilderProc);
 begin
   EnsureInitialized;
 
@@ -245,10 +323,36 @@ begin
   FTable[OpCode].Registered := True;
   FTable[OpCode].Name := Name;
   FTable[OpCode].Handler := Handler;
+  FTable[OpCode].Builder := Builder;
 
   programlog.LogOutFormatStr(
-    'uzeentproxymanager: Registered OpCode %d (%s)',
-    [OpCode, Name], LM_Info);
+    'uzeentproxymanager: Registered OpCode %d (%s), builder=%s',
+    [OpCode, Name, BoolToStr(Assigned(Builder), True)], LM_Info);
+end;
+
+class function TProxyOpCodeDispatcher.BuildSubEntities(
+  const OpCode: Integer;
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext): Boolean;
+begin
+  Result := False;
+  EnsureInitialized;
+
+  if (OpCode < 0) or (OpCode > PROXY_MAX_OPCODE) then
+    Exit;
+
+  if FTable[OpCode].Registered and Assigned(FTable[OpCode].Builder) then
+  begin
+    try
+      FTable[OpCode].Builder(HandlerResult, Context);
+      Result := True;
+    except
+      on E: Exception do
+        programlog.LogOutFormatStr(
+          'uzeentproxymanager: BuildSubEntities %d (%s) exception: %s',
+          [OpCode, FTable[OpCode].Name, E.Message], LM_Info);
+    end;
+  end;
 end;
 
 class function TProxyOpCodeDispatcher.HandleOpCode(

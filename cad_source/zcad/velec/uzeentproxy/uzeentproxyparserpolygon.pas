@@ -55,6 +55,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   UGDBPoint3DArray,
   uzcLog;
@@ -94,7 +95,6 @@ end;
 { --- Обработчик OpCode --- }
 
 { Читает данные замкнутого полигона из потока, заполняет вершины и BBox.
-  Добавляет первую вершину в конец для замыкания контура.
   Регистрируется в TProxyOpCodeDispatcher как обработчик OpCode=7. }
 procedure HandlePolygon(
   Stream: TProxyByteStream;
@@ -103,7 +103,6 @@ var
   VertexCount: Integer;
   I: Integer;
   Vertex: TzePoint3d;
-  FirstVertex: TzePoint3d;
   BBoxInitialized: Boolean;
 begin
   HandlerResult.Valid := False;
@@ -126,8 +125,7 @@ begin
     Exit;
   end;
 
-  { +1 для замыкающей вершины (копия первой) }
-  HandlerResult.Vertices.init(VertexCount + 1);
+  HandlerResult.Vertices.init(VertexCount);
   BBoxInitialized := False;
 
   { Читаем все вершины полигона }
@@ -137,18 +135,13 @@ begin
     HandlerResult.Vertices.PushBackData(Vertex);
     UpdateBBoxWithVertex(Vertex,
       HandlerResult.BBoxMin, HandlerResult.BBoxMax, BBoxInitialized);
-
-    { Запоминаем первую вершину для замыкания контура }
-    if I = 0 then
-      FirstVertex := Vertex;
   end;
 
-  { Замыкаем контур: добавляем первую вершину в конец }
-  HandlerResult.Vertices.PushBackData(FirstVertex);
-
   HandlerResult.HasVertices := True;
-  { Контур замкнут: первая вершина добавлена в конец, флаг Closed = True }
+  { Контур замкнут по определению полигона: замыкание выполняет построитель }
   HandlerResult.Closed := True;
+  { Заливка — семантика Polygon/Hatch по умолчанию }
+  HandlerResult.Filled := True;
   HandlerResult.HasBBox := BBoxInitialized;
   HandlerResult.Valid := True;
 
@@ -159,13 +152,39 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы полигона: заполненный контур превращается в
+  солиды через триангуляцию веером, а периметр — в последовательность
+  отрезков GDBObjLine с замыканием. }
+procedure BuildPolygonSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  if HandlerResult.Vertices.Count < POLYGON_MIN_VERTEX_COUNT then
+    Exit;
+
+  if HandlerResult.Filled then
+    BuildSolidFromVertices(Context,
+      HandlerResult.Vertices,
+      Context.OwnerLineWeight);
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=7 (Polygon/Hatch).
-    Если этот файл исключён из проекта — регистрация не происходит,
-    полигоны (области штриховки) внутри прокси-объектов перестают парситься. }
+  { Регистрируем обработчик OpCode=7 (Polygon/Hatch) и построитель
+    подпримитивов. Если этот файл исключён из проекта — регистрация не
+    происходит, полигоны внутри прокси-объектов перестают парситься. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     POLYGON_OPCODE,
     'Polygon/Hatch',
-    @HandlePolygon);
+    @HandlePolygon,
+    @BuildPolygonSubEntities);
 
 end.

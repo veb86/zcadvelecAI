@@ -70,7 +70,6 @@ uses
   uzbLogIntf,
   uzclog,
   uzestyleslayers,
-  uzestylestexts,
   uzecamera,
   SysUtils,
   Math,
@@ -131,32 +130,17 @@ type
     FProxyBBoxMax: TzePoint3d;
     FProxyGripOffset: TzePoint3d;
 
-    { Разбирает FProxyDataBytes и создаёт подпримитивы в ConstObjArray }
+    { Разбирает FProxyDataBytes и создаёт подпримитивы в ConstObjArray.
+      Фактическое создание подпримитивов делегируется зарегистрированным
+      в TProxyOpCodeDispatcher построителям (по одному на OpCode) из
+      модулей-парсеров uzeentproxyparser*.pas. }
     procedure BuildSubEntities(var drawing: TDrawingDef;
       var DC: TDrawContext);
 
-    { Создаёт подпримитив-линию из двух соседних точек контура }
-    procedure CreateLineSubEntity(
-      const P1, P2: TzePoint3d;
-      const Contour: TProxyContour;
-      var drawing: TDrawingDef; var DC: TDrawContext);
-
-    { Создаёт подпримитив-солид из заполненного контура }
-    procedure CreateSolidSubEntity(
-      const Contour: TProxyContour;
-      var drawing: TDrawingDef; var DC: TDrawContext);
-
-    { Создаёт подпримитив-текст из TProxyTextItem }
-    procedure CreateTextSubEntity(
-      const Item: TProxyTextItem;
-      var drawing: TDrawingDef; var DC: TDrawContext);
-
-    { Переводит точку proxy graphic в локальные координаты proxy entity }
-    function ToLocalPoint(
-      const Pt: TzePoint3d): TzePoint3d;
-
-    { Проверяет, объект находится внутри блока }
-    function HasOwnerMatrix: Boolean;
+    { Формирует контекст (владелец, массив подпримитивов, слой/цвет/вес,
+      грип-смещение) для передачи в Builder-процедуру каждого OpCode. }
+    function MakeBuilderContext(var drawing: TDrawingDef;
+      var DC: TDrawContext): TProxySubEntityContext;
 
   public
     constructor init(own: Pointer; layeraddres: PGDBLayerProp;
@@ -221,8 +205,6 @@ function AllocAndInitAcdProxy(
 implementation
 
 uses
-  uzeentmtext,
-  uzeentabstracttext,
   uzeutils;
 
 { --- Вспомогательные функции --- }
@@ -388,202 +370,38 @@ begin
     [GraphicsSize], LM_Info);
 end;
 
-{ Проверяет, объект находится внутри блока }
-function GDBObjAcdProxy.HasOwnerMatrix: Boolean;
+{ Строит контекст для передачи в Builder-процедуру примитива.
+  Все данные владельца (слой, цвет, грипп, массив подпримитивов)
+  упаковываются в typed Pointer-ы, чтобы исключить циклическую
+  зависимость между модулями парсеров и этим модулем. }
+function GDBObjAcdProxy.MakeBuilderContext(
+  var drawing: TDrawingDef; var DC: TDrawContext): TProxySubEntityContext;
 begin
-  Result := bp.ListPos.owner <> nil;
-end;
-
-{ Переводит точку proxy graphic в локальные координаты proxy entity }
-function GDBObjAcdProxy.ToLocalPoint(
-  const Pt: TzePoint3d): TzePoint3d;
-begin
-  Result := VertexSub(Pt, FProxyGripOffset);
-end;
-
-{ Создаёт подпримитив-линию из двух точек.
-  Линия получает индивидуальные визуальные свойства из контура. }
-procedure GDBObjAcdProxy.CreateLineSubEntity(
-  const P1, P2: TzePoint3d;
-  const Contour: TProxyContour;
-  var drawing: TDrawingDef; var DC: TDrawContext);
-var
-  WP1, WP2: TzePoint3d;
-  SubEnt: PGDBObjEntity;
-  ContourLW: TGDBLineWeight;
-begin
-  WP1 := ToLocalPoint(P1);
-  WP2 := ToLocalPoint(P2);
-
-  ContourLW := Contour.LineWeight;
-  if (ContourLW = LnWtByLayer) or (ContourLW = LnWtByBlock)
-    or (ContourLW = LnWtByLwDefault) then
-    ContourLW := vp.LineWeight;
-
-  SubEnt := ENTF_CreateLine(
-    PGDBObjGenericSubEntry(@self),
-    @ConstObjArray,
-    vp.Layer, vp.LineType, ContourLW, vp.Color,
-    WP1, WP2);
-
-  if SubEnt <> nil then
-    SubEnt^.FormatEntity(drawing, DC);
-end;
-
-{ Создаёт подпримитив-солид из заполненного контура.
-  Для контуров с 3 вершинами — один треугольник.
-  Для контуров с 4+ вершинами — серия треугольников веером. }
-procedure GDBObjAcdProxy.CreateSolidSubEntity(
-  const Contour: TProxyContour;
-  var drawing: TDrawingDef; var DC: TDrawContext);
-var
-  ir: itrec;
-  pV: PzePoint3d;
-  Points: array of TzePoint3d;
-  PointCount, I: Integer;
-  SubEnt: PGDBObjEntity;
-  ContourLW: TGDBLineWeight;
-begin
-  if Contour.Vertices.Count < 3 then
-    Exit;
-
-  PointCount := Contour.Vertices.Count;
-  SetLength(Points, PointCount);
-  I := 0;
-  pV := Contour.Vertices.beginiterate(ir);
-  while pV <> nil do
-  begin
-    Points[I] := ToLocalPoint(pV^);
-    Inc(I);
-    pV := Contour.Vertices.iterate(ir);
-  end;
-
-  ContourLW := Contour.LineWeight;
-  if (ContourLW = LnWtByLayer) or (ContourLW = LnWtByBlock)
-    or (ContourLW = LnWtByLwDefault) then
-    ContourLW := vp.LineWeight;
-
-  { Триангуляция веером: вершина 0 — общая для всех треугольников }
-  for I := 1 to PointCount - 2 do
-  begin
-    if I + 1 < PointCount then
-    begin
-      SubEnt := ENTF_CreateSolid(
-        PGDBObjGenericSubEntry(@self),
-        @ConstObjArray,
-        vp.Layer, vp.LineType, ContourLW, vp.Color,
-        Points[0], Points[I], Points[I + 1]);
-      if SubEnt <> nil then
-        SubEnt^.FormatEntity(drawing, DC);
-    end;
-  end;
-end;
-
-{ Создаёт подпримитив многострочного текста (MTEXT) из TProxyTextItem.
-  Текст внутри таблиц и других proxy-объектов хранится как многострочный
-  примитив (GDBObjMText), что позволяет корректно отображать форматирование
-  (шрифты, стили, выравнивание) и многострочное содержимое. }
-procedure GDBObjAcdProxy.CreateTextSubEntity(
-  const Item: TProxyTextItem;
-  var drawing: TDrawingDef; var DC: TDrawContext);
-var
-  pMText: PGDBObjMText;
-  TXTStyle: PGDBTextStyle;
-  InsertPt: TzePoint3d;
-begin
-  InsertPt := ToLocalPoint(Item.Insert);
-
-  { Получаем стиль текста.
-    Внутри proxy-объекта сохранено имя файла шрифта (например, "times.ttf"
-    или "txt.shx"), а не имя стиля. Поэтому сначала пробуем найти стиль,
-    чей FontFile совпадает с этим именем файла — тогда разные строки с
-    разными шрифтами получат соответствующие стили из таблицы стилей
-    чертежа (сравнение с учётом и без учёта расширения).
-    Для обратной совместимости и исключения ситуаций, когда в потоке
-    случайно оказалось имя стиля, дополнительно проверяем FindStyle
-    по имени. В крайнем случае используется стиль "Standard". }
-  TXTStyle := nil;
-  if Item.FontName <> '' then
-  begin
-    TXTStyle := drawing.GetTextStyleTable^.FindStyleByFont(
-      Item.FontName);
-    if TXTStyle = nil then
-      TXTStyle := drawing.GetTextStyleTable^.FindStyle(
-        Item.FontName, False);
-  end;
-  if TXTStyle = nil then
-    TXTStyle := drawing.GetTextStyleTable^.FindStyle(
-      'Standard', False);
-  if TXTStyle = nil then
-    TXTStyle := PGDBTextStyle(
-      drawing.GetTextStyleTable^.getDataMutable(0));
-
-  if TXTStyle = nil then
-  begin
-    programlog.LogOutFormatStr(
-      'uzeentacdproxy: CreateTextSubEntity no font, skip',
-      [], LM_Info);
-    Exit;
-  end;
-
-  { Создаём MTEXT-подпримитив: внутри таблиц и сложных proxy-объектов
-    текст хранится как многострочный, что позволяет обрабатывать
-    форматирование и переносы строк корректно. }
-  pMText := pointer(
-    ConstObjArray.CreateInitObj(GDBMtextID, @self));
-  if pMText = nil then
-    Exit;
-
-  pMText^.vp.Layer := vp.Layer;
-  pMText^.vp.LineType := vp.LineType;
-  pMText^.vp.LineWeight := vp.LineWeight;
-  pMText^.vp.Color := vp.Color;
-  { Template — шаблон с форматированием, при пустом Content он будет
-    использован как исходный текст в FormatContent. }
-  pMText^.Template := Item.Text;
-  pMText^.TXTStyle := TXTStyle;
-  pMText^.Local.P_insert := InsertPt;
-  pMText^.textprop.size := Item.Height;
-  pMText^.textprop.wfactor := Item.WidthFactor;
-  pMText^.textprop.oblique := 0;
-  pMText^.textprop.justify := jsbl;
-  { Ширина 0 отключает принудительный перенос строк — MTEXT
-    переносит только по явным символам #10. }
-  pMText^.Width := 0;
-  pMText^.linespacef := 1;
-  pMText^.WrapMode := mwmByWord;
-
-  { Устанавливаем поворот через базис OX }
-  if Abs(Item.Angle) > 1e-10 then
-  begin
-    pMText^.Local.basis.ox.x := Cos(Item.Angle);
-    pMText^.Local.basis.ox.y := Sin(Item.Angle);
-    pMText^.Local.basis.ox.z := 0;
-  end;
-
-  pMText^.FormatEntity(drawing, DC);
-
-  programlog.LogOutFormatStr(
-    'uzeentacdproxy: CreateTextSubEntity MTEXT "%s" at (%.3f,%.3f)'
-    + ' font="%s" style="%s"',
-    [Item.Text, InsertPt.x, InsertPt.y,
-     Item.FontName, TXTStyle^.Name], LM_Info);
+  Result.OwnerEntity      := @Self;
+  Result.SubEntitiesArray := @ConstObjArray;
+  Result.Drawing          := @drawing;
+  Result.DC               := @DC;
+  Result.OwnerLayer       := vp.Layer;
+  Result.OwnerLineType    := vp.LineType;
+  Result.OwnerLineWeight  := vp.LineWeight;
+  Result.OwnerColor       := Integer(vp.Color);
+  Result.GripOffset       := FProxyGripOffset;
 end;
 
 { Разбирает FProxyDataBytes и создаёт подпримитивы.
-  Контуры из парсера преобразуются:
-  - незаполненный контур → серия линий (GDBObjLine)
-  - заполненный контур → солиды (GDBObjSolid)
-  - текстовые элементы → GDBObjMText (многострочный текст) }
+  Сам модуль не знает, как именно строить GDB-объекты из каждого
+  примитива: построением занимаются Builder-процедуры, зарегистрированные
+  в TProxyOpCodeDispatcher соответствующими модулями-парсерами
+  uzeentproxyparser*.pas. Этот метод лишь организует проход по
+  результату парсинга и вызывает диспетчер. }
 procedure GDBObjAcdProxy.BuildSubEntities(
   var drawing: TDrawingDef; var DC: TDrawContext);
 var
   Parser: TProxyGraphicParser;
   ParseResult: TProxyGraphicParseResult;
+  Context: TProxySubEntityContext;
   I: Integer;
-  ir: itrec;
-  pV, pVNext: PzePoint3d;
-  SubEntCount: Integer;
+  BuiltCount: Integer;
 begin
   if Length(FProxyDataBytes) = 0 then
     Exit;
@@ -595,10 +413,10 @@ begin
   Parser := TProxyGraphicParser.Create(FProxyDataBytes);
   try
     ParseResult := Parser.Parse;
-    SubEntCount := 0;
 
     { Вычисляем BBox и смещение ДО создания подпримитивов,
-      чтобы ToLocalPoint корректно пересчитывал координаты }
+      чтобы Builder-процедуры корректно переводили координаты
+      в локальную систему подпримитивов }
     if ParseResult.BBoxLoaded then
     begin
       FProxyBBoxMin := ParseResult.BBoxMin;
@@ -618,69 +436,31 @@ begin
          FProxyGripOffset.z], LM_Info);
     end;
 
-    { Создаём подпримитивы из контуров }
-    for I := 0 to ParseResult.ContourCount - 1 do
+    { Формируем контекст построителей только один раз — указатели на
+      массив подпримитивов, слой/тип линии/вес/цвет владельца и грип
+      неизменны в пределах построения. }
+    Context := MakeBuilderContext(drawing, DC);
+
+    { Делегируем создание подпримитивов модулям-парсерам.
+      Каждый примитив в порядке появления в Proxy Graphic передаётся
+      в Builder, зарегистрированный для его OpCode. }
+    BuiltCount := 0;
+    for I := 0 to High(ParseResult.Primitives) do
     begin
-      if ParseResult.Contours[I].Vertices.Count = 0 then
-        Continue;
-
-      { Заполненные контуры → солиды }
-      if ParseResult.Contours[I].Filled then
-      begin
-        CreateSolidSubEntity(
-          ParseResult.Contours[I], drawing, DC);
-        Inc(SubEntCount);
-      end;
-
-      { Контуры с линиями → серия подпримитивов-линий.
-        Каждый отрезок — отдельный GDBObjLine с индивидуальными
-        свойствами (цвет, толщина линии, тип линии). }
-      if ParseResult.Contours[I].Vertices.Count >= 2 then
-      begin
-        pV := ParseResult.Contours[I].Vertices.beginiterate(ir);
-        pVNext := ParseResult.Contours[I].Vertices.iterate(ir);
-        while pVNext <> nil do
-        begin
-          CreateLineSubEntity(
-            pV^, pVNext^,
-            ParseResult.Contours[I], drawing, DC);
-          Inc(SubEntCount);
-          pV := pVNext;
-          pVNext := ParseResult.Contours[I].Vertices.iterate(ir);
-        end;
-
-        { Замыкающий отрезок для замкнутых контуров }
-        if ParseResult.Contours[I].Closed
-          and (ParseResult.Contours[I].Vertices.Count > 2)
-        then
-        begin
-          pVNext := ParseResult.Contours[I].Vertices.getDataMutable(0);
-          CreateLineSubEntity(
-            pV^, pVNext^,
-            ParseResult.Contours[I], drawing, DC);
-          Inc(SubEntCount);
-        end;
-      end;
-    end;
-
-    { Создаём подпримитивы из текстовых элементов }
-    for I := 0 to High(ParseResult.TextItems) do
-    begin
-      CreateTextSubEntity(
-        ParseResult.TextItems[I], drawing, DC);
-      Inc(SubEntCount);
+      if TProxyOpCodeDispatcher.BuildSubEntities(
+        ParseResult.Primitives[I].OpCode,
+        ParseResult.Primitives[I].HandlerResult,
+        Context) then
+        Inc(BuiltCount);
     end;
 
     programlog.LogOutFormatStr(
-      'uzeentacdproxy: BuildSubEntities created %d sub-entities '
-      + 'from %d contours and %d texts',
-      [SubEntCount, ParseResult.ContourCount,
-       Length(ParseResult.TextItems)], LM_Info);
+      'uzeentacdproxy: BuildSubEntities built %d/%d primitives',
+      [BuiltCount, Length(ParseResult.Primitives)], LM_Info);
 
   finally
-    { Освобождаем контуры результата парсера }
-    for I := 0 to Length(ParseResult.Contours) - 1 do
-      ParseResult.Contours[I].Vertices.done;
+    { Освобождаем вершины всех примитивов результата и сам парсер }
+    FreeParseResult(ParseResult);
     Parser.Free;
   end;
 

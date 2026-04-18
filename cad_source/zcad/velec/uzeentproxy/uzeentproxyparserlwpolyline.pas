@@ -59,6 +59,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   UGDBPoint3DArray,
   uzcLog;
@@ -172,13 +173,33 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из вершин LWPOLYLINE.
+  Если полилиния замкнута (Flags бит 9) — строится замыкающий отрезок. }
+procedure BuildLwPolylineSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  if HandlerResult.Vertices.Count < LWPOLYLINE_MIN_VERTEX_COUNT then
+    Exit;
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=33 (LwPolyline).
+  { Регистрируем обработчик OpCode=33 (LwPolyline) и построитель подпримитивов.
     Если этот файл исключён из проекта — регистрация не происходит,
     LWPOLYLINE внутри прокси-объектов перестают парситься. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     LWPOLYLINE_OPCODE,
     'LwPolyline',
-    @HandleLwPolyline);
+    @HandleLwPolyline,
+    @BuildLwPolylineSubEntities);
 
 end.

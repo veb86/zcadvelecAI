@@ -26,17 +26,30 @@
       [CommandSize: int32] [OpCode: int32] [Данные...]
 
   Диспетчеризация:
-  - Системные команды (Extents, SetColor, SetLayer, Push/PopMatrix) обрабатываются
-    непосредственно в этом модуле.
-  - Примитивные команды (Circle, Text, Polyline и т.д.) обрабатываются через
-    TProxyOpCodeDispatcher — менеджер, куда каждый модуль-парсер регистрирует
-    свой обработчик в секции initialization.
-  - Если примитив не зарегистрирован — команда пропускается автоматически.
+  - Системные команды (Extents, SetColor, SetLayer, Push/PopMatrix)
+    обрабатываются непосредственно в этом модуле (они изменяют
+    состояние парсера, а не создают подпримитивы).
+  - Примитивные команды (Circle, Text, Polyline и т.д.) обрабатываются
+    через TProxyOpCodeDispatcher — менеджер, куда каждый модуль-парсер
+    регистрирует свой обработчик в секции initialization.
+  - Если примитив не зарегистрирован — команда пропускается.
 
   Результат парсинга (TProxyGraphicParseResult):
   - BBoxMin, BBoxMax — суммарный BBox всех успешно распаршенных примитивов
-  - AllVertices      — вершины всех контуров для отрисовки (полилинии)
+  - Primitives       — распаршенные примитивы (OpCode + результат обработчика)
+                       в порядке появления в потоке. Сбор подпримитивов
+                       происходит в GDBObjAcdProxy.BuildSubEntities: для
+                       каждого примитива вызывается Builder соответствующего
+                       OpCode через TProxyOpCodeDispatcher.BuildSubEntities.
   - PrimitiveCount   — количество успешно обработанных примитивов
+
+  Важно: промежуточные структуры «контуры» и «текстовые элементы» намеренно
+  удалены. Вместо этого парсер хранит для каждого примитива результат
+  обработчика целиком (вершины, флаги, текст, состояние атрибутов). Решение
+  о том, какие GDB-сущности создать из данных — принимает Builder из
+  модуля-парсера, а не центральный код прокси-объекта. Это выполняет
+  требование: «файл, в котором происходит расшифровка примитива, создаёт
+  и соответствующий подпримитив».
 }
 
 unit uzeentproxygraphicparser;
@@ -56,27 +69,27 @@ uses
   UGDBPoint3DArray;
 
 type
-  { Один контур (набор вершин одного примитива) для отрисовки }
-  TProxyContour = record
-    { Вершины контура }
-    Vertices: GDBPoint3DArray;
-    { Флаг: контур замкнут (полигон, круг, эллипс) }
-    Closed: Boolean;
-    { Флаг: контур заполнен (SOLID заливка, штриховка) }
-    Filled: Boolean;
-    { Вес линии, действовавший на момент создания примитива }
+  { Один распаршенный примитив: OpCode + результат обработчика + состояние
+    атрибутов парсера на момент обработки. Сохраняется в результате парсинга
+    до вызова Builder-процедуры соответствующего модуля-парсера. }
+  TProxyParsedPrimitive = record
+    { OpCode команды в потоке (см. uzeentproxytypes.TProxyGraphicCommand) }
+    OpCode: Integer;
+    { Результат обработчика (вершины, BBox, текст, флаги) }
+    HandlerResult: TProxyHandlerResult;
+    { Вес линии, действовавший на момент обработки }
     LineWeight: Integer;
-    { Цвет, действовавший на момент создания примитива }
+    { Цвет, действовавший на момент обработки }
     Color: Integer;
-    { Слой, действовавший на момент создания примитива }
+    { Слой, действовавший на момент обработки }
     Layer: string;
-    { Тип линии, действовавший на момент создания примитива }
+    { Тип линии, действовавший на момент обработки }
     Linetype: string;
-    { Масштаб типа линии, действовавший на момент создания примитива }
+    { Масштаб типа линии }
     LtScale: Double;
-    { Толщина, действовавшая на момент создания примитива }
+    { Толщина }
     Thickness: Double;
-    { TrueColor, действовавший на момент создания примитива }
+    { True color }
     TrueColor: Integer;
   end;
 
@@ -87,14 +100,12 @@ type
     BBoxMax: TzePoint3d;
     { Флаг: BBox вычислен хотя бы одним примитивом }
     BBoxLoaded: Boolean;
-    { Контуры примитивов для отрисовки (каждый контур отдельно) }
-    Contours: array of TProxyContour;
-    { Число контуров }
-    ContourCount: Integer;
-    { Общее число успешно обработанных примитивов (включая без вершин) }
+    { Распаршенные примитивы (в порядке появления).
+      Фактическое создание подпримитивов происходит позже — через
+      Builder-процедуру, зарегистрированную в TProxyOpCodeDispatcher. }
+    Primitives: array of TProxyParsedPrimitive;
+    { Общее число успешно обработанных примитивов }
     PrimitiveCount: Integer;
-    { Текстовые примитивы для отрисовки через DrawTextContent }
-    TextItems: array of TProxyTextItem;
   end;
 
   { Парсер Proxy Graphic.
@@ -140,16 +151,15 @@ type
     procedure HandleSetThickness;
     procedure SkipDataBytes(const CommandSize: Integer);
 
-    { Добавляет контур (набор вершин одного примитива) в массив контуров }
-    procedure AppendContour(var Src: GDBPoint3DArray;
-      const IsClosed: Boolean; const IsFilled: Boolean;
-      const LineWeight: Integer);
+    { Добавляет распаршенный примитив в результат: сохраняет OpCode,
+      HandlerResult целиком (включая вершины), и текущее состояние
+      атрибутов парсера. HandlerResult при этом «передаёт» владение
+      данными — внешний код не должен вызывать HandlerResult.Vertices.done. }
+    procedure AppendPrimitive(const OpCode: Integer;
+      const HandlerResult: TProxyHandlerResult);
 
     { Расширяет суммарный BBox данными из одного примитива }
     procedure MergeHandlerBBox(const HandlerResult: TProxyHandlerResult);
-
-    { Добавляет текстовый элемент в список TextItems результата }
-    procedure AppendTextItem(const Item: TProxyTextItem);
 
     { Применяет текущую матрицу из стека к вершинам результата
       обработчика (если стек не пуст). }
@@ -163,9 +173,15 @@ type
     constructor Create(const Data: TBytes);
     destructor Destroy; override;
 
-    { Разбирает весь блок Proxy Graphic; возвращает суммарный результат }
+    { Разбирает весь блок Proxy Graphic; возвращает суммарный результат.
+      Вершины внутри Primitives[i].HandlerResult.Vertices принадлежат
+      результату и освобождаются вызывающей стороной через FreeParseResult. }
     function Parse: TProxyGraphicParseResult;
   end;
+
+{ Освобождает память, занятую вершинами всех распаршенных примитивов.
+  Должна вызываться после того, как все Builder-процедуры завершены. }
+procedure FreeParseResult(var ParseResult: TProxyGraphicParseResult);
 
 implementation
 
@@ -194,6 +210,20 @@ const
   { Максимально разумное количество команд в одном блоке }
   MAX_COMMAND_COUNT = 100000;
 
+{ === Вспомогательные функции уровня модуля === }
+
+procedure FreeParseResult(var ParseResult: TProxyGraphicParseResult);
+var
+  I: Integer;
+begin
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].HandlerResult.HasVertices then
+      ParseResult.Primitives[I].HandlerResult.Vertices.done;
+  SetLength(ParseResult.Primitives, 0);
+  ParseResult.PrimitiveCount := 0;
+  ParseResult.BBoxLoaded := False;
+end;
+
 { === TProxyGraphicParser === }
 
 constructor TProxyGraphicParser.Create(const Data: TBytes);
@@ -213,80 +243,40 @@ begin
   inherited Destroy;
 end;
 
-{ Добавляет контур (вершины одного примитива) как отдельный элемент.
-  Каждый примитив хранится в своём контуре для раздельной отрисовки. }
-procedure TProxyGraphicParser.AppendContour(var Src: GDBPoint3DArray;
-  const IsClosed: Boolean; const IsFilled: Boolean; const LineWeight: Integer);
+{ Добавляет распаршенный примитив в результат парсера.
+  Сохраняет OpCode, результат обработчика и текущее состояние
+  атрибутов (слой, цвет, тип линии и т.д.) для последующей передачи
+  в Builder-процедуру этого OpCode. }
+procedure TProxyGraphicParser.AppendPrimitive(const OpCode: Integer;
+  const HandlerResult: TProxyHandlerResult);
 var
   Idx: Integer;
-  ir: itrec;
-  pV: PzePoint3d;
-  FirstV, LastV: TzePoint3d;
-  HasVertex: Boolean;
 begin
-  Idx := Length(FResult.Contours);
-  SetLength(FResult.Contours, Idx + 1);
-  FResult.Contours[Idx].Vertices.init(Src.Count);
-  FResult.Contours[Idx].Closed := IsClosed;
-  FResult.Contours[Idx].Filled := IsFilled;
-  FResult.Contours[Idx].LineWeight := LineWeight;
-  FResult.Contours[Idx].Color := FState.Color;
-  FResult.Contours[Idx].Layer := FState.Layer;
-  FResult.Contours[Idx].Linetype := FState.Linetype;
-  FResult.Contours[Idx].LtScale := FState.LtScale;
-  FResult.Contours[Idx].Thickness := FState.Thickness;
-  FResult.Contours[Idx].TrueColor := FState.TrueColor;
-  HasVertex := False;
-  pV := Src.beginiterate(ir);
-  while pV <> nil do
-  begin
-    if not HasVertex then
-    begin
-      FirstV := pV^;
-      HasVertex := True;
-    end;
-    LastV := pV^;
-    FResult.Contours[Idx].Vertices.PushBackData(pV^);
-    pV := Src.iterate(ir);
-  end;
+  Idx := Length(FResult.Primitives);
+  SetLength(FResult.Primitives, Idx + 1);
+  FResult.Primitives[Idx].OpCode := OpCode;
+  FResult.Primitives[Idx].HandlerResult := HandlerResult;
+  FResult.Primitives[Idx].LineWeight := FState.LineWeight;
+  FResult.Primitives[Idx].Color := FState.Color;
+  FResult.Primitives[Idx].Layer := FState.Layer;
+  FResult.Primitives[Idx].Linetype := FState.Linetype;
+  FResult.Primitives[Idx].LtScale := FState.LtScale;
+  FResult.Primitives[Idx].Thickness := FState.Thickness;
+  FResult.Primitives[Idx].TrueColor := FState.TrueColor;
 
-  if HasVertex then
-    programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: AppendContour[%d] vertices=%d closed=%s filled=%s lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f first=(%.3f,%.3f,%.3f) last=(%.3f,%.3f,%.3f)',
-      [Idx, FResult.Contours[Idx].Vertices.Count,
-       BoolToStr(IsClosed, True), BoolToStr(IsFilled, True), LineWeight,
-       FState.Color, FState.TrueColor, FState.Layer, FState.Linetype,
-       FState.LtScale, FState.Thickness,
-       FirstV.x, FirstV.y, FirstV.z, LastV.x, LastV.y, LastV.z],
-      LM_Info)
-  else
-    programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: AppendContour[%d] empty lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f',
-      [Idx, LineWeight, FState.Color, FState.TrueColor, FState.Layer,
-       FState.Linetype, FState.LtScale, FState.Thickness], LM_Info);
-end;
-
-{ Добавляет текстовый элемент в список TextItems результата }
-procedure TProxyGraphicParser.AppendTextItem(const Item: TProxyTextItem);
-var
-  NewLen: Integer;
-begin
-  NewLen := Length(FResult.TextItems) + 1;
-  SetLength(FResult.TextItems, NewLen);
-  FResult.TextItems[NewLen - 1] := Item;
-  FResult.TextItems[NewLen - 1].LineWeight := FState.LineWeight;
-  FResult.TextItems[NewLen - 1].Color := FState.Color;
-  FResult.TextItems[NewLen - 1].Layer := FState.Layer;
-  FResult.TextItems[NewLen - 1].Linetype := FState.Linetype;
-  FResult.TextItems[NewLen - 1].LtScale := FState.LtScale;
-  FResult.TextItems[NewLen - 1].Thickness := FState.Thickness;
-  FResult.TextItems[NewLen - 1].TrueColor := FState.TrueColor;
   programlog.LogOutFormatStr(
-    'uzeentproxygraphicparser: AppendTextItem[%d] text="%s" height=%.3f widthFactor=%.3f angle=%.3f lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s" ltScale=%.3f thickness=%.3f font="%s"',
-    [NewLen - 1, Item.Text, Item.Height, Item.WidthFactor, Item.Angle,
-     FState.LineWeight, FState.Color, FState.TrueColor, FState.Layer,
-     FState.Linetype, FState.LtScale, FState.Thickness, Item.FontName],
-    LM_Info);
+    'uzeentproxygraphicparser: AppendPrimitive[%d] OpCode=%d' +
+    ' vertices=%d closed=%s filled=%s hasText=%s' +
+    ' lineweight=%d color=%d trueColor=%d layer="%s" linetype="%s"' +
+    ' ltScale=%.3f thickness=%.3f',
+    [Idx, OpCode,
+     HandlerResult.Vertices.Count,
+     BoolToStr(HandlerResult.Closed, True),
+     BoolToStr(HandlerResult.Filled, True),
+     BoolToStr(HandlerResult.HasTextItem, True),
+     FState.LineWeight, FState.Color, FState.TrueColor,
+     FState.Layer, FState.Linetype,
+     FState.LtScale, FState.Thickness], LM_Info);
 end;
 
 { Расширяет суммарный BBox данными из результата обработчика }
@@ -723,21 +713,13 @@ begin
         { Определяем заливку: флаг FFillActive применяется
           к замкнутым контурам (Polygon, Shell и др.).
           Аналогично ezdxf: SetFill(1) → Polygon/Shell = SOLID. }
-        if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0) then
-        begin
-          if FFillActive and HandlerResult.Closed then
-            HandlerResult.Filled := True;
-          AppendContour(HandlerResult.Vertices,
-            HandlerResult.Closed, HandlerResult.Filled,
-            FState.LineWeight);
-          Inc(FResult.ContourCount);
-          HandlerResult.Vertices.done;
-        end;
+        if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0)
+          and FFillActive and HandlerResult.Closed then
+          HandlerResult.Filled := True;
 
-        { Сохраняем текстовый примитив для последующей отрисовки }
-        if HandlerResult.HasTextItem then
-          AppendTextItem(HandlerResult.TextItem);
-
+        { Сохраняем примитив — владение данными (Vertices) переходит к
+          результату парсера и будет освобождено через FreeParseResult. }
+        AppendPrimitive(OpCode, HandlerResult);
         Inc(FResult.PrimitiveCount);
 
         { Сбрасываем флаг заливки после каждого примитива
@@ -749,6 +731,10 @@ begin
         programlog.LogOutFormatStr(
           'uzeentproxygraphicparser: Handler for OpCode=%d returned invalid result',
           [OpCode], LM_Info);
+        { Handler вернул invalid — на всякий случай освобождаем вершины,
+          если они были инициализированы. }
+        if HandlerResult.HasVertices then
+          HandlerResult.Vertices.done;
         SkipDataBytes(CommandSize);
       end;
     end
@@ -779,11 +765,9 @@ function TProxyGraphicParser.Parse: TProxyGraphicParseResult;
 var
   CommandCount, I: Integer;
 begin
-  SetLength(FResult.Contours, 0);
+  SetLength(FResult.Primitives, 0);
   FResult.BBoxLoaded := False;
   FResult.PrimitiveCount := 0;
-  FResult.ContourCount := 0;
-  SetLength(FResult.TextItems, 0);
 
   programlog.LogOutFormatStr(
     'uzeentproxygraphicparser: Parse START (registered handlers: %d)',
@@ -816,8 +800,8 @@ begin
     end;
 
     programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: Parse DONE: primitives=%d contours=%d bbox=%s',
-      [FResult.PrimitiveCount, FResult.ContourCount,
+      'uzeentproxygraphicparser: Parse DONE: primitives=%d bbox=%s',
+      [FResult.PrimitiveCount,
        BoolToStr(FResult.BBoxLoaded, True)], LM_Info);
 
   except

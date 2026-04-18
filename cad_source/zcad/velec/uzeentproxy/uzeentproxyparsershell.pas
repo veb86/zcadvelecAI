@@ -55,6 +55,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   UGDBPoint3DArray,
   uzcLog;
@@ -213,8 +214,9 @@ begin
     CommandSize и перемещает указатель потока. }
 
   HandlerResult.HasVertices := (HandlerResult.Vertices.Count > 0);
-  { Контуры граней замкнуты: первая вершина добавлена в конец }
-  HandlerResult.Closed := True;
+  { Контуры граней уже содержат замыкающие дубликаты первых вершин,
+    поэтому дополнительное замыкание построителем не требуется. }
+  HandlerResult.Closed := False;
   HandlerResult.HasBBox := BBoxInitialized;
   HandlerResult.Valid := True;
 
@@ -223,14 +225,41 @@ begin
     [VertexCount, HandlerResult.Vertices.Count], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы Shell: рёбра концов граней превращаются в
+  GDBObjLine, а при активной заливке — в GDBObjSolid через триангуляцию.
+  Замыкание выполняется уже парсером через дублирующие вершины,
+  поэтому дополнительный замыкающий отрезок не нужен. }
+procedure BuildShellSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  if HandlerResult.Vertices.Count < 2 then
+    Exit;
+
+  if HandlerResult.Filled then
+    BuildSolidFromVertices(Context,
+      HandlerResult.Vertices,
+      Context.OwnerLineWeight);
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=9 (Shell/PolyFace).
-    Shell используется для отображения заполненных областей (стрелки,
-    прямоугольники подложки текста и другие PolyFace-сетки) внутри
-    прокси-объектов. }
+  { Регистрируем обработчик OpCode=9 (Shell/PolyFace) и построитель
+    подпримитивов. Shell используется для отображения заполненных
+    областей (стрелки, прямоугольники подложки текста и другие
+    PolyFace-сетки) внутри прокси-объектов. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     SHELL_OPCODE,
     'Shell/PolyFace',
-    @HandleShell);
+    @HandleShell,
+    @BuildShellSubEntities);
 
 end.

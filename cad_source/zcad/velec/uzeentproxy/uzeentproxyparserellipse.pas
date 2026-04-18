@@ -57,6 +57,7 @@ uses
   Math,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   uzegeometry,
   UGDBPoint3DArray,
@@ -279,13 +280,39 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из тесселированных вершин
+  эллипса или эллиптической дуги. Для замкнутого эллипса добавляется
+  замыкающий отрезок. Заливка, если активна, приводит к созданию
+  солидов через триангуляцию веером. }
+procedure BuildEllipseSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+
+  if HandlerResult.Filled and HandlerResult.Closed then
+    BuildSolidFromVertices(Context,
+      HandlerResult.Vertices,
+      Context.OwnerLineWeight);
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=44 (EllipticArc).
-    Если этот файл исключён из проекта — регистрация не происходит,
-    эллипсы и эллиптические дуги внутри прокси-объектов перестают парситься. }
+  { Регистрируем обработчик OpCode=44 (EllipticArc) и построитель
+    подпримитивов. Если этот файл исключён из проекта — регистрация не
+    происходит, эллипсы и эллиптические дуги внутри прокси-объектов
+    перестают парситься. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     ELLIPSE_OPCODE,
     'EllipticArc',
-    @HandleEllipse);
+    @HandleEllipse,
+    @BuildEllipseSubEntities);
 
 end.

@@ -38,8 +38,10 @@ uses
   uzeentacdproxy,
   uzeentline,
   uzeentproxygraphicparser,
+  uzeentproxymanager,
   uzegeometry,
   uzegeometrytypes,
+  UGDBPoint3DArray,
   // Основной загрузчик DXF
   uzeffdxf,
   // Инфраструктура чертежа
@@ -215,7 +217,7 @@ begin
     Result[I] := StrToInt('$' + Copy(Hex, I * 2 + 1, 2));
 end;
 
-function ContourHasSegment(const Contour: TProxyContour;
+function PrimitiveHasSegment(const Vertices: GDBPoint3DArray;
   const X1, Y1, X2, Y2: Double): Boolean;
 var
   I: Integer;
@@ -224,10 +226,12 @@ const
   EPS = 1e-6;
 begin
   Result := False;
-  for I := 0 to Contour.Vertices.Count - 2 do
+  if Vertices.Count < 2 then
+    Exit;
+  for I := 0 to Vertices.Count - 2 do
   begin
-    P1 := Contour.Vertices.getDataMutable(I)^;
-    P2 := Contour.Vertices.getDataMutable(I + 1)^;
+    P1 := Vertices.getDataMutable(I)^;
+    P2 := Vertices.getDataMutable(I + 1)^;
     if SameValue(P1.x, X1, EPS) and SameValue(P1.y, Y1, EPS)
       and SameValue(P2.x, X2, EPS) and SameValue(P2.y, Y2, EPS) then
       Exit(True);
@@ -344,22 +348,22 @@ begin
     Parser.Free;
   end;
 
-  CheckEquals(1, ParseResult.ContourCount,
-    'Тестовый proxy graphic должен содержать один контур');
-  CheckEquals(60, ParseResult.Contours[0].LineWeight,
-    'Контур должен хранить вес линии для детального лога');
-  CheckEquals(7, ParseResult.Contours[0].Color,
-    'Контур должен хранить текущий цвет');
-  CheckEquals(1122867, ParseResult.Contours[0].TrueColor,
-    'Контур должен хранить текущий true color');
-  CheckEquals('5', ParseResult.Contours[0].Layer,
-    'Контур должен хранить индекс слоя из proxy graphic');
-  CheckEquals('3', ParseResult.Contours[0].Linetype,
-    'Контур должен хранить индекс типа линии из proxy graphic');
-  CheckEquals(2.5, ParseResult.Contours[0].LtScale, 1e-9,
-    'Контур должен хранить масштаб типа линии');
-  CheckEquals(1.25, ParseResult.Contours[0].Thickness, 1e-9,
-    'Контур должен хранить толщину');
+  CheckEquals(1, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать один примитив');
+  CheckEquals(60, ParseResult.Primitives[0].LineWeight,
+    'Примитив должен хранить вес линии для детального лога');
+  CheckEquals(7, ParseResult.Primitives[0].Color,
+    'Примитив должен хранить текущий цвет');
+  CheckEquals(1122867, ParseResult.Primitives[0].TrueColor,
+    'Примитив должен хранить текущий true color');
+  CheckEquals('5', ParseResult.Primitives[0].Layer,
+    'Примитив должен хранить индекс слоя из proxy graphic');
+  CheckEquals('3', ParseResult.Primitives[0].Linetype,
+    'Примитив должен хранить индекс типа линии из proxy graphic');
+  CheckEquals(2.5, ParseResult.Primitives[0].LtScale, 1e-9,
+    'Примитив должен хранить масштаб типа линии');
+  CheckEquals(1.25, ParseResult.Primitives[0].Thickness, 1e-9,
+    'Примитив должен хранить толщину');
 end;
 
 procedure TProxyEntityLoadTest.ProxyGraphicDefaultLineweightIsByLayer;
@@ -379,11 +383,11 @@ begin
     Parser.Free;
   end;
 
-  Check(ParseResult.ContourCount > 0,
-    'Proxy graphic mleaderblock.dxf должен содержать контуры');
-  for I := 0 to High(ParseResult.Contours) do
-    CheckEquals(LnWtByLayer, ParseResult.Contours[I].LineWeight,
-      'Контуры без явного SetLineweight должны сохранять LineWeight=ByLayer');
+  Check(Length(ParseResult.Primitives) > 0,
+    'Proxy graphic mleaderblock.dxf должен содержать примитивы');
+  for I := 0 to High(ParseResult.Primitives) do
+    CheckEquals(LnWtByLayer, ParseResult.Primitives[I].LineWeight,
+      'Примитивы без явного SetLineweight должны сохранять LineWeight=ByLayer');
 end;
 
 { Проверяет, что кастомная сущность SPDSPOLYMORPHMARK загружается как прокси-объект.
@@ -447,10 +451,12 @@ begin
   end;
 
   FoundShelf := False;
-  for I := 0 to High(ParseResult.Contours) do
-    if ContourHasSegment(ParseResult.Contours[I],
-      1097.291017048187, 1381.615369802081,
-      1113.291017048187, 1381.615369802081) then
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].HandlerResult.HasVertices
+      and PrimitiveHasSegment(
+        ParseResult.Primitives[I].HandlerResult.Vertices,
+        1097.291017048187, 1381.615369802081,
+        1113.291017048187, 1381.615369802081) then
     begin
       FoundShelf := True;
       Break;
@@ -526,14 +532,14 @@ begin
   end;
 
   ExplicitLineweightCount := 0;
-  for I := 0 to High(ParseResult.Contours) do
-    if ParseResult.Contours[I].LineWeight = 60 then
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].LineWeight = 60 then
       Inc(ExplicitLineweightCount);
 
-  CheckEquals(4, ParseResult.ContourCount,
-    'Proxy graphic SPDSDOOR должен содержать 4 контура двери');
-  CheckEquals(ParseResult.ContourCount, ExplicitLineweightCount,
-    'Каждый контур SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
+  CheckEquals(4, Length(ParseResult.Primitives),
+    'Proxy graphic SPDSDOOR должен содержать 4 примитива двери');
+  CheckEquals(Length(ParseResult.Primitives), ExplicitLineweightCount,
+    'Каждый примитив SPDSDOOR должен сохранять явный вес линии 0.60 мм (DXF 60)');
 end;
 
 procedure TProxyEntityLoadTest.SpdsDoorProxyUsesGraphicBBoxForGripCenter;
