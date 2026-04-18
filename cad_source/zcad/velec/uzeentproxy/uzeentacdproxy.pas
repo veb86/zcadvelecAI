@@ -490,11 +490,23 @@ var
 begin
   InsertPt := ToLocalPoint(Item.Insert);
 
-  { Получаем стиль текста }
+  { Получаем стиль текста.
+    Внутри proxy-объекта сохранено имя файла шрифта (например, "times.ttf"),
+    а не имя стиля. Поэтому сначала пробуем найти стиль, чей FontFile
+    совпадает с этим именем файла — тогда разные строки с разными шрифтами
+    получат соответствующие стили из таблицы стилей чертежа.
+    Для обратной совместимости и исключения ситуаций, когда в потоке
+    случайно оказалось имя стиля, дополнительно проверяем FindStyle
+    по имени. В крайнем случае используется стиль "Standard". }
   TXTStyle := nil;
   if Item.FontName <> '' then
-    TXTStyle := drawing.GetTextStyleTable^.FindStyle(
-      Item.FontName, False);
+  begin
+    TXTStyle := drawing.GetTextStyleTable^.FindStyleByFont(
+      Item.FontName);
+    if TXTStyle = nil then
+      TXTStyle := drawing.GetTextStyleTable^.FindStyle(
+        Item.FontName, False);
+  end;
   if TXTStyle = nil then
     TXTStyle := drawing.GetTextStyleTable^.FindStyle(
       'Standard', False);
@@ -538,8 +550,10 @@ begin
   pText^.FormatEntity(drawing, DC);
 
   programlog.LogOutFormatStr(
-    'uzeentacdproxy: CreateTextSubEntity "%s" at (%.3f,%.3f)',
-    [Item.Text, InsertPt.x, InsertPt.y], LM_Info);
+    'uzeentacdproxy: CreateTextSubEntity "%s" at (%.3f,%.3f) font="%s"'
+    + ' style="%s"',
+    [Item.Text, InsertPt.x, InsertPt.y,
+     Item.FontName, TXTStyle^.Name], LM_Info);
 end;
 
 { Разбирает FProxyDataBytes и создаёт подпримитивы.

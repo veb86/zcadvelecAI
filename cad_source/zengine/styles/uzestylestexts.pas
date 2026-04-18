@@ -22,7 +22,7 @@ unit uzestylestexts;
 interface
 uses LCLProc,uzbpaths,uzefontmanager,sysutils,
      uzefont,uzestrconsts,UGDBNamedObjectsArray,uzeNamedObject,
-     uzeLogIntf;
+     uzeLogIntf,gzctnrVectorTypes;
 type
 
   GDBTextStyleProp=record
@@ -57,6 +57,11 @@ GDBTextStyleArray= object(GDBNamedObjectsArray<PGDBTextStyle,GDBTextStyle>)
                     function setstyle(const StyleName,AFontFile,AFontFamily:String;tp:GDBTextStyleProp;USedInLT:Boolean):PGDBTextStyle;
                     procedure internalsetstyle(var style:GDBTextStyle;const AFontFile,AFontFamily:String;tp:GDBTextStyleProp;USedInLT:Boolean;const LogProc:TZELogProc=nil);
                     function FindStyle(const StyleName:String;ult:Boolean):PGDBTextStyle;
+                    { Поиск стиля текста по имени файла шрифта (FontFile).
+                      Используется при разборе proxy-объектов, где сохранено
+                      имя файла шрифта (например, "times.ttf"), а не имя стиля.
+                      Возвращает nil, если стиль с таким FontFile не найден. }
+                    function FindStyleByFont(const FontFileName:String):PGDBTextStyle;
                     procedure freeelement(PItem:PT);virtual;
                     function CorrectNilledTextStyle(pts:PGDBTextStyle):PGDBTextStyle;
               end;
@@ -142,6 +147,32 @@ begin
   internalsetstyle(ts^,AFontFile,AFontFamily,tp,USedInLT,LogProc);
   result:=pointer(getDataMutable(PushBackData(ts)));
 end;
+{ Поиск стиля текста по имени файла шрифта (FontFile).
+  Используется при разборе proxy-объектов: в бинарном потоке сохранено
+  имя файла шрифта ("times.ttf"), а не имя стиля ("newtext").
+  Сравнение выполняется без учёта регистра. Стили-служебные элементы
+  типов линий (UsedInLTYPE=true) в поиске пропускаются. }
+function GDBTextStyleArray.FindStyleByFont(const FontFileName:String):PGDBTextStyle;
+var
+  pStyle:PGDBTextStyle;
+  ir:itrec;
+begin
+  result:=nil;
+  if FontFileName='' then Exit;
+  pStyle:=beginiterate(ir);
+  while pStyle<>nil do
+  begin
+    if (not pStyle^.UsedInLTYPE)
+      and (Length(pStyle^.FontFile)=Length(FontFileName))
+      and (CompareText(pStyle^.FontFile,FontFileName)=0) then
+    begin
+      result:=pStyle;
+      Exit;
+    end;
+    pStyle:=iterate(ir);
+  end;
+end;
+
 function GDBTextStyleArray.FindStyle;
 begin
 
