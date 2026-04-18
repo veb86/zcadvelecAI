@@ -107,8 +107,8 @@ type
 
     Наследуется от GDBObjComplex — составной примитив с контейнером
     подпримитивов. Парсит бинарный Proxy Graphic из DXF, создаёт
-    подпримитивы (линии, окружности, дуги, солиды, текст) и добавляет
-    их в ConstObjArray. Отрисовка делегируется подпримитивам. }
+    подпримитивы (линии, окружности, дуги, солиды, многострочный текст)
+    и добавляет их в ConstObjArray. Отрисовка делегируется подпримитивам. }
   GDBObjAcdProxy = object(GDBObjComplex)
   private
     { Сырые байты Proxy Graphic (код 310 из DXF) }
@@ -221,7 +221,7 @@ function AllocAndInitAcdProxy(
 implementation
 
 uses
-  uzeenttext,
+  uzeentmtext,
   uzeentabstracttext,
   uzeutils;
 
@@ -479,22 +479,26 @@ begin
   end;
 end;
 
-{ Создаёт подпримитив-текст из TProxyTextItem }
+{ Создаёт подпримитив многострочного текста (MTEXT) из TProxyTextItem.
+  Текст внутри таблиц и других proxy-объектов хранится как многострочный
+  примитив (GDBObjMText), что позволяет корректно отображать форматирование
+  (шрифты, стили, выравнивание) и многострочное содержимое. }
 procedure GDBObjAcdProxy.CreateTextSubEntity(
   const Item: TProxyTextItem;
   var drawing: TDrawingDef; var DC: TDrawContext);
 var
-  pText: PGDBObjText;
+  pMText: PGDBObjMText;
   TXTStyle: PGDBTextStyle;
   InsertPt: TzePoint3d;
 begin
   InsertPt := ToLocalPoint(Item.Insert);
 
   { Получаем стиль текста.
-    Внутри proxy-объекта сохранено имя файла шрифта (например, "times.ttf"),
-    а не имя стиля. Поэтому сначала пробуем найти стиль, чей FontFile
-    совпадает с этим именем файла — тогда разные строки с разными шрифтами
-    получат соответствующие стили из таблицы стилей чертежа.
+    Внутри proxy-объекта сохранено имя файла шрифта (например, "times.ttf"
+    или "txt.shx"), а не имя стиля. Поэтому сначала пробуем найти стиль,
+    чей FontFile совпадает с этим именем файла — тогда разные строки с
+    разными шрифтами получат соответствующие стили из таблицы стилей
+    чертежа (сравнение с учётом и без учёта расширения).
     Для обратной совместимости и исключения ситуаций, когда в потоке
     случайно оказалось имя стиля, дополнительно проверяем FindStyle
     по имени. В крайнем случае используется стиль "Standard". }
@@ -522,36 +526,46 @@ begin
     Exit;
   end;
 
-  pText := pointer(
-    ConstObjArray.CreateInitObj(GDBtextID, @self));
-  if pText = nil then
+  { Создаём MTEXT-подпримитив: внутри таблиц и сложных proxy-объектов
+    текст хранится как многострочный, что позволяет обрабатывать
+    форматирование и переносы строк корректно. }
+  pMText := pointer(
+    ConstObjArray.CreateInitObj(GDBMtextID, @self));
+  if pMText = nil then
     Exit;
 
-  pText^.vp.Layer := vp.Layer;
-  pText^.vp.LineType := vp.LineType;
-  pText^.vp.LineWeight := vp.LineWeight;
-  pText^.vp.Color := vp.Color;
-  pText^.Content := Item.Text;
-  pText^.TXTStyle := TXTStyle;
-  pText^.Local.P_insert := InsertPt;
-  pText^.textprop.size := Item.Height;
-  pText^.textprop.wfactor := Item.WidthFactor;
-  pText^.textprop.oblique := 0;
-  pText^.textprop.justify := jsbl;
+  pMText^.vp.Layer := vp.Layer;
+  pMText^.vp.LineType := vp.LineType;
+  pMText^.vp.LineWeight := vp.LineWeight;
+  pMText^.vp.Color := vp.Color;
+  { Template — шаблон с форматированием, при пустом Content он будет
+    использован как исходный текст в FormatContent. }
+  pMText^.Template := Item.Text;
+  pMText^.TXTStyle := TXTStyle;
+  pMText^.Local.P_insert := InsertPt;
+  pMText^.textprop.size := Item.Height;
+  pMText^.textprop.wfactor := Item.WidthFactor;
+  pMText^.textprop.oblique := 0;
+  pMText^.textprop.justify := jsbl;
+  { Ширина 0 отключает принудительный перенос строк — MTEXT
+    переносит только по явным символам #10. }
+  pMText^.Width := 0;
+  pMText^.linespacef := 1;
+  pMText^.WrapMode := mwmByWord;
 
   { Устанавливаем поворот через базис OX }
   if Abs(Item.Angle) > 1e-10 then
   begin
-    pText^.Local.basis.ox.x := Cos(Item.Angle);
-    pText^.Local.basis.ox.y := Sin(Item.Angle);
-    pText^.Local.basis.ox.z := 0;
+    pMText^.Local.basis.ox.x := Cos(Item.Angle);
+    pMText^.Local.basis.ox.y := Sin(Item.Angle);
+    pMText^.Local.basis.ox.z := 0;
   end;
 
-  pText^.FormatEntity(drawing, DC);
+  pMText^.FormatEntity(drawing, DC);
 
   programlog.LogOutFormatStr(
-    'uzeentacdproxy: CreateTextSubEntity "%s" at (%.3f,%.3f) font="%s"'
-    + ' style="%s"',
+    'uzeentacdproxy: CreateTextSubEntity MTEXT "%s" at (%.3f,%.3f)'
+    + ' font="%s" style="%s"',
     [Item.Text, InsertPt.x, InsertPt.y,
      Item.FontName, TXTStyle^.Name], LM_Info);
 end;
@@ -560,7 +574,7 @@ end;
   Контуры из парсера преобразуются:
   - незаполненный контур → серия линий (GDBObjLine)
   - заполненный контур → солиды (GDBObjSolid)
-  - текстовые элементы → GDBObjText }
+  - текстовые элементы → GDBObjMText (многострочный текст) }
 procedure GDBObjAcdProxy.BuildSubEntities(
   var drawing: TDrawingDef; var DC: TDrawContext);
 var

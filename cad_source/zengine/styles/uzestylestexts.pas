@@ -147,27 +147,54 @@ begin
   internalsetstyle(ts^,AFontFile,AFontFamily,tp,USedInLT,LogProc);
   result:=pointer(getDataMutable(PushBackData(ts)));
 end;
+{ Возвращает имя файла без расширения.
+  Используется для сравнения шрифтов, когда в одном источнике хранится
+  полное имя файла ("times.ttf"), а в другом только базовое имя ("times"
+  или "txt"). }
+function StripFontExtension(const FontFileName:String):String;
+begin
+  Result:=ChangeFileExt(FontFileName,'');
+end;
+
 { Поиск стиля текста по имени файла шрифта (FontFile).
   Используется при разборе proxy-объектов: в бинарном потоке сохранено
-  имя файла шрифта ("times.ttf"), а не имя стиля ("newtext").
-  Сравнение выполняется без учёта регистра. Стили-служебные элементы
-  типов линий (UsedInLTYPE=true) в поиске пропускаются. }
+  имя файла шрифта ("times.ttf" или "txt.shx"), а в таблице стилей
+  чертежа — либо то же имя, либо имя без расширения ("txt"). Поэтому
+  сначала выполняется точное сравнение, затем — сравнение базовых имён
+  без расширений. Сравнение выполняется без учёта регистра.
+  Стили-служебные элементы типов линий (UsedInLTYPE=true) пропускаются. }
 function GDBTextStyleArray.FindStyleByFont(const FontFileName:String):PGDBTextStyle;
 var
   pStyle:PGDBTextStyle;
   ir:itrec;
+  FontBase,StyleBase:String;
 begin
   result:=nil;
   if FontFileName='' then Exit;
+  FontBase:=StripFontExtension(FontFileName);
   pStyle:=beginiterate(ir);
   while pStyle<>nil do
   begin
-    if (not pStyle^.UsedInLTYPE)
-      and (Length(pStyle^.FontFile)=Length(FontFileName))
-      and (CompareText(pStyle^.FontFile,FontFileName)=0) then
+    if not pStyle^.UsedInLTYPE then
     begin
-      result:=pStyle;
-      Exit;
+      { Точное сравнение имён файлов }
+      if (Length(pStyle^.FontFile)=Length(FontFileName))
+        and (CompareText(pStyle^.FontFile,FontFileName)=0) then
+      begin
+        result:=pStyle;
+        Exit;
+      end;
+      { Сравнение базовых имён (без расширения) — AutoCAD в proxy
+        graphic часто пишет "txt.shx", тогда как в таблице стилей
+        имя хранится как "txt". }
+      StyleBase:=StripFontExtension(pStyle^.FontFile);
+      if (StyleBase<>'') and (FontBase<>'')
+        and (Length(StyleBase)=Length(FontBase))
+        and (CompareText(StyleBase,FontBase)=0) then
+      begin
+        result:=pStyle;
+        Exit;
+      end;
     end;
     pStyle:=iterate(ir);
   end;
