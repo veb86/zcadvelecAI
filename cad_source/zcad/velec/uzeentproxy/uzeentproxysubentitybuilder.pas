@@ -165,8 +165,8 @@ begin
   if (SubEnt <> nil)
     and (Context.Drawing <> nil) and (Context.DC <> nil) then
     SubEnt^.FormatEntity(
-      PDrawingDef(Context.Drawing)^,
-      PDrawContext(Context.DC)^);
+      PTDrawingDef(Context.Drawing)^,
+      PTDrawContext(Context.DC)^);
 end;
 
 procedure BuildLinesFromVertices(const Context: TProxySubEntityContext;
@@ -256,8 +256,8 @@ begin
     if (SubEnt <> nil)
       and (Context.Drawing <> nil) and (Context.DC <> nil) then
       SubEnt^.FormatEntity(
-        PDrawingDef(Context.Drawing)^,
-        PDrawContext(Context.DC)^);
+        PTDrawingDef(Context.Drawing)^,
+        PTDrawContext(Context.DC)^);
   end;
 end;
 
