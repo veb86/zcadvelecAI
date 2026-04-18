@@ -115,6 +115,7 @@ uses
   uzestyleslinetypes,
   uzepalette,
   uzeconsts,
+  gzctnrVectorTypes,
   uzbLogIntf,
   uzclog;
 
