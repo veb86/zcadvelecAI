@@ -38,6 +38,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   uzcLog;
 
@@ -116,10 +117,31 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из вершин полилинии с общей
+  нормалью. Полилиния рассматривается как незамкнутая, пока явно не указано
+  обратное (нормаль на замкнутость не влияет). }
+procedure BuildPolylineWithNormalsSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  if HandlerResult.Vertices.Count < POLYLINE_MIN_VERTEX_COUNT then
+    Exit;
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
   TProxyOpCodeDispatcher.RegisterOpCode(
     POLYLINE_WITH_NORMALS_OPCODE,
     'PolylineWithNormals',
-    @HandlePolylineWithNormals);
+    @HandlePolylineWithNormals,
+    @BuildPolylineWithNormalsSubEntities);
 
 end.

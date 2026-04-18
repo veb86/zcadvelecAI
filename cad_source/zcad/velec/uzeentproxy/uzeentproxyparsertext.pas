@@ -73,6 +73,18 @@ uses
   Math,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
+  uzeentmtext,
+  uzeentity,
+  uzeentgenericsubentry,
+  UGDBVisibleOpenArray,
+  uzestyleslayers,
+  uzestyleslinetypes,
+  uzestylestexts,
+  uzedrawingdef,
+  uzgldrawcontext,
+  uzepalette,
+  uzeTypes,
   uzegeometrytypes,
   uzegeometry,
   UGDBPoint3DArray,
@@ -303,18 +315,119 @@ begin
     [Angle], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Подбирает стиль текста для TextItem.
+  Сначала пробует найти стиль по имени файла шрифта, затем по имени,
+  потом стандартный стиль, в крайнем случае — первый стиль таблицы. }
+function ResolveTextStyle(var Drawing: TDrawingDef;
+  const FontName: String): PGDBTextStyle;
+begin
+  Result := nil;
+  if FontName <> '' then
+  begin
+    Result := Drawing.GetTextStyleTable^.FindStyleByFont(FontName);
+    if Result = nil then
+      Result := Drawing.GetTextStyleTable^.FindStyle(FontName, False);
+  end;
+  if Result = nil then
+    Result := Drawing.GetTextStyleTable^.FindStyle('Standard', False);
+  if Result = nil then
+    Result := PGDBTextStyle(Drawing.GetTextStyleTable^.getDataMutable(0));
+end;
+
+{ Создаёт подпримитив GDBObjMText из TProxyTextItem.
+  Стиль подбирается внутри парсера (а не в прокси-объекте), чтобы
+  сохранить принцип: модуль-парсер примитива отвечает и за создание
+  соответствующего подпримитива. }
+procedure BuildTextSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+var
+  pMText: PGDBObjMText;
+  TxtStyle: PGDBTextStyle;
+  InsertPt: TzePoint3d;
+  Drawing: PDrawingDef;
+  DC: PDrawContext;
+begin
+  if not HandlerResult.HasTextItem then
+    Exit;
+  if (Context.OwnerEntity = nil) or (Context.SubEntitiesArray = nil) then
+    Exit;
+  if (Context.Drawing = nil) or (Context.DC = nil) then
+    Exit;
+
+  Drawing := PDrawingDef(Context.Drawing);
+  DC := PDrawContext(Context.DC);
+
+  TxtStyle := ResolveTextStyle(Drawing^, HandlerResult.TextItem.FontName);
+  if TxtStyle = nil then
+  begin
+    programlog.LogOutFormatStr(
+      'uzeentproxyparsertext: BuildTextSubEntities no style, skipping',
+      [], LM_Info);
+    Exit;
+  end;
+
+  InsertPt := ProxyToLocalPoint(Context, HandlerResult.TextItem.Insert);
+
+  pMText := pointer(
+    PGDBObjEntityOpenArray(Context.SubEntitiesArray)^.CreateInitObj(
+      GDBMTextID, Context.OwnerEntity));
+  if pMText = nil then
+    Exit;
+
+  pMText^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
+  pMText^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
+  pMText^.vp.LineWeight := Context.OwnerLineWeight;
+  pMText^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+
+  { Template — шаблон с форматированием, при пустом Content он будет
+    использован как исходный текст в FormatContent. }
+  pMText^.Template := HandlerResult.TextItem.Text;
+  pMText^.TXTStyle := TxtStyle;
+  pMText^.Local.P_insert := InsertPt;
+  pMText^.textprop.size := HandlerResult.TextItem.Height;
+  pMText^.textprop.wfactor := HandlerResult.TextItem.WidthFactor;
+  pMText^.textprop.oblique := 0;
+  pMText^.textprop.justify := jsbl;
+  { Ширина 0 отключает принудительный перенос строк — MTEXT
+    переносит только по явным символам #10. }
+  pMText^.Width := 0;
+  pMText^.linespacef := 1;
+  pMText^.WrapMode := mwmByWord;
+
+  { Поворот через базис OX }
+  if Abs(HandlerResult.TextItem.Angle) > 1e-10 then
+  begin
+    pMText^.Local.basis.ox.x := Cos(HandlerResult.TextItem.Angle);
+    pMText^.Local.basis.ox.y := Sin(HandlerResult.TextItem.Angle);
+    pMText^.Local.basis.ox.z := 0;
+  end;
+
+  pMText^.FormatEntity(Drawing^, DC^);
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparsertext: BuildTextSubEntities MTEXT "%s" at (%.3f,%.3f)' +
+    ' font="%s" style="%s"',
+    [HandlerResult.TextItem.Text, InsertPt.x, InsertPt.y,
+     HandlerResult.TextItem.FontName, TxtStyle^.Name], LM_Info);
+end;
+
 initialization
-  { Регистрируем оба обработчика текста.
+  { Регистрируем оба обработчика текста с общим построителем подпримитивов.
     Исключение этого файла из проекта полностью отключает парсинг
     текстовых примитивов внутри прокси-объектов. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     TEXT_OPCODE,
     'Text1 (ANSI)',
-    @HandleText);
+    @HandleText,
+    @BuildTextSubEntities);
 
   TProxyOpCodeDispatcher.RegisterOpCode(
     UNICODE_TEXT2_OPCODE,
     'UnicodeText2',
-    @HandleUnicodeText2);
+    @HandleUnicodeText2,
+    @BuildTextSubEntities);
 
 end.

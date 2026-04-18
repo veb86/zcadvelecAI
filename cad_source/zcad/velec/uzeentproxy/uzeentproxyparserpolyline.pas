@@ -52,6 +52,7 @@ uses
   SysUtils,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   UGDBPoint3DArray,
   uzcLog;
@@ -144,13 +145,36 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из вершин полилинии.
+  Каждая пара соседних вершин превращается в отдельный GDBObjLine
+  с локальными координатами относительно ручки прокси-объекта.
+  Если контур замкнут — добавляется замыкающий отрезок. }
+procedure BuildPolylineSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  if HandlerResult.Vertices.Count < POLYLINE_MIN_VERTEX_COUNT then
+    Exit;
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=6 (Polyline / Line).
-    Если этот файл исключён из проекта — регистрация не происходит,
-    полилинии и линии внутри прокси-объектов перестают парситься. }
+  { Регистрируем обработчик OpCode=6 (Polyline / Line) и построитель
+    подпримитивов. Если этот файл исключён из проекта — регистрация не
+    происходит, полилинии и линии внутри прокси-объектов перестают
+    парситься, а подпримитивы из них не создаются. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     POLYLINE_OPCODE,
     'Polyline/Line',
-    @HandlePolyline);
+    @HandlePolyline,
+    @BuildPolylineSubEntities);
 
 end.

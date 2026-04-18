@@ -55,6 +55,7 @@ uses
   Math,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   uzegeometry,
   UGDBPoint3DArray,
@@ -250,13 +251,30 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из тесселированных вершин
+  дуги. Дуга — открытый контур (не замыкается). }
+procedure BuildArcSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    False,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=4 (CircularArc).
-    Если этот файл исключён из проекта — регистрация не происходит,
-    дуги внутри прокси-объектов перестают парситься. }
+  { Регистрируем обработчик OpCode=4 (CircularArc) и построитель
+    подпримитивов. Если этот файл исключён из проекта — регистрация не
+    происходит, дуги внутри прокси-объектов перестают парситься. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     ARC_OPCODE,
     'CircularArc',
-    @HandleArc);
+    @HandleArc,
+    @BuildArcSubEntities);
 
 end.

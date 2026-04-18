@@ -53,6 +53,7 @@ uses
   Math,
   uzeentproxystream,
   uzeentproxymanager,
+  uzeentproxysubentitybuilder,
   uzegeometrytypes,
   uzegeometry,
   UGDBPoint3DArray,
@@ -195,14 +196,40 @@ begin
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
+{ --- Построитель подпримитивов --- }
+
+{ Создаёт подпримитивы-отрезки (GDBObjLine) из тесселированных вершин
+  окружности. Круг — замкнутый контур, поэтому строится и замыкающий
+  отрезок (последняя → первая вершина).
+  Если над окружностью была активна заливка — строятся подпримитивы
+  GDBObjSolid через триангуляцию веером. }
+procedure BuildCircleSubEntities(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+begin
+  if not HandlerResult.HasVertices then
+    Exit;
+
+  if HandlerResult.Filled then
+    BuildSolidFromVertices(Context,
+      HandlerResult.Vertices,
+      Context.OwnerLineWeight);
+
+  BuildLinesFromVertices(Context,
+    HandlerResult.Vertices,
+    HandlerResult.Closed,
+    Context.OwnerLineWeight);
+end;
+
 initialization
-  { Регистрируем обработчик OpCode=2 (Circle).
+  { Регистрируем обработчик OpCode=2 (Circle) и построитель подпримитивов.
     Если этот файл исключён из проекта — регистрация не происходит,
     круги внутри прокси-объектов перестают парситься без изменений в
     главном модуле. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     CIRCLE_OPCODE,
     'Circle',
-    @HandleCircle);
+    @HandleCircle,
+    @BuildCircleSubEntities);
 
 end.
