@@ -134,7 +134,7 @@ begin
   BuildLinesFromVertices(Context,
     HandlerResult.Vertices,
     HandlerResult.Closed,
-    Context.OwnerLineWeight);
+    Context.PrimitiveLineWeight);
 end;
 
 initialization

@@ -381,7 +381,10 @@ begin
 
   pMText^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
   pMText^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
-  pMText^.vp.LineWeight := Context.OwnerLineWeight;
+  { Применяем вес линии текущего примитива (с откатом на вес владельца
+    для значений ByLayer/ByBlock/ByLwDefault). }
+  pMText^.vp.LineWeight :=
+    ResolveLineWeight(Context, Context.PrimitiveLineWeight);
   pMText^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
 
   { Template — шаблон с форматированием, при пустом Content он будет

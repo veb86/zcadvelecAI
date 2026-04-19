@@ -385,6 +385,9 @@ begin
   Result.OwnerLineType    := vp.LineType;
   Result.OwnerLineWeight  := vp.LineWeight;
   Result.OwnerColor       := Integer(vp.Color);
+  { По умолчанию — вес владельца; реальный вес каждого примитива
+    подставляется в BuildSubEntities на каждой итерации цикла. }
+  Result.PrimitiveLineWeight := vp.LineWeight;
   Result.GripOffset       := FProxyGripOffset;
 end;
 
@@ -447,6 +450,15 @@ begin
     BuiltCount := 0;
     for I := 0 to High(ParseResult.Primitives) do
     begin
+      { Подставляем вес линии, зафиксированный парсером для конкретного
+        примитива (SetLineweight OpCode=23 из потока Proxy Graphic).
+        Без этого все подпримитивы получали бы одинаковый вес владельца
+        прокси-объекта, игнорируя значения, заданные внутри графики. }
+      Context.PrimitiveLineWeight := ParseResult.Primitives[I].LineWeight;
+      programlog.LogOutFormatStr(
+        'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d',
+        [I, ParseResult.Primitives[I].OpCode,
+         ParseResult.Primitives[I].LineWeight], LM_Info);
       if TProxyOpCodeDispatcher.BuildSubEntities(
         ParseResult.Primitives[I].OpCode,
         ParseResult.Primitives[I].HandlerResult,
