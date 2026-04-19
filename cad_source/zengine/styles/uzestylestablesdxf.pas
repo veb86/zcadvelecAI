@@ -333,9 +333,9 @@ begin
     Value := Trim(ObjectLines[I + 1]);
 
     { Логируем каждый считанный параметр }
-    programlog.LogOutFormatStr(
-      'TableStyle "%s": code=%d value=%s',
-      [StyleName, Code, Value], LM_Info);
+    //programlog.LogOutFormatStr(
+    //  'TableStyle "%s": code=%d value=%s',
+    //  [StyleName, Code, Value], LM_Info);
 
     { Обрабатываем блок ACAD_XDICTIONARY: сохраняем хэндл расширенного словаря }
     if (Code = 102) and (UpperCase(Copy(Value, 1, 17)) = '{ACAD_XDICTIONARY') then
@@ -500,9 +500,9 @@ begin
             StyleName := StyleNameByHandle.Values[UpperCase(ObjHandle)];
             if StyleName <> '' then
             begin
-              programlog.LogOutFormatStr(
-                'uzestylestablesdxf: обработка стиля "%s" хэндл=%s',
-                [StyleName, ObjHandle], LM_Info);
+              //programlog.LogOutFormatStr(
+              //  'uzestylestablesdxf: обработка стиля "%s" хэндл=%s',
+              //  [StyleName, ObjHandle], LM_Info);
               Style := TableStyleTable.AddStyle(StyleName);
               if Style <> nil then
               begin

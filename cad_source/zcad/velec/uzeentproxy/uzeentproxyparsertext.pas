@@ -87,6 +87,8 @@ uses
   uzeTypes,
   uzegeometrytypes,
   uzegeometry,
+  uzeconsts,
+  uzeentabstracttext,
   UGDBPoint3DArray,
   uzcLog;
 
@@ -347,8 +349,8 @@ var
   pMText: PGDBObjMText;
   TxtStyle: PGDBTextStyle;
   InsertPt: TzePoint3d;
-  Drawing: PDrawingDef;
-  DC: PDrawContext;
+  Drawing: PTDrawingDef;
+  DC: PTDrawContext;
 begin
   if not HandlerResult.HasTextItem then
     Exit;
@@ -357,8 +359,8 @@ begin
   if (Context.Drawing = nil) or (Context.DC = nil) then
     Exit;
 
-  Drawing := PDrawingDef(Context.Drawing);
-  DC := PDrawContext(Context.DC);
+  Drawing := PTDrawingDef(Context.Drawing);
+  DC := PTDrawContext(Context.DC);
 
   TxtStyle := ResolveTextStyle(Drawing^, HandlerResult.TextItem.FontName);
   if TxtStyle = nil then
