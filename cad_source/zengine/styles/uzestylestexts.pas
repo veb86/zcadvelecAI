@@ -62,6 +62,13 @@ GDBTextStyleArray= object(GDBNamedObjectsArray<PGDBTextStyle,GDBTextStyle>)
                       имя файла шрифта (например, "times.ttf"), а не имя стиля.
                       Возвращает nil, если стиль с таким FontFile не найден. }
                     function FindStyleByFont(const FontFileName:String):PGDBTextStyle;
+                    { Поиск стиля текста по имени typeface (FontFamily).
+                      Используется при разборе proxy-объектов (OpCode=38
+                      UnicodeText2), где сохранено читаемое имя шрифта
+                      ("Times New Roman"), а в таблице стилей это значение
+                      хранится в поле FontFamily (группа 1000 расширенных
+                      данных). Возвращает nil, если стиль не найден. }
+                    function FindStyleByTypeface(const TypefaceName:String):PGDBTextStyle;
                     procedure freeelement(PItem:PT);virtual;
                     function CorrectNilledTextStyle(pts:PGDBTextStyle):PGDBTextStyle;
               end;
@@ -196,6 +203,35 @@ begin
         Exit;
       end;
     end;
+    pStyle:=iterate(ir);
+  end;
+end;
+
+{ Поиск стиля по имени typeface (FontFamily в GDBTextStyle).
+  Используется при разборе proxy-объектов OpCode=38 (UnicodeText2), где
+  AutoCAD сохраняет человекочитаемое имя шрифта (например "Times New Roman")
+  в поле TypeFace. В таблице стилей ZCAD это значение хранится в FontFamily
+  (читается из расширенных данных STYLE, группа 1000 под регистрацией "ACAD").
+  Сравнение выполняется без учёта регистра.
+  Стили-служебные элементы типов линий (UsedInLTYPE=true) пропускаются. }
+function GDBTextStyleArray.FindStyleByTypeface(const TypefaceName:String):PGDBTextStyle;
+var
+  pStyle:PGDBTextStyle;
+  ir:itrec;
+begin
+  result:=nil;
+  if TypefaceName='' then Exit;
+  pStyle:=beginiterate(ir);
+  while pStyle<>nil do
+  begin
+    if not pStyle^.UsedInLTYPE then
+      if (pStyle^.FontFamily<>'')
+        and (Length(pStyle^.FontFamily)=Length(TypefaceName))
+        and (CompareText(pStyle^.FontFamily,TypefaceName)=0) then
+      begin
+        result:=pStyle;
+        Exit;
+      end;
     pStyle:=iterate(ir);
   end;
 end;

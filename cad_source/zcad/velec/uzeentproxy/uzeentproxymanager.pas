@@ -106,6 +106,15 @@ type
     Angle: Double;
     { Имя шрифта (ANSI, может быть пустым — тогда используется Standard) }
     FontName: string;
+    { Имя typeface/FontFamily (для OpCode=38 UnicodeText2, содержит
+      человекочитаемое имя шрифта, например "Times New Roman").
+      Может быть пустым, если текст-примитив не несёт такой информации
+      (OpCode=10 Text1 или OpCode=36 UnicodeText). Используется при
+      подборе стиля через GDBTextStyleArray.FindStyleByTypeface. }
+    TypeFace: string;
+    { Имя файла большого шрифта (для OpCode=38). Сохраняется на случай,
+      если в будущем потребуется полноценная поддержка BigFont (asian). }
+    BigFontName: string;
     { Вес линии, действовавший на момент создания текста }
     LineWeight: Integer;
     { Цвет, действовавший на момент создания текста }
