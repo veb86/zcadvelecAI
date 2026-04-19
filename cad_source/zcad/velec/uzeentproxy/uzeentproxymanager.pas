@@ -79,6 +79,12 @@ type
     OwnerLineWeight: Integer;
     { Цвет владельца прокси-объекта. }
     OwnerColor: Integer;
+    { Вес линии текущего примитива (из Proxy Graphic SetLineweight OpCode=23).
+      Значение копируется из FState.LineWeight парсера в момент обработки
+      примитива и передаётся построителю подпримитивов. Если вес —
+      ByLayer/ByBlock/ByLwDefault, ResolveLineWeight откатится на
+      OwnerLineWeight. }
+    PrimitiveLineWeight: Integer;
     { Смещение, которое нужно вычитать из координат proxy graphic,
       чтобы получить локальные координаты относительно точки вставки. }
     GripOffset: TzePoint3d;

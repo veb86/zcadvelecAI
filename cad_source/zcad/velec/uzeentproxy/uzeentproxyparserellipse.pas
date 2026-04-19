@@ -296,12 +296,12 @@ begin
   if HandlerResult.Filled and HandlerResult.Closed then
     BuildSolidFromVertices(Context,
       HandlerResult.Vertices,
-      Context.OwnerLineWeight);
+      Context.PrimitiveLineWeight);
 
   BuildLinesFromVertices(Context,
     HandlerResult.Vertices,
     HandlerResult.Closed,
-    Context.OwnerLineWeight);
+    Context.PrimitiveLineWeight);
 end;
 
 initialization
