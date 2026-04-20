@@ -496,6 +496,7 @@ begin
   pMText^.vp.LineWeight :=
     ResolveLineWeight(Context, Context.PrimitiveLineWeight);
   pMText^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+  ApplyLineTypeScale(PGDBObjEntity(pMText), Context);
 
   { Template — шаблон с форматированием, при пустом Content он будет
     использован как исходный текст в FormatContent. }

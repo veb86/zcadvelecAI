@@ -85,6 +85,17 @@ type
       ByLayer/ByBlock/ByLwDefault, ResolveLineWeight откатится на
       OwnerLineWeight. }
     PrimitiveLineWeight: Integer;
+    { Масштаб типа линии владельца прокси-объекта (DXF group code 48).
+      Подпримитивы наследуют этот масштаб, чтобы пунктир/штрих типа линии
+      отображался в том же масштабе, что задан в исходном DXF. По умолчанию
+      равен 1 (стандартное значение группового кода 48). }
+    OwnerLineTypeScale: Double;
+    { Масштаб типа линии текущего примитива (из Proxy Graphic SetLtScale
+      OpCode=24). Значение копируется из LtScale парсера в момент обработки
+      примитива. Применяется к подпримитиву вместе с OwnerLineTypeScale
+      (итоговый scale = Owner * Primitive), чтобы Proxy Graphic-состояние
+      тоже влияло на отрисовку штрихов. }
+    PrimitiveLineTypeScale: Double;
     { Смещение, которое нужно вычитать из координат proxy graphic,
       чтобы получить локальные координаты относительно точки вставки. }
     GripOffset: TzePoint3d;

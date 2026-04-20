@@ -110,6 +110,11 @@ type
       (proxyinblock.dxf): добавляет PE<N>-блок на каждую такую
       proxy-сущность и заполняет FConvertedBlockName. }
     procedure ConvertProxyEntitiesToBlocksHandlesProxiesInsideBlockDef;
+    { Проверяет, что ProxyEntity читает DXF group code 48 (linetype
+      scale) и переносит его на подпримитивы. В spdsconstructionline.dxf
+      SPDSCONSTRUCTIONLINE имеет "48 100.0", а парсер до исправления
+      записывал 1.0. }
+    procedure SpdsConstructionLineProxyKeepsLineTypeScale;
   end;
 
 implementation
@@ -1184,6 +1189,62 @@ begin
         BlockArr^.getindex(
           NestedProxies[I]^.GetConvertedBlockName) >= 0,
         'PE-блок должен присутствовать в BlockDefArray');
+    end;
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.SpdsConstructionLineProxyKeepsLineTypeScale;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  sub: PGDBObjEntity;
+  I: Integer;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsconstructionline.dxf', zdc);
+
+    { Файл содержит один SPDSCONSTRUCTIONLINE внутри ENTITIES. }
+    CheckTrue(drawing.pObjRoot^.ObjArray.Count >= 1,
+      'spdsconstructionline.dxf должен загружать как минимум одну сущность');
+
+    entity := nil;
+    for I := 0 to drawing.pObjRoot^.ObjArray.Count - 1 do
+    begin
+      entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(I));
+      if (entity <> nil)
+        and (entity^.GetObjTypeName = ObjN_GDBObjAcdProxy) then
+        Break;
+      entity := nil;
+    end;
+    Check(entity <> nil,
+      'SPDSCONSTRUCTIONLINE должен загружаться как proxy-объект');
+
+    { DXF group code 48 = 100.0 в spdsconstructionline.dxf: прокси-объект
+      должен прочитать этот код и сохранить его в vp.LineTypeScale. }
+    CheckEquals(100.0, entity^.vp.LineTypeScale, 1e-9,
+      'Proxy должен читать DXF code 48 и сохранять значение 100.0');
+
+    proxy := PGDBObjAcdProxy(entity);
+    Check(proxy^.ConstObjArray.Count > 0,
+      'Proxy graphic должен построить подпримитивы');
+
+    { Каждый подпримитив должен наследовать LineTypeScale владельца
+      (или его произведение с per-primitive LtScale, но не стандартное 1.0). }
+    for I := 0 to proxy^.ConstObjArray.Count - 1 do
+    begin
+      sub := PGDBObjEntity(proxy^.ConstObjArray.GetData(I));
+      if sub = nil then
+        Continue;
+      CheckTrue(sub^.vp.LineTypeScale >= 100.0 - 1e-6,
+        'Подпримитив proxy-объекта должен наследовать LineTypeScale владельца (>=100)');
     end;
   finally
     drawing.done;
