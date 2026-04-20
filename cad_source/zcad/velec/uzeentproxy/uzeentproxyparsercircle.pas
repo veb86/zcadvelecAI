@@ -231,6 +231,7 @@ begin
   pCircle^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
   pCircle^.vp.LineWeight := ActualLW;
   pCircle^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+  ApplyLineTypeScale(PGDBObjEntity(pCircle), Context);
 
   pCircle^.FormatEntity(Drawing^, DC^);
 

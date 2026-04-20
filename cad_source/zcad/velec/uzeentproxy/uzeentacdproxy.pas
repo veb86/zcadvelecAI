@@ -444,6 +444,16 @@ begin
   { По умолчанию — вес владельца; реальный вес каждого примитива
     подставляется в BuildSubEntities на каждой итерации цикла. }
   Result.PrimitiveLineWeight := vp.LineWeight;
+  { Масштаб типа линии владельца (DXF group code 48). Берётся
+    непосредственно из vp.LineTypeScale, заполненного
+    LoadFromDXFObjShared при чтении DXF. Используется, чтобы
+    подпримитивы унаследовали этот масштаб и отображали штрихи
+    типа линии в правильном масштабе. }
+  Result.OwnerLineTypeScale := vp.LineTypeScale;
+  { По умолчанию — 1 (идентичный множитель); реальное значение
+    PrimitiveLineTypeScale подставляется в BuildSubEntities на каждой
+    итерации цикла из LtScale парсера. }
+  Result.PrimitiveLineTypeScale := 1.0;
   Result.GripOffset       := FProxyGripOffset;
 end;
 
@@ -511,10 +521,17 @@ begin
         Без этого все подпримитивы получали бы одинаковый вес владельца
         прокси-объекта, игнорируя значения, заданные внутри графики. }
       Context.PrimitiveLineWeight := ParseResult.Primitives[I].LineWeight;
+      { Подставляем масштаб типа линии, зафиксированный парсером для
+        конкретного примитива (SetLtScale OpCode=24 из потока Proxy
+        Graphic). При построении подпримитива он умножается на
+        OwnerLineTypeScale (DXF code 48 владельца), чтобы отражался и
+        масштаб самого прокси-объекта, и внутренний масштаб графики. }
+      Context.PrimitiveLineTypeScale := ParseResult.Primitives[I].LtScale;
       programlog.LogOutFormatStr(
-        'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d',
+        'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d ltScale=%.3f',
         [I, ParseResult.Primitives[I].OpCode,
-         ParseResult.Primitives[I].LineWeight], LM_Info);
+         ParseResult.Primitives[I].LineWeight,
+         ParseResult.Primitives[I].LtScale], LM_Info);
       if TProxyOpCodeDispatcher.BuildSubEntities(
         ParseResult.Primitives[I].OpCode,
         ParseResult.Primitives[I].HandlerResult,

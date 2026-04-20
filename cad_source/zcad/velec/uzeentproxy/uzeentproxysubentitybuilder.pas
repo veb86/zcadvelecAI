@@ -68,6 +68,22 @@ function ProxyToLocalPoint(const Context: TProxySubEntityContext;
 function ResolveLineWeight(const Context: TProxySubEntityContext;
   const ContourLineWeight: Integer): Integer;
 
+{ Итоговый масштаб типа линии для подпримитива:
+  OwnerLineTypeScale (DXF group code 48 владельца) умножается на
+  PrimitiveLineTypeScale (Proxy Graphic OpCode=24 для текущего примитива).
+  Нули и отрицательные значения трактуются как 1, чтобы не
+  «обнулить» пунктир при повреждённых данных. }
+function ResolveLineTypeScale(
+  const Context: TProxySubEntityContext): Double;
+
+{ Применяет вычисленный масштаб типа линии к созданному подпримитиву.
+  Вызывается после ENTF_CreateLine/ENTF_CreateSolid и перед
+  FormatEntity, чтобы подпримитив использовал корректный масштаб
+  при отрисовке штрихов. }
+procedure ApplyLineTypeScale(
+  SubEnt: PGDBObjEntity;
+  const Context: TProxySubEntityContext);
+
 { Создаёт подпримитив GDBObjLine между двумя точками контура.
   Точки P1 и P2 задаются в координатах прокси-графики — внутри
   процедуры они пересчитываются в локальную систему через
@@ -137,6 +153,29 @@ begin
     Result := Context.OwnerLineWeight;
 end;
 
+function ResolveLineTypeScale(
+  const Context: TProxySubEntityContext): Double;
+var
+  Owner, Primitive: Double;
+begin
+  Owner := Context.OwnerLineTypeScale;
+  if Owner <= 0 then
+    Owner := 1.0;
+  Primitive := Context.PrimitiveLineTypeScale;
+  if Primitive <= 0 then
+    Primitive := 1.0;
+  Result := Owner * Primitive;
+end;
+
+procedure ApplyLineTypeScale(
+  SubEnt: PGDBObjEntity;
+  const Context: TProxySubEntityContext);
+begin
+  if SubEnt = nil then
+    Exit;
+  SubEnt^.vp.LineTypeScale := ResolveLineTypeScale(Context);
+end;
+
 { --- Построители подпримитивов --- }
 
 procedure BuildLineSubEntity(const Context: TProxySubEntityContext;
@@ -161,6 +200,8 @@ begin
     ActualLW,
     TGDBPaletteColor(Context.OwnerColor),
     LocalP1, LocalP2);
+
+  ApplyLineTypeScale(SubEnt, Context);
 
   if (SubEnt <> nil)
     and (Context.Drawing <> nil) and (Context.DC <> nil) then
@@ -252,6 +293,8 @@ begin
       ActualLW,
       TGDBPaletteColor(Context.OwnerColor),
       Points[0], Points[I], Points[I + 1]);
+
+    ApplyLineTypeScale(SubEnt, Context);
 
     if (SubEnt <> nil)
       and (Context.Drawing <> nil) and (Context.DC <> nil) then
