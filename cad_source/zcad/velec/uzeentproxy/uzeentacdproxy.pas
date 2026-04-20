@@ -55,6 +55,8 @@ uses
   uzeentityfactory,
   uzgldrawcontext,
   uzedrawingdef,
+  uzedrawingsimple,
+  uzeffdxfout,
   uzeentsubordinated,
   uzeentcomplex,
   uzeentity,
@@ -73,6 +75,8 @@ uses
   uzecamera,
   SysUtils,
   Math,
+  UGDBObjBlockdefArray,
+  uzeblockdef,
   uzeentproxymanager,
   uzeentproxygraphicparser,
   { Подключаем модули-парсеры примитивов. Каждый регистрирует свой
@@ -98,6 +102,17 @@ uses
   uzeentitiesmanager,
   uzepalette,
   uzestyleslinetypes;
+
+const
+  { Префикс для уникальных имён блоков, сгенерированных из ProxyEntity.
+    "PE" означает "Proxy Entity": позволяет отличать такие блоки
+    от обычных пользовательских блоков. }
+  ProxyBlockNamePrefix = 'PE';
+
+  { Верхняя граница случайного числа, используемого в имени блока
+    (имя имеет вид PE<целое>). Задаёт достаточное пространство
+    для практически бесконфликтной генерации имён. }
+  ProxyBlockMaxRandom = 1000000000;
 
 type
   PGDBObjAcdProxy = ^GDBObjAcdProxy;
@@ -136,6 +151,12 @@ type
     FProxyBBoxMin: TzePoint3d;
     FProxyBBoxMax: TzePoint3d;
     FProxyGripOffset: TzePoint3d;
+
+    { Имя уникального блока (PE<N>), сгенерированное для сохранения
+      прокси-объекта как BlockInsert. Пустая строка означает, что
+      конвертация в блок ещё не выполнена. Заполняется в
+      EnsureConvertedBlockDef. }
+    FConvertedBlockName: string;
 
     { Разбирает FProxyDataBytes и создаёт подпримитивы в ConstObjArray.
       Фактическое создание подпримитивов делегируется зарегистрированным
@@ -207,6 +228,16 @@ type
 
     { Создаёт новый инициализированный экземпляр }
     class function CreateInstance: PGDBObjAcdProxy; static;
+
+    { Создаёт (если ещё не создан) блок с уникальным именем PE<N>
+      в BlockDefArray чертежа, заполняя его подпримитивами прокси-объекта.
+      Возвращает имя сгенерированного блока. При повторных вызовах
+      возвращает ранее сгенерированное имя без создания новых блоков. }
+    function EnsureConvertedBlockDef(var drawing: TDrawingDef): string;
+
+    { Возвращает имя уже сгенерированного блока или пустую строку,
+      если конвертация ещё не выполнялась. Предназначено для тестов. }
+    function GetConvertedBlockName: string;
   end;
 
 { Выделяет память для нового прокси-объекта }
@@ -215,6 +246,17 @@ function AllocAcdProxy: Pointer;
 { Выделяет и инициализирует новый прокси-объект }
 function AllocAndInitAcdProxy(
   owner: PGDBObjGenericWithSubordinated): PGDBObjAcdProxy;
+
+{ Генерирует уникальное имя блока вида PE<N>, где N — случайное
+  целое в диапазоне [0..ProxyBlockMaxRandom]. Имя гарантированно
+  отсутствует в BlockDefArray чертежа. }
+function GenerateUniqueProxyBlockName(
+  var drawing: TDrawingDef): string;
+
+{ Pre-save обработчик: обходит дерево объектов чертежа и для каждого
+  ProxyEntity создаёт блок в BlockDefArray. Регистрируется в
+  initialization через RegisterBeforeSaveDxfProc. }
+procedure ConvertProxyEntitiesToBlocks(var drawing: TSimpleDrawing);
 
 implementation
 
@@ -261,6 +303,7 @@ begin
   FOriginalDataFormat := 0;
   scale := ScaleOne;
   rotate := 0;
+  FConvertedBlockName := '';
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -278,11 +321,13 @@ begin
   FOriginalDataFormat := 0;
   scale := ScaleOne;
   rotate := 0;
+  FConvertedBlockName := '';
 end;
 
 destructor GDBObjAcdProxy.done;
 begin
   SetLength(FProxyDataBytes, 0);
+  FConvertedBlockName := '';
   inherited done;
 end;
 
@@ -343,49 +388,42 @@ begin
   FProxyBBoxLoaded := False;
 end;
 
-{ Сохраняет данные объекта в DXF-поток }
+{ Сохраняет данные объекта в DXF-поток как INSERT (BlockInsert).
+
+  Концепция: прокси-объект сохраняется не как ACAD_PROXY_ENTITY, а
+  как ссылка на блок BLOCK с уникальным именем PE<N>. Сам блок
+  добавляется в BlockDefArray чертежа через ConvertProxyEntitiesToBlocks
+  до начала записи DXF (см. initialization и uzeffdxfout). Это
+  приводит к тому, что при повторном открытии файла прокси-объектов
+  уже нет — остаются только BlockInsert'ы.
+
+  Формат записи совпадает с GDBObjBlockInsert.SaveToDXF:
+  - код 0: INSERT
+  - код 100: AcDbBlockReference
+  - код 2: имя блока (PE<N>)
+  - код 10: точка вставки
+  - код 41/42/43: масштаб
+  - код 50: угол поворота (в градусах) }
 procedure GDBObjAcdProxy.SaveToDXF(
   var outStream: TZctnrVectorBytes;
   var drawing: TDrawingDef;
   var IODXFContext: TIODXFSaveContext);
-const
-  MaxHexCharsPerChunk = 254;
 var
-  HexStr, Chunk: string;
-  GraphicsSize, Offset, ChunkLen: Integer;
+  BlockName: string;
 begin
-  SaveToDXFObjPrefix(outStream, 'ACAD_PROXY_ENTITY',
-    'AcDbProxyEntity', IODXFContext);
+  BlockName := EnsureConvertedBlockDef(drawing);
 
-  dxfIntegerout(outStream, 90, FProxyClassID);
-  dxfIntegerout(outStream, 91, FAppClassID);
-
-  GraphicsSize := Length(FProxyDataBytes);
-  dxfIntegerout(outStream, 92, GraphicsSize);
-
-  if GraphicsSize > 0 then
-  begin
-    HexStr := BytesToHexString(FProxyDataBytes);
-    Offset := 1;
-    while Offset <= Length(HexStr) do
-    begin
-      ChunkLen := Length(HexStr) - Offset + 1;
-      if ChunkLen > MaxHexCharsPerChunk then
-        ChunkLen := MaxHexCharsPerChunk;
-      Chunk := Copy(HexStr, Offset, ChunkLen);
-      dxfStringWithoutEncodeOut(outStream, 310, Chunk);
-      Inc(Offset, ChunkLen);
-    end;
-  end;
-
-  dxfIntegerout(outStream, 93, FEntityDataSize);
-  dxfIntegerout(outStream, 94, FObjectDataSize);
-  dxfIntegerout(outStream, 95, FDrawingFormat);
-  dxfIntegerout(outStream, 70, FOriginalDataFormat);
+  SaveToDXFObjPrefix(outStream, 'INSERT', 'AcDbBlockReference',
+    IODXFContext);
+  dxfStringout(outStream, 2, BlockName, IODXFContext.Header);
+  dxfvertexout(outStream, 10, Local.p_insert);
+  dxfvertexout1(outStream, 41, scale);
+  dxfDoubleout(outStream, 50, rotate * 180 / pi);
+  SaveToDXFObjPostfix(outStream);
 
   programlog.LogOutFormatStr(
-    'uzeentacdproxy: SaveToDXF wrote %d bytes',
-    [GraphicsSize], LM_Info);
+    'uzeentacdproxy: SaveToDXF wrote INSERT of block "%s"',
+    [BlockName], LM_Info);
 end;
 
 { Строит контекст для передачи в Builder-процедуру примитива.
@@ -688,6 +726,10 @@ begin
   ClonePtr^.scale := scale;
   ClonePtr^.rotate := rotate;
 
+  { Не копируем FConvertedBlockName — клон должен получить собственное
+    уникальное имя блока при следующем сохранении. }
+  ClonePtr^.FConvertedBlockName := '';
+
   Result := PGDBObjEntity(ClonePtr);
 end;
 
@@ -709,6 +751,121 @@ begin
   Result^.initnul(owner);
 end;
 
+{ Генерирует уникальное имя блока вида PE<N>. Перебирает случайные
+  имена, пока не найдётся отсутствующее в BlockDefArray чертежа. }
+function GenerateUniqueProxyBlockName(
+  var drawing: TDrawingDef): string;
+var
+  Attempt: Integer;
+  Candidate: string;
+  BlockArr: PGDBObjBlockdefArray;
+begin
+  BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+  { В подавляющем большинстве случаев хватает одной попытки: диапазон
+    в миллиард значений даёт пренебрежимо малую вероятность коллизии.
+    Цикл с запасом защищает от маловероятного совпадения. }
+  for Attempt := 0 to 1024 do
+  begin
+    Candidate := ProxyBlockNamePrefix
+      + IntToStr(Random(ProxyBlockMaxRandom + 1));
+    if BlockArr^.getindex(Candidate) < 0 then
+      Exit(Candidate);
+  end;
+  { Крайне маловероятный случай: не смогли подобрать имя за 1025
+    попыток. Падаем явно, чтобы не записать блок с дублирующимся именем. }
+  raise Exception.Create(
+    'GenerateUniqueProxyBlockName: failed to generate unique name');
+end;
+
+function GDBObjAcdProxy.GetConvertedBlockName: string;
+begin
+  Result := FConvertedBlockName;
+end;
+
+{ Создаёт (если ещё не создан) блок с уникальным именем в
+  BlockDefArray чертежа и копирует в него подпримитивы прокси-объекта.
+  Имя генерируется один раз на экземпляр прокси и кэшируется в
+  FConvertedBlockName — повторные вызовы возвращают то же имя без
+  повторного создания блока. }
+function GDBObjAcdProxy.EnsureConvertedBlockDef(
+  var drawing: TDrawingDef): string;
+var
+  BlockArr: PGDBObjBlockdefArray;
+  BlockDef: PGDBObjBlockdef;
+  SubEnt, ClonedEnt: PGDBObjEntity;
+  IR: itrec;
+  DC: TDrawContext;
+begin
+  if FConvertedBlockName <> '' then
+  begin
+    { Имя уже сгенерировано — блок также должен существовать.
+      Если его нет (редкий случай, например после очистки
+      BlockDefArray), создаём заново с тем же именем. }
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+    if BlockArr^.getindex(FConvertedBlockName) >= 0 then
+      Exit(FConvertedBlockName);
+  end
+  else
+    FConvertedBlockName := GenerateUniqueProxyBlockName(drawing);
+
+  { Подпримитивы могли ещё не быть построены (если прокси не
+    форматировался после загрузки). Строим их здесь, чтобы блок
+    получил все геометрические элементы. }
+  if (not FSubEntitiesBuilt) and (Length(FProxyDataBytes) > 0) then
+  begin
+    DC := drawing.CreateDrawingRC;
+    BuildSubEntities(drawing, DC);
+  end;
+
+  BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+  BlockDef := BlockArr^.create(FConvertedBlockName);
+  BlockDef^.Base := NulVertex;
+
+  { Копируем подпримитивы из ConstObjArray в ObjArray блока.
+    Каждый подпримитив клонируется — владелец клона теперь BlockDef. }
+  SubEnt := ConstObjArray.beginiterate(IR);
+  if SubEnt <> nil then
+    repeat
+      ClonedEnt := SubEnt^.Clone(BlockDef);
+      BlockDef^.ObjArray.AddPEntity(ClonedEnt^);
+      SubEnt := ConstObjArray.iterate(IR);
+    until SubEnt = nil;
+
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: EnsureConvertedBlockDef created "%s" with %d entities',
+    [FConvertedBlockName, BlockDef^.ObjArray.Count], LM_Info);
+
+  Result := FConvertedBlockName;
+end;
+
+{ Рекурсивно обходит массив сущностей и для каждого ProxyEntity
+  вызывает EnsureConvertedBlockDef. Обрабатывает вложенные составные
+  объекты (BlockInsert, Complex) через их ConstObjArray. }
+procedure ConvertProxyEntitiesInArray(
+  pArray: PGDBObjEntityOpenArray; var drawing: TSimpleDrawing);
+var
+  Ent: PGDBObjEntity;
+  IR: itrec;
+begin
+  if pArray = nil then
+    Exit;
+  Ent := pArray^.beginiterate(IR);
+  if Ent <> nil then
+    repeat
+      if Ent^.GetObjType = GDBAcdProxyID then
+        PGDBObjAcdProxy(Ent)^.EnsureConvertedBlockDef(drawing);
+      Ent := pArray^.iterate(IR);
+    until Ent = nil;
+end;
+
+procedure ConvertProxyEntitiesToBlocks(var drawing: TSimpleDrawing);
+begin
+  if drawing.pObjRoot = nil then
+    Exit;
+  ConvertProxyEntitiesInArray(
+    @drawing.pObjRoot^.ObjArray, drawing);
+end;
+
 initialization
   RegisterDXFEntity(
     GDBAcdProxyID,
@@ -716,6 +873,15 @@ initialization
     'ProxyEntity',
     @AllocAcdProxy,
     @AllocAndInitAcdProxy);
+
+  { Регистрируем pre-save callback, чтобы перед записью DXF все
+    ProxyEntity были конвертированы в BlockInsert'ы с уникальными
+    именами блоков (префикс "PE"). }
+  RegisterBeforeSaveDxfProc(@ConvertProxyEntitiesToBlocks);
+
+  { Инициализируем генератор случайных чисел один раз при старте.
+    Используется для генерации имён PE<N>. }
+  Randomize;
 
   programlog.LogOutFormatStr(
     'uzeentacdproxy: Registered ACAD_PROXY_ENTITY, handlers: %d',

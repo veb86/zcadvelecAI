@@ -32,9 +32,31 @@ uses
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
   uzestylestablesdxf,uzclog;
 
+type
+  { Callback, вызываемый перед началом записи DXF. Позволяет подпиться
+    на pre-save обработку чертежа (например, конвертацию ProxyEntity
+    в BlockInsert). }
+  TBeforeSaveDxfProc=procedure(var drawing:TSimpleDrawing);
+
+{ Регистрирует pre-save callback. Все зарегистрированные callback'и
+  вызываются в порядке регистрации в начале savedxf20XX. }
+procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
+
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
 implementation
+
+var
+  BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
+
+procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
+var
+  i:Integer;
+begin
+  i:=Length(BeforeSaveDxfProcs);
+  SetLength(BeforeSaveDxfProcs,i+1);
+  BeforeSaveDxfProcs[i]:=proc;
+end;
 
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 begin
@@ -333,9 +355,16 @@ var
   { Массивы предварительно выделенных хэндлов для стилей таблиц }
   tsHandles: array of TDWGHandle;
   tsCount: integer;
+  beforeProcIdx: integer;
 begin
   intable:=0;
   IODXFContext.InitRec;
+
+  { Вызываем зарегистрированные pre-save обработчики перед началом
+    записи (например, конвертация ProxyEntity -> BlockInsert). }
+  for beforeProcIdx:=0 to High(BeforeSaveDxfProcs) do
+    if Assigned(BeforeSaveDxfProcs[beforeProcIdx]) then
+      BeforeSaveDxfProcs[beforeProcIdx](drawing);
 
   IODXFContext.Header.Version:=ZCDxfVer2DXF_ACVer(AVer);
   IODXFContext.Header.iVersion:=ZCDxfVer2ACVer(AVer);
