@@ -115,6 +115,12 @@ type
       SPDSCONSTRUCTIONLINE имеет "48 100.0", а парсер до исправления
       записывал 1.0. }
     procedure SpdsConstructionLineProxyKeepsLineTypeScale;
+    { Проверяет, что ProxyEntity корректно распространяет DXF code 48
+      на все подпримитивы для нескольких SPDSCONSTRUCTIONLINE в одном
+      файле (spdsconstructionline2.dxf: scale 77 и 100). После
+      FormatEntity каждый подпримитив должен наследовать LineTypeScale
+      своего владельца. }
+    procedure SpdsConstructionLine2ProxyPropagatesScaleToAllSubEntities;
   end;
 
 implementation
@@ -1232,6 +1238,11 @@ begin
     CheckEquals(100.0, entity^.vp.LineTypeScale, 1e-9,
       'Proxy должен читать DXF code 48 и сохранять значение 100.0');
 
+    { Явно форматируем прокси, чтобы триггернуть BuildSubEntities:
+      без этого ConstObjArray остаётся пустым, так как DXF-загрузка
+      не вызывает FormatEntity для прокси-объектов. }
+    entity^.FormatEntity(drawing, dc);
+
     proxy := PGDBObjAcdProxy(entity);
     Check(proxy^.ConstObjArray.Count > 0,
       'Proxy graphic должен построить подпримитивы');
@@ -1245,6 +1256,94 @@ begin
         Continue;
       CheckTrue(sub^.vp.LineTypeScale >= 100.0 - 1e-6,
         'Подпримитив proxy-объекта должен наследовать LineTypeScale владельца (>=100)');
+    end;
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.SpdsConstructionLine2ProxyPropagatesScaleToAllSubEntities;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  sub: PGDBObjEntity;
+  Proxies: array of PGDBObjAcdProxy;
+  FoundScale77, FoundScale100: Boolean;
+  I, J, ProxyIdx: Integer;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsconstructionline2.dxf', zdc);
+
+    { Файл содержит две SPDSCONSTRUCTIONLINE сущности: первая
+      имеет DXF code 48 = 77.0, вторая — 48 = 100.0. Собираем их
+      указатели и для каждой проверяем, что LineTypeScale прочитан
+      и корректно распространён на все подпримитивы. }
+    SetLength(Proxies, 0);
+    ProxyIdx := 0;
+    for I := 0 to drawing.pObjRoot^.ObjArray.Count - 1 do
+    begin
+      entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(I));
+      if (entity <> nil)
+        and (entity^.GetObjTypeName = ObjN_GDBObjAcdProxy) then
+      begin
+        SetLength(Proxies, ProxyIdx + 1);
+        Proxies[ProxyIdx] := PGDBObjAcdProxy(entity);
+        Inc(ProxyIdx);
+      end;
+    end;
+    CheckEquals(2, Length(Proxies),
+      'spdsconstructionline2.dxf должен содержать 2 SPDSCONSTRUCTIONLINE');
+
+    FoundScale77 := False;
+    FoundScale100 := False;
+    for I := 0 to High(Proxies) do
+    begin
+      if Abs(Proxies[I]^.vp.LineTypeScale - 77.0) < 1e-6 then
+        FoundScale77 := True;
+      if Abs(Proxies[I]^.vp.LineTypeScale - 100.0) < 1e-6 then
+        FoundScale100 := True;
+    end;
+    CheckTrue(FoundScale77,
+      'Один из proxy должен иметь LineTypeScale = 77.0 (DXF code 48)');
+    CheckTrue(FoundScale100,
+      'Один из proxy должен иметь LineTypeScale = 100.0 (DXF code 48)');
+
+    { Явно форматируем каждый прокси, чтобы триггернуть BuildSubEntities. }
+    for I := 0 to High(Proxies) do
+      PGDBObjEntity(Proxies[I])^.FormatEntity(drawing, dc);
+
+    for I := 0 to High(Proxies) do
+    begin
+      proxy := Proxies[I];
+      Check(proxy^.ConstObjArray.Count > 0,
+        'Каждый proxy должен построить подпримитивы после FormatEntity');
+
+      { Все подпримитивы данного прокси должны иметь LineTypeScale,
+        унаследованный от владельца. ResolveLineTypeScale умножает
+        OwnerLineTypeScale на PrimitiveLineTypeScale (>=1), поэтому
+        результат не может быть меньше vp.LineTypeScale владельца
+        (с точностью до 1e-6). }
+      for J := 0 to proxy^.ConstObjArray.Count - 1 do
+      begin
+        sub := PGDBObjEntity(proxy^.ConstObjArray.GetData(J));
+        if sub = nil then
+          Continue;
+        CheckTrue(
+          sub^.vp.LineTypeScale >= proxy^.vp.LineTypeScale - 1e-6,
+          'LineTypeScale подпримитива должен быть не меньше LineTypeScale владельца');
+        { Подпримитив не должен остаться со стандартным значением 1.0
+          (если OwnerLineTypeScale != 1), иначе масштаб типа линии не
+          будет корректно применяться при отрисовке штрихов. }
+        CheckTrue(
+          Abs(sub^.vp.LineTypeScale - 1.0) > 1e-6,
+          'Подпримитив не должен сохранять LineTypeScale = 1 при ненулевом масштабе владельца');
+      end;
     end;
   finally
     drawing.done;
