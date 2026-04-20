@@ -53,6 +53,9 @@ uses
   uzgldrawcontext,
   uzeconsts,
   uzeentgenericsubentry,
+  // Модули для тестов конвертации proxy -> block
+  UGDBObjBlockdefArray,
+  uzeblockdef,
   // Нужен для инициализации LCL-зависимых модулей
   Interfaces;
 
@@ -87,6 +90,21 @@ type
     { Проверяет, что однородное масштабирование proxy-объекта корректно
       масштабирует подпримитивы и их bbox расширяется в то же число раз. }
     procedure SpdsDoorProxyUniformScaleTransformsSubEntities;
+    { Проверяет, что GenerateUniqueProxyBlockName возвращает имя с
+      префиксом "PE" и числом в диапазоне [0..1_000_000_000]. }
+    procedure GeneratedProxyBlockNameHasPrefixAndRange;
+    { Проверяет, что несколько вызовов GenerateUniqueProxyBlockName
+      возвращают имена, отсутствующие в BlockDefArray. }
+    procedure GeneratedProxyBlockNamesAreUniqueInArray;
+    { Проверяет, что EnsureConvertedBlockDef создаёт блок в
+      BlockDefArray и заполняет его подпримитивами proxy-объекта. }
+    procedure EnsureConvertedBlockDefCreatesBlockWithSubEntities;
+    { Проверяет, что повторный вызов EnsureConvertedBlockDef не
+      создаёт новых блоков — возвращает ранее сгенерированное имя. }
+    procedure EnsureConvertedBlockDefIsIdempotent;
+    { Проверяет, что ConvertProxyEntitiesToBlocks обходит дерево и
+      для каждого ProxyEntity добавляет блок в BlockDefArray. }
+    procedure ConvertProxyEntitiesToBlocksAddsBlocksForAllProxies;
   end;
 
 implementation
@@ -915,6 +933,180 @@ begin
     CheckEquals(center.y * scaleFactor + scaleFactor * beforeLocal.y,
       afterWCS.y, 1e-6,
       'После масштабирования WCS подпримитива должен быть умножен на scale относительно начала координат WCS');
+  finally
+    drawing.done;
+  end;
+end;
+
+{ Вспомогательная процедура: создаёт корректно инициализированный
+  drawing и загружает в него spdsdoor.dxf, возвращая proxy и dc.
+  В отличие от LoadSpdsDoorProxy оставляет drawing в валидном
+  состоянии, готовом для использования GetBlockDefArraySimple. }
+procedure LoadSpdsDoorDrawing(var drawing: TSimpleDrawing;
+  var dc: TDrawContext; out proxy: PGDBObjAcdProxy);
+var
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+begin
+  drawing.init(nil);
+  dc := drawing.CreateDrawingRC;
+  zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+  AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+  entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+  proxy := PGDBObjAcdProxy(entity);
+end;
+
+procedure TProxyEntityLoadTest.GeneratedProxyBlockNameHasPrefixAndRange;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  Name: string;
+  NumStr: string;
+  N, I: Integer;
+begin
+  LoadSpdsDoorDrawing(drawing, dc, proxy);
+  try
+    { Генерируем несколько имён подряд и проверяем формат }
+    for I := 0 to 9 do
+    begin
+      Name := GenerateUniqueProxyBlockName(drawing);
+      CheckTrue(Length(Name) > 2,
+        'Сгенерированное имя должно содержать префикс + число');
+      CheckEquals('PE', Copy(Name, 1, 2),
+        'Имя блока должно начинаться с префикса "PE"');
+      NumStr := Copy(Name, 3, Length(Name) - 2);
+      N := StrToIntDef(NumStr, -1);
+      CheckTrue(N >= 0,
+        'После "PE" должно следовать неотрицательное целое');
+      CheckTrue(N <= 1000000000,
+        'Число после "PE" должно быть в диапазоне [0..1_000_000_000]');
+    end;
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.GeneratedProxyBlockNamesAreUniqueInArray;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  BlockArr: PGDBObjBlockdefArray;
+  Name: string;
+begin
+  LoadSpdsDoorDrawing(drawing, dc, proxy);
+  try
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+    { Имя должно отсутствовать в массиве до создания блока }
+    Name := GenerateUniqueProxyBlockName(drawing);
+    CheckTrue(BlockArr^.getindex(Name) < 0,
+      'Сгенерированное имя не должно совпадать с существующими блоками');
+    { Создаём блок с этим именем, следующее имя должно быть другим }
+    BlockArr^.create(Name);
+    CheckTrue(GenerateUniqueProxyBlockName(drawing) <> Name,
+      'Повторный вызов после создания блока должен вернуть другое имя');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.EnsureConvertedBlockDefCreatesBlockWithSubEntities;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  BlockArr: PGDBObjBlockdefArray;
+  BlockName: string;
+  Idx: Integer;
+  BlockDef: PGDBObjBlockdef;
+  CountBefore, CountAfter: Integer;
+begin
+  LoadSpdsDoorDrawing(drawing, dc, proxy);
+  try
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+    CountBefore := BlockArr^.Count;
+
+    BlockName := proxy^.EnsureConvertedBlockDef(drawing);
+
+    CountAfter := BlockArr^.Count;
+    CheckEquals(CountBefore + 1, CountAfter,
+      'EnsureConvertedBlockDef должен добавить ровно один блок в BlockDefArray');
+    CheckEquals('PE', Copy(BlockName, 1, 2),
+      'Имя сгенерированного блока должно начинаться с "PE"');
+
+    Idx := BlockArr^.getindex(BlockName);
+    CheckTrue(Idx >= 0,
+      'Созданный блок должен быть доступен по имени через getindex');
+    BlockDef := BlockArr^.getDataMutable(Idx);
+    CheckTrue(BlockDef <> nil,
+      'BlockDef по индексу не должен быть nil');
+    CheckTrue(BlockDef^.ObjArray.Count > 0,
+      'Блок должен содержать скопированные подпримитивы proxy-объекта');
+    CheckEquals(proxy^.ConstObjArray.Count, BlockDef^.ObjArray.Count,
+      'Количество сущностей блока должно совпадать с ConstObjArray proxy');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.EnsureConvertedBlockDefIsIdempotent;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  BlockArr: PGDBObjBlockdefArray;
+  Name1, Name2: string;
+  CountAfterFirst, CountAfterSecond: Integer;
+begin
+  LoadSpdsDoorDrawing(drawing, dc, proxy);
+  try
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+
+    Name1 := proxy^.EnsureConvertedBlockDef(drawing);
+    CountAfterFirst := BlockArr^.Count;
+
+    Name2 := proxy^.EnsureConvertedBlockDef(drawing);
+    CountAfterSecond := BlockArr^.Count;
+
+    CheckEquals(Name1, Name2,
+      'Повторный вызов EnsureConvertedBlockDef должен вернуть то же имя');
+    CheckEquals(CountAfterFirst, CountAfterSecond,
+      'Повторный вызов EnsureConvertedBlockDef не должен создавать новый блок');
+
+    CheckEquals(Name1, proxy^.GetConvertedBlockName,
+      'GetConvertedBlockName должен возвращать кэшированное имя');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.ConvertProxyEntitiesToBlocksAddsBlocksForAllProxies;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  BlockArr: PGDBObjBlockdefArray;
+  CountBefore, CountAfter: Integer;
+  ConvertedName: string;
+begin
+  LoadSpdsDoorDrawing(drawing, dc, proxy);
+  try
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+    CountBefore := BlockArr^.Count;
+
+    ConvertProxyEntitiesToBlocks(drawing);
+
+    CountAfter := BlockArr^.Count;
+    CheckTrue(CountAfter > CountBefore,
+      'ConvertProxyEntitiesToBlocks должен добавить блок(и) для proxy-объектов');
+    ConvertedName := proxy^.GetConvertedBlockName;
+    CheckTrue(Length(ConvertedName) > 2,
+      'Proxy должен получить имя сгенерированного блока после обхода');
+    CheckEquals('PE', Copy(ConvertedName, 1, 2),
+      'Имя сгенерированного блока должно начинаться с "PE"');
+    CheckTrue(BlockArr^.getindex(ConvertedName) >= 0,
+      'Соответствующий блок должен присутствовать в BlockDefArray');
   finally
     drawing.done;
   end;
