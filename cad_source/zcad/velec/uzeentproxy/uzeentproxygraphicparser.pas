@@ -495,6 +495,16 @@ begin
   if HandlerResult.HasTextItem then
     HandlerResult.TextItem.Insert :=
       VectorTransform3D(HandlerResult.TextItem.Insert, CurrentMatrix);
+
+  { Трансформируем центр круга }
+  if HandlerResult.HasCircleItem then
+    HandlerResult.CircleItem.Center :=
+      VectorTransform3D(HandlerResult.CircleItem.Center, CurrentMatrix);
+
+  { Трансформируем центр дуги }
+  if HandlerResult.HasArcItem then
+    HandlerResult.ArcItem.Center :=
+      VectorTransform3D(HandlerResult.ArcItem.Center, CurrentMatrix);
 end;
 
 { Системный обработчик: SetLinetype — читает индекс типа линии }

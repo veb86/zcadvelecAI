@@ -33,10 +33,10 @@
     SweepAngle  — 1 × double (8 байт)  — угол раствора дуги (радианы)
     ArcType     — 1 × int32 (4 байта)  — тип дуги (0 — обычная)
 
-  Тесселяция:
-  - Дуга аппроксимируется ARC_SEGMENT_COUNT отрезками
-  - Количество отрезков пропорционально углу раствора (минимум 4)
-  - Вершины сохраняются в TProxyHandlerResult.Vertices
+  Построение подпримитива:
+  - Вместо тесселяции в набор отрезков создаётся один GDBObjArc
+    (по аналогии с uzeentproxyparsertext.pas, где создаётся GDBObjMText).
+  - Дуга сама решает вопросы LOD/тесселяции/трансформации при отрисовке.
 }
 
 unit uzeentproxyparserarc;
@@ -56,21 +56,23 @@ uses
   uzeentproxystream,
   uzeentproxymanager,
   uzeentproxysubentitybuilder,
+  uzeentity,
+  uzeentarc,
+  uzeentgenericsubentry,
+  UGDBVisibleOpenArray,
+  uzedrawingdef,
+  uzgldrawcontext,
+  uzepalette,
+  uzestyleslayers,
+  uzestyleslinetypes,
   uzegeometrytypes,
   uzegeometry,
-  UGDBPoint3DArray,
-  gzctnrVectorTypes,
+  uzeconsts,
   uzcLog;
 
 const
   { OpCode дуги в формате AcGiWorldDraw }
   ARC_OPCODE = 4;
-
-  { Максимальное количество отрезков тесселяции для полной окружности }
-  ARC_MAX_SEGMENT_COUNT = 64;
-
-  { Минимальное количество отрезков тесселяции }
-  ARC_MIN_SEGMENT_COUNT = 4;
 
   { Нормаль по умолчанию совпадает с осью Z WCS }
   ARC_Z_AXIS: TzePoint3d = (x: 0.0; y: 0.0; z: 1.0);
@@ -114,78 +116,33 @@ begin
   Result.z := scalarDot(Point, ZAxis);
 end;
 
-{ Вычисляет BBox дуги через тесселированные вершины }
-procedure CalcArcBBoxFromVertices(const Vertices: GDBPoint3DArray;
+{ Вычисляет BBox дуги приблизительно: как BBox круга с тем же центром
+  и радиусом. Это заведомо включает любую часть дуги. }
+procedure CalcArcBBox(const Center: TzePoint3d; const Radius: Double;
   out BBoxMin, BBoxMax: TzePoint3d);
-var
-  Iter: itrec;
-  Pt: PzePoint3d;
-  Initialized: Boolean;
 begin
-  BBoxMin.x := 0; BBoxMin.y := 0; BBoxMin.z := 0;
-  BBoxMax := BBoxMin;
-  Initialized := False;
-
-  Pt := Vertices.beginiterate(Iter);
-  while Pt <> nil do
-  begin
-    if not Initialized then
-    begin
-      BBoxMin := Pt^;
-      BBoxMax := Pt^;
-      Initialized := True;
-    end
-    else
-    begin
-      if Pt^.x < BBoxMin.x then BBoxMin.x := Pt^.x;
-      if Pt^.y < BBoxMin.y then BBoxMin.y := Pt^.y;
-      if Pt^.z < BBoxMin.z then BBoxMin.z := Pt^.z;
-      if Pt^.x > BBoxMax.x then BBoxMax.x := Pt^.x;
-      if Pt^.y > BBoxMax.y then BBoxMax.y := Pt^.y;
-      if Pt^.z > BBoxMax.z then BBoxMax.z := Pt^.z;
-    end;
-    Pt := Vertices.iterate(Iter);
-  end;
+  BBoxMin.x := Center.x - Radius;
+  BBoxMin.y := Center.y - Radius;
+  BBoxMin.z := Center.z;
+  BBoxMax.x := Center.x + Radius;
+  BBoxMax.y := Center.y + Radius;
+  BBoxMax.z := Center.z;
 end;
 
-{ Вычисляет количество отрезков тесселяции пропорционально углу раствора }
-function CalcSegmentCount(const SweepAngle: Double): Integer;
+{ Нормализует угол в диапазон [0, 2*Pi) }
+function NormalizeAngle(Angle: Double): Double;
 begin
-  Result := Round(ARC_MAX_SEGMENT_COUNT * Abs(SweepAngle) / (2 * Pi));
-  if Result < ARC_MIN_SEGMENT_COUNT then
-    Result := ARC_MIN_SEGMENT_COUNT;
-  if Result > ARC_MAX_SEGMENT_COUNT then
-    Result := ARC_MAX_SEGMENT_COUNT;
-end;
-
-{ Тесселирует дугу в массив вершин.
-  Center — центр, Radius — радиус, StartAngle — начальный угол (рад),
-  SweepAngle — угол раствора (рад), Z — координата по оси Z. }
-procedure TessellateArc(const Center: TzePoint3d; const Radius: Double;
-  const StartAngle, SweepAngle: Double; var Vertices: GDBPoint3DArray);
-var
-  SegmentCount: Integer;
-  I: Integer;
-  Angle: Double;
-  Pt: TzePoint3d;
-begin
-  SegmentCount := CalcSegmentCount(SweepAngle);
-  Vertices.init(SegmentCount + 1);
-
-  { Добавляем SegmentCount + 1 вершин (включая конечную точку дуги) }
-  for I := 0 to SegmentCount do
-  begin
-    Angle := StartAngle + SweepAngle * I / SegmentCount;
-    Pt.x := Center.x + Radius * Cos(Angle);
-    Pt.y := Center.y + Radius * Sin(Angle);
-    Pt.z := Center.z;
-    Vertices.PushBackData(Pt);
-  end;
+  Result := Angle;
+  while Result < 0 do
+    Result := Result + 2 * Pi;
+  while Result >= 2 * Pi do
+    Result := Result - 2 * Pi;
 end;
 
 { --- Обработчик OpCode --- }
 
-{ Читает данные дуги из потока, вычисляет BBox и тесселирует контур.
+{ Читает данные дуги из потока, вычисляет BBox и сохраняет параметры
+  дуги в HandlerResult.ArcItem — без тесселяции.
   Регистрируется в TProxyOpCodeDispatcher как обработчик OpCode=4. }
 procedure HandleArc(
   Stream: TProxyByteStream;
@@ -196,11 +153,12 @@ var
   Normal: TzePoint3d;
   StartVector: TzePoint3d;
   SweepAngle: Double;
-  StartAngle: Double;
+  StartAngle, EndAngle: Double;
 begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
+  HandlerResult.HasArcItem := False;
 
   { Читаем: Center (24 байта) + Radius (8 байт) + Normal (24 байта)
             + StartVector (24 байта) + SweepAngle (8 байт) + ArcType (4 байта) }
@@ -230,41 +188,91 @@ begin
     StartVector := TransformPointToOCS(StartVector, Normal);
   end;
 
-  { Вычисляем начальный угол из вектора StartVector }
-  StartAngle := ArcTan2(StartVector.y, StartVector.x);
+  { Вычисляем начальный и конечный угол из вектора StartVector и SweepAngle.
+    GDBObjArc ожидает StartAngle/EndAngle от оси X локальной СК в радианах. }
+  StartAngle := NormalizeAngle(ArcTan2(StartVector.y, StartVector.x));
+  EndAngle   := NormalizeAngle(StartAngle + SweepAngle);
 
-  { Тесселируем дугу }
-  TessellateArc(Center, Radius, StartAngle, SweepAngle, HandlerResult.Vertices);
-  HandlerResult.HasVertices := True;
-
-  { Вычисляем BBox по тесселированным вершинам }
-  CalcArcBBoxFromVertices(HandlerResult.Vertices,
-    HandlerResult.BBoxMin, HandlerResult.BBoxMax);
+  { Вычисляем BBox (грубое приближение — полный круг) }
+  CalcArcBBox(Center, Radius, HandlerResult.BBoxMin, HandlerResult.BBoxMax);
   HandlerResult.HasBBox := True;
+
+  { Заполняем параметры дуги для построителя подпримитива }
+  HandlerResult.ArcItem.Center := Center;
+  HandlerResult.ArcItem.Radius := Radius;
+  HandlerResult.ArcItem.StartAngle := StartAngle;
+  HandlerResult.ArcItem.EndAngle := EndAngle;
+  HandlerResult.ArcItem.Normal := Normal;
+  HandlerResult.HasArcItem := True;
 
   HandlerResult.Valid := True;
 
   programlog.LogOutFormatStr(
-    'uzeentproxyparserarc: OK, %d vertices, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
-    [HandlerResult.Vertices.Count,
+    'uzeentproxyparserarc: OK, ArcItem filled, Start=%.4f End=%.4f BBox=(%.3f,%.3f)-(%.3f,%.3f)',
+    [StartAngle, EndAngle,
      HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
 { --- Построитель подпримитивов --- }
 
-{ Создаёт подпримитивы-отрезки (GDBObjLine) из тесселированных вершин
-  дуги. Дуга — открытый контур (не замыкается). }
+{ Создаёт подпримитив GDBObjArc из TProxyArcItem.
+  По аналогии с парсером текста (uzeentproxyparsertext.pas), который
+  создаёт GDBObjMText через CreateInitObj(GDBMTextID, ...). }
 procedure BuildArcSubEntities(
   const HandlerResult: TProxyHandlerResult;
   const Context: TProxySubEntityContext);
+var
+  pArc: PGDBObjArc;
+  Drawing: PTDrawingDef;
+  DC: PTDrawContext;
+  LocalCenter: TzePoint3d;
+  ActualLW: Integer;
 begin
-  if not HandlerResult.HasVertices then
+  if not HandlerResult.HasArcItem then
     Exit;
-  BuildLinesFromVertices(Context,
-    HandlerResult.Vertices,
-    False,
-    Context.PrimitiveLineWeight);
+  if (Context.OwnerEntity = nil) or (Context.SubEntitiesArray = nil) then
+    Exit;
+  if (Context.Drawing = nil) or (Context.DC = nil) then
+    Exit;
+
+  Drawing := PTDrawingDef(Context.Drawing);
+  DC := PTDrawContext(Context.DC);
+
+  { Пересчитываем центр в локальную систему подпримитива (с учётом
+    смещения ручки прокси-объекта) }
+  LocalCenter := ProxyToLocalPoint(Context, HandlerResult.ArcItem.Center);
+
+  pArc := pointer(
+    PGDBObjEntityOpenArray(Context.SubEntitiesArray)^.CreateInitObj(
+      GDBArcID, Context.OwnerEntity));
+  if pArc = nil then
+    Exit;
+
+  pArc^.Local.p_insert := LocalCenter;
+  pArc^.R := HandlerResult.ArcItem.Radius;
+  pArc^.StartAngle := HandlerResult.ArcItem.StartAngle;
+  pArc^.EndAngle := HandlerResult.ArcItem.EndAngle;
+  { Нормаль (ось Z локальной СК) — из примитива; ox/oy восстановит
+    CalcObjMatrixWithoutOwner через алгоритм Arbitrary Axis. }
+  pArc^.Local.basis.oz := NormalizeVertex(HandlerResult.ArcItem.Normal);
+
+  ActualLW := ResolveLineWeight(Context, Context.PrimitiveLineWeight);
+
+  pArc^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
+  pArc^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
+  pArc^.vp.LineWeight := ActualLW;
+  pArc^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+
+  pArc^.FormatEntity(Drawing^, DC^);
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparserarc: BuildArcSubEntities ARC at (%.3f,%.3f,%.3f)' +
+    ' R=%.4f S=%.4f E=%.4f',
+    [LocalCenter.x, LocalCenter.y, LocalCenter.z,
+     HandlerResult.ArcItem.Radius,
+     HandlerResult.ArcItem.StartAngle,
+     HandlerResult.ArcItem.EndAngle], LM_Info);
 end;
 
 initialization

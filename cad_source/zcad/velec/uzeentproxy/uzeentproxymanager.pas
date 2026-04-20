@@ -91,6 +91,35 @@ type
   end;
   PProxySubEntityContext = ^TProxySubEntityContext;
 
+  { Данные примитива "окружность", переданные обработчиком.
+    Используются построителем для создания GDBObjCircle-подпримитива
+    без предварительной тесселяции — сама окружность затем сама решает
+    вопросы LOD/тесселяции при отрисовке. }
+  TProxyCircleItem = record
+    { Центр окружности в OCS (после применения Arbitrary Axis) }
+    Center: TzePoint3d;
+    { Радиус окружности }
+    Radius: Double;
+    { Нормаль (ось Z локальной СК) }
+    Normal: TzePoint3d;
+  end;
+
+  { Данные примитива "дуга", переданные обработчиком.
+    Используются построителем для создания GDBObjArc-подпримитива
+    без предварительной тесселяции. Углы заданы в радианах. }
+  TProxyArcItem = record
+    { Центр дуги в OCS (после применения Arbitrary Axis) }
+    Center: TzePoint3d;
+    { Радиус дуги }
+    Radius: Double;
+    { Начальный угол (рад), отсчитывается от оси X локальной СК }
+    StartAngle: Double;
+    { Конечный угол (рад) }
+    EndAngle: Double;
+    { Нормаль (ось Z локальной СК) }
+    Normal: TzePoint3d;
+  end;
+
   { Данные одного текстового примитива, переданные обработчиком.
     Используются в FormatEntity для вызова Representation.DrawTextContent. }
   TProxyTextItem = record
@@ -154,6 +183,14 @@ type
     TextItem: TProxyTextItem;
     { Флаг: TextItem заполнен }
     HasTextItem: Boolean;
+    { Данные примитива-окружности (заполняется только для OpCode=2) }
+    CircleItem: TProxyCircleItem;
+    { Флаг: CircleItem заполнен }
+    HasCircleItem: Boolean;
+    { Данные примитива-дуги (заполняется только для OpCode=4) }
+    ArcItem: TProxyArcItem;
+    { Флаг: ArcItem заполнен }
+    HasArcItem: Boolean;
   end;
 
   { Процедура-обработчик одного OpCode.
@@ -382,6 +419,8 @@ begin
   HandlerResult.Filled := False;
   HandlerResult.HasBBox := False;
   HandlerResult.HasTextItem := False;
+  HandlerResult.HasCircleItem := False;
+  HandlerResult.HasArcItem := False;
 
   EnsureInitialized;
 

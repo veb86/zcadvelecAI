@@ -30,11 +30,10 @@
     Radius  — 1 × double (8 байт)  — радиус
     Normal  — 3 × double (24 байта) — нормаль (ось Z локальной СК)
 
-  Тесселяция:
-  - Круг аппроксимируется CIRCLE_SEGMENT_COUNT отрезками
-  - Вершины сохраняются в TProxyHandlerResult.Vertices
-  - Отрисовка выполняется в GDBObjAcdProxy.FormatEntity через
-    Representation.DrawPolyLineWithLT
+  Построение подпримитива:
+  - Вместо тесселяции в набор отрезков создаётся один GDBObjCircle
+    (по аналогии с uzeentproxyparsertext.pas, где создаётся GDBObjMText).
+  - Круг сам решает вопросы LOD/тесселяции/трансформации при отрисовке.
 }
 
 unit uzeentproxyparsercircle;
@@ -54,17 +53,23 @@ uses
   uzeentproxystream,
   uzeentproxymanager,
   uzeentproxysubentitybuilder,
+  uzeentity,
+  uzeentcircle,
+  uzeentgenericsubentry,
+  UGDBVisibleOpenArray,
+  uzedrawingdef,
+  uzgldrawcontext,
+  uzepalette,
+  uzestyleslayers,
+  uzestyleslinetypes,
   uzegeometrytypes,
   uzegeometry,
-  UGDBPoint3DArray,
+  uzeconsts,
   uzcLog;
 
 const
   { OpCode круга в формате AcGiWorldDraw }
   CIRCLE_OPCODE = 2;
-
-  { Количество отрезков тесселяции окружности }
-  CIRCLE_SEGMENT_COUNT = 64;
 
   { Нормаль по умолчанию совпадает с осью Z WCS }
   CIRCLE_Z_AXIS: TzePoint3d = (x: 0.0; y: 0.0; z: 1.0);
@@ -95,26 +100,6 @@ begin
   BBoxMax.z := Center.z;
 end;
 
-{ Тесселирует окружность в массив вершин.
-  Center — центр, Radius — радиус в плоскости XY (Z = Center.z). }
-procedure TessellateCircle(const Center: TzePoint3d; const Radius: Double;
-  var Vertices: GDBPoint3DArray);
-var
-  I: Integer;
-  Angle: Double;
-  Pt: TzePoint3d;
-begin
-  Vertices.init(CIRCLE_SEGMENT_COUNT);
-  for I := 0 to CIRCLE_SEGMENT_COUNT - 1 do
-  begin
-    Angle := (I / CIRCLE_SEGMENT_COUNT) * 2 * Pi;
-    Pt.x := Center.x + Radius * Cos(Angle);
-    Pt.y := Center.y + Radius * Sin(Angle);
-    Pt.z := Center.z;
-    Vertices.PushBackData(Pt);
-  end;
-end;
-
 { Преобразует точку Point из WCS в OCS по нормали Normal.
   Использует алгоритм произвольной оси AutoCAD. }
 function TransformPointToOCS(const Point, Normal: TzePoint3d): TzePoint3d;
@@ -142,7 +127,8 @@ end;
 
 { --- Обработчик OpCode --- }
 
-{ Читает данные круга из потока, вычисляет BBox и тесселирует контур.
+{ Читает данные круга из потока, вычисляет BBox и сохраняет параметры
+  круга в HandlerResult.CircleItem — без тесселяции.
   Регистрируется в TProxyOpCodeDispatcher как обработчик OpCode=2. }
 procedure HandleCircle(
   Stream: TProxyByteStream;
@@ -155,6 +141,7 @@ begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
+  HandlerResult.HasCircleItem := False;
 
   { Читаем: Center (24 байта) + Radius (8 байт) + Normal (24 байта) }
   Center := Stream.ReadVertex;
@@ -178,47 +165,79 @@ begin
   if not VectorsAreEqual(Normal, CIRCLE_Z_AXIS) then
     Center := TransformPointToOCS(Center, Normal);
 
-  { Вычисляем BBox }
+  { Вычисляем BBox (аппроксимационно, в плоскости XY OCS) }
   CalcCircleBBox(Center, Radius, HandlerResult.BBoxMin, HandlerResult.BBoxMax);
   HandlerResult.HasBBox := True;
 
-  { Тесселируем контур окружности }
-  TessellateCircle(Center, Radius, HandlerResult.Vertices);
-  HandlerResult.HasVertices := True;
+  { Заполняем параметры круга для построителя подпримитива }
+  HandlerResult.CircleItem.Center := Center;
+  HandlerResult.CircleItem.Radius := Radius;
+  HandlerResult.CircleItem.Normal := Normal;
+  HandlerResult.HasCircleItem := True;
   HandlerResult.Closed := True;
 
   HandlerResult.Valid := True;
 
   programlog.LogOutFormatStr(
-    'uzeentproxyparsercircle: OK, %d vertices, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
-    [HandlerResult.Vertices.Count,
-     HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
+    'uzeentproxyparsercircle: OK, CircleItem filled, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
+    [HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
      HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
 end;
 
 { --- Построитель подпримитивов --- }
 
-{ Создаёт подпримитивы-отрезки (GDBObjLine) из тесселированных вершин
-  окружности. Круг — замкнутый контур, поэтому строится и замыкающий
-  отрезок (последняя → первая вершина).
-  Если над окружностью была активна заливка — строятся подпримитивы
-  GDBObjSolid через триангуляцию веером. }
+{ Создаёт подпримитив GDBObjCircle из TProxyCircleItem.
+  По аналогии с парсером текста (uzeentproxyparsertext.pas), который
+  создаёт GDBObjMText через CreateInitObj(GDBMTextID, ...). }
 procedure BuildCircleSubEntities(
   const HandlerResult: TProxyHandlerResult;
   const Context: TProxySubEntityContext);
+var
+  pCircle: PGDBObjCircle;
+  Drawing: PTDrawingDef;
+  DC: PTDrawContext;
+  LocalCenter: TzePoint3d;
+  ActualLW: Integer;
 begin
-  if not HandlerResult.HasVertices then
+  if not HandlerResult.HasCircleItem then
+    Exit;
+  if (Context.OwnerEntity = nil) or (Context.SubEntitiesArray = nil) then
+    Exit;
+  if (Context.Drawing = nil) or (Context.DC = nil) then
     Exit;
 
-  if HandlerResult.Filled then
-    BuildSolidFromVertices(Context,
-      HandlerResult.Vertices,
-      Context.PrimitiveLineWeight);
+  Drawing := PTDrawingDef(Context.Drawing);
+  DC := PTDrawContext(Context.DC);
 
-  BuildLinesFromVertices(Context,
-    HandlerResult.Vertices,
-    HandlerResult.Closed,
-    Context.PrimitiveLineWeight);
+  { Пересчитываем центр в локальную систему подпримитива (с учётом
+    смещения ручки прокси-объекта) }
+  LocalCenter := ProxyToLocalPoint(Context, HandlerResult.CircleItem.Center);
+
+  pCircle := pointer(
+    PGDBObjEntityOpenArray(Context.SubEntitiesArray)^.CreateInitObj(
+      GDBCircleID, Context.OwnerEntity));
+  if pCircle = nil then
+    Exit;
+
+  pCircle^.Local.p_insert := LocalCenter;
+  pCircle^.Radius := HandlerResult.CircleItem.Radius;
+  { Нормаль (ось Z локальной СК) — из примитива; ox/oy восстановит
+    CalcObjMatrixWithoutOwner через алгоритм Arbitrary Axis. }
+  pCircle^.Local.basis.oz := NormalizeVertex(HandlerResult.CircleItem.Normal);
+
+  ActualLW := ResolveLineWeight(Context, Context.PrimitiveLineWeight);
+
+  pCircle^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
+  pCircle^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
+  pCircle^.vp.LineWeight := ActualLW;
+  pCircle^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+
+  pCircle^.FormatEntity(Drawing^, DC^);
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparsercircle: BuildCircleSubEntities CIRCLE at (%.3f,%.3f,%.3f) R=%.4f',
+    [LocalCenter.x, LocalCenter.y, LocalCenter.z,
+     HandlerResult.CircleItem.Radius], LM_Info);
 end;
 
 initialization
