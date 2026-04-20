@@ -75,6 +75,9 @@ type
     procedure SpdsDoorProxySubEntitiesAreLocalToGripCenter;
     { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
     procedure ProxyGraphicContourStoresDrawingAttributesForLog;
+    { Проверяет, что OpCode=38 UnicodeText2 сохраняет TypeFace, FontName
+      и BigFont в HandlerResult.TextItem. }
+    procedure ProxyGraphicUnicodeText2StoresFontFields;
   end;
 
 implementation
@@ -283,6 +286,109 @@ begin
   begin
     AppendBytes(Data, Length(Payload));
     Move(Payload[0], Data[Length(Data) - Length(Payload)], Length(Payload));
+  end;
+end;
+
+{ Кодирует строку как UTF-16LE, завершает двумя нулевыми байтами и
+  выравнивает позицию данных до границы 4 байт. Формат совместим с
+  TProxyByteStream.ReadPaddedUnicodeString и соответствует тому, как
+  AutoCAD пишет строки внутри OpCode=38 (UnicodeText2). }
+procedure AppendPaddedUnicodeString(var Data: TBytes; const Value: UnicodeString);
+var
+  I, OldLen, ByteLen: Integer;
+  W: Word;
+begin
+  ByteLen := Length(Value) * 2;
+  OldLen := Length(Data);
+  AppendBytes(Data, ByteLen + 2);
+  for I := 1 to Length(Value) do
+  begin
+    W := Word(Value[I]);
+    Data[OldLen + (I - 1) * 2]     := Byte(W and $FF);
+    Data[OldLen + (I - 1) * 2 + 1] := Byte((W shr 8) and $FF);
+  end;
+  Data[OldLen + ByteLen]     := 0;
+  Data[OldLen + ByteLen + 1] := 0;
+
+  { Выравнивание до границы DWORD }
+  while (Length(Data) mod 4) <> 0 do
+  begin
+    SetLength(Data, Length(Data) + 1);
+    Data[High(Data)] := 0;
+  end;
+end;
+
+{ Собирает payload для OpCode=38 (UnicodeText2) с заданным текстом,
+  TypeFace, FontFile и BigFont. Используется тестом для проверки,
+  что парсер корректно читает и сохраняет эти три поля шрифта. }
+procedure AppendUnicodeText2Payload(var Payload: TBytes;
+  const Text, TypeFace, FontFile, BigFont: UnicodeString);
+begin
+  { Точка вставки, нормаль, направление }
+  AppendVertex(Payload, 0.0, 0.0, 0.0);
+  AppendVertex(Payload, 0.0, 0.0, 1.0);
+  AppendVertex(Payload, 1.0, 0.0, 0.0);
+
+  { Строка текста }
+  AppendPaddedUnicodeString(Payload, Text);
+
+  { IgnoreLength, Raw }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { Height, WidthFactor }
+  AppendDouble(Payload, 2.5);
+  AppendDouble(Payload, 1.0);
+
+  { ObliqueAngle, TrackingPercentage }
+  AppendDouble(Payload, 0.0);
+  AppendDouble(Payload, 1.0);
+
+  { Флаги: IsBackward, IsUpsideDown, IsVertical, IsUnderlined, IsOverlined }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { IsBold, IsItalic, Charset, Pitch }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { TypeFace, FontFilename, BigFontFilename }
+  AppendPaddedUnicodeString(Payload, TypeFace);
+  AppendPaddedUnicodeString(Payload, FontFile);
+  AppendPaddedUnicodeString(Payload, BigFont);
+end;
+
+{ Собирает proxy graphic с двумя UnicodeText2-примитивами:
+  - один с TypeFace="Times New Roman" и пустым FontFile (стиль newtext),
+  - один с пустым TypeFace и FontFile="txt.shx" (стиль Standard).
+  Это воспроизводит реальные данные из tablerazdel2.dxf, где строки
+  таблицы используют разные стили текста. }
+function BuildProxyGraphicWithTwoUnicodeText2: TBytes;
+var
+  Body, Payload: TBytes;
+begin
+  SetLength(Body, 0);
+
+  SetLength(Payload, 0);
+  AppendUnicodeText2Payload(Payload, 'Times row', 'Times New Roman', '', '');
+  AppendCommand(Body, 38, Payload);
+
+  SetLength(Payload, 0);
+  AppendUnicodeText2Payload(Payload, 'Shx row', '', 'txt.shx', '');
+  AppendCommand(Body, 38, Payload);
+
+  SetLength(Result, 0);
+  AppendInt32(Result, Length(Body) + 8);
+  AppendInt32(Result, 2);
+  if Length(Body) > 0 then
+  begin
+    AppendBytes(Result, Length(Body));
+    Move(Body[0], Result[Length(Result) - Length(Body)], Length(Body));
   end;
 end;
 
@@ -641,6 +747,52 @@ begin
   finally
     drawing.done;
   end;
+end;
+
+procedure TProxyEntityLoadTest.ProxyGraphicUnicodeText2StoresFontFields;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  TimesIdx, ShxIdx, I: Integer;
+begin
+  Parser := TProxyGraphicParser.Create(BuildProxyGraphicWithTwoUnicodeText2);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(2, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать два UnicodeText2 примитива');
+
+  TimesIdx := -1;
+  ShxIdx := -1;
+  for I := 0 to High(ParseResult.Primitives) do
+  begin
+    CheckTrue(ParseResult.Primitives[I].HandlerResult.HasTextItem,
+      'Каждый UnicodeText2 должен заполнять TextItem в HandlerResult');
+    if ParseResult.Primitives[I].HandlerResult.TextItem.Text = 'Times row' then
+      TimesIdx := I
+    else if ParseResult.Primitives[I].HandlerResult.TextItem.Text = 'Shx row' then
+      ShxIdx := I;
+  end;
+
+  Check(TimesIdx >= 0, 'Должен быть примитив с текстом "Times row"');
+  Check(ShxIdx >= 0, 'Должен быть примитив с текстом "Shx row"');
+
+  CheckEquals('Times New Roman',
+    ParseResult.Primitives[TimesIdx].HandlerResult.TextItem.TypeFace,
+    'TypeFace должен сохраняться из OpCode=38 для подбора стиля по FontFamily');
+  CheckEquals('',
+    ParseResult.Primitives[TimesIdx].HandlerResult.TextItem.FontName,
+    'Пустой FontFile должен оставаться пустым, а не заменяться TypeFace');
+
+  CheckEquals('',
+    ParseResult.Primitives[ShxIdx].HandlerResult.TextItem.TypeFace,
+    'Отсутствие TypeFace должно приводить к пустой строке');
+  CheckEquals('txt.shx',
+    ParseResult.Primitives[ShxIdx].HandlerResult.TextItem.FontName,
+    'FontFile должен сохраняться независимо от TypeFace');
 end;
 
 begin

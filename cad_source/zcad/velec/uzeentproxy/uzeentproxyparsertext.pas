@@ -211,6 +211,8 @@ begin
   HandlerResult.TextItem.WidthFactor := WidthFactor;
   HandlerResult.TextItem.Angle := Angle;
   HandlerResult.TextItem.FontName := '';
+  HandlerResult.TextItem.TypeFace := '';
+  HandlerResult.TextItem.BigFontName := '';
   HandlerResult.HasTextItem := True;
 
   HandlerResult.Valid := True;
@@ -221,14 +223,23 @@ begin
 end;
 
 { Читает расширенный Unicode-текст формата OpCode=38 (UnicodeText2).
-  Возвращает BBox и TextItem для отрисовки через DrawTextContent. }
+  Возвращает BBox и TextItem для отрисовки через DrawTextContent.
+  Структура полей шрифта соответствует AcGiWorldDraw/ezdxf:
+  - TypeFace   — читаемое имя шрифта ("Times New Roman"), хранится в
+                 FontFamily стиля текста ZCAD (расширенные данные 1000
+                 группы ACAD в STYLE-записи DXF).
+  - FontFile   — имя файла шрифта ("times.ttf", "txt.shx"), хранится в
+                 FontFile стиля текста.
+  - BigFont    — имя файла большого (Asian) шрифта, редко используется.
+  Эти три поля нужны для корректного подбора стиля (текст в разных
+  ячейках таблицы может использовать разные стили). }
 procedure HandleUnicodeText2(
   Stream: TProxyByteStream;
   out HandlerResult: TProxyHandlerResult);
 var
   Insert, Normal, Direction: TzePoint3d;
   Height, WidthFactor: Double;
-  Text, FontName: string;
+  Text, FontName, TypeFace, BigFont: string;
   Angle: Double;
 begin
   HandlerResult.Valid := False;
@@ -273,15 +284,21 @@ begin
   Stream.ReadUInt32;
   Stream.ReadUInt32;
 
-  { TypeFace, FontFilename, BigFontFilename — Unicode-строки с паддингом }
-  Stream.ReadPaddedUnicodeString;
+  { TypeFace, FontFilename, BigFontFilename — Unicode-строки с паддингом.
+    В разных ячейках таблицы значения могут быть разные:
+    - "newtext" стиль:  TypeFace="Times New Roman", FontFile="" (ttf)
+    - "Standard" стиль: TypeFace="",               FontFile="txt.shx"
+    Поэтому сохраняем оба значения — подбор стиля выполняется в
+    BuildTextSubEntities с fallback TypeFace -> FontFile -> style name. }
+  TypeFace := Stream.ReadPaddedUnicodeString;
   FontName := Stream.ReadPaddedUnicodeString;
-  Stream.ReadPaddedUnicodeString;
+  BigFont := Stream.ReadPaddedUnicodeString;
 
   programlog.LogOutFormatStr(
     'uzeentproxyparsertext: UnicodeText2 Insert=(%.3f,%.3f,%.3f) H=%.3f' +
-    ' Text="%s" Font="%s"',
-    [Insert.x, Insert.y, Insert.z, Height, Text, FontName], LM_Info);
+    ' Text="%s" TypeFace="%s" Font="%s" BigFont="%s"',
+    [Insert.x, Insert.y, Insert.z, Height, Text, TypeFace, FontName, BigFont],
+    LM_Info);
 
   if (Height <= 0) or (Text = '') then
     Exit;
@@ -308,6 +325,8 @@ begin
   HandlerResult.TextItem.WidthFactor := WidthFactor;
   HandlerResult.TextItem.Angle := Angle;
   HandlerResult.TextItem.FontName := FontName;
+  HandlerResult.TextItem.TypeFace := TypeFace;
+  HandlerResult.TextItem.BigFontName := BigFont;
   HandlerResult.HasTextItem := True;
 
   HandlerResult.Valid := True;
@@ -320,13 +339,31 @@ end;
 { --- Построитель подпримитивов --- }
 
 { Подбирает стиль текста для TextItem.
-  Сначала пробует найти стиль по имени файла шрифта, затем по имени,
-  потом стандартный стиль, в крайнем случае — первый стиль таблицы. }
+
+  Порядок поиска (сначала удачный вариант возвращается):
+  1. По TypeFace — сравнение с FontFamily стилей таблицы.
+     TypeFace хранится в OpCode=38 (UnicodeText2) как читаемое имя шрифта
+     ("Times New Roman"). В ZCAD это поле FontFamily, заполняемое из
+     расширенных данных STYLE-записи DXF (код 1000 в секции ACAD).
+  2. По FontName — сравнение с FontFile стилей (точное и без расширения).
+     FontName хранится в OpCode=10 (Text1) как имя файла шрифта
+     ("times.ttf", "txt.shx").
+  3. По FontName как имени стиля (если имя стиля совпадает с именем файла).
+  4. Fallback: стиль "Standard".
+  5. Fallback: первый стиль таблицы.
+
+  Такой порядок важен: в одном proxy-графике разные примитивы могут
+  содержать разные комбинации полей (см. ezdxf proxygraphic.unicode_text2),
+  например строка с TypeFace="Times New Roman" + FontName="" должна
+  резолвиться в стиль newtext, а строка с TypeFace="" + FontName="txt.shx"
+  — в стиль Standard. Эти стили имеют разные fontfile/fontfamily. }
 function ResolveTextStyle(var Drawing: TDrawingDef;
-  const FontName: String): PGDBTextStyle;
+  const FontName, TypeFace: String): PGDBTextStyle;
 begin
   Result := nil;
-  if FontName <> '' then
+  if TypeFace <> '' then
+    Result := Drawing.GetTextStyleTable^.FindStyleByTypeface(TypeFace);
+  if (Result = nil) and (FontName <> '') then
   begin
     Result := Drawing.GetTextStyleTable^.FindStyleByFont(FontName);
     if Result = nil then
@@ -362,7 +399,9 @@ begin
   Drawing := PTDrawingDef(Context.Drawing);
   DC := PTDrawContext(Context.DC);
 
-  TxtStyle := ResolveTextStyle(Drawing^, HandlerResult.TextItem.FontName);
+  TxtStyle := ResolveTextStyle(Drawing^,
+    HandlerResult.TextItem.FontName,
+    HandlerResult.TextItem.TypeFace);
   if TxtStyle = nil then
   begin
     programlog.LogOutFormatStr(
@@ -414,8 +453,9 @@ begin
 
   programlog.LogOutFormatStr(
     'uzeentproxyparsertext: BuildTextSubEntities MTEXT "%s" at (%.3f,%.3f)' +
-    ' font="%s" style="%s"',
+    ' typeface="%s" font="%s" style="%s"',
     [HandlerResult.TextItem.Text, InsertPt.x, InsertPt.y,
+     HandlerResult.TextItem.TypeFace,
      HandlerResult.TextItem.FontName, TxtStyle^.Name], LM_Info);
 end;
 
