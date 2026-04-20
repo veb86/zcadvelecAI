@@ -717,6 +717,12 @@ var
 begin
   ClonePtr := CreateInstance;
 
+  { Копируем свойства слоя/типа линии/веса/цвета и LineTypeScale владельца.
+    Без этого vp.LineTypeScale в клоне останется равным 1, и подпримитивы
+    клона (построенные при первом FormatEntity) получат масштаб 1 вместо
+    считанного из DXF code 48. }
+  CopyVPto(ClonePtr^);
+
   { Копируем бинарные данные proxy graphic }
   SetLength(ClonePtr^.FProxyDataBytes, Length(FProxyDataBytes));
   if Length(FProxyDataBytes) > 0 then
@@ -747,6 +753,7 @@ begin
     уникальное имя блока при следующем сохранении. }
   ClonePtr^.FConvertedBlockName := '';
 
+  ClonePtr^.bp.ListPos.Owner := own;
   Result := PGDBObjEntity(ClonePtr);
 end;
 
