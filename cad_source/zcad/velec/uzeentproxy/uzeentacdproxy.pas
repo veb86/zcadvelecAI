@@ -109,6 +109,13 @@ type
     подпримитивы (линии, окружности, дуги, солиды, многострочный текст)
     и добавляет их в ConstObjArray. Отрисовка делегируется подпримитивам. }
   GDBObjAcdProxy = object(GDBObjComplex)
+  public
+    { Параметры трансформации (по образцу GDBObjBlockInsert).
+      Поддерживают перемещение/масштабирование/поворот/зеркализацию
+      прокси-объекта. Хранятся отдельно, чтобы пережить пересборку
+      матрицы objmatrix в CalcObjMatrix. }
+    scale: TzePoint3d;
+    rotate: double;
   private
     { Сырые байты Proxy Graphic (код 310 из DXF) }
     FProxyDataBytes: TBytes;
@@ -168,7 +175,14 @@ type
     procedure DrawGeometry(lw: integer; var DC: TDrawContext;
       const inFrustumState: TInBoundingVolume); virtual;
 
-    { Применяет матрицу трансформации }
+    { Пересчитывает objmatrix с учётом scale и rotate }
+    procedure CalcObjMatrix(pdrawing: PTDrawingDef = nil); virtual;
+
+    { Декомпозиция objmatrix обратно в Local.p_insert/scale/rotate,
+      чтобы параметры трансформации пережили повторный CalcObjMatrix. }
+    procedure ReCalcFromObjMatrix; virtual;
+
+    { Применяет матрицу трансформации (move/scale/rotate/mirror) }
     procedure TransformAt(p: PGDBObjEntity;
       t_matrix: PzeTypedMatrix4d); virtual;
 
@@ -245,6 +259,8 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  scale := ScaleOne;
+  rotate := 0;
 end;
 
 constructor GDBObjAcdProxy.initnul;
@@ -260,6 +276,8 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  scale := ScaleOne;
+  rotate := 0;
 end;
 
 destructor GDBObjAcdProxy.done;
@@ -491,27 +509,26 @@ begin
   if not FSubEntitiesBuilt then
     BuildSubEntities(drawing, DC);
 
+  { Пересчитываем objmatrix с учётом scale/rotate ДО форматирования
+    подпримитивов, чтобы подпримитивы унаследовали полную матрицу
+    владельца через bp.ListPos.owner.GetMatrix. }
   CalcObjMatrix(@drawing);
 
-  { Делегируем форматирование подпримитивов GDBObjComplex }
-  inherited FormatEntity(drawing, DC, Stage);
+  { Форматируем подпримитивы и вычисляем BBox из них: так BBox
+    получается в мировых координатах с учётом трансформации. }
+  ConstObjArray.FormatEntity(drawing, DC);
+  calcbb(DC);
+  self.BuildGeometry(drawing);
+  CalcActualVisible(DC.DrawingContext.VActuality);
 
   if FProxyBBoxLoaded then
-  begin
-    vp.BoundingBox.LBN := FProxyBBoxMin;
-    vp.BoundingBox.RTF := FProxyBBoxMax;
-    ConstObjArray.ObjTree.BoundingBox := vp.BoundingBox;
-
     { Выводим в лог координаты BBox и ручки (grip) для диагностики }
     programlog.LogOutFormatStr(
       'uzeentacdproxy: FormatEntity bbox min=(%.3f,%.3f,%.3f)'
-      + ' max=(%.3f,%.3f,%.3f)',
-      [FProxyBBoxMin.x, FProxyBBoxMin.y, FProxyBBoxMin.z,
-       FProxyBBoxMax.x, FProxyBBoxMax.y, FProxyBBoxMax.z], LM_Info);
-    programlog.LogOutFormatStr(
-      'uzeentacdproxy: FormatEntity grip center=(%.3f,%.3f,%.3f)',
-      [GetCenterPoint.x, GetCenterPoint.y, GetCenterPoint.z], LM_Info);
-  end;
+      + ' max=(%.3f,%.3f,%.3f) grip=(%.3f,%.3f,%.3f)',
+      [vp.BoundingBox.LBN.x, vp.BoundingBox.LBN.y, vp.BoundingBox.LBN.z,
+       vp.BoundingBox.RTF.x, vp.BoundingBox.RTF.y, vp.BoundingBox.RTF.z,
+       GetCenterPoint.x, GetCenterPoint.y, GetCenterPoint.z], LM_Info);
 
   if Assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
@@ -525,10 +542,64 @@ begin
   inherited DrawGeometry(lw, DC, inFrustumState);
 end;
 
+{ Пересчёт objmatrix: базовая матрица (translate(Local.p_insert)*basis) из
+  предка, затем поворот вокруг Z на угол rotate и масштабирование scale.
+  Та же последовательность, что и в GDBObjBlockInsert.CalcObjMatrix;
+  сохраняется параметры трансформации в матрице, чтобы их нельзя было
+  "потерять" при повторном форматировании. }
+procedure GDBObjAcdProxy.CalcObjMatrix(pdrawing: PTDrawingDef = nil);
+var
+  m1: TzeTypedMatrix4d;
+begin
+  inherited CalcObjMatrix(pdrawing);
+
+  if not IsZero(rotate) then
+  begin
+    m1 := CreateRotationMatrixZ(rotate);
+    objMatrix := MatrixMultiply(m1, objMatrix);
+  end;
+
+  if (not SameValue(scale.x, 1.0))
+    or (not SameValue(scale.y, 1.0))
+    or (not SameValue(scale.z, 1.0)) then
+  begin
+    m1 := CreateScaleMatrix(scale);
+    objMatrix := MatrixMultiply(m1, objMatrix);
+  end;
+
+  P_insert_in_WCS := VectorTransform3D(NulVertex, objMatrix);
+end;
+
+{ Декомпозиция objMatrix в Local.p_insert/basis/scale/rotate, чтобы после
+  внешней трансформации (TransformAt) параметры пережили последующий вызов
+  CalcObjMatrix. По образцу GDBObjBlockInsert.ReCalcFromObjMatrix. }
+procedure GDBObjAcdProxy.ReCalcFromObjMatrix;
+var
+  ox, tv: TzePoint3d;
+begin
+  inherited ReCalcFromObjMatrix;
+  Local := GetPInsertInOCSBymatrix(objMatrix, scale);
+
+  ox := GetXfFromZ(Local.basis.oz);
+  tv := Local.basis.ox;
+  if scale.x < -eps then
+    tv := VertexMulOnSc(tv, -1);
+  rotate := scalardot(tv, ox);
+  if rotate > 1.0 then
+    rotate := 1.0
+  else if rotate < -1.0 then
+    rotate := -1.0;
+  rotate := arccos(rotate);
+  if scalardot(tv, VectorDot(Local.basis.oz,
+    GetXfFromZ(Local.basis.oz))) < -eps then
+    rotate := 2 * pi - rotate;
+end;
+
 procedure GDBObjAcdProxy.TransformAt(p: PGDBObjEntity;
   t_matrix: PzeTypedMatrix4d);
 begin
   inherited TransformAt(p, t_matrix);
+  ReCalcFromObjMatrix;
 end;
 
 function GDBObjAcdProxy.GetObjTypeName: string;
@@ -611,6 +682,11 @@ begin
   ClonePtr^.FProxyBBoxMin := FProxyBBoxMin;
   ClonePtr^.FProxyBBoxMax := FProxyBBoxMax;
   ClonePtr^.FProxyGripOffset := FProxyGripOffset;
+
+  { Копируем параметры трансформации }
+  ClonePtr^.Local := Local;
+  ClonePtr^.scale := scale;
+  ClonePtr^.rotate := rotate;
 
   Result := PGDBObjEntity(ClonePtr);
 end;

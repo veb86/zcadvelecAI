@@ -34,6 +34,9 @@ uses
   Classes,
   fpcunit,
   testregistry,
+  // Базовые типы и сущности
+  uzetypes,
+  uzeentity,
   // Сущности для регистрации в фабрике
   uzeentacdproxy,
   uzeentline,
@@ -78,6 +81,12 @@ type
     { Проверяет, что OpCode=38 UnicodeText2 сохраняет TypeFace, FontName
       и BigFont в HandlerResult.TextItem. }
     procedure ProxyGraphicUnicodeText2StoresFontFields;
+    { Проверяет, что вращение proxy-объекта меняет положение подпримитивов
+      согласно повороту, а grip center остаётся в той же точке. }
+    procedure SpdsDoorProxyRotationTransformsSubEntities;
+    { Проверяет, что однородное масштабирование proxy-объекта корректно
+      масштабирует подпримитивы и их bbox расширяется в то же число раз. }
+    procedure SpdsDoorProxyUniformScaleTransformsSubEntities;
   end;
 
 implementation
@@ -224,7 +233,7 @@ function PrimitiveHasSegment(const Vertices: GDBPoint3DArray;
   const X1, Y1, X2, Y2: Double): Boolean;
 var
   I: Integer;
-  P1, P2: GDBvertex;
+  P1, P2: TzePoint3d;
 const
   EPS = 1e-6;
 begin
@@ -591,7 +600,7 @@ begin
     entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
     CheckEquals(ObjN_GDBObjAcdProxy, entity^.GetObjTypeName,
       'SPDSDOOR должен загружаться как proxy-объект');
-    CheckNotNull(entity^.vp.Layer, 'У proxy-объекта должен быть назначен слой');
+    CheckTrue(entity^.vp.Layer <> nil, 'У proxy-объекта должен быть назначен слой');
     CheckEquals('АР ДВЕРИ', entity^.vp.Layer^.Name,
       'Proxy-объект должен сохранять слой из DXF-сущности');
   finally
@@ -654,7 +663,7 @@ var
   dc: TDrawContext;
   zdc: TZDrawingContext;
   entity: PGDBObjEntity;
-  Center: GDBvertex;
+  Center: TzePoint3d;
 begin
   drawing.init(nil);
   try
@@ -698,7 +707,7 @@ var
   entity: PGDBObjEntity;
   proxy: PGDBObjAcdProxy;
   line: PGDBObjLine;
-  center, delta: GDBvertex;
+  center, delta: TzePoint3d;
   moveMatrix: TzeTypedMatrix4d;
 begin
   drawing.init(nil);
@@ -793,6 +802,122 @@ begin
   CheckEquals('txt.shx',
     ParseResult.Primitives[ShxIdx].HandlerResult.TextItem.FontName,
     'FontFile должен сохраняться независимо от TypeFace');
+end;
+
+{ Помощник: запустить прокси из spdsdoor.dxf, вернуть указатели. }
+procedure LoadSpdsDoorProxy(var drawing: TSimpleDrawing;
+  var dc: TDrawContext; out proxy: PGDBObjAcdProxy);
+var
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+begin
+  drawing.init(nil);
+  dc := drawing.CreateDrawingRC;
+  zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+  AddFromDXF('cad_source/test/spdsdoor.dxf', zdc);
+  entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+  proxy := PGDBObjAcdProxy(entity);
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxyRotationTransformsSubEntities;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  line: PGDBObjLine;
+  center: TzePoint3d;
+  beforeLocal, afterLocal: TzePoint3d;
+  beforeWCS, afterWCS: TzePoint3d;
+  rotMatrix: TzeTypedMatrix4d;
+  angle: double;
+  cosA, sinA: double;
+begin
+  LoadSpdsDoorProxy(drawing, dc, proxy);
+  try
+    Check(proxy^.ConstObjArray.Count > 0,
+      'Proxy graphic должен построить подпримитивы');
+
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+    center := proxy^.GetCenterPoint;
+    beforeLocal := line^.CoordInOCS.lBegin;
+    beforeWCS := line^.CoordInWCS.lBegin;
+
+    CheckEquals(beforeLocal.x + center.x, beforeWCS.x, 1e-6,
+      'До поворота WCS-координата = локальная + центр');
+
+    { Поворачиваем на 90° вокруг grip center }
+    angle := pi / 2;
+    rotMatrix := CreateRotationMatrixZ(angle);
+    proxy^.TransformAt(PGDBObjEntity(proxy), @rotMatrix);
+    proxy^.FormatEntity(drawing, dc);
+
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+    afterLocal := line^.CoordInOCS.lBegin;
+    afterWCS := line^.CoordInWCS.lBegin;
+
+    { Локальные координаты подпримитивов НЕ изменяются (rotation применяется
+      через owner matrix). Изменяется только WCS. }
+    CheckEquals(beforeLocal.x, afterLocal.x, 1e-6,
+      'Локальные координаты подпримитива не должны меняться при повороте владельца');
+    CheckEquals(beforeLocal.y, afterLocal.y, 1e-6,
+      'Локальные координаты подпримитива не должны меняться при повороте владельца');
+
+    { TransformAt умножает objmatrix на t_matrix справа — значит финальная
+      WCS-позиция точки есть её прежняя WCS-позиция, повёрнутая вокруг
+      начала мировых координат на angle вокруг Z. }
+    cosA := cos(angle);
+    sinA := sin(angle);
+    CheckEquals(cosA * beforeWCS.x - sinA * beforeWCS.y,
+      afterWCS.x, 1e-6,
+      'После поворота WCS должен отражать rotZ вокруг начала координат');
+    CheckEquals(sinA * beforeWCS.x + cosA * beforeWCS.y,
+      afterWCS.y, 1e-6,
+      'После поворота WCS должен отражать rotZ вокруг начала координат');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.SpdsDoorProxyUniformScaleTransformsSubEntities;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  line: PGDBObjLine;
+  center: TzePoint3d;
+  beforeLocal: TzePoint3d;
+  afterWCS: TzePoint3d;
+  scaleMatrix: TzeTypedMatrix4d;
+  scaleFactor: double;
+begin
+  LoadSpdsDoorProxy(drawing, dc, proxy);
+  try
+    Check(proxy^.ConstObjArray.Count > 0,
+      'Proxy graphic должен построить подпримитивы');
+
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+    center := proxy^.GetCenterPoint;
+    beforeLocal := line^.CoordInOCS.lBegin;
+
+    scaleFactor := 2.0;
+    scaleMatrix := CreateScaleMatrix(scaleFactor);
+    proxy^.TransformAt(PGDBObjEntity(proxy), @scaleMatrix);
+    proxy^.FormatEntity(drawing, dc);
+
+    line := PGDBObjLine(proxy^.ConstObjArray.GetData(0));
+    afterWCS := line^.CoordInWCS.lBegin;
+
+    { После масштабирования X2 вокруг grip center:
+      newWCS = grip_center + scale * (beforeLocal) }
+    CheckEquals(center.x * scaleFactor + scaleFactor * beforeLocal.x,
+      afterWCS.x, 1e-6,
+      'После масштабирования WCS подпримитива должен быть умножен на scale относительно начала координат WCS');
+    CheckEquals(center.y * scaleFactor + scaleFactor * beforeLocal.y,
+      afterWCS.y, 1e-6,
+      'После масштабирования WCS подпримитива должен быть умножен на scale относительно начала координат WCS');
+  finally
+    drawing.done;
+  end;
 end;
 
 begin
