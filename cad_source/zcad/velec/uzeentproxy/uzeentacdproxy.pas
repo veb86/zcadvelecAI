@@ -193,6 +193,30 @@ type
 
     { Создаёт новый инициализированный экземпляр }
     class function CreateInstance: PGDBObjAcdProxy; static;
+
+    { --- Публичные свойства для доступа из команды proxytoblock --- }
+
+    { Количество контуров (распаршенных примитивов) }
+    property ContourCount: Integer read FContourCount;
+    { Минимальная точка BBox в OCS }
+    property BBoxMin: TzePoint3d read FBBoxMinInOCS;
+    { Максимальная точка BBox в OCS }
+    property BBoxMax: TzePoint3d read FBBoxMaxInOCS;
+    { Флаг: BBox вычислен }
+    property BBoxLoaded: Boolean read FBBoxLoaded;
+    { Центр BBox }
+    property CenterPoint: TzePoint3d read FCenterPoint;
+    { Флаг: центр BBox вычислен }
+    property HasCenterPoint: Boolean read FHasCenterPoint;
+
+    { Возвращает контур по индексу }
+    function GetContour(Index: Integer): TProxyContour;
+    { Возвращает количество текстовых примитивов }
+    function GetTextItemCount: Integer;
+    { Возвращает текстовый примитив по индексу }
+    function GetTextItem(Index: Integer): TProxyTextItem;
+    { Выполняет разбор proxy-данных, если ещё не выполнен }
+    procedure EnsureParsed;
   end;
 
 { Выделяет память для нового прокси-объекта }
@@ -229,6 +253,33 @@ begin
   Result := '';
   for I := 0 to High(Data) do
     Result := Result + IntToHex(Data[I], 2);
+end;
+
+{ === Публичные методы доступа для proxytoblock === }
+
+{ Возвращает контур по индексу }
+function GDBObjAcdProxy.GetContour(Index: Integer): TProxyContour;
+begin
+  Result := FContours[Index];
+end;
+
+{ Возвращает количество текстовых примитивов }
+function GDBObjAcdProxy.GetTextItemCount: Integer;
+begin
+  Result := Length(FTextItems);
+end;
+
+{ Возвращает текстовый примитив по индексу }
+function GDBObjAcdProxy.GetTextItem(Index: Integer): TProxyTextItem;
+begin
+  Result := FTextItems[Index];
+end;
+
+{ Выполняет разбор proxy-данных, если ещё не выполнен }
+procedure GDBObjAcdProxy.EnsureParsed;
+begin
+  if (FContourCount = 0) and (Length(FProxyDataBytes) > 0) then
+    ParseProxyData;
 end;
 
 { === GDBObjAcdProxy === }
