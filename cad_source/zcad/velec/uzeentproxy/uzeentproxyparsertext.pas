@@ -495,7 +495,11 @@ begin
     для значений ByLayer/ByBlock/ByLwDefault). }
   pMText^.vp.LineWeight :=
     ResolveLineWeight(Context, Context.PrimitiveLineWeight);
-  pMText^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+  { Применяем цвет текущего примитива (ByBlock → цвет владельца,
+    ByLayer → цвет слоя, явный индекс → как есть). Соответствует
+    поведению примитивов внутри BlockInsert. }
+  pMText^.vp.Color := TGDBPaletteColor(
+    ResolveColor(Context, Context.PrimitiveColor));
   ApplyLineTypeScale(PGDBObjEntity(pMText), Context);
 
   { Template — шаблон с форматированием, при пустом Content он будет

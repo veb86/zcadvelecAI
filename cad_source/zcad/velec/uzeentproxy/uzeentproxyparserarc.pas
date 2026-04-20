@@ -262,7 +262,8 @@ begin
   pArc^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
   pArc^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
   pArc^.vp.LineWeight := ActualLW;
-  pArc^.vp.Color := TGDBPaletteColor(Context.OwnerColor);
+  pArc^.vp.Color := TGDBPaletteColor(
+    ResolveColor(Context, Context.PrimitiveColor));
   ApplyLineTypeScale(PGDBObjEntity(pArc), Context);
 
   pArc^.FormatEntity(Drawing^, DC^);

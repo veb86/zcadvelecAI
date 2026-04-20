@@ -460,6 +460,12 @@ begin
   { По умолчанию — вес владельца; реальный вес каждого примитива
     подставляется в BuildSubEntities на каждой итерации цикла. }
   Result.PrimitiveLineWeight := vp.LineWeight;
+  { По умолчанию — ByBlock: если в потоке Proxy Graphic нет команды
+    SetColor (OpCode=14), подпримитив ведёт себя как внутри BlockInsert
+    с цветом ByBlock, то есть наследует цвет владельца. Реальное значение
+    PrimitiveColor подставляется в BuildSubEntities на каждой итерации
+    цикла из ParseResult.Primitives[I].Color. }
+  Result.PrimitiveColor := ClByBlock;
   { Масштаб типа линии владельца (DXF group code 48). Берётся
     непосредственно из vp.LineTypeScale, заполненного
     LoadFromDXFObjShared при чтении DXF. Используется, чтобы
@@ -553,11 +559,20 @@ begin
         OwnerLineTypeScale (DXF code 48 владельца), чтобы отражался и
         масштаб самого прокси-объекта, и внутренний масштаб графики. }
       Context.PrimitiveLineTypeScale := ParseResult.Primitives[I].LtScale;
+      { Подставляем цвет, зафиксированный парсером для конкретного
+        примитива (SetColor OpCode=14 из потока Proxy Graphic). Без
+        этого все подпримитивы всегда получали цвет владельца (прокси-
+        объекта), что ломало инвариант BlockInsert: примитивы с ByLayer
+        должны использовать цвет слоя, с явным цветом — свой цвет, и
+        только ByBlock — унаследовать цвет контейнера. См. ResolveColor
+        в uzeentproxysubentitybuilder. }
+      Context.PrimitiveColor := ParseResult.Primitives[I].Color;
       programlog.LogOutFormatStr(
-        'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d ltScale=%.3f',
+        'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d ltScale=%.3f color=%d',
         [I, ParseResult.Primitives[I].OpCode,
          ParseResult.Primitives[I].LineWeight,
-         ParseResult.Primitives[I].LtScale], LM_Info);
+         ParseResult.Primitives[I].LtScale,
+         ParseResult.Primitives[I].Color], LM_Info);
       if TProxyOpCodeDispatcher.BuildSubEntities(
         ParseResult.Primitives[I].OpCode,
         ParseResult.Primitives[I].HandlerResult,
