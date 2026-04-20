@@ -338,6 +338,70 @@ end;
 
 { --- Построитель подпримитивов --- }
 
+const
+  { Префикс имён стилей, создаваемых при расчленении MTEXT на TEXT.
+    Совпадает с поведением AutoCAD (EXPLODE MTEXT создаёт MtXpl_<Font>). }
+  MTEXT_EXPLODE_STYLE_PREFIX = 'MtXpl_';
+
+{ Формирует имя стиля из имени шрифта по правилу AutoCAD:
+  - удаляет расширение файла (".shx", ".ttf"),
+  - заменяет пробелы на символ "_",
+  - добавляет префикс MtXpl_.
+  Источник имени: TypeFace имеет приоритет над FontName, т.к. именно он
+  содержит читаемое имя шрифта ("Verdana", "ISOCPEUR"). Если пуст, то
+  используется имя файла шрифта без расширения ("txt" из "txt.shx"). }
+function BuildMtXplStyleName(const FontName, TypeFace: String): String;
+var
+  BaseName: String;
+begin
+  if TypeFace <> '' then
+    BaseName := TypeFace
+  else
+    BaseName := ChangeFileExt(FontName, '');
+  BaseName := StringReplace(BaseName, ' ', '_', [rfReplaceAll]);
+  Result := MTEXT_EXPLODE_STYLE_PREFIX + BaseName;
+end;
+
+{ Создаёт в таблице стилей чертежа новый стиль текста для шрифта,
+  который встретился в proxy-графике, но ни одного соответствующего
+  стиля в таблице нет. Имя создаваемого стиля формируется через
+  BuildMtXplStyleName. Свойства (высота/ширина/наклон) берутся по
+  умолчанию, как при EXPLODE MTEXT в AutoCAD.
+
+  Если стиль с таким именем уже существует (например, мы уже создавали
+  его для предыдущего примитива), он возвращается без повторного
+  добавления. }
+function CreateMtXplStyle(var Drawing: TDrawingDef;
+  const FontName, TypeFace: String): PGDBTextStyle;
+var
+  StyleName: String;
+  tp: GDBTextStyleProp;
+begin
+  Result := nil;
+  if (FontName = '') and (TypeFace = '') then
+    Exit;
+
+  StyleName := BuildMtXplStyleName(FontName, TypeFace);
+
+  { Стиль мог быть создан ранее для той же пары (FontName,TypeFace). }
+  Result := Drawing.GetTextStyleTable^.FindStyle(StyleName, False);
+  if Result <> nil then
+    Exit;
+
+  tp.size := 0;
+  tp.wfactor := 1;
+  tp.oblique := 0;
+
+  Result := Drawing.GetTextStyleTable^.addstyle(
+    StyleName, FontName, TypeFace, tp, False);
+
+  if Result <> nil then
+    programlog.LogOutFormatStr(
+      'uzeentproxyparsertext: Created MtXpl style "%s"'
+      + ' (FontFile="%s", TypeFace="%s")',
+      [StyleName, FontName, TypeFace], LM_Info);
+end;
+
 { Подбирает стиль текста для TextItem.
 
   Порядок поиска (сначала удачный вариант возвращается):
@@ -349,8 +413,13 @@ end;
      FontName хранится в OpCode=10 (Text1) как имя файла шрифта
      ("times.ttf", "txt.shx").
   3. По FontName как имени стиля (если имя стиля совпадает с именем файла).
-  4. Fallback: стиль "Standard".
-  5. Fallback: первый стиль таблицы.
+  4. Если соответствующий стиль не найден — создаётся новый стиль с
+     именем "MtXpl_<TypeFace или FontName>" (пробелы заменяются на "_").
+     Это повторяет поведение AutoCAD при расчленении MTEXT на TEXT:
+     если в чертеже нет стиля с нужным шрифтом, команда EXPLODE создаёт
+     новый стиль с префиксом "MtXpl_".
+  5. Fallback: стиль "Standard".
+  6. Fallback: первый стиль таблицы.
 
   Такой порядок важен: в одном proxy-графике разные примитивы могут
   содержать разные комбинации полей (см. ezdxf proxygraphic.unicode_text2),
@@ -369,6 +438,8 @@ begin
     if Result = nil then
       Result := Drawing.GetTextStyleTable^.FindStyle(FontName, False);
   end;
+  if (Result = nil) and ((FontName <> '') or (TypeFace <> '')) then
+    Result := CreateMtXplStyle(Drawing, FontName, TypeFace);
   if Result = nil then
     Result := Drawing.GetTextStyleTable^.FindStyle('Standard', False);
   if Result = nil then
