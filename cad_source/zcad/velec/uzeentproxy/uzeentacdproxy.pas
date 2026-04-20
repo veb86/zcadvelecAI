@@ -838,32 +838,93 @@ begin
   Result := FConvertedBlockName;
 end;
 
-{ Рекурсивно обходит массив сущностей и для каждого ProxyEntity
-  вызывает EnsureConvertedBlockDef. Обрабатывает вложенные составные
-  объекты (BlockInsert, Complex) через их ConstObjArray. }
+{ Обходит массив сущностей и запускает для всех proxy-объектов
+  EnsureConvertedBlockDef. Сбор указателей выполняется отдельным
+  проходом, потому что EnsureConvertedBlockDef вызывает create()
+  у BlockDefArray — это может привести к grow() и перевыделению
+  parray. GDBObjBlockdef хранится там по значению, поэтому
+  существующие BlockDef'ы меняют адрес, и указатель на любой из их
+  ObjArray становится невалидным. Сами PGDBObjAcdProxy
+  аллоцируются отдельно (AllocAcdProxy) и при grow() не
+  перемещаются, поэтому собранные указатели остаются валидными. }
 procedure ConvertProxyEntitiesInArray(
   pArray: PGDBObjEntityOpenArray; var drawing: TSimpleDrawing);
 var
   Ent: PGDBObjEntity;
-  IR: itrec;
+  I, N, ProxyCount: Integer;
+  Proxies: array of PGDBObjAcdProxy;
 begin
   if pArray = nil then
     Exit;
-  Ent := pArray^.beginiterate(IR);
-  if Ent <> nil then
-    repeat
-      if Ent^.GetObjType = GDBAcdProxyID then
-        PGDBObjAcdProxy(Ent)^.EnsureConvertedBlockDef(drawing);
-      Ent := pArray^.iterate(IR);
-    until Ent = nil;
+  N := pArray^.Count;
+  SetLength(Proxies, N);
+  ProxyCount := 0;
+  for I := 0 to N - 1 do
+  begin
+    Ent := PGDBObjEntity(pArray^.GetData(I));
+    if (Ent <> nil) and (Ent^.GetObjType = GDBAcdProxyID) then
+    begin
+      Proxies[ProxyCount] := PGDBObjAcdProxy(Ent);
+      Inc(ProxyCount);
+    end;
+  end;
+  for I := 0 to ProxyCount - 1 do
+    Proxies[I]^.EnsureConvertedBlockDef(drawing);
 end;
 
 procedure ConvertProxyEntitiesToBlocks(var drawing: TSimpleDrawing);
+var
+  BlockArr: PGDBObjBlockdefArray;
+  I, InitialBlockCount, ProxyCount, J: Integer;
+  BlockDef: PGDBObjBlockdef;
+  Ent: PGDBObjEntity;
+  Proxies: array of PGDBObjAcdProxy;
 begin
-  if drawing.pObjRoot = nil then
+  if drawing.pObjRoot <> nil then
+    ConvertProxyEntitiesInArray(
+      @drawing.pObjRoot^.ObjArray, drawing);
+
+  { Proxy-объекты могут лежать не только в корневом ObjArray, но и
+    внутри определений блоков (например, когда INSERT в .dxf
+    ссылается на блок, содержащий proxy-сущности). Для таких
+    proxy-объектов также нужно создать PE<N>-блок, иначе при
+    повторном открытии INSERT не найдёт своего определения и
+    uzeentblockinsert.pas:321 упадёт с assert на getindex < 0.
+
+    Сначала собираем все proxy-указатели в локальный список, и
+    только затем вызываем EnsureConvertedBlockDef. Причина:
+    EnsureConvertedBlockDef вызывает create() у BlockDefArray,
+    которое может привести к grow() и перевыделению parray. Так
+    как GDBObjBlockdef хранится в parray по значению, существующие
+    BlockDef'ы меняют свой адрес, и @BlockDef^.ObjArray перестаёт
+    быть валидным указателем. Сами PGDBObjAcdProxy аллоцируются
+    отдельно и при grow() не перемещаются. }
+  BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+  if BlockArr = nil then
     Exit;
-  ConvertProxyEntitiesInArray(
-    @drawing.pObjRoot^.ObjArray, drawing);
+  InitialBlockCount := BlockArr^.Count;
+
+  ProxyCount := 0;
+  SetLength(Proxies, 0);
+  for I := 0 to InitialBlockCount - 1 do
+  begin
+    BlockDef := BlockArr^.getDataMutable(I);
+    if BlockDef = nil then
+      Continue;
+    for J := 0 to BlockDef^.ObjArray.Count - 1 do
+    begin
+      Ent := PGDBObjEntity(BlockDef^.ObjArray.GetData(J));
+      if (Ent <> nil) and (Ent^.GetObjType = GDBAcdProxyID) then
+      begin
+        SetLength(Proxies, ProxyCount + 1);
+        Proxies[ProxyCount] := PGDBObjAcdProxy(Ent);
+        Inc(ProxyCount);
+      end;
+    end;
+  end;
+
+  for I := 0 to ProxyCount - 1 do
+    Proxies[I]^.EnsureConvertedBlockDef(drawing);
 end;
 
 initialization
