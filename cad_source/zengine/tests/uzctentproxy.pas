@@ -105,6 +105,11 @@ type
     { Проверяет, что ConvertProxyEntitiesToBlocks обходит дерево и
       для каждого ProxyEntity добавляет блок в BlockDefArray. }
     procedure ConvertProxyEntitiesToBlocksAddsBlocksForAllProxies;
+    { Проверяет, что ConvertProxyEntitiesToBlocks конвертирует
+      proxy-сущности, лежащие внутри определения блока
+      (proxyinblock.dxf): добавляет PE<N>-блок на каждую такую
+      proxy-сущность и заполняет FConvertedBlockName. }
+    procedure ConvertProxyEntitiesToBlocksHandlesProxiesInsideBlockDef;
   end;
 
 implementation
@@ -1107,6 +1112,79 @@ begin
       'Имя сгенерированного блока должно начинаться с "PE"');
     CheckTrue(BlockArr^.getindex(ConvertedName) >= 0,
       'Соответствующий блок должен присутствовать в BlockDefArray');
+  finally
+    drawing.done;
+  end;
+end;
+
+{ Регрессионный тест для issue #965: ранее ConvertProxyEntitiesToBlocks
+  обходил только корневой ObjArray и не обрабатывал proxy-сущности
+  внутри определений блоков. В результате при сохранении DXF в
+  BLOCKS-секции появлялись INSERT PE<N>, но самих PE<N>-блоков там
+  не было — при повторном открытии BlockInsert.BuildGeometry падал
+  на assert(index >= 0) в uzeentblockinsert.pas:321.
+
+  Тест использует proxyinblock.dxf, где proxy-сущности лежат
+  внутри определения блока "Оси_блок Б", и проверяет, что после
+  ConvertProxyEntitiesToBlocks для каждой такой proxy-сущности в
+  BlockDefArray появляется соответствующий PE<N>-блок. }
+procedure TProxyEntityLoadTest.ConvertProxyEntitiesToBlocksHandlesProxiesInsideBlockDef;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  BlockArr: PGDBObjBlockdefArray;
+  I, J, NestedProxyCount, InitialBlockCount: Integer;
+  BlockDef: PGDBObjBlockdef;
+  Ent: PGDBObjEntity;
+  NestedProxies: array of PGDBObjAcdProxy;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/proxyinblock.dxf', zdc);
+
+    { Собираем proxy-сущности, лежащие внутри определений блоков }
+    BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
+    InitialBlockCount := BlockArr^.Count;
+    NestedProxyCount := 0;
+    SetLength(NestedProxies, 0);
+    for I := 0 to InitialBlockCount - 1 do
+    begin
+      BlockDef := BlockArr^.getDataMutable(I);
+      if BlockDef = nil then
+        Continue;
+      for J := 0 to BlockDef^.ObjArray.Count - 1 do
+      begin
+        Ent := PGDBObjEntity(BlockDef^.ObjArray.GetData(J));
+        if (Ent <> nil) and (Ent^.GetObjType = GDBAcdProxyID) then
+        begin
+          SetLength(NestedProxies, NestedProxyCount + 1);
+          NestedProxies[NestedProxyCount] := PGDBObjAcdProxy(Ent);
+          Inc(NestedProxyCount);
+        end;
+      end;
+    end;
+    CheckTrue(NestedProxyCount > 0,
+      'Тестовый файл proxyinblock.dxf должен содержать proxy-сущности внутри блоков');
+
+    ConvertProxyEntitiesToBlocks(drawing);
+
+    { После конвертации для каждой найденной proxy в BlockDefArray
+      должен появиться PE<N>-блок и proxy должна запомнить его имя. }
+    for I := 0 to NestedProxyCount - 1 do
+    begin
+      CheckTrue(Length(NestedProxies[I]^.GetConvertedBlockName) > 2,
+        'Каждой вложенной proxy должно быть присвоено имя PE<N>');
+      CheckEquals('PE',
+        Copy(NestedProxies[I]^.GetConvertedBlockName, 1, 2),
+        'Имя сгенерированного блока должно начинаться с "PE"');
+      CheckTrue(
+        BlockArr^.getindex(
+          NestedProxies[I]^.GetConvertedBlockName) >= 0,
+        'PE-блок должен присутствовать в BlockDefArray');
+    end;
   finally
     drawing.done;
   end;
