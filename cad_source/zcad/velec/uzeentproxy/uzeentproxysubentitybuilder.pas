@@ -164,7 +164,7 @@ begin
   Primitive := Context.PrimitiveLineTypeScale;
   if Primitive <= 0 then
     Primitive := 1.0;
-  Result := Owner * Primitive;
+  Result := Owner;
 end;
 
 procedure ApplyLineTypeScale(
