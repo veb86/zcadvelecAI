@@ -143,6 +143,16 @@ type
     FDrawingFormat: Integer;
     FOriginalDataFormat: Integer;
 
+    { Версия DXF-файла, из которого загружен прокси-объект (код $ACADVER
+      в заголовке). Значения соответствуют iVersion в TDXFHeaderInfo:
+      1015 = DXF 2000, 1018 = DXF 2004, 1021 = DXF 2007, и т.д.
+      Используется для правильной декодировки текстовых строк в
+      бинарных Proxy Graphic данных (см. uzeentproxystream):
+      - DXF 2007+ (>= 1021): UTF-16 (2 байта на символ);
+      - DXF 2000/2004 (< 1021): ANSI (1 байт на символ).
+      Если значение не задано (0), считаем формат DXF 2007+. }
+    FDXFFileVersion: Integer;
+
     { Флаг: подпримитивы уже построены }
     FSubEntitiesBuilt: Boolean;
 
@@ -301,6 +311,7 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  FDXFFileVersion := 0;
   scale := ScaleOne;
   rotate := 0;
   FConvertedBlockName := '';
@@ -319,6 +330,7 @@ begin
   FObjectDataSize := 0;
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
+  FDXFFileVersion := 0;
   scale := ScaleOne;
   rotate := 0;
   FConvertedBlockName := '';
@@ -340,6 +352,10 @@ var
   Code: Integer;
 begin
   HexAccum := '';
+  { Запоминаем версию DXF-файла. Она нужна при разборе бинарной
+    Proxy Graphic, чтобы выбрать правильную кодировку строк:
+    DXF 2007+ — UTF-16, DXF 2000/2004 — ANSI. }
+  FDXFFileVersion := context.Header.iVersion;
   Code := rdr.ParseInteger;
   while Code <> 0 do
   begin
@@ -471,6 +487,7 @@ var
   Context: TProxySubEntityContext;
   I: Integer;
   BuiltCount: Integer;
+  UnicodeText: Boolean;
 begin
   if Length(FProxyDataBytes) = 0 then
     Exit;
@@ -479,7 +496,16 @@ begin
   ConstObjArray.Free;
   ConstObjArray.init(8);
 
-  Parser := TProxyGraphicParser.Create(FProxyDataBytes);
+  { Выбор кодировки текста в Proxy Graphic по версии DXF-файла:
+    DXF 2007+ (AC1021+, iVersion >= 1021) — UTF-16,
+    DXF 2000/2004 (AC1015/AC1018)         — ANSI.
+    Если версия неизвестна (0), считаем формат DXF 2007+. }
+  UnicodeText := (FDXFFileVersion = 0) or (FDXFFileVersion >= 1021);
+  programlog.LogOutFormatStr(
+    'uzeentacdproxy: BuildSubEntities dxfVersion=%d unicodeText=%s',
+    [FDXFFileVersion, BoolToStr(UnicodeText, True)], LM_Info);
+
+  Parser := TProxyGraphicParser.Create(FProxyDataBytes, UnicodeText);
   try
     ParseResult := Parser.Parse;
 
@@ -736,6 +762,7 @@ begin
   ClonePtr^.FObjectDataSize := FObjectDataSize;
   ClonePtr^.FDrawingFormat := FDrawingFormat;
   ClonePtr^.FOriginalDataFormat := FOriginalDataFormat;
+  ClonePtr^.FDXFFileVersion := FDXFFileVersion;
 
   { Подпримитивы будут построены при первом FormatEntity }
   ClonePtr^.FSubEntitiesBuilt := False;

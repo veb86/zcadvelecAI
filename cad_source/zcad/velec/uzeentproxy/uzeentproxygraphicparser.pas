@@ -170,7 +170,11 @@ type
     function HasActiveTransform: Boolean;
 
   public
-    constructor Create(const Data: TBytes);
+    { AUnicodeText=True — «широкие» строки внутри прокси-графики
+      декодируются как UTF-16 (DXF 2007+). False — как ANSI (DXF 2000/2004).
+      Значение передаётся в TProxyByteStream. }
+    constructor Create(const Data: TBytes;
+      AUnicodeText: Boolean = True);
     destructor Destroy; override;
 
     { Разбирает весь блок Proxy Graphic; возвращает суммарный результат.
@@ -226,10 +230,11 @@ end;
 
 { === TProxyGraphicParser === }
 
-constructor TProxyGraphicParser.Create(const Data: TBytes);
+constructor TProxyGraphicParser.Create(const Data: TBytes;
+  AUnicodeText: Boolean);
 begin
   inherited Create;
-  FStream := TProxyByteStream.Create(Data);
+  FStream := TProxyByteStream.Create(Data, AUnicodeText);
   FillChar(FResult, SizeOf(FResult), 0);
   InitProxyState(FState);
   FFillActive := False;

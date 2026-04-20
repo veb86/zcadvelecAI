@@ -30,14 +30,21 @@ uses
   uzeGeometryTypes;
 
 type
-  { Поток байтов для чтения (аналог ByteStream из ezdxf) }
+  { Поток байтов для чтения (аналог ByteStream из ezdxf).
+    FUnicodeText управляет способом декодирования "широких" строк
+    внутри прокси-графики. DXF 2007+ (AC1021+) хранит текст в формате
+    UTF-16 (2 байта на символ). DXF 2000 (AC1015) и DXF 2004 (AC1018)
+    хранят тот же текст в однобайтовой кодировке ANSI. Флаг задаётся
+    создателем потока (GDBObjAcdProxy по версии DXF-файла). }
   TProxyByteStream = class
   private
     FData: TBytes;
     FIndex: Integer;
     FLength: Integer;
+    FUnicodeText: Boolean;
   public
-    constructor Create(const Data: TBytes);
+    constructor Create(const Data: TBytes;
+      AUnicodeText: Boolean = True);
 
     { Чтение примитивов }
     function ReadInt32: Integer;
@@ -57,6 +64,9 @@ type
     { Чтение строк }
     function ReadString(Encoding: TEncoding): string;
     function ReadPaddedString(Encoding: TEncoding): string;
+    { ReadUnicodeString и ReadPaddedUnicodeString читают «широкие»
+      строки. В DXF 2007+ это UTF-16 (2 байта/символ), в DXF 2000/2004
+      — ANSI (1 байт/символ), режим выбирается флагом FUnicodeText. }
     function ReadUnicodeString: string;
     function ReadPaddedUnicodeString: string;
 
@@ -74,18 +84,23 @@ type
     property Index: Integer read FIndex;
     property Length: Integer read FLength;
     property Data: TBytes read FData;
+    { True — широкие строки в потоке хранятся в UTF-16 (DXF 2007+).
+      False — в однобайтовой ANSI-кодировке (DXF 2000/2004). }
+    property UnicodeText: Boolean read FUnicodeText write FUnicodeText;
   end;
 
 implementation
 
 { === TProxyByteStream === }
 
-constructor TProxyByteStream.Create(const Data: TBytes);
+constructor TProxyByteStream.Create(const Data: TBytes;
+  AUnicodeText: Boolean);
 begin
   inherited Create;
   FData := Copy(Data, 0, system.Length(Data));
   FIndex := 0;
   FLength := system.Length(Data);
+  FUnicodeText := AUnicodeText;
 end;
 
 function TProxyByteStream.ReadInt32: Integer;
@@ -227,55 +242,106 @@ end;
 function TProxyByteStream.ReadUnicodeString: string;
 var
   Len: Integer;
-  WBytes: TBytes;
+  Bytes: TBytes;
 begin
-  // Читаем до нулевого слова (UTF-16)
-  Len := 0;
-  while (FIndex + Len * 2 + 1 < FLength) and
-        ((FData[FIndex + Len * 2] <> 0) or (FData[FIndex + Len * 2 + 1] <> 0)) do
-    Inc(Len);
+  // В DXF 2007+ текст хранится как UTF-16 (2 байта/символ),
+  // в DXF 2000/2004 — как однобайтовая ANSI-строка.
+  if FUnicodeText then begin
+    // Читаем до нулевого слова (UTF-16)
+    Len := 0;
+    while (FIndex + Len * 2 + 1 < FLength) and
+          ((FData[FIndex + Len * 2] <> 0) or (FData[FIndex + Len * 2 + 1] <> 0)) do
+      Inc(Len);
 
-  if Len > 0 then begin
-    SetLength(WBytes, Len * 2);
-    Move(FData[FIndex], WBytes[0], Len * 2);
-    try
-      Result := TEncoding.Unicode.GetString(WBytes);
-    except
+    if Len > 0 then begin
+      SetLength(Bytes, Len * 2);
+      Move(FData[FIndex], Bytes[0], Len * 2);
+      try
+        Result := TEncoding.Unicode.GetString(Bytes);
+      except
+        Result := '';
+      end;
+      Inc(FIndex, Len * 2);
+    end else
       Result := '';
-    end;
-    Inc(FIndex, Len * 2);
-  end else
-    Result := '';
 
-  Inc(FIndex, 2); // +2 для нулевого терминатора
+    Inc(FIndex, 2); // +2 для нулевого терминатора (UTF-16)
+  end else begin
+    // Читаем до нулевого байта (ANSI, DXF 2000/2004)
+    Len := 0;
+    while (FIndex + Len < FLength) and (FData[FIndex + Len] <> 0) do
+      Inc(Len);
+
+    if Len > 0 then begin
+      SetLength(Bytes, Len);
+      Move(FData[FIndex], Bytes[0], Len);
+      try
+        Result := TEncoding.ANSI.GetString(Bytes);
+      except
+        Result := '';
+      end;
+      Inc(FIndex, Len);
+    end else
+      Result := '';
+
+    Inc(FIndex, 1); // +1 для нулевого терминатора (ANSI)
+  end;
 end;
 
 function TProxyByteStream.ReadPaddedUnicodeString: string;
 var
   Len: Integer;
-  WBytes: TBytes;
+  Bytes: TBytes;
 begin
-  // Читаем UTF-16 строку с нулевым терминатором (как в AcGiWorldDraw)
-  Len := 0;
-  while (FIndex + Len * 2 + 1 < FLength) and
-        ((FData[FIndex + Len * 2] <> 0) or (FData[FIndex + Len * 2 + 1] <> 0)) do
-    Inc(Len);
+  // Читаем null-terminated строку в формате текущего потока:
+  //   UnicodeText=True  — UTF-16 (2 байта/символ), DXF 2007+;
+  //   UnicodeText=False — ANSI (1 байт/символ), DXF 2000/2004.
+  // После строки и терминатора выравниваемся по 4 байтам (паддинг
+  // до границы DWORD, как в AcGiWorldDraw).
+  if FUnicodeText then begin
+    // UTF-16: ищем нулевое слово
+    Len := 0;
+    while (FIndex + Len * 2 + 1 < FLength) and
+          ((FData[FIndex + Len * 2] <> 0) or (FData[FIndex + Len * 2 + 1] <> 0)) do
+      Inc(Len);
 
-  if Len > 0 then begin
-    SetLength(WBytes, Len * 2);
-    Move(FData[FIndex], WBytes[0], Len * 2);
-    try
-      Result := TEncoding.Unicode.GetString(WBytes);
-    except
+    if Len > 0 then begin
+      SetLength(Bytes, Len * 2);
+      Move(FData[FIndex], Bytes[0], Len * 2);
+      try
+        Result := TEncoding.Unicode.GetString(Bytes);
+      except
+        Result := '';
+      end;
+      Inc(FIndex, Len * 2);
+    end else
       Result := '';
-    end;
-    Inc(FIndex, Len * 2);
-  end else
-    Result := '';
 
-  // Пропускаем нулевой терминатор (2 байта)
-  if FIndex + 1 < FLength then
-    Inc(FIndex, 2);
+    // Пропускаем нулевой терминатор (2 байта)
+    if FIndex + 1 < FLength then
+      Inc(FIndex, 2);
+  end else begin
+    // ANSI: ищем нулевой байт
+    Len := 0;
+    while (FIndex + Len < FLength) and (FData[FIndex + Len] <> 0) do
+      Inc(Len);
+
+    if Len > 0 then begin
+      SetLength(Bytes, Len);
+      Move(FData[FIndex], Bytes[0], Len);
+      try
+        Result := TEncoding.ANSI.GetString(Bytes);
+      except
+        Result := '';
+      end;
+      Inc(FIndex, Len);
+    end else
+      Result := '';
+
+    // Пропускаем нулевой терминатор (1 байт)
+    if FIndex < FLength then
+      Inc(FIndex, 1);
+  end;
 
   // Выравниваем по 4 байтам (паддинг до границы DWORD)
   if (FIndex mod 4) <> 0 then

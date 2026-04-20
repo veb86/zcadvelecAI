@@ -121,6 +121,16 @@ type
       FormatEntity каждый подпримитив должен наследовать LineTypeScale
       своего владельца. }
     procedure SpdsConstructionLine2ProxyPropagatesScaleToAllSubEntities;
+    { Регрессия на issue #971: в файлах DXF 2000/2004 «широкие» строки
+      внутри бинарной Proxy Graphic хранятся в однобайтовой ANSI-кодировке,
+      а не в UTF-16. Парсер должен читать их корректно, если поток создан
+      в режиме UnicodeText=False. }
+    procedure ProxyGraphicAnsiUnicodeText2ParsesInDxf2000Mode;
+    { Регрессия на issue #971: загрузка spdsconstructionline2000.dxf должна
+      давать тот же BBox, что и загрузка spdsconstructionline2007.dxf.
+      Это доказывает, что после исправления текст в прокси-графике читается
+      корректно в обоих форматах. }
+    procedure SpdsConstructionLine2000AndDxf2007ProduceSameBBox;
   end;
 
 implementation
@@ -361,6 +371,75 @@ begin
   end;
 end;
 
+{ Кодирует строку как ANSI (однобайтовую), завершает нулевым байтом и
+  выравнивает позицию данных до границы 4 байт. Формат соответствует тому,
+  как AutoCAD пишет строки внутри OpCode=38 (UnicodeText2) в DXF 2000/2004
+  (версии до AC1021), где «широкие» строки на самом деле однобайтовые.
+  Совместим с TProxyByteStream.ReadPaddedUnicodeString в режиме UnicodeText=False. }
+procedure AppendPaddedAnsiString(var Data: TBytes; const Value: AnsiString);
+var
+  I, OldLen, ByteLen: Integer;
+begin
+  ByteLen := Length(Value);
+  OldLen := Length(Data);
+  AppendBytes(Data, ByteLen + 1);
+  for I := 1 to ByteLen do
+    Data[OldLen + (I - 1)] := Byte(Value[I]);
+  Data[OldLen + ByteLen] := 0;
+
+  { Выравнивание до границы DWORD }
+  while (Length(Data) mod 4) <> 0 do
+  begin
+    SetLength(Data, Length(Data) + 1);
+    Data[High(Data)] := 0;
+  end;
+end;
+
+{ Собирает payload для OpCode=38 (UnicodeText2) в формате DXF 2000/2004,
+  где «широкие» строки на самом деле однобайтовые (ANSI). Используется
+  тестом регрессии для бага «ProxyEntity. Не считывается текст из DXF 2000». }
+procedure AppendAnsiUnicodeText2Payload(var Payload: TBytes;
+  const Text, TypeFace, FontFile, BigFont: AnsiString);
+begin
+  { Точка вставки, нормаль, направление }
+  AppendVertex(Payload, 0.0, 0.0, 0.0);
+  AppendVertex(Payload, 0.0, 0.0, 1.0);
+  AppendVertex(Payload, 1.0, 0.0, 0.0);
+
+  { Строка текста (ANSI, как в DXF 2000) }
+  AppendPaddedAnsiString(Payload, Text);
+
+  { IgnoreLength, Raw }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { Height, WidthFactor }
+  AppendDouble(Payload, 2.5);
+  AppendDouble(Payload, 1.0);
+
+  { ObliqueAngle, TrackingPercentage }
+  AppendDouble(Payload, 0.0);
+  AppendDouble(Payload, 1.0);
+
+  { Флаги: IsBackward, IsUpsideDown, IsVertical, IsUnderlined, IsOverlined }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { IsBold, IsItalic, Charset, Pitch }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { TypeFace, FontFilename, BigFontFilename (ANSI) }
+  AppendPaddedAnsiString(Payload, TypeFace);
+  AppendPaddedAnsiString(Payload, FontFile);
+  AppendPaddedAnsiString(Payload, BigFont);
+end;
+
 { Собирает payload для OpCode=38 (UnicodeText2) с заданным текстом,
   TypeFace, FontFile и BigFont. Используется тестом для проверки,
   что парсер корректно читает и сохраняет эти три поля шрифта. }
@@ -423,6 +502,34 @@ begin
 
   SetLength(Payload, 0);
   AppendUnicodeText2Payload(Payload, 'Shx row', '', 'txt.shx', '');
+  AppendCommand(Body, 38, Payload);
+
+  SetLength(Result, 0);
+  AppendInt32(Result, Length(Body) + 8);
+  AppendInt32(Result, 2);
+  if Length(Body) > 0 then
+  begin
+    AppendBytes(Result, Length(Body));
+    Move(Body[0], Result[Length(Result) - Length(Body)], Length(Body));
+  end;
+end;
+
+{ Собирает proxy graphic с двумя UnicodeText2-примитивами в формате
+  DXF 2000 (AC1015), где «широкие» строки кодируются в однобайтовой ANSI.
+  Воспроизводит содержимое spdsconstructionline2000.dxf, где текст оси
+  и имя shx-шрифта хранятся в ANSI, а не в UTF-16. }
+function BuildProxyGraphicWithAnsiUnicodeText2: TBytes;
+var
+  Body, Payload: TBytes;
+begin
+  SetLength(Body, 0);
+
+  SetLength(Payload, 0);
+  AppendAnsiUnicodeText2Payload(Payload, '15', '', 'CS_Gost2304.shx', '');
+  AppendCommand(Body, 38, Payload);
+
+  SetLength(Payload, 0);
+  AppendAnsiUnicodeText2Payload(Payload, 'Axis', 'Times New Roman', '', '');
   AppendCommand(Body, 38, Payload);
 
   SetLength(Result, 0);
@@ -1347,6 +1454,114 @@ begin
     end;
   finally
     drawing.done;
+  end;
+end;
+
+{ Регрессия на issue #971: в DXF 2000/2004 «широкие» строки внутри
+  бинарной Proxy Graphic хранятся в однобайтовой ANSI-кодировке, а не
+  в UTF-16. Если парсер интерпретирует их как UTF-16, то каждый второй
+  байт используется как старший байт символа, и вместо "15" получается
+  мусор — текст оказывается некорректным.
+
+  Тест собирает proxy graphic с двумя OpCode=38 UnicodeText2 примитивами
+  в ANSI-формате и создаёт парсер с AUnicodeText=False. После исправления
+  текст и шрифт должны читаться корректно. }
+procedure TProxyEntityLoadTest.ProxyGraphicAnsiUnicodeText2ParsesInDxf2000Mode;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  AxisIdx, LabelIdx, I: Integer;
+begin
+  Parser := TProxyGraphicParser.Create(
+    BuildProxyGraphicWithAnsiUnicodeText2, False);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(2, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать два UnicodeText2 примитива');
+
+  AxisIdx := -1;
+  LabelIdx := -1;
+  for I := 0 to High(ParseResult.Primitives) do
+  begin
+    CheckTrue(ParseResult.Primitives[I].HandlerResult.HasTextItem,
+      'Каждый UnicodeText2 должен заполнять TextItem в HandlerResult');
+    if ParseResult.Primitives[I].HandlerResult.TextItem.Text = '15' then
+      AxisIdx := I
+    else if ParseResult.Primitives[I].HandlerResult.TextItem.Text = 'Axis' then
+      LabelIdx := I;
+  end;
+
+  Check(AxisIdx >= 0,
+    'В DXF 2000 режиме должен распознаваться текст оси "15" (ANSI)');
+  Check(LabelIdx >= 0,
+    'В DXF 2000 режиме должен распознаваться текст "Axis" (ANSI)');
+
+  CheckEquals('CS_Gost2304.shx',
+    ParseResult.Primitives[AxisIdx].HandlerResult.TextItem.FontName,
+    'FontFile в ANSI-формате должен читаться как "CS_Gost2304.shx"');
+  CheckEquals('Times New Roman',
+    ParseResult.Primitives[LabelIdx].HandlerResult.TextItem.TypeFace,
+    'TypeFace в ANSI-формате должен читаться как "Times New Roman"');
+end;
+
+{ Регрессия на issue #971: загрузка spdsconstructionline2000.dxf и
+  spdsconstructionline2007.dxf должна строить прокси-объекты с одинаковой
+  геометрией (текст парсится по-разному в этих форматах, но сама
+  графика должна давать один и тот же bounding box с точностью до
+  миллиметра). До исправления текст в DXF 2000 не читался, из-за чего
+  подпримитивы располагались некорректно. }
+procedure TProxyEntityLoadTest.SpdsConstructionLine2000AndDxf2007ProduceSameBBox;
+var
+  drawing2000, drawing2007: TSimpleDrawing;
+  dc2000, dc2007: TDrawContext;
+  zdc2000, zdc2007: TZDrawingContext;
+  entity2000, entity2007: PGDBObjEntity;
+begin
+  drawing2000.init(nil);
+  drawing2007.init(nil);
+  try
+    dc2000 := drawing2000.CreateDrawingRC;
+    zdc2000.CreateRec(drawing2000, drawing2000.pObjRoot^, TLOLoad, dc2000);
+    AddFromDXF('cad_source/test/spdsconstructionline2000.dxf', zdc2000);
+
+    dc2007 := drawing2007.CreateDrawingRC;
+    zdc2007.CreateRec(drawing2007, drawing2007.pObjRoot^, TLOLoad, dc2007);
+    AddFromDXF('cad_source/test/spdsconstructionline2007.dxf', zdc2007);
+
+    CheckEquals(1, drawing2000.pObjRoot^.ObjArray.Count,
+      'spdsconstructionline2000.dxf должен загружать один proxy-объект');
+    CheckEquals(1, drawing2007.pObjRoot^.ObjArray.Count,
+      'spdsconstructionline2007.dxf должен загружать один proxy-объект');
+
+    entity2000 := PGDBObjEntity(drawing2000.pObjRoot^.ObjArray.GetData(0));
+    entity2007 := PGDBObjEntity(drawing2007.pObjRoot^.ObjArray.GetData(0));
+
+    CheckEquals(ObjN_GDBObjAcdProxy, entity2000^.GetObjTypeName,
+      'SPDSCONSTRUCTIONLINE должен загружаться как proxy-объект');
+    CheckEquals(ObjN_GDBObjAcdProxy, entity2007^.GetObjTypeName,
+      'SPDSCONSTRUCTIONLINE должен загружаться как proxy-объект');
+
+    { BBox должен совпадать с точностью до 1 мм: графика в обоих файлах
+      одна и та же, различаются только кодировки текстовых строк. }
+    CheckEquals(entity2007^.vp.BoundingBox.LBN.x,
+                entity2000^.vp.BoundingBox.LBN.x, 1e-3,
+      'BBox.LBN.x прокси-объекта должен совпадать для DXF 2000 и DXF 2007');
+    CheckEquals(entity2007^.vp.BoundingBox.LBN.y,
+                entity2000^.vp.BoundingBox.LBN.y, 1e-3,
+      'BBox.LBN.y прокси-объекта должен совпадать для DXF 2000 и DXF 2007');
+    CheckEquals(entity2007^.vp.BoundingBox.RTF.x,
+                entity2000^.vp.BoundingBox.RTF.x, 1e-3,
+      'BBox.RTF.x прокси-объекта должен совпадать для DXF 2000 и DXF 2007');
+    CheckEquals(entity2007^.vp.BoundingBox.RTF.y,
+                entity2000^.vp.BoundingBox.RTF.y, 1e-3,
+      'BBox.RTF.y прокси-объекта должен совпадать для DXF 2000 и DXF 2007');
+  finally
+    drawing2000.done;
+    drawing2007.done;
   end;
 end;
 
