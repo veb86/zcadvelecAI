@@ -126,6 +126,11 @@ type
       а не в UTF-16. Парсер должен читать их корректно, если поток создан
       в режиме UnicodeText=False. }
     procedure ProxyGraphicAnsiUnicodeText2ParsesInDxf2000Mode;
+    { Регрессия на issue #971: DXF 2000 использует OpCode=11 (pgcText2)
+      для текста внутри Proxy Graphic. Раньше он не был зарегистрирован
+      и пропускался, из-за чего текст терялся. После исправления он
+      должен читаться как ANSI-текст с шрифтом (без TypeFace). }
+    procedure ProxyGraphicText2ParsesDxf2000Format;
     { Регрессия на issue #971: загрузка spdsconstructionline2000.dxf должна
       давать тот же BBox, что и загрузка spdsconstructionline2007.dxf.
       Это доказывает, что после исправления текст в прокси-графике читается
@@ -546,6 +551,74 @@ begin
   SetLength(Payload, 0);
   AppendAnsiUnicodeText2Payload(Payload, 'Axis', 'Times New Roman', '', '');
   AppendCommand(Body, 38, Payload);
+
+  SetLength(Result, 0);
+  AppendInt32(Result, Length(Body) + 8);
+  AppendInt32(Result, 2);
+  if Length(Body) > 0 then
+  begin
+    AppendBytes(Result, Length(Body));
+    Move(Body[0], Result[Length(Result) - Length(Body)], Length(Body));
+  end;
+end;
+
+{ Собирает payload для OpCode=11 (Text2) в формате DXF 2000/2004,
+  где все строки однобайтовые (ANSI). Отличие от OpCode=38: нет поля
+  TypeFace и нет Bold/Italic/Charset/Pitch. Используется тестом регрессии
+  на issue #971. }
+procedure AppendText2Payload(var Payload: TBytes;
+  const Text, FontFile, BigFont: AnsiString);
+begin
+  { Точка вставки, нормаль, направление }
+  AppendVertex(Payload, 0.0, 0.0, 0.0);
+  AppendVertex(Payload, 0.0, 0.0, 1.0);
+  AppendVertex(Payload, 1.0, 0.0, 0.0);
+
+  { Строка текста (ANSI) }
+  AppendPaddedAnsiString(Payload, Text);
+
+  { Length, Raw }
+  AppendInt32(Payload, -1);
+  AppendInt32(Payload, 0);
+
+  { Height, WidthFactor }
+  AppendDouble(Payload, 350.0);
+  AppendDouble(Payload, 1.0);
+
+  { ObliqueAngle, TrackingPercentage }
+  AppendDouble(Payload, 0.0);
+  AppendDouble(Payload, 1.0);
+
+  { Флаги: IsBackward, IsUpsideDown, IsVertical, IsUnderlined, IsOverlined }
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+  AppendInt32(Payload, 0);
+
+  { FontFilename, BigFontFilename (ANSI).
+    В OpCode=11 нет полей TypeFace, IsBold, IsItalic, Charset, Pitch. }
+  AppendPaddedAnsiString(Payload, FontFile);
+  AppendPaddedAnsiString(Payload, BigFont);
+end;
+
+{ Собирает proxy graphic с двумя OpCode=11 (Text2) примитивами
+  в формате DXF 2000. Воспроизводит содержимое
+  spdsconstructionline2000.dxf, где текст оси "15" записан именно
+  с OpCode=11 (а не OpCode=38). }
+function BuildProxyGraphicWithText2: TBytes;
+var
+  Body, Payload: TBytes;
+begin
+  SetLength(Body, 0);
+
+  SetLength(Payload, 0);
+  AppendText2Payload(Payload, '15', 'CS_Gost2304.shx', '');
+  AppendCommand(Body, 11, Payload);
+
+  SetLength(Payload, 0);
+  AppendText2Payload(Payload, 'Axis', 'txt.shx', '');
+  AppendCommand(Body, 11, Payload);
 
   SetLength(Result, 0);
   AppendInt32(Result, Length(Body) + 8);
@@ -1521,6 +1594,59 @@ begin
   CheckEquals('Times New Roman',
     ParseResult.Primitives[LabelIdx].HandlerResult.TextItem.TypeFace,
     'TypeFace в ANSI-формате должен читаться как "Times New Roman"');
+end;
+
+{ Регрессия на issue #971: AutoCAD/nanoCAD в DXF 2000 записывают текст
+  внутри Proxy Graphic через OpCode=11 (pgcText2) — укороченный вариант
+  OpCode=38 без TypeFace и без Bold/Italic/Charset/Pitch, все строки
+  однобайтовые (ANSI). До исправления этот OpCode не был зарегистрирован
+  и пропускался диспетчером, из-за чего текст «15» терялся и
+  SPDSCONSTRUCTIONLINE отображался без размерного числа. Тест собирает
+  proxy graphic с двумя OpCode=11 примитивами и проверяет, что парсер
+  их корректно распознаёт и заполняет TextItem. }
+procedure TProxyEntityLoadTest.ProxyGraphicText2ParsesDxf2000Format;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  AxisIdx, LabelIdx, I: Integer;
+begin
+  Parser := TProxyGraphicParser.Create(
+    BuildProxyGraphicWithText2, False);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(2, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать два Text2 примитива');
+
+  AxisIdx := -1;
+  LabelIdx := -1;
+  for I := 0 to High(ParseResult.Primitives) do
+  begin
+    CheckTrue(ParseResult.Primitives[I].HandlerResult.HasTextItem,
+      'Каждый Text2 должен заполнять TextItem в HandlerResult');
+    if ParseResult.Primitives[I].HandlerResult.TextItem.Text = '15' then
+      AxisIdx := I
+    else if ParseResult.Primitives[I].HandlerResult.TextItem.Text = 'Axis' then
+      LabelIdx := I;
+  end;
+
+  Check(AxisIdx >= 0,
+    'OpCode=11 должен распознавать текст оси "15" (ANSI)');
+  Check(LabelIdx >= 0,
+    'OpCode=11 должен распознавать текст "Axis" (ANSI)');
+
+  CheckEquals('CS_Gost2304.shx',
+    ParseResult.Primitives[AxisIdx].HandlerResult.TextItem.FontName,
+    'FontName в OpCode=11 должен читаться как "CS_Gost2304.shx"');
+  CheckEquals('',
+    ParseResult.Primitives[AxisIdx].HandlerResult.TextItem.TypeFace,
+    'TypeFace в OpCode=11 отсутствует и должен оставаться пустым');
+  CheckEquals('txt.shx',
+    ParseResult.Primitives[LabelIdx].HandlerResult.TextItem.FontName,
+    'FontName в OpCode=11 должен читаться как "txt.shx"');
 end;
 
 { Регрессия на issue #971: загрузка spdsconstructionline2000.dxf и

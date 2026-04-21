@@ -19,9 +19,12 @@
 {
   Модуль: uzeentproxyparsertext
   Назначение: Парсер текстовых примитивов для прокси-объектов.
-              Обрабатывает два вида текста:
+              Обрабатывает три вида текста:
               - OpCode = 10 (pgcText)   — ANSI строка (kAcGiOpText1)
-              - OpCode = 38 (pgcUnicodeText2) — Unicode строка с расширенными атрибутами
+              - OpCode = 11 (pgcText2)  — расширенный текст с шрифтом
+                (DXF 2000/2004, AC1015/AC1018)
+              - OpCode = 38 (pgcUnicodeText2) — Unicode строка с расширенными
+                атрибутами (DXF 2007+, AC1021+)
 
   Архитектура:
   - Секция initialization регистрирует обработчики в TProxyOpCodeDispatcher
@@ -36,6 +39,21 @@
     ObliqueAngle — double (угол наклона, радианы)
     Text      — null-terminated ANSI строка
 
+  Формат OpCode=11 (Text2) — расширенный текст в DXF 2000/2004:
+    Position  — 3 × double
+    Normal    — 3 × double
+    Direction — 3 × double
+    Text      — null-terminated ANSI строка (выровнена по 4 байтам)
+    Length    — int32
+    Raw       — int32
+    Height    — double
+    WidthFactor — double
+    ObliqueAngle — double
+    TrackingPercentage — double
+    IsBackward, IsUpsideDown, IsVertical, IsUnderlined, IsOverlined — uint32
+    FontName   — null-terminated ANSI (выровнена по 4 байтам)
+    BigFontName — null-terminated ANSI (выровнена по 4 байтам)
+
   Формат OpCode=38 (UnicodeText2):
     Position  — 3 × double
     Normal    — 3 × double
@@ -48,8 +66,10 @@
     ObliqueAngle — double
     TrackingPercentage — double
     IsBackward, IsUpsideDown, IsVertical, IsUnderlined, IsOverlined — uint32
-    FontName  — null-terminated ANSI
-    BigFontName — null-terminated ANSI
+    IsBold, IsItalic, Charset, Pitch — uint32 (отсутствуют в OpCode=11)
+    TypeFace  — null-terminated Unicode (отсутствует в OpCode=11)
+    FontName  — null-terminated Unicode
+    BigFontName — null-terminated Unicode
 
   Текущая реализация:
   - BBox вычисляется аппроксимационно: ширина = len(text) × height × wfactor
@@ -95,6 +115,9 @@ uses
 const
   { OpCode ANSI-текста }
   TEXT_OPCODE         = 10;
+  { OpCode расширенного текста (DXF 2000/2004) — аналог UnicodeText2,
+    но без TypeFace и Bold/Italic/Charset/Pitch, все строки однобайтовые. }
+  TEXT2_OPCODE        = 11;
   { OpCode расширенного Unicode-текста }
   UNICODE_TEXT2_OPCODE = 38;
 
@@ -336,6 +359,116 @@ begin
     [Angle], LM_Info);
 end;
 
+{ Читает расширенный текст формата OpCode=11 (Text2).
+  Используется в DXF 2000/2004 (AC1015/AC1018) вместо OpCode=38: все строки
+  однобайтовые (ANSI), а поля TypeFace и Bold/Italic/Charset/Pitch
+  отсутствуют. Остальная структура совпадает с OpCode=38.
+  Возвращает BBox и TextItem для отрисовки через DrawTextContent. }
+procedure HandleText2(
+  Stream: TProxyByteStream;
+  out HandlerResult: TProxyHandlerResult);
+var
+  Insert, Normal, Direction: TzePoint3d;
+  Height, WidthFactor: Double;
+  Text, FontName, BigFont: string;
+  Angle: Double;
+  SavedUnicodeText: Boolean;
+begin
+  HandlerResult.Valid := False;
+  HandlerResult.HasVertices := False;
+  HandlerResult.HasBBox := False;
+  HandlerResult.HasTextItem := False;
+
+  { Геометрия }
+  Insert := Stream.ReadVertex;
+  Normal := Stream.ReadVector;
+  Direction := Stream.ReadVector;
+
+  { Все строки в OpCode=11 — однобайтовые (ANSI), независимо от версии
+    DXF-файла и значения Stream.UnicodeText. Временно переключаем поток
+    в ANSI-режим, чтобы ReadPaddedUnicodeString корректно читал строки
+    в формате DXF 2000. }
+  SavedUnicodeText := Stream.UnicodeText;
+  Stream.UnicodeText := False;
+  try
+    { Текст (ANSI, выровнен по 4 байтам) }
+    try
+      Text := Stream.ReadPaddedUnicodeString;
+    except
+      Text := '';
+    end;
+
+    { Пропускаем Length и Raw }
+    Stream.ReadInt32;
+    Stream.ReadInt32;
+
+    Height := Stream.ReadDouble;
+    WidthFactor := Stream.ReadDouble;
+
+    { Пропускаем: ObliqueAngle, TrackingPercentage }
+    Stream.ReadDouble;
+    Stream.ReadDouble;
+
+    { Пропускаем флаги: IsBackward, IsUpsideDown, IsVertical,
+      IsUnderlined, IsOverlined.
+      В OpCode=11 (в отличие от OpCode=38) нет полей
+      IsBold, IsItalic, Charset, Pitch и нет TypeFace. }
+    Stream.ReadUInt32;
+    Stream.ReadUInt32;
+    Stream.ReadUInt32;
+    Stream.ReadUInt32;
+    Stream.ReadUInt32;
+
+    { FontFilename, BigFontFilename — ANSI-строки с паддингом. }
+    FontName := Stream.ReadPaddedUnicodeString;
+    BigFont := Stream.ReadPaddedUnicodeString;
+  finally
+    Stream.UnicodeText := SavedUnicodeText;
+  end;
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparsertext: Text2 Insert=(%.3f,%.3f,%.3f) H=%.3f' +
+    ' Text="%s" Font="%s" BigFont="%s"',
+    [Insert.x, Insert.y, Insert.z, Height, Text, FontName, BigFont],
+    LM_Info);
+
+  if (Height <= 0) or (Text = '') then
+    Exit;
+
+  { Переводим в OCS если нормаль не совпадает с Z }
+  if not VectorsAreEqual(Normal, TEXT_Z_AXIS) then
+    Insert := TransformPointToOCS(Insert, Normal);
+
+  { Угол поворота текста из вектора Direction (проекция на плоскость XY) }
+  if (Abs(Direction.x) > 1e-9) or (Abs(Direction.y) > 1e-9) then
+    Angle := ArcTan2(Direction.y, Direction.x)
+  else
+    Angle := 0.0;
+
+  { Аппроксимационный BBox }
+  CalcTextBBox(Insert, Text, Height, WidthFactor,
+    HandlerResult.BBoxMin, HandlerResult.BBoxMax);
+  HandlerResult.HasBBox := True;
+
+  { Заполняем данные текстового примитива для отрисовки.
+    TypeFace в OpCode=11 отсутствует — оставляем пустым. }
+  HandlerResult.TextItem.Insert := Insert;
+  HandlerResult.TextItem.Text := Text;
+  HandlerResult.TextItem.Height := Height;
+  HandlerResult.TextItem.WidthFactor := WidthFactor;
+  HandlerResult.TextItem.Angle := Angle;
+  HandlerResult.TextItem.FontName := FontName;
+  HandlerResult.TextItem.TypeFace := '';
+  HandlerResult.TextItem.BigFontName := BigFont;
+  HandlerResult.HasTextItem := True;
+
+  HandlerResult.Valid := True;
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparsertext: Text2 OK, angle=%.3f rad, TextItem filled',
+    [Angle], LM_Info);
+end;
+
 { --- Построитель подпримитивов --- }
 
 const
@@ -536,13 +669,19 @@ begin
 end;
 
 initialization
-  { Регистрируем оба обработчика текста с общим построителем подпримитивов.
+  { Регистрируем обработчики текста с общим построителем подпримитивов.
     Исключение этого файла из проекта полностью отключает парсинг
     текстовых примитивов внутри прокси-объектов. }
   TProxyOpCodeDispatcher.RegisterOpCode(
     TEXT_OPCODE,
     'Text1 (ANSI)',
     @HandleText,
+    @BuildTextSubEntities);
+
+  TProxyOpCodeDispatcher.RegisterOpCode(
+    TEXT2_OPCODE,
+    'Text2 (ANSI, DXF 2000)',
+    @HandleText2,
     @BuildTextSubEntities);
 
   TProxyOpCodeDispatcher.RegisterOpCode(
