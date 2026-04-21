@@ -94,7 +94,8 @@ uses
   uzeentproxystream,
   uzeentproxymanager,
   uzeentproxysubentitybuilder,
-  uzeentmtext,
+  { uzeentmtext,  — оставлено для возможного возврата к MTEXT, см. BuildTextSubEntitiesMText ниже }
+  uzeenttext,
   uzeentity,
   uzeentgenericsubentry,
   UGDBVisibleOpenArray,
@@ -579,15 +580,21 @@ begin
     Result := PGDBTextStyle(Drawing.GetTextStyleTable^.getDataMutable(0));
 end;
 
-{ Создаёт подпримитив GDBObjMText из TProxyTextItem.
+{ Создаёт подпримитив GDBObjText (однострочный TEXT) из TProxyTextItem.
   Стиль подбирается внутри парсера (а не в прокси-объекте), чтобы
   сохранить принцип: модуль-парсер примитива отвечает и за создание
-  соответствующего подпримитива. }
+  соответствующего подпримитива.
+
+  Тесты показали, что прокси-графика текстовых примитивов должна
+  отрисовываться как однострочный TEXT (GDBObjText), а не MTEXT.
+  Реализация MTEXT сохранена в виде закомментированной процедуры
+  BuildTextSubEntitiesMText ниже — её можно вернуть, если в будущих
+  форматах понадобится многострочный текст. }
 procedure BuildTextSubEntities(
   const HandlerResult: TProxyHandlerResult;
   const Context: TProxySubEntityContext);
 var
-  pMText: PGDBObjMText;
+  pText: PGDBObjText;
   TxtStyle: PGDBTextStyle;
   InsertPt: TzePoint3d;
   Drawing: PTDrawingDef;
@@ -616,6 +623,94 @@ begin
 
   InsertPt := ProxyToLocalPoint(Context, HandlerResult.TextItem.Insert);
 
+  pText := pointer(
+    PGDBObjEntityOpenArray(Context.SubEntitiesArray)^.CreateInitObj(
+      GDBtextID, Context.OwnerEntity));
+  if pText = nil then
+    Exit;
+
+  pText^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
+  pText^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
+  { Применяем вес линии текущего примитива (с откатом на вес владельца
+    для значений ByLayer/ByBlock/ByLwDefault). }
+  pText^.vp.LineWeight :=
+    ResolveLineWeight(Context, Context.PrimitiveLineWeight);
+  { Применяем цвет текущего примитива (ByBlock → цвет владельца,
+    ByLayer → цвет слоя, явный индекс → как есть). Соответствует
+    поведению примитивов внутри BlockInsert. }
+  pText^.vp.Color := TGDBPaletteColor(
+    ResolveColor(Context, Context.PrimitiveColor));
+  ApplyLineTypeScale(PGDBObjEntity(pText), Context);
+
+  { Template — шаблон с форматированием, при пустом Content он будет
+    использован как исходный текст в FormatEntity. }
+  pText^.Template := HandlerResult.TextItem.Text;
+  pText^.TXTStyle := TxtStyle;
+  pText^.Local.P_insert := InsertPt;
+  pText^.textprop.size := HandlerResult.TextItem.Height;
+  pText^.textprop.wfactor := HandlerResult.TextItem.WidthFactor;
+  pText^.textprop.oblique := 0;
+  pText^.textprop.justify := jsbl;
+
+  { Поворот через базис OX }
+  if Abs(HandlerResult.TextItem.Angle) > 1e-10 then
+  begin
+    pText^.Local.basis.ox.x := Cos(HandlerResult.TextItem.Angle);
+    pText^.Local.basis.ox.y := Sin(HandlerResult.TextItem.Angle);
+    pText^.Local.basis.ox.z := 0;
+  end;
+
+  pText^.FormatEntity(Drawing^, DC^);
+
+  programlog.LogOutFormatStr(
+    'uzeentproxyparsertext: BuildTextSubEntities TEXT "%s" at (%.3f,%.3f)' +
+    ' typeface="%s" font="%s" style="%s"',
+    [HandlerResult.TextItem.Text, InsertPt.x, InsertPt.y,
+     HandlerResult.TextItem.TypeFace,
+     HandlerResult.TextItem.FontName, TxtStyle^.Name], LM_Info);
+end;
+
+{ === Реализация MTEXT (закомментирована, сохранена для истории) =============
+  Ниже — прежняя реализация BuildTextSubEntities, создающая подпримитив
+  GDBObjMText. По требованию issue #976 вместо MTEXT теперь используется
+  однострочный TEXT (см. процедуру BuildTextSubEntities выше). Если
+  возникнет необходимость вернуться к MTEXT — раскомментируйте код ниже,
+  подключите uzeentmtext в секции uses и зарегистрируйте эту процедуру
+  вместо текущей BuildTextSubEntities.
+
+procedure BuildTextSubEntitiesMText(
+  const HandlerResult: TProxyHandlerResult;
+  const Context: TProxySubEntityContext);
+var
+  pMText: PGDBObjMText;
+  TxtStyle: PGDBTextStyle;
+  InsertPt: TzePoint3d;
+  Drawing: PTDrawingDef;
+  DC: PTDrawContext;
+begin
+  if not HandlerResult.HasTextItem then
+    Exit;
+  if (Context.OwnerEntity = nil) or (Context.SubEntitiesArray = nil) then
+    Exit;
+  if (Context.Drawing = nil) or (Context.DC = nil) then
+    Exit;
+
+  Drawing := PTDrawingDef(Context.Drawing);
+  DC := PTDrawContext(Context.DC);
+
+  TxtStyle := ResolveTextStyle(Drawing^,
+    HandlerResult.TextItem.FontName,
+    HandlerResult.TextItem.TypeFace);
+  if TxtStyle = nil then
+  begin
+    programlog.LogOutFormatStr(
+      'uzeentproxyparsertext: BuildTextSubEntitiesMText no style, skipping',
+      [], LM_Info);
+    Exit;
+  end;
+
+  InsertPt := ProxyToLocalPoint(Context, HandlerResult.TextItem.Insert);
+
   pMText := pointer(
     PGDBObjEntityOpenArray(Context.SubEntitiesArray)^.CreateInitObj(
       GDBMTextID, Context.OwnerEntity));
@@ -624,19 +719,12 @@ begin
 
   pMText^.vp.Layer := PGDBLayerProp(Context.OwnerLayer);
   pMText^.vp.LineType := PGDBLtypeProp(Context.OwnerLineType);
-  { Применяем вес линии текущего примитива (с откатом на вес владельца
-    для значений ByLayer/ByBlock/ByLwDefault). }
   pMText^.vp.LineWeight :=
     ResolveLineWeight(Context, Context.PrimitiveLineWeight);
-  { Применяем цвет текущего примитива (ByBlock → цвет владельца,
-    ByLayer → цвет слоя, явный индекс → как есть). Соответствует
-    поведению примитивов внутри BlockInsert. }
   pMText^.vp.Color := TGDBPaletteColor(
     ResolveColor(Context, Context.PrimitiveColor));
   ApplyLineTypeScale(PGDBObjEntity(pMText), Context);
 
-  { Template — шаблон с форматированием, при пустом Content он будет
-    использован как исходный текст в FormatContent. }
   pMText^.Template := HandlerResult.TextItem.Text;
   pMText^.TXTStyle := TxtStyle;
   pMText^.Local.P_insert := InsertPt;
@@ -644,13 +732,10 @@ begin
   pMText^.textprop.wfactor := HandlerResult.TextItem.WidthFactor;
   pMText^.textprop.oblique := 0;
   pMText^.textprop.justify := jsbl;
-  { Ширина 0 отключает принудительный перенос строк — MTEXT
-    переносит только по явным символам #10. }
   pMText^.Width := 0;
   pMText^.linespacef := 1;
   pMText^.WrapMode := mwmByWord;
 
-  { Поворот через базис OX }
   if Abs(HandlerResult.TextItem.Angle) > 1e-10 then
   begin
     pMText^.Local.basis.ox.x := Cos(HandlerResult.TextItem.Angle);
@@ -661,12 +746,13 @@ begin
   pMText^.FormatEntity(Drawing^, DC^);
 
   programlog.LogOutFormatStr(
-    'uzeentproxyparsertext: BuildTextSubEntities MTEXT "%s" at (%.3f,%.3f)' +
+    'uzeentproxyparsertext: BuildTextSubEntitiesMText "%s" at (%.3f,%.3f)' +
     ' typeface="%s" font="%s" style="%s"',
     [HandlerResult.TextItem.Text, InsertPt.x, InsertPt.y,
      HandlerResult.TextItem.TypeFace,
      HandlerResult.TextItem.FontName, TxtStyle^.Name], LM_Info);
 end;
+============================================================================== }
 
 initialization
   { Регистрируем обработчики текста с общим построителем подпримитивов.
