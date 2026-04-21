@@ -462,13 +462,24 @@ end;
 
 { Применяет текущую матрицу из стека к вершинам и BBox результата.
   Если стек пуст — ничего не делает.
-  Используется после каждого успешного вызова обработчика примитива. }
+  Используется после каждого успешного вызова обработчика примитива.
+
+  Для текстовых примитивов (HasTextItem) матрица применяется также к
+  высоте и ширине символов (issue #978). Высота в Proxy Graphic задаётся
+  в системе координат контейнера, поэтому после PushMatrix с масштабом
+  она должна быть промасштабирована — иначе текст отображается
+  мелко (или крупно) относительно окружающих его графических
+  элементов. Алгоритм повторяет поведение GDBObjAbstractText.transform:
+  переводится единичный отрезок длиной Height вдоль оси Y (матрица без
+  translation), новая длина и становится масштабированной высотой. }
 procedure TProxyGraphicParser.TransformHandlerVertices(
   var HandlerResult: TProxyHandlerResult);
 var
   ir: itrec;
   pV: PzePoint3d;
-  CurrentMatrix: TzeTypedMatrix4d;
+  CurrentMatrix, LinearMatrix: TzeTypedMatrix4d;
+  ScaledVec: TzePoint3d;
+  NewHeight: Double;
 begin
   if not HasActiveTransform then
     Exit;
@@ -496,10 +507,28 @@ begin
       VectorTransform3D(HandlerResult.BBoxMax, CurrentMatrix);
   end;
 
-  { Трансформируем точку вставки текста }
+  { Трансформируем точку вставки и высоту текста.
+    Для корректного масштабирования высоты нужна линейная часть
+    матрицы (без translation), иначе длина отрезка (0, Height, 0)
+    поплывёт из-за сдвига координат. }
   if HandlerResult.HasTextItem then
+  begin
     HandlerResult.TextItem.Insert :=
       VectorTransform3D(HandlerResult.TextItem.Insert, CurrentMatrix);
+
+    if HandlerResult.TextItem.Height > 0 then
+    begin
+      LinearMatrix := CurrentMatrix;
+      PzePoint3d(@LinearMatrix.mtr.v[3])^ := NulVertex;
+      LinearMatrix.t := CMTTransform;
+      ScaledVec := VectorTransform3D(
+        CreateVertex(0, HandlerResult.TextItem.Height, 0),
+        LinearMatrix);
+      NewHeight := oneVertexlength(ScaledVec);
+      if NewHeight > 0 then
+        HandlerResult.TextItem.Height := NewHeight;
+    end;
+  end;
 
   { Трансформируем центр круга }
   if HandlerResult.HasCircleItem then
