@@ -131,6 +131,21 @@ type
       Это доказывает, что после исправления текст в прокси-графике читается
       корректно в обоих форматах. }
     procedure SpdsConstructionLine2000AndDxf2007ProduceSameBBox;
+    { Регрессия на issue #973: подпримитивы внутри ProxyEntity должны
+      повторять цветовое поведение примитивов внутри BlockInsert:
+      ByLayer (DXF=256 или PROXY_DEFAULT=-1) — цвет из слоя,
+      ByBlock (0) — цвет владельца (прокси-объекта),
+      явный индекс 1..255 — используется как есть. До исправления все
+      подпримитивы всегда наследовали цвет прокси-объекта. }
+    procedure ProxyGraphicByLayerPrimitivesResolveToByLayer;
+    procedure ProxyGraphicByBlockPrimitivesInheritOwnerColor;
+    procedure ProxyGraphicExplicitPrimitiveColorIsPreserved;
+    { Интеграционный тест: в spdsconstructionlineCOLOR.dxf два кастомных
+      объекта SPDSCONSTRUCTIONLINE с цветами 3 (зелёный) и 1 (красный),
+      внутри которых все примитивы имеют цвет ByLayer. После загрузки
+      подпримитивы каждого прокси должны получить ClByLayer, а не цвет
+      самого прокси. }
+    procedure SpdsConstructionLineColorSubEntitiesUseByLayer;
   end;
 
 implementation
@@ -1562,6 +1577,197 @@ begin
   finally
     drawing2000.done;
     drawing2007.done;
+  end;
+end;
+
+{ === Issue #973: цветовое поведение подпримитивов внутри ProxyEntity === }
+
+{ Собирает минимальный proxy graphic из ExtentsCommand, PushMatrix и одной
+  полилинии. Если ColorOpCode = True — перед полилинией записывается
+  SetColor(ColorValue), иначе состояние остаётся дефолтным (BYLAYER=-1).
+  Возвращает полный блок (заголовок + тело), готовый для подачи в
+  TProxyGraphicParser.Create. }
+function BuildProxyGraphicWithPolylineColor(
+  const ColorOpCode: Boolean; const ColorValue: Integer): TBytes;
+var
+  Body, Payload: TBytes;
+  CmdCount: Integer;
+begin
+  SetLength(Body, 0);
+  CmdCount := 0;
+
+  if ColorOpCode then
+  begin
+    SetLength(Payload, 0);
+    AppendInt32(Payload, ColorValue);
+    AppendCommand(Body, 14, Payload);
+    Inc(CmdCount);
+  end;
+
+  { Полилиния из двух точек — минимум для успешного парсинга OpCode=6. }
+  SetLength(Payload, 0);
+  AppendInt32(Payload, 2);
+  AppendVertex(Payload, 0.0, 0.0, 0.0);
+  AppendVertex(Payload, 1.0, 0.0, 0.0);
+  AppendCommand(Body, 6, Payload);
+  Inc(CmdCount);
+
+  SetLength(Result, 0);
+  AppendInt32(Result, Length(Body) + 8);
+  AppendInt32(Result, CmdCount);
+  if Length(Body) > 0 then
+  begin
+    AppendBytes(Result, Length(Body));
+    Move(Body[0], Result[Length(Result) - Length(Body)], Length(Body));
+  end;
+end;
+
+{ Регрессия на issue #973: если в Proxy Graphic нет SetColor, примитивы
+  имеют состояние color = PROXY_DEFAULT_COLOR (-1 = ByLayer). После
+  исправления подпримитив должен получить цвет ClByLayer (256), а не
+  цвет прокси-объекта. }
+procedure TProxyEntityLoadTest.ProxyGraphicByLayerPrimitivesResolveToByLayer;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  { В потоке нет SetColor → FState.Color остаётся -1 (PROXY_DEFAULT_COLOR). }
+  Parser := TProxyGraphicParser.Create(
+    BuildProxyGraphicWithPolylineColor(False, 0));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(1, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать один примитив');
+  CheckEquals(-1, ParseResult.Primitives[0].Color,
+    'Без SetColor в потоке цвет примитива должен остаться ByLayer (-1)');
+end;
+
+{ Регрессия на issue #973: SetColor(0) в Proxy Graphic означает ByBlock.
+  После исправления подпримитив должен наследовать цвет прокси-объекта
+  (OwnerColor), что соответствует поведению BlockInsert. }
+procedure TProxyEntityLoadTest.ProxyGraphicByBlockPrimitivesInheritOwnerColor;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  Parser := TProxyGraphicParser.Create(
+    BuildProxyGraphicWithPolylineColor(True, 0));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(1, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать один примитив');
+  CheckEquals(0, ParseResult.Primitives[0].Color,
+    'SetColor(0) должен сохраниться как ByBlock (0) в примитиве');
+end;
+
+{ Регрессия на issue #973: SetColor(3) в Proxy Graphic задаёт явный
+  индекс палитры (зелёный). После исправления подпримитив должен получить
+  именно этот цвет, а не цвет прокси-объекта. }
+procedure TProxyEntityLoadTest.ProxyGraphicExplicitPrimitiveColorIsPreserved;
+var
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  Parser := TProxyGraphicParser.Create(
+    BuildProxyGraphicWithPolylineColor(True, 3));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckEquals(1, Length(ParseResult.Primitives),
+    'Тестовый proxy graphic должен содержать один примитив');
+  CheckEquals(3, ParseResult.Primitives[0].Color,
+    'SetColor(3) должен сохраниться как явный цвет 3 в примитиве');
+end;
+
+{ Интеграционный регрессионный тест для issue #973.
+  Файл spdsconstructionlineCOLOR.dxf содержит два SPDSCONSTRUCTIONLINE:
+    - первый  с цветом 3 (зелёный) в DXF-сущности,
+    - второй  с цветом 1 (красный) в DXF-сущности.
+  Внутри обоих прокси-график все примитивы нарисованы как ByLayer.
+  После исправления все подпримитивы каждого прокси должны иметь
+  vp.Color = ClByLayer (256) — не цвет владельца (3 или 1). }
+procedure TProxyEntityLoadTest.SpdsConstructionLineColorSubEntitiesUseByLayer;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  sub: PGDBObjEntity;
+  Proxies: array of PGDBObjAcdProxy;
+  FoundColor3, FoundColor1: Boolean;
+  I, J, ProxyIdx: Integer;
+begin
+  drawing.init(nil);
+  try
+    dc := drawing.CreateDrawingRC;
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/spdsconstructionlineCOLOR.dxf', zdc);
+
+    SetLength(Proxies, 0);
+    ProxyIdx := 0;
+    for I := 0 to drawing.pObjRoot^.ObjArray.Count - 1 do
+    begin
+      entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(I));
+      if (entity <> nil)
+        and (entity^.GetObjTypeName = ObjN_GDBObjAcdProxy) then
+      begin
+        SetLength(Proxies, ProxyIdx + 1);
+        Proxies[ProxyIdx] := PGDBObjAcdProxy(entity);
+        Inc(ProxyIdx);
+      end;
+    end;
+    CheckEquals(2, Length(Proxies),
+      'spdsconstructionlineCOLOR.dxf должен содержать 2 SPDSCONSTRUCTIONLINE');
+
+    { Проверяем, что прокси-объекты получили разные цвета из DXF (3 и 1). }
+    FoundColor3 := False;
+    FoundColor1 := False;
+    for I := 0 to High(Proxies) do
+    begin
+      if Integer(Proxies[I]^.vp.Color) = 3 then
+        FoundColor3 := True;
+      if Integer(Proxies[I]^.vp.Color) = 1 then
+        FoundColor1 := True;
+    end;
+    CheckTrue(FoundColor3,
+      'Один из proxy должен иметь цвет 3 (зелёный, DXF code 62)');
+    CheckTrue(FoundColor1,
+      'Второй proxy должен иметь цвет 1 (красный, DXF code 62)');
+
+    { После исправления подпримитивы каждого прокси должны иметь
+      vp.Color = ClByLayer (256), а не цвет владельца. Это означает,
+      что при изменении цвета прокси-объекта цвет подпримитивов не
+      меняется — они подчиняются цвету слоя, как и в BlockInsert. }
+    for I := 0 to High(Proxies) do
+    begin
+      proxy := Proxies[I];
+      Check(proxy^.ConstObjArray.Count > 0,
+        'Каждый proxy должен построить подпримитивы после FormatEntity');
+
+      for J := 0 to proxy^.ConstObjArray.Count - 1 do
+      begin
+        sub := PGDBObjEntity(proxy^.ConstObjArray.GetData(J));
+        if sub = nil then
+          Continue;
+        CheckEquals(ClByLayer, Integer(sub^.vp.Color),
+          'Подпримитив ProxyEntity с ByLayer в потоке должен иметь'
+          + ' цвет ClByLayer (256), а не цвет владельца');
+      end;
+    end;
+  finally
+    drawing.done;
   end;
 end;
 

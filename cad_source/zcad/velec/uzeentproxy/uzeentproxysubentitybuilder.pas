@@ -68,6 +68,20 @@ function ProxyToLocalPoint(const Context: TProxySubEntityContext;
 function ResolveLineWeight(const Context: TProxySubEntityContext;
   const ContourLineWeight: Integer): Integer;
 
+{ Цвет, который следует применить к подпримитиву прокси-объекта.
+  Повторяет поведение примитивов внутри BlockInsert:
+    - ByBlock (ClByBlock = 0) — подпримитив наследует цвет владельца
+      (OwnerColor), чтобы при изменении цвета прокси-объекта поменялся
+      и цвет "блочных" примитивов;
+    - ByLayer (ClByLayer = 256 или PROXY_DEFAULT_COLOR = -1) — подпримитив
+      получает значение ClByLayer, чтобы реально отображаться цветом
+      своего слоя, а не цветом контейнера (прокси-объекта);
+    - явный индекс палитры (1..255) — используется как есть.
+  ContourColor — цвет, зафиксированный парсером на момент обработки
+  примитива (FState.Color, см. uzeentproxygraphicparser). }
+function ResolveColor(const Context: TProxySubEntityContext;
+  const ContourColor: Integer): Integer;
+
 { Итоговый масштаб типа линии для подпримитива:
   OwnerLineTypeScale (DXF group code 48 владельца) умножается на
   PrimitiveLineTypeScale (Proxy Graphic OpCode=24 для текущего примитива).
@@ -153,6 +167,29 @@ begin
     Result := Context.OwnerLineWeight;
 end;
 
+function ResolveColor(const Context: TProxySubEntityContext;
+  const ContourColor: Integer): Integer;
+begin
+  { ByBlock (0): подпримитив должен рендериться цветом владельца —
+    то же поведение, что у примитивов внутри BlockInsert. }
+  if ContourColor = ClByBlock then
+  begin
+    Result := Context.OwnerColor;
+    Exit;
+  end;
+  { ByLayer: AutoCAD пишет 256 в DXF; внутренний парсер прокси-графики
+    хранит -1 (см. PROXY_DEFAULT_COLOR). Любое из этих значений означает
+    "взять цвет из слоя подпримитива", поэтому возвращаем ClByLayer
+    независимо от того, какое из двух представлений попало в поток. }
+  if (ContourColor = ClByLayer) or (ContourColor < 0) then
+  begin
+    Result := ClByLayer;
+    Exit;
+  end;
+  { Явный цвет 1..255 — применяется как есть. }
+  Result := ContourColor;
+end;
+
 function ResolveLineTypeScale(
   const Context: TProxySubEntityContext): Double;
 var
@@ -184,6 +221,7 @@ var
   LocalP1, LocalP2: TzePoint3d;
   SubEnt: PGDBObjEntity;
   ActualLW: Integer;
+  ActualColor: Integer;
 begin
   if (Context.OwnerEntity = nil) or (Context.SubEntitiesArray = nil) then
     Exit;
@@ -191,6 +229,7 @@ begin
   LocalP1 := ProxyToLocalPoint(Context, P1);
   LocalP2 := ProxyToLocalPoint(Context, P2);
   ActualLW := ResolveLineWeight(Context, ContourLineWeight);
+  ActualColor := ResolveColor(Context, Context.PrimitiveColor);
 
   SubEnt := ENTF_CreateLine(
     PGDBObjGenericSubEntry(Context.OwnerEntity),
@@ -198,7 +237,7 @@ begin
     PGDBLayerProp(Context.OwnerLayer),
     PGDBLtypeProp(Context.OwnerLineType),
     ActualLW,
-    TGDBPaletteColor(Context.OwnerColor),
+    TGDBPaletteColor(ActualColor),
     LocalP1, LocalP2);
 
   ApplyLineTypeScale(SubEnt, Context);
@@ -263,6 +302,7 @@ var
   PointCount, I: Integer;
   SubEnt: PGDBObjEntity;
   ActualLW: Integer;
+  ActualColor: Integer;
 begin
   if Vertices.Count < 3 then
     Exit;
@@ -281,6 +321,7 @@ begin
   end;
 
   ActualLW := ResolveLineWeight(Context, ContourLineWeight);
+  ActualColor := ResolveColor(Context, Context.PrimitiveColor);
 
   { Триангуляция веером: вершина 0 — общая для всех треугольников }
   for I := 1 to PointCount - 2 do
@@ -291,7 +332,7 @@ begin
       PGDBLayerProp(Context.OwnerLayer),
       PGDBLtypeProp(Context.OwnerLineType),
       ActualLW,
-      TGDBPaletteColor(Context.OwnerColor),
+      TGDBPaletteColor(ActualColor),
       Points[0], Points[I], Points[I + 1]);
 
     ApplyLineTypeScale(SubEnt, Context);

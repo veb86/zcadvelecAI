@@ -85,6 +85,14 @@ type
       ByLayer/ByBlock/ByLwDefault, ResolveLineWeight откатится на
       OwnerLineWeight. }
     PrimitiveLineWeight: Integer;
+    { Цвет текущего примитива (из Proxy Graphic SetColor OpCode=14).
+      Значение копируется из FState.Color парсера в момент обработки
+      примитива и передаётся построителю подпримитивов. Семантика
+      совпадает с тем, как обрабатываются примитивы внутри BlockInsert:
+      ByBlock (0) откатывается на OwnerColor, ByLayer (-1 или 256) —
+      на ClByLayer, явный индекс палитры (1..255) — используется как есть.
+      См. ResolveColor в uzeentproxysubentitybuilder. }
+    PrimitiveColor: Integer;
     { Масштаб типа линии владельца прокси-объекта (DXF group code 48).
       Подпримитивы наследуют этот масштаб, чтобы пунктир/штрих типа линии
       отображался в том же масштабе, что задан в исходном DXF. По умолчанию
