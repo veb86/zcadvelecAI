@@ -149,7 +149,7 @@ var
   dc: TDrawContext;
 begin
   Result := 0;
-  shiftMatrix := CreateTranslationMatrix(-basePoint);
+  shiftMatrix := CreateTranslationMatrix(NulVertex);
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
   Exclude(dc.Options, DCODrawable);
 
@@ -311,8 +311,8 @@ begin
   );
 
   // Шаг 5: асинхронно запустить команду Insert с подставленным именем блока
-  PendingInsertBlockName := blockName;
-  Application.QueueAsyncCall(@RunPendingInsertCommand, 0);
+  //PendingInsertBlockName := blockName;
+  //Application.QueueAsyncCall(@RunPendingInsertCommand, 0);
 end;
 
 initialization
