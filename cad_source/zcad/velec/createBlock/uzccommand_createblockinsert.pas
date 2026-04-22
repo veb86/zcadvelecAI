@@ -92,28 +92,38 @@ const
   Вызывается через Application.QueueAsyncCall после завершения текущей команды,
   иначе commandmanager.executecommand откажется запускать команду в состоянии
   isBusy.
+  QueueAsyncCall требует метод объекта (of object), поэтому используется
+  вспомогательный класс TAsyncInsertRunner.
 }
-var
-  PendingInsertBlockName: string = '';
 
 {
-  Запуск команды Insert с ранее сохранённым именем блока.
-  Используется как AsyncCall-обработчик.
+  Вспомогательный класс для асинхронного запуска команды Insert.
+  Метод RunInsert соответствует сигнатуре, ожидаемой QueueAsyncCall.
 }
-procedure RunPendingInsertCommand(Data: PtrInt);
+type
+  TAsyncInsertRunner = class
+    BlockName: string;
+    // Запускает команду Insert с сохранённым именем блока.
+    procedure RunInsert(Data: PtrInt);
+  end;
+
+procedure TAsyncInsertRunner.RunInsert(Data: PtrInt);
 var
   cmdStr: string;
 begin
-  if PendingInsertBlockName = '' then
+  if BlockName = '' then
     Exit;
-  cmdStr := 'Insert ' + PendingInsertBlockName;
-  PendingInsertBlockName := '';
+  cmdStr := 'Insert ' + BlockName;
+  BlockName := '';
   commandmanager.executecommand(
     cmdStr,
     drawings.GetCurrentDWG,
     drawings.GetCurrentOGLWParam
   );
 end;
+
+var
+  AsyncInsertRunner: TAsyncInsertRunner;
 
 {
   Подсчитывает количество выделенных примитивов в текущем чертеже.
@@ -311,16 +321,18 @@ begin
   );
 
   // Шаг 5: асинхронно запустить команду Insert с подставленным именем блока
-  PendingInsertBlockName := blockName;
-  Application.QueueAsyncCall(@RunPendingInsertCommand, 0);
+  AsyncInsertRunner.BlockName := blockName;
+  Application.QueueAsyncCall(AsyncInsertRunner.RunInsert, 0);
 end;
 
 initialization
   programlog.LogOutFormatStr('Unit "%s" initialization', [{$INCLUDE %FILE%}],
     LM_Info, UnitsInitializeLMId);
+  AsyncInsertRunner := TAsyncInsertRunner.Create;
   CreateZCADCommand(@CreateBlockInsert_com, CommandName, CADWG or CASelEnts, 0);
 
 finalization
   ProgramLog.LogOutFormatStr('Unit "%s" finalization', [{$INCLUDE %FILE%}],
     LM_Info, UnitsFinalizeLMId);
+  FreeAndNil(AsyncInsertRunner);
 end.
