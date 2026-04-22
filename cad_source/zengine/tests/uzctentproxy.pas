@@ -56,6 +56,9 @@ uses
   // Модули для тестов конвертации proxy -> block
   UGDBObjBlockdefArray,
   uzeblockdef,
+  // Для тестов расчленения (issue #988)
+  uzeentcircle,
+  uzeenttext,
   // Нужен для инициализации LCL-зависимых модулей
   Interfaces;
 
@@ -151,6 +154,19 @@ type
       подпримитивы каждого прокси должны получить ClByLayer, а не цвет
       самого прокси. }
     procedure SpdsConstructionLineColorSubEntitiesUseByLayer;
+    { Регрессия на issue #988: при расчленении ProxyEntity клонированный
+      GDBObjCircle после transform(proxy.objMatrix) должен сохранять
+      ненулевой радиус и позицию центра. До исправления GDBObjWithLocalCS.
+      transform вызывал ReCalcFromObjMatrix на мусорной objMatrix (Clone
+      использует GetMem+init), что обнуляло Radius и искажало P_insert. }
+    procedure ProxyExplodeCircleTransformPreservesPositionAndRadius;
+    { Регрессия на issue #988: при расчленении ProxyEntity клонированный
+      GDBObjText после transform(proxy.objMatrix) должен сохранять корректную
+      точку вставки. До исправления GDBObjAbstractText.transform вызывал
+      inherited (GDBObjWithLocalCS.transform → ReCalcFromObjMatrix на
+      OneMatrix), что обнуляло Local.P_insert (сдвигало текст в начало
+      координат). }
+    procedure ProxyExplodeTextTransformPreservesInsertPoint;
   end;
 
 implementation
@@ -1892,6 +1908,194 @@ begin
           + ' цвет ClByLayer (256), а не цвет владельца');
       end;
     end;
+  finally
+    drawing.done;
+  end;
+end;
+
+{ Регрессия на issue #988: клонирование GDBObjCircle из ConstObjArray прокси
+  с последующим вызовом transform(proxy.objMatrix) не должно портить Radius
+  и Local.p_insert.
+
+  До исправления GDBObjCircle не имел override-метода transform. Базовый
+  GDBObjWithLocalCS.transform игнорировал t_matrix и вызывал
+  ReCalcFromObjMatrix; при этом objMatrix содержала мусор (Clone использует
+  GetMem+init без нулевой инициализации), что обнуляло Radius и искажало
+  Local.p_insert. В результате круг «исчезал» после расчленения.
+
+  Тест загружает testspds3entity2008.dxf (SPDSPOLYMORPHMARK содержит Circle),
+  форматирует прокси, находит кружное подпримитив, клонирует его и применяет
+  матрицу трансформации. Ожидаемый результат: Radius и позиция не равны нулю. }
+procedure TProxyEntityLoadTest.ProxyExplodeCircleTransformPreservesPositionAndRadius;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  sub: PGDBObjEntity;
+  cloned: PGDBObjEntity;
+  circle: PGDBObjCircle;
+  origRadius, clonedRadius: Double;
+  clonedInsert: TzePoint3d;
+  transform: TzeTypedMatrix4d;
+  i: Integer;
+  found: Boolean;
+begin
+  drawing.init(nil);
+  dc := drawing.CreateDrawingRC;
+  try
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/testspds3entity2008.dxf', zdc);
+    Check(drawing.pObjRoot^.ObjArray.Count > 0,
+      'testspds3entity2008.dxf должен загружать хотя бы один объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    Check(entity <> nil, 'Первый объект не должен быть nil');
+    Check(entity^.GetObjType = GDBAcdProxyID,
+      'Первый объект должен быть ProxyEntity (GDBAcdProxyID)');
+
+    proxy := PGDBObjAcdProxy(entity);
+    proxy^.FormatEntity(drawing, dc);
+
+    Check(proxy^.ConstObjArray.Count > 0,
+      'После FormatEntity proxy должен иметь подпримитивы');
+
+    { Ищем первый кружной подпримитив }
+    found := False;
+    for i := 0 to proxy^.ConstObjArray.Count - 1 do
+    begin
+      sub := PGDBObjEntity(proxy^.ConstObjArray.GetData(i));
+      if (sub <> nil) and (sub^.GetObjType = GDBCircleID) then
+      begin
+        circle := PGDBObjCircle(sub);
+        origRadius := circle^.Radius;
+
+        CheckTrue(origRadius > 0,
+          'Исходный Radius подпримитива-круга должен быть положительным');
+
+        { Клонируем круг и применяем трансформацию прокси (имитируем explode) }
+        proxy^.CalcObjMatrix(PTDrawingDef(@drawing));
+        transform := proxy^.objMatrix;
+        cloned := sub^.Clone(drawing.GetCurrentROOT);
+        Check(cloned <> nil, 'Clone не должен вернуть nil');
+
+        cloned^.transform(transform);
+        circle := PGDBObjCircle(cloned);
+        clonedRadius := circle^.Radius;
+        clonedInsert := circle^.Local.p_insert;
+
+        CheckTrue(clonedRadius > 0,
+          'После transform(proxy.objMatrix) Radius клона не должен быть равен 0 '
+          + '(регрессия issue #988: мусорная objMatrix после Clone обнуляла Radius)');
+
+        { Вектор tranlation матрицы прокси — позиция его grip center.
+          После transform Local.p_insert должна содержать WCS-позицию центра
+          круга, которая не должна быть нулевой, если grip center не в нуле. }
+        CheckFalse(
+          (abs(clonedInsert.x) < 1e-6) and
+          (abs(clonedInsert.y) < 1e-6),
+          'После transform(proxy.objMatrix) центр круга не должен быть в начале '
+          + 'координат (регрессия issue #988: ReCalcFromObjMatrix на OneMatrix '
+          + 'или мусорной objMatrix сбрасывала позицию в ноль)');
+
+        found := True;
+        Break;
+      end;
+    end;
+
+    CheckTrue(found,
+      'testspds3entity2008.dxf должен содержать хотя бы один Circle-подпримитив '
+      + 'в ProxyEntity; убедитесь, что uzeentproxyparsercircle зарегистрирован');
+  finally
+    drawing.done;
+  end;
+end;
+
+{ Регрессия на issue #988: клонирование GDBObjText из ConstObjArray прокси
+  с последующим вызовом transform(proxy.objMatrix) не должно сбрасывать
+  Local.P_insert в начало координат.
+
+  До исправления GDBObjAbstractText.transform вызывал inherited (который
+  в итоге звал ReCalcFromObjMatrix на OneMatrix — потому что GDBObjText.Clone
+  использует initnul), что устанавливало Local.P_insert в NulVertex.
+  В результате текст после расчленения оказывался в начале координат.
+
+  Тест загружает testspds3entity2008.dxf, форматирует прокси, находит
+  текстовый подпримитив, клонирует его и применяет матрицу трансформации.
+  Ожидаемый результат: Local.P_insert не в начале координат. }
+procedure TProxyEntityLoadTest.ProxyExplodeTextTransformPreservesInsertPoint;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  zdc: TZDrawingContext;
+  entity: PGDBObjEntity;
+  proxy: PGDBObjAcdProxy;
+  sub: PGDBObjEntity;
+  cloned: PGDBObjEntity;
+  txt: PGDBObjText;
+  clonedInsert: TzePoint3d;
+  transform: TzeTypedMatrix4d;
+  i: Integer;
+  found: Boolean;
+begin
+  drawing.init(nil);
+  dc := drawing.CreateDrawingRC;
+  try
+    zdc.CreateRec(drawing, drawing.pObjRoot^, TLOLoad, dc);
+    AddFromDXF('cad_source/test/testspds3entity2008.dxf', zdc);
+    Check(drawing.pObjRoot^.ObjArray.Count > 0,
+      'testspds3entity2008.dxf должен загружать хотя бы один объект');
+
+    entity := PGDBObjEntity(drawing.pObjRoot^.ObjArray.GetData(0));
+    Check(entity <> nil, 'Первый объект не должен быть nil');
+    Check(entity^.GetObjType = GDBAcdProxyID,
+      'Первый объект должен быть ProxyEntity (GDBAcdProxyID)');
+
+    proxy := PGDBObjAcdProxy(entity);
+    proxy^.FormatEntity(drawing, dc);
+
+    Check(proxy^.ConstObjArray.Count > 0,
+      'После FormatEntity proxy должен иметь подпримитивы');
+
+    { Ищем первый текстовый подпримитив }
+    found := False;
+    for i := 0 to proxy^.ConstObjArray.Count - 1 do
+    begin
+      sub := PGDBObjEntity(proxy^.ConstObjArray.GetData(i));
+      if (sub <> nil) and (sub^.GetObjType = GDBtextID) then
+      begin
+        txt := PGDBObjText(sub);
+
+        { Клонируем текст и применяем трансформацию прокси (имитируем explode) }
+        proxy^.CalcObjMatrix(PTDrawingDef(@drawing));
+        transform := proxy^.objMatrix;
+        cloned := sub^.Clone(drawing.GetCurrentROOT);
+        Check(cloned <> nil, 'Clone не должен вернуть nil');
+
+        cloned^.transform(transform);
+        txt := PGDBObjText(cloned);
+        clonedInsert := txt^.Local.P_insert;
+
+        { Вектор translation матрицы прокси даёт WCS-позицию grip center.
+          После transform Local.P_insert должна содержать WCS-позицию текста,
+          которая не должна быть нулевой, если grip center не в нуле. }
+        CheckFalse(
+          (abs(clonedInsert.x) < 1e-6) and
+          (abs(clonedInsert.y) < 1e-6),
+          'После transform(proxy.objMatrix) точка вставки текста не должна '
+          + 'быть в начале координат (регрессия issue #988: '
+          + 'GDBObjAbstractText.transform вызывал inherited → '
+          + 'ReCalcFromObjMatrix на OneMatrix → P_insert := NulVertex)');
+
+        found := True;
+        Break;
+      end;
+    end;
+
+    CheckTrue(found,
+      'testspds3entity2008.dxf должен содержать хотя бы один Text-подпримитив '
+      + 'в ProxyEntity; убедитесь, что uzeentproxyparsertext зарегистрирован');
   finally
     drawing.done;
   end;

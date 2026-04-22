@@ -89,18 +89,31 @@ begin
 end;
 
 
+{ Применяет матрицу трансформации к точке вставки и масштабу высоты текста.
+  Базовая реализация GDBObjWithLocalCS.transform вызывает ReCalcFromObjMatrix,
+  которая читает objMatrix — при этом после Clone objMatrix может быть
+  неинициализирована или устаревшая, что приводит к сбросу Local.P_insert
+  в неверную позицию (например, в центр bbox прокси-объекта). Данное
+  переопределение работает напрямую через Local.P_insert, что корректно как
+  при расчленении прокси-объектов (после Clone), так и при обычных командах
+  перемещения/вращения/масштабирования. }
 procedure GDBObjAbstractText.transform;
 var
   tv:TzePoint3d;
   m:TzeTypedMatrix4d;
 begin
+  { Масштабируем высоту текста по ротационной части матрицы }
   tv:=CreateVertex(0,textprop.size,0);
   m:=t_matrix;
   PzePoint3d(@m.mtr.v[3])^:=NulVertex;
-
   tv:=VectorTransform3d(tv,m);
   textprop.size:=oneVertexlength(tv);
-  inherited;
+
+  { Переносим точку вставки текста в новую позицию.
+    Не вызываем inherited, так как GDBObjWithLocalCS.transform читает
+    objMatrix (которая может быть неинициализирована после Clone) и
+    затирает Local.P_insert неверным значением. }
+  Local.P_insert:=VectorTransform3D(Local.P_insert, t_matrix);
 end;
 
 procedure GDBObjAbstractText.setrot(r:double);

@@ -88,6 +88,12 @@ type
     function IsIntersect_Line(lbegin,lend:TzePoint3d):Intercept3DProp;
       virtual; //<**Пересечение с линией описанной 2-я точками
     procedure ReCalcFromObjMatrix;virtual;
+    { Применяет матрицу трансформации к центру и радиусу окружности.
+      Переопределяет базовую реализацию GDBObjWithLocalCS, которая не
+      применяет t_matrix к Local.p_insert и повреждает Radius при вызове
+      ReCalcFromObjMatrix на неинициализированной objMatrix (например, после
+      Clone). }
+    procedure transform(const t_matrix:TzeTypedMatrix4d);virtual;
 
     function GetTangentInPoint(const point:TzePoint3d):TzePoint3d;virtual;
     procedure AddOnTrackAxis(var posr:os_record;
@@ -146,6 +152,29 @@ var
 begin
   Local:=GetPInsertInOCSBymatrix(objmatrix,scl);
   Radius:=scl.x;
+end;
+
+{ Применяет t_matrix к Local.p_insert и масштабирует Radius.
+  Базовая реализация GDBObjWithLocalCS.transform вызывает ReCalcFromObjMatrix
+  на неинициализированной objMatrix и повреждает позицию и радиус окружности.
+  Данное переопределение работает напрямую через Local.p_insert, что корректно
+  как при расчленении прокси-объектов (после Clone), так и при обычных
+  командах перемещения/вращения/масштабирования (когда Local.p_insert уже
+  соответствует текущей позиции относительно владельца). }
+procedure GDBObjCircle.transform;
+var
+  scaleX: TzePoint3d;
+begin
+  { Переносим центр окружности в новую позицию }
+  Local.p_insert := VectorTransform3D(Local.p_insert, t_matrix);
+
+  { Масштабируем радиус по длине первого столбца матрицы трансформации.
+    Первый столбец содержит преобразованный вектор единичной длины по оси X;
+    его длина равна коэффициенту масштабирования. }
+  scaleX.x := t_matrix.mtr.v[0].v[0];
+  scaleX.y := t_matrix.mtr.v[0].v[1];
+  scaleX.z := t_matrix.mtr.v[0].v[2];
+  Radius := Radius * oneVertexlength(scaleX);
 end;
 
 function GDBObjCircle.IsIntersect_Line(lbegin,lend:TzePoint3d):Intercept3DProp;
