@@ -66,6 +66,7 @@ uses
   uzegeometrytypes,
   uzegeometry,
   uzgldrawcontext,
+  uzedrawingdef,
   uzcdrawing,
   uzcdrawings,
   uzcutils,
@@ -214,7 +215,7 @@ begin
   { Убедимся, что матрица вставки актуальна — её подсущности имеют
     относительные координаты внутри определения блока, матрица вставки
     переводит их в координаты чертежа с учётом base-point блока. }
-  Insert^.CalcObjMatrix(Drawing);
+  Insert^.CalcObjMatrix(PTDrawingDef(Drawing));
   Transform := Insert^.objMatrix;
   SubEntity := BlockDef^.ObjArray.beginiterate(IR);
   if SubEntity <> nil then
