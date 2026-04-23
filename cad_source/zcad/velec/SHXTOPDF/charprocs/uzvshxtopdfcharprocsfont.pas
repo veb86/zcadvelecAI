@@ -86,6 +86,11 @@ uses
   uzvshxtopdfcharprocsbbox,
   uzvshxtopdfcharprocswriter;
 
+type
+  // Динамический массив Double
+  // Dynamic array of Double
+  TDoubleDynArray = array of Double;
+
 // Сгенерировать словарь /Encoding для Type3 Font
 // Generate /Encoding dictionary for Type3 Font
 function GenerateEncodingDict(const CharProcs: TUzvPdfCharProcsArray): AnsiString;
@@ -132,11 +137,6 @@ function BuildWidthsArray(
   const CharProcs: TUzvPdfCharProcsArray;
   FirstChar, LastChar: Integer
 ): TDoubleDynArray;
-
-type
-  // Динамический массив Double
-  // Dynamic array of Double
-  TDoubleDynArray = array of Double;
 
 implementation
 
