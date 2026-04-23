@@ -286,6 +286,7 @@ uses
   uzvmanemschemalevelone, //создание одноуровневой схемы
   uzvmanemdialogcom,//запуск генератора схемы через диалоговое окно
   uzvmanagerconnect, // менеджер подключений
+  //uzvshxtopdf_commandstart,
   {$IFDEF WINDOWS}//uzvmodeltoxlsx,
   uzvmodeltoxlsxfps, uzvdevtoxlsx, uzvxlsxtocad,uzvelectricalexcelcom,{$ENDIF}  //запуск экспорта информации из veb модели в xlsx на OLE
 
