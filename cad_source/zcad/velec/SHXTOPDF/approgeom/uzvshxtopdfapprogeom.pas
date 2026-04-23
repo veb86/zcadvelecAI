@@ -139,7 +139,7 @@ function ConvertArcToBezier(
   const Tolerance: Double
 ): TUzvBezierPath;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   i: Integer;
 begin
   Result := CreateEmptyBezierPath;
@@ -182,7 +182,7 @@ function ConvertCircleToBezier(
   const Tolerance: Double
 ): TUzvBezierPath;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   i: Integer;
 begin
   Result := CreateEmptyBezierPath;
@@ -265,7 +265,7 @@ var
   CurrentPoint: TPointF;
   PathStartPoint: TPointF;
   Segment: TUzvBezierSegment;
-  ArcSegments: TArray<TUzvBezierSegment>;
+  ArcSegments: TUzvBezierSegmentArray;
   j: Integer;
 begin
   Result := CreateEmptyBezierGlyph(ShxGlyph.Code);

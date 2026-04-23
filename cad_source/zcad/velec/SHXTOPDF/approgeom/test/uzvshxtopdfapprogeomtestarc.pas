@@ -101,7 +101,7 @@ function TestCounterClockwiseArc: TTestResult;
 // Проверяет точки на кривых Безье и сравнивает с исходной дугой
 // Checks points on Bezier curves and compares with original arc
 function CalculateMaxDeviation(
-  const Segments: TArray<TUzvBezierSegment>;
+  const Segments: TUzvBezierSegmentArray;
   CenterX, CenterY, Radius: Double;
   SamplesPerSegment: Integer
 ): Double;
@@ -160,7 +160,7 @@ end;
 
 // Вычислить максимальное отклонение аппроксимации от дуги
 function CalculateMaxDeviation(
-  const Segments: TArray<TUzvBezierSegment>;
+  const Segments: TUzvBezierSegmentArray;
   CenterX, CenterY, Radius: Double;
   SamplesPerSegment: Integer
 ): Double;
@@ -189,7 +189,7 @@ end;
 // Проверить совпадение начальной точки
 // Check start point match
 function CheckStartPointMatch(
-  const Segments: TArray<TUzvBezierSegment>;
+  const Segments: TUzvBezierSegmentArray;
   ExpectedX, ExpectedY: Double
 ): Boolean;
 begin
@@ -206,7 +206,7 @@ end;
 // Проверить совпадение конечной точки
 // Check end point match
 function CheckEndPointMatch(
-  const Segments: TArray<TUzvBezierSegment>;
+  const Segments: TUzvBezierSegmentArray;
   ExpectedX, ExpectedY: Double
 ): Boolean;
 var
@@ -233,7 +233,7 @@ const
   END_ANGLE = Pi / 2;       // 90 градусов
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
   ExpectedStartX, ExpectedStartY: Double;
   ExpectedEndX, ExpectedEndY: Double;
@@ -356,7 +356,7 @@ const
   RADIUS = 50.0;
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
 begin
   Result.TestName := 'Semicircle (0 -> 180 degrees)';
@@ -390,7 +390,7 @@ const
   RADIUS = 75.0;
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
 begin
   Result.TestName := 'Full Circle';
@@ -424,7 +424,7 @@ const
   RADIUS = 100.0;
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
   SmallAngle: Double;
 begin
@@ -460,7 +460,7 @@ const
   RADIUS = 100.0;
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
   LargeAngle: Double;
 begin
@@ -496,7 +496,7 @@ const
   RADIUS = 100.0;
   TOLERANCE = 0.01;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   MaxDev: Double;
 begin
   Result.TestName := 'Counter-clockwise Arc (90 -> 0 degrees)';
