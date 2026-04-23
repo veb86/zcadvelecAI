@@ -36,6 +36,10 @@ const
   SHX_OPCODE_ARC_CCW = 9;     // Дуга против часовой стрелки
   SHX_OPCODE_END = 0;         // Конец определения глифа
 
+// Массив смещений глифов
+type
+  TLongWordArray = array of LongWord;
+
 // Структура заголовка SHX файла
 type
   TShxHeader = record
@@ -60,7 +64,7 @@ type
     function ReadHeader(var F: File): TShxHeader;
 
     // Прочитать таблицу смещений глифов
-    function ReadOffsetTable(var F: File; ShapeCount: Word): array of LongWord;
+    function ReadOffsetTable(var F: File; ShapeCount: Word): TLongWordArray;
 
     // Парсить один глиф начиная с указанной позиции
     function ParseGlyph(var F: File; Offset: LongWord): TShxGlyph;
@@ -153,7 +157,7 @@ begin
 end;
 
 // Прочитать таблицу смещений глифов
-function TShxParser.ReadOffsetTable(var F: File; ShapeCount: Word): array of LongWord;
+function TShxParser.ReadOffsetTable(var F: File; ShapeCount: Word): TLongWordArray;
 var
   i: Integer;
   Offset: LongWord;
