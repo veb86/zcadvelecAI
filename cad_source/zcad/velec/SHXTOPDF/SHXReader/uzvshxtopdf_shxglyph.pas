@@ -205,7 +205,7 @@ end;
 // Рассчитать ограничивающий прямоугольник глифа по его командам
 procedure CalculateGlyphBounds(var Glyph: TShxGlyph);
 var
-  i: Integer;
+  i,j: Integer;
   Cmd: TShxCommand;
   IsFirst: Boolean;
   Angle: Double;
@@ -242,9 +242,9 @@ begin
 
         // Проверяем критические углы (0, 90, 180, 270 градусов)
         Steps := 4;
-        for i := 0 to Steps - 1 do
+        for j := 0 to Steps - 1 do
         begin
-          Angle := i * Pi / 2;
+          Angle := j * Pi / 2;
           X := Cmd.P1.X + Cmd.Radius * Cos(Angle);
           Y := Cmd.P1.Y + Cmd.Radius * Sin(Angle);
           UpdateBoundsWithPoint(Glyph.Bounds, X, Y, IsFirst);
