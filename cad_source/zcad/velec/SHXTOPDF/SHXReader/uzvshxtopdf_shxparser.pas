@@ -486,7 +486,7 @@ begin
       Result.UnitsPerEm := Header.UnitsPerEm;
 
       programlog.LogOutFormatStr(
-        'Заголовок прочитан: FontName=%s UnitsPerEm=%d',
+        'Заголовок прочитан: FontName=%s UnitsPerEm=%g',
         [Result.FontName, Result.UnitsPerEm],
         LM_Info
       );
