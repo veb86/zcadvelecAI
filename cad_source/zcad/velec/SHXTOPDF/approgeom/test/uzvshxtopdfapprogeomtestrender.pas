@@ -603,7 +603,7 @@ end;
 // Тест рендеринга дуги
 function TestRenderArc: TRenderTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   Path: TUzvBezierPath;
   Buffer1, Buffer2: TRasterBuffer;
   Scale: Double;
@@ -663,7 +663,7 @@ end;
 // Тест рендеринга окружности
 function TestRenderCircle: TRenderTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   Path: TUzvBezierPath;
   Buffer1, Buffer2: TRasterBuffer;
   Scale: Double;

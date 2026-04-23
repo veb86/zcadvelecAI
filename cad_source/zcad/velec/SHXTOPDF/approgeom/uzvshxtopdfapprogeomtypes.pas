@@ -80,6 +80,10 @@ type
                                       // Array of glyph contours
   end;
 
+  // Динамический массив сегментов Безье
+  // Dynamic array of Bezier segments
+  TUzvBezierSegmentArray = array of TUzvBezierSegment;
+
   // Шрифт в форме кривых Безье - результат этапа 2
   // Font as Bezier curves - Stage 2 result
   TUzvBezierFont = record

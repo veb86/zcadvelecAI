@@ -110,11 +110,11 @@ function TestVerySmallRadius: TStabilityTestResult;
 
 // Проверить массив сегментов на наличие NaN
 // Check segment array for NaN values
-function ContainsNaN(const Segments: TArray<TUzvBezierSegment>): Boolean;
+function ContainsNaN(const Segments: TUzvBezierSegmentArray): Boolean;
 
 // Проверить массив сегментов на наличие Infinity
 // Check segment array for Infinity values
-function ContainsInfinity(const Segments: TArray<TUzvBezierSegment>): Boolean;
+function ContainsInfinity(const Segments: TUzvBezierSegmentArray): Boolean;
 
 // Вывести результаты тестов в лог
 // Output test results to log
@@ -157,7 +157,7 @@ begin
 end;
 
 // Проверить массив сегментов на наличие NaN
-function ContainsNaN(const Segments: TArray<TUzvBezierSegment>): Boolean;
+function ContainsNaN(const Segments: TUzvBezierSegmentArray): Boolean;
 var
   i: Integer;
 begin
@@ -173,7 +173,7 @@ begin
 end;
 
 // Проверить массив сегментов на наличие Infinity
-function ContainsInfinity(const Segments: TArray<TUzvBezierSegment>): Boolean;
+function ContainsInfinity(const Segments: TUzvBezierSegmentArray): Boolean;
 var
   i: Integer;
 begin
@@ -191,7 +191,7 @@ end;
 // Тест нулевого радиуса
 function TestZeroRadius: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Zero Radius';
   Result.Passed := False;
@@ -235,7 +235,7 @@ end;
 // Тест дуги 360°
 function TestFullCircleArc: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Full Circle Arc (360 degrees)';
   Result.Passed := False;
@@ -287,7 +287,7 @@ end;
 // Тест дуги меньше tolerance
 function TestTinyArc: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
   TinyAngle: Double;
 begin
   Result.TestName := 'Tiny Arc (< tolerance)';
@@ -333,7 +333,7 @@ end;
 // Тест отрицательных координат
 function TestNegativeCoordinates: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Negative Coordinates';
   Result.Passed := False;
@@ -383,7 +383,7 @@ end;
 // Тест отрицательного радиуса
 function TestNegativeRadius: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Negative Radius';
   Result.Passed := False;
@@ -427,7 +427,7 @@ end;
 // Тест NaN входных данных
 function TestNaNInput: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'NaN Input';
   Result.Passed := False;
@@ -476,7 +476,7 @@ end;
 // Тест Infinity входных данных
 function TestInfinityInput: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Infinity Input';
   Result.Passed := False;
@@ -524,7 +524,7 @@ end;
 // Тест очень большого радиуса
 function TestLargeRadius: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Very Large Radius';
   Result.Passed := False;
@@ -568,7 +568,7 @@ end;
 // Тест очень малого радиуса
 function TestVerySmallRadius: TStabilityTestResult;
 var
-  Segments: TArray<TUzvBezierSegment>;
+  Segments: TUzvBezierSegmentArray;
 begin
   Result.TestName := 'Very Small Radius';
   Result.Passed := False;

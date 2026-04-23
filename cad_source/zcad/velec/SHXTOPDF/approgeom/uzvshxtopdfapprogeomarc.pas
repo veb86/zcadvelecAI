@@ -67,7 +67,7 @@ function ApproximateArc(
   Radius: Double;
   StartAngle, EndAngle: Double;
   Tolerance: Double
-): TArray<TUzvBezierSegment>;
+): TUzvBezierSegmentArray;
 
 // Аппроксимировать один сегмент дуги (угол <= 90°) одной кривой Безье
 // Approximate single arc segment (angle <= 90 degrees) with one Bezier curve
@@ -96,7 +96,7 @@ function ApproximateCircle(
   CenterX, CenterY: Double;
   Radius: Double;
   Tolerance: Double
-): TArray<TUzvBezierSegment>;
+): TUzvBezierSegmentArray;
 
 // Вычислить точку на окружности
 // Calculate point on circle
@@ -292,7 +292,7 @@ function ApproximateArc(
   Radius: Double;
   StartAngle, EndAngle: Double;
   Tolerance: Double
-): TArray<TUzvBezierSegment>;
+): TUzvBezierSegmentArray;
 var
   Settings: TApproximationSettings;
   SweepAngle: Double;
@@ -395,7 +395,7 @@ function ApproximateCircle(
   CenterX, CenterY: Double;
   Radius: Double;
   Tolerance: Double
-): TArray<TUzvBezierSegment>;
+): TUzvBezierSegmentArray;
 var
   Settings: TApproximationSettings;
   AbsRadius: Double;
