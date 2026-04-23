@@ -168,9 +168,28 @@ begin
 end;
 
 { Клонирует одну подсущность из массива ObjArray определения блока
-  в корень чертежа с применением трансформации. Новой сущности
-  присваивается текущий корень в качестве владельца. Возвращает
-  указатель на клон или nil, если клонировать не удалось. }
+  в корень чертежа с применением трансформации. Возвращает указатель
+  на клон или nil, если клонировать не удалось.
+
+  Алгоритм повторяет подход команды Copy (uzccommand_copy.pas):
+    1. Клон создаётся с исходным владельцем подсущности (определением
+       блока или самим прокси-объектом). Это важно: GDBObjCircle.Clone
+       и другие Clone-методы после init имеют objmatrix=OneMatrix
+       (мусорное значение, неотражающее фактическое положение подсущности
+       внутри контейнера). Если сразу сменить владельца, теряется связь
+       с корректным objmatrix источника.
+    2. Вызывается TransformAt(source, @matrix): objmatrix клона
+       вычисляется как source.objmatrix * matrix, то есть «взять
+       мировую матрицу подсущности внутри контейнера и умножить на
+       матрицу самого контейнера». В результате клон получает корректную
+       мировую матрицу. Затем ReCalcFromObjMatrix (виртуально) обновляет
+       Local (p_insert, basis, radius и т.п.) из новой objmatrix.
+       Это то же самое, что делает команда Copy.
+    3. После TransformAt клон перемещается в корень чертежа:
+       меняется bp.ListPos.Owner. Так как Local уже содержит мировые
+       координаты, повторный CalcObjMatrix внутри FormatEntity (его
+       GetMatrix у корня — единичный) даст ту же мировую матрицу.
+    4. FormatEntity форматирует клон для отрисовки в чертеже. }
 function CloneSubEntityToRoot(SubEntity: PGDBObjEntity;
   Drawing: PTZCADDrawing;
   const ATransform: TzeTypedMatrix4d;
@@ -182,15 +201,24 @@ begin
   Result := nil;
   if SubEntity = nil then
     Exit;
-  Cloned := SubEntity^.Clone(Drawing^.GetCurrentROOT);
+  { Клонируем с тем же владельцем, что и исходная подсущность —
+    так же, как это делает команда Copy. }
+  Cloned := SubEntity^.Clone(SubEntity^.bp.ListPos.Owner);
   if Cloned = nil then
     Exit;
-  { Применяем матрицу родительского объекта (BlockInsert/Proxy),
-    чтобы подсущность оказалась в мировых координатах. }
+  { Применяем матрицу родительского объекта (BlockInsert/Proxy)
+    через TransformAt(source, matrix). Это ключевое отличие от
+    прямого transform(matrix): TransformAt использует objmatrix
+    исходной подсущности, а не objmatrix клона (который после Clone
+    содержит OneMatrix или мусор). }
   LocalTransform := ATransform;
-  Cloned^.transform(LocalTransform);
-  { Наследуем текущие настройки чертежа (цвет, тип линии и т.п.),
-    если у клона они заданы "по блоку" — после расчленения должны
+  Cloned^.TransformAt(SubEntity, @LocalTransform);
+  { Переносим клон в корень чертежа. После TransformAt его Local
+    уже содержит мировые координаты, так что повторные вызовы
+    CalcObjMatrix при новом владельце дадут корректную матрицу. }
+  Cloned^.bp.ListPos.Owner := Drawing^.GetCurrentROOT;
+  { Форматируем клон: вычисление objmatrix, BBox и пр.
+    Наследуем настройки чертежа — после расчленения должны
     остаться осмысленные значения. }
   Cloned^.FormatEntity(Drawing^, DC);
   Result := Cloned;
@@ -212,6 +240,12 @@ begin
   BlockDef := GetBlockDef(Insert, Drawing^);
   if BlockDef = nil then
     Exit;
+  { Убедимся, что подсущности блока отформатированы — без этого их
+    objmatrix может быть устаревшим/единичным, что приведёт к
+    неправильной работе TransformAt(source, matrix) при клонировании.
+    FormatEntity ставит Formated=True и повторные вызовы безопасны. }
+  if not BlockDef^.Formated then
+    BlockDef^.FormatEntity(PTDrawingDef(Drawing)^, DC);
   { Убедимся, что матрица вставки актуальна — её подсущности имеют
     относительные координаты внутри определения блока, матрица вставки
     переводит их в координаты чертежа с учётом base-point блока. }
@@ -220,6 +254,11 @@ begin
   SubEntity := BlockDef^.ObjArray.beginiterate(IR);
   if SubEntity <> nil then
     repeat
+      { Для каждой подсущности предварительно форматируем её
+        непосредственно — это гарантирует актуальность objmatrix
+        даже у подсущностей, не охваченных общим FormatEntity
+        определения блока (например, вложенных BlockInsert). }
+      SubEntity^.FormatEntity(PTDrawingDef(Drawing)^, DC);
       Cloned := CloneSubEntityToRoot(SubEntity, Drawing, Transform, DC);
       if Cloned <> nil then
       begin
@@ -234,23 +273,34 @@ end;
   ConstObjArray после BuildSubEntities; достаточно клонировать их
   с учётом матрицы прокси-объекта. Если подсущности ещё не построены,
   форматирование прокси их построит. Возвращает число добавленных
-  подсущностей. }
+  подсущностей.
+
+  Ключевая особенность: после Proxy.FormatEntity подсущности в
+  ConstObjArray имеют владельцем сам прокси-объект, поэтому их
+  objmatrix уже содержит мировую матрицу (Local * Proxy.objmatrix,
+  см. GDBObjWithLocalCS.CalcObjMatrix). Поэтому в качестве матрицы
+  трансформации передаётся единичная матрица: TransformAt(source, I)
+  присвоит objmatrix клона = source.objmatrix, то есть сохранит
+  мировые координаты подсущности в чертеже. }
 function ExplodeOneProxyEntity(Proxy: PGDBObjAcdProxy;
   Drawing: PTZCADDrawing; var DC: TDrawContext): Integer;
 var
   SubEntity, Cloned: PGDBObjEntity;
   IR: itrec;
-  Transform: TzeTypedMatrix4d;
+  IdentityTransform: TzeTypedMatrix4d;
 begin
   Result := 0;
   { Принудительное форматирование гарантирует, что ConstObjArray
-    заполнен и матрица objMatrix соответствует текущим scale/rotate. }
+    заполнен, матрица objMatrix прокси соответствует текущим
+    scale/rotate, и подсущности имеют актуальные objmatrix в
+    мировых координатах. }
   Proxy^.FormatEntity(Drawing^, DC);
-  Transform := Proxy^.objMatrix;
+  IdentityTransform := OneMatrix;
   SubEntity := Proxy^.ConstObjArray.beginiterate(IR);
   if SubEntity <> nil then
     repeat
-      Cloned := CloneSubEntityToRoot(SubEntity, Drawing, Transform, DC);
+      Cloned := CloneSubEntityToRoot(SubEntity, Drawing,
+        IdentityTransform, DC);
       if Cloned <> nil then
       begin
         zcAddEntToDrawingWithUndo(Cloned, Drawing^);

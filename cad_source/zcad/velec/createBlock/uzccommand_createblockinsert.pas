@@ -159,7 +159,7 @@ var
   dc: TDrawContext;
 begin
   Result := 0;
-  shiftMatrix := CreateTranslationMatrix(-basePoint);
+  shiftMatrix := CreateTranslationMatrix(NulVertex);
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;
   Exclude(dc.Options, DCODrawable);
 
