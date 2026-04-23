@@ -113,7 +113,7 @@ var
 begin
   if BlockName = '' then
     Exit;
-  cmdStr := 'Insert ' + BlockName;
+  cmdStr := 'Insert(' + BlockName + ')';
   BlockName := '';
   commandmanager.executecommand(
     cmdStr,
