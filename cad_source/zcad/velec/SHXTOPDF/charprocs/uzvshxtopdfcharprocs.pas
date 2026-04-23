@@ -94,6 +94,13 @@ uses
 //
 // Returns:
 //   TUzvPdfType3Font - complete Type3 font description for PDF
+
+type
+  // Динамический массив Integer
+  // Dynamic array of Integer
+  TIntegerDynArray = array of Integer;
+
+
 function BuildType3FontCharProcs(
   const Font: TUzvWorldBezierFont;
   const GlyphWidths: array of Double;
@@ -138,10 +145,7 @@ function GetUniqueGlyphCount(const Font: TUzvWorldBezierFont): Integer;
 // Get list of unique character codes
 function GetUniqueCharCodes(const Font: TUzvWorldBezierFont): TIntegerDynArray;
 
-type
-  // Динамический массив Integer
-  // Dynamic array of Integer
-  TIntegerDynArray = array of Integer;
+
 
 implementation
 
