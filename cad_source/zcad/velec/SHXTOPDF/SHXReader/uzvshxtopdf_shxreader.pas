@@ -34,15 +34,23 @@ uses
 //   FileName - полный путь к SHX файлу
 //   CodePage - номер кодовой страницы (по умолчанию 1251 - Windows Cyrillic)
 //   Verbose - режим подробного логирования
-//   UsedChars - массив кодов символов, которые нужно загрузить (если пустой - загружаются все)
 // Возвращает:
 //   Структуру TShxFont с загруженными глифами
 function LoadShxFont(
   const FileName: string;
   CodePage: Integer = 1251;
-  Verbose: Boolean = False;
-  const UsedChars: array of Byte = nil
-): TShxFont;
+  Verbose: Boolean = False
+): TShxFont; overload;
+
+// Перегруженная версия с фильтрацией по используемым символам
+// Параметры:
+//   UsedChars - массив кодов символов, которые нужно загрузить
+function LoadShxFont(
+  const FileName: string;
+  CodePage: Integer;
+  Verbose: Boolean;
+  const UsedChars: array of Byte
+): TShxFont; overload;
 
 // Проверка валидности загруженного шрифта
 function ValidateShxFont(const Font: TShxFont): Boolean;
@@ -61,12 +69,25 @@ implementation
 uses
   Math;
 
-// Главная функция загрузки SHX шрифта
+// Перегруженная версия без фильтрации по используемым символам
 function LoadShxFont(
   const FileName: string;
   CodePage: Integer = 1251;
-  Verbose: Boolean = False;
-  const UsedChars: array of Byte = nil
+  Verbose: Boolean = False
+): TShxFont;
+var
+  EmptyChars: array of Byte;
+begin
+  SetLength(EmptyChars, 0);
+  Result := LoadShxFont(FileName, CodePage, Verbose, EmptyChars);
+end;
+
+// Главная функция загрузки SHX шрифта с фильтрацией по используемым символам
+function LoadShxFont(
+  const FileName: string;
+  CodePage: Integer;
+  Verbose: Boolean;
+  const UsedChars: array of Byte
 ): TShxFont;
 var
   Parser: TShxParser;
