@@ -122,7 +122,7 @@ function CreateJoin(
   HalfWidth: Double;
   JoinType: TUzvLineJoin;
   MiterLimit: Double
-): array of TUzvBezierSegment;
+): TUzvBezierSegmentArray;
 
 // Создать окончание линии (cap)
 // Create line cap
@@ -131,7 +131,7 @@ function CreateCap(
   const Direction: TPointF;
   HalfWidth: Double;
   CapType: TUzvLineCap
-): array of TUzvBezierSegment;
+): TUzvBezierSegmentArray;
 
 // Нормализовать вектор (привести к единичной длине)
 // Normalize vector (make unit length)
@@ -282,7 +282,7 @@ function CreateJoin(
   HalfWidth: Double;
   JoinType: TUzvLineJoin;
   MiterLimit: Double
-): array of TUzvBezierSegment;
+): TUzvBezierSegmentArray;
 var
   N1, N2: TPointF;
   P1, P2: TPointF;
@@ -367,7 +367,7 @@ function CreateCap(
   const Direction: TPointF;
   HalfWidth: Double;
   CapType: TUzvLineCap
-): array of TUzvBezierSegment;
+): TUzvBezierSegmentArray;
 var
   Normal: TPointF;
   Dir: TPointF;
