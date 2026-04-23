@@ -242,10 +242,11 @@ begin
 
         // Проверяем критические углы (0, 90, 180, 270 градусов)
         Steps := 4;
-        for Angle := 0 to Steps - 1 do
+        for i := 0 to Steps - 1 do
         begin
-          X := Cmd.P1.X + Cmd.Radius * Cos(Angle * Pi / 2);
-          Y := Cmd.P1.Y + Cmd.Radius * Sin(Angle * Pi / 2);
+          Angle := i * Pi / 2;
+          X := Cmd.P1.X + Cmd.Radius * Cos(Angle);
+          Y := Cmd.P1.Y + Cmd.Radius * Sin(Angle);
           UpdateBoundsWithPoint(Glyph.Bounds, X, Y, IsFirst);
         end;
       end;
