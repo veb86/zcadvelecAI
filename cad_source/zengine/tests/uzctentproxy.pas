@@ -171,6 +171,27 @@ type
       с координатами из описания issue). До исправления в DXF 2007
       эта POLYLINE не доходила до парсера. }
     procedure MLeader2000And2007ProduceSameLeaderSegments;
+    { Регрессия на issue #1014: в DXF 2007 мультивыноска содержит
+      UNICODE_TEXT2 (OpCode=38) с текстом "ai123456". Команда
+      идёт после бит-упакованной LWPOLYLINE размером 53 байта
+      (не кратно 4), которая ломает абсолютное 4-байтное
+      выравнивание строковых паддингов. До фикса этот сдвиг на
+      1 байт приводил к тому, что высота текста читалась из
+      случайных байтов (давала мусорное значение < 0), и handler
+      выходил по проверке «if Height <= 0», не создавая подпримитива.
+      После фикса выравнивание считается относительно начала
+      payload команды. }
+    procedure MLeader2007ProxyParsesUnicodeText2Content;
+    { Парная регрессия на issue #1014 для DXF 2000: тот же текст
+      "ai123456" должен читаться корректно через OpCode=11 (TEXT2),
+      хотя в этом файле проблема с выравниванием не возникает
+      (все команды идут на 4-байтной границе). }
+    procedure MLeader2000ProxyParsesText2Content;
+    { Регрессия на issue #1014: убеждаемся, что после фикса DXF 2000
+      и DXF 2007 одной и той же мультивыноски выдают одинаковый
+      распознаный текст. До фикса в DXF 2007 текст вообще не
+      создавался (handler выходил по проверке Height). }
+    procedure MLeader2000And2007ProduceSameText;
   end;
 
 implementation
@@ -2063,6 +2084,144 @@ begin
   CheckTrue(Polylines2007 >= 1,
     'В DXF 2007 должна присутствовать хотя бы одна ' +
     '4-вершинная POLYLINE выноски');
+end;
+
+{ Находит в ParseResult первый текстовый примитив и возвращает True,
+  если он содержит Text=ExpectedText и Height > 0. Используется для
+  регрессии на issue #1014. }
+function FindTextPrimitive(
+  const ParseResult: TProxyGraphicParseResult;
+  const ExpectedText: string;
+  out Height: Double; out FontName, TypeFace: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  Height := 0;
+  FontName := '';
+  TypeFace := '';
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].HandlerResult.HasTextItem
+      and (ParseResult.Primitives[I].HandlerResult.TextItem.Text = ExpectedText) then
+    begin
+      Height := ParseResult.Primitives[I].HandlerResult.TextItem.Height;
+      FontName := ParseResult.Primitives[I].HandlerResult.TextItem.FontName;
+      TypeFace := ParseResult.Primitives[I].HandlerResult.TextItem.TypeFace;
+      Result := True;
+      Exit;
+    end;
+end;
+
+procedure TProxyEntityLoadTest.MLeader2007ProxyParsesUnicodeText2Content;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  Height: Double;
+  FontName, TypeFace: string;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2007notwork.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData,
+    'Не удалось извлечь proxy graphic из mleader2007notwork.dxf');
+
+  { DXF 2007 использует UTF-16 для «широких» строк, поэтому создаём
+    парсер с AUnicodeText=True (дефолтное значение). }
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData), True);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  { В мультивыноске должен быть распознан один текст "ai123456"
+    с высотой 1.8 и шрифтом txt.shx (как в файле DXF). До фикса
+    высота читалась из мусорных байтов (шла как большое отрицательное
+    число), и handler выходил по проверке «if Height <= 0», не
+    создавая TextItem. }
+  CheckTrue(FindTextPrimitive(ParseResult, 'ai123456',
+    Height, FontName, TypeFace),
+    'DXF 2007: UNICODE_TEXT2 (OpCode=38) должен давать TextItem ' +
+    'с текстом "ai123456"');
+  CheckTrue(Height > 0,
+    Format('DXF 2007: высота текста должна быть положительной, ' +
+      'а не мусорным значением (получено %.6g)', [Height]));
+  CheckEquals(1.8, Height, 1e-6,
+    'DXF 2007: высота текста "ai123456" должна равняться 1.8');
+  CheckEquals('txt.shx', FontName,
+    'DXF 2007: FontName для "ai123456" должен быть "txt.shx"');
+end;
+
+procedure TProxyEntityLoadTest.MLeader2000ProxyParsesText2Content;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+  Height: Double;
+  FontName, TypeFace: string;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2000notwork.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData,
+    'Не удалось извлечь proxy graphic из mleader2000notwork.dxf');
+
+  { DXF 2000 использует ANSI для «широких» строк, поэтому создаём
+    парсер с AUnicodeText=False. }
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData), False);
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  CheckTrue(FindTextPrimitive(ParseResult, 'ai123456',
+    Height, FontName, TypeFace),
+    'DXF 2000: TEXT2 (OpCode=11) должен давать TextItem ' +
+    'с текстом "ai123456"');
+  CheckEquals(1.8, Height, 1e-6,
+    'DXF 2000: высота текста "ai123456" должна равняться 1.8');
+  CheckEquals('txt.shx', FontName,
+    'DXF 2000: FontName для "ai123456" должен быть "txt.shx"');
+end;
+
+procedure TProxyEntityLoadTest.MLeader2000And2007ProduceSameText;
+var
+  HexData2000, HexData2007: string;
+  Parser: TProxyGraphicParser;
+  Result2000, Result2007: TProxyGraphicParseResult;
+  Height2000, Height2007: Double;
+  Font2000, Font2007, TF2000, TF2007: string;
+  Found2000, Found2007: Boolean;
+begin
+  HexData2000 := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2000notwork.dxf', 'MULTILEADER');
+  HexData2007 := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2007notwork.dxf', 'MULTILEADER');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData2000), False);
+  try
+    Result2000 := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData2007), True);
+  try
+    Result2007 := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  Found2000 := FindTextPrimitive(Result2000, 'ai123456',
+    Height2000, Font2000, TF2000);
+  Found2007 := FindTextPrimitive(Result2007, 'ai123456',
+    Height2007, Font2007, TF2007);
+
+  CheckTrue(Found2000, 'DXF 2000 должен содержать "ai123456"');
+  CheckTrue(Found2007, 'DXF 2007 должен содержать "ai123456"');
+  CheckEquals(Height2000, Height2007, 1e-6,
+    'Высота текста в DXF 2000 и DXF 2007 должна совпадать');
+  CheckEquals(Font2000, Font2007,
+    'FontName текста в DXF 2000 и DXF 2007 должен совпадать');
 end;
 
 begin

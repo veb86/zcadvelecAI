@@ -42,6 +42,17 @@ type
     FIndex: Integer;
     FLength: Integer;
     FUnicodeText: Boolean;
+    { Стартовая позиция для выравнивания по 4 байтам в
+      ReadPaddedString/ReadPaddedUnicodeString. Паддинг в Proxy Graphic
+      рассчитывается относительно начала payload команды, а не начала
+      всего потока (см. ezdxf.tools.binarydata.ByteStream). Если
+      предыдущая команда имела размер не кратный 4 (например,
+      бит-упакованная LWPOLYLINE в DXF 2007 с размером 53 байта),
+      абсолютный индекс смещается, и выравнивание по нему даёт
+      ошибку в 1–3 байта для всех последующих строковых полей.
+      FPaddingBase сбрасывается внешним диспетчером (TProxyGraphicParser)
+      на начало payload перед вызовом handler'а каждой команды. }
+    FPaddingBase: Integer;
   public
     constructor Create(const Data: TBytes;
       AUnicodeText: Boolean = True);
@@ -87,6 +98,11 @@ type
     { True — широкие строки в потоке хранятся в UTF-16 (DXF 2007+).
       False — в однобайтовой ANSI-кодировке (DXF 2000/2004). }
     property UnicodeText: Boolean read FUnicodeText write FUnicodeText;
+    { База для выравнивания в ReadPadded*. По умолчанию равна 0 (начало
+      потока), но диспетчер команд должен устанавливать её на начало
+      payload перед вызовом handler'а каждой команды, чтобы паддинг
+      считался относительно payload, а не абсолютного индекса. }
+    property PaddingBase: Integer read FPaddingBase write FPaddingBase;
   end;
 
   { Битовый поток для разбора DWG-подобных бит-упакованных данных,
@@ -139,6 +155,7 @@ begin
   FIndex := 0;
   FLength := system.Length(Data);
   FUnicodeText := AUnicodeText;
+  FPaddingBase := 0;
 end;
 
 function TProxyByteStream.ReadInt32: Integer;
@@ -328,7 +345,7 @@ end;
 
 function TProxyByteStream.ReadPaddedUnicodeString: string;
 var
-  Len: Integer;
+  Len, RelIdx, Rem: Integer;
   Bytes: TBytes;
 begin
   // Читаем null-terminated строку в формате текущего потока:
@@ -381,9 +398,15 @@ begin
       Inc(FIndex, 1);
   end;
 
-  // Выравниваем по 4 байтам (паддинг до границы DWORD)
-  if (FIndex mod 4) <> 0 then
-    Skip(4 - (FIndex mod 4));
+  { Выравниваем по 4 байтам относительно FPaddingBase (начала payload
+    текущей команды). До фикса выравнивание шло по абсолютному индексу,
+    из-за чего в DXF 2007 после LWPOLYLINE с размером 53 (не кратно 4)
+    все последующие команды со строками читались со сдвигом и высота
+    текста получалась мусором (см. issue #1014). }
+  RelIdx := FIndex - FPaddingBase;
+  Rem := RelIdx mod 4;
+  if Rem <> 0 then
+    Skip(4 - Rem);
 end;
 
 function TProxyByteStream.ReadStruct(const Format: string): TArray<Double>;

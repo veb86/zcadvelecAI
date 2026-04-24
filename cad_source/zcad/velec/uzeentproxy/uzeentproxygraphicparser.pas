@@ -695,6 +695,17 @@ begin
   { Позиция, на которой должна закончиться обработка команды }
   ExpectedEnd := StartIndex + CommandSize;
 
+  { База для выравнивания строковых полей в handler'е. Паддинг в
+    Proxy Graphic считается относительно начала payload (позиции сразу
+    после заголовка команды), а не абсолютного индекса в потоке. Без
+    этой установки после команды с размером не кратным 4 (например,
+    бит-упакованная LWPOLYLINE размером 53 байта в DXF 2007) все
+    строковые поля в последующих командах читаются со сдвигом 1–3
+    байта, и height текста (и другие поля) становятся мусором.
+    См. issue #1014 и ezdxf.proxygraphic, где ByteStream создаётся
+    заново для payload каждой команды. }
+  FStream.PaddingBase := FStream.Index;
+
   programlog.LogOutFormatStr(
     'uzeentproxygraphicparser: Command OpCode=%d Size=%d',
     [OpCode, CommandSize], LM_Info);
