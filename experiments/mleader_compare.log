@@ -1,0 +1,75 @@
+
+============================================================
+=== mleader2000notwork.dxf: 760 bytes ===
+============================================================
+ChunkSize=760 CommandCount=22
+  cmd#  1 off=    8 size=  12 op= 16 SET_LAYER
+  cmd#  2 off=   20 size=  12 op= 22 SET_TRUE_COLOR
+  cmd#  3 off=   32 size=  12 op= 19 SET_MARKER
+  cmd#  4 off=   44 size=  60 op=  6 POLYLINE
+        polyline vertices=2
+           v0: (50.8544, 40.1285, 0.0000)
+           v1: (51.2144, 40.1285, 0.0000)
+  cmd#  5 off=  104 size=  12 op= 19 SET_MARKER
+  cmd#  6 off=  116 size= 136 op= 29 PUSH_MATRIX
+  cmd#  7 off=  252 size=  12 op= 22 SET_TRUE_COLOR
+  cmd#  8 off=  264 size=  12 op= 23 SET_LINEWEIGHT
+  cmd#  9 off=  276 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 10 off=  288 size=  12 op= 23 SET_LINEWEIGHT
+  cmd# 11 off=  300 size=  84 op= 32 POLYLINE_WITH_NORMALS
+  cmd# 12 off=  384 size=   8 op= 31 POP_MATRIX
+  cmd# 13 off=  392 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 14 off=  404 size=  12 op= 19 SET_MARKER
+  cmd# 15 off=  416 size= 108 op=  6 POLYLINE
+        polyline vertices=4
+           v0: (23.8391, 30.9887, 0.0000)
+           v1: (38.8257, 39.2472, 0.0000)
+           v2: (45.1864, 39.2472, 0.0000)
+           v3: (50.8544, 40.1285, 0.0000)
+  cmd# 16 off=  524 size=  12 op= 19 SET_MARKER
+  cmd# 17 off=  536 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 18 off=  548 size=  12 op= 18 SET_LINETYPE
+  cmd# 19 off=  560 size=  12 op= 23 SET_LINEWEIGHT
+  cmd# 20 off=  572 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 21 off=  584 size=  12 op= 19 SET_MARKER
+  cmd# 22 off=  596 size= 164 op= 11 TEXT2
+  Total commands parsed: 22, offset reached 760/760
+
+============================================================
+=== mleader2007notwork.dxf: 849 bytes ===
+============================================================
+ChunkSize=849 CommandCount=23
+  cmd#  1 off=    8 size=  12 op= 16 SET_LAYER
+  cmd#  2 off=   20 size=  12 op= 22 SET_TRUE_COLOR
+  cmd#  3 off=   32 size=  12 op= 19 SET_MARKER
+  cmd#  4 off=   44 size=  60 op=  6 POLYLINE
+        polyline vertices=2
+           v0: (50.8544, 40.1285, 0.0000)
+           v1: (51.2144, 40.1285, 0.0000)
+  cmd#  5 off=  104 size=  12 op= 19 SET_MARKER
+  cmd#  6 off=  116 size= 136 op= 29 PUSH_MATRIX
+  cmd#  7 off=  252 size=  12 op= 22 SET_TRUE_COLOR
+  cmd#  8 off=  264 size=  12 op= 23 SET_LINEWEIGHT
+  cmd#  9 off=  276 size=  53 op= 33 LWPOLYLINE
+        lwpolyline vertices=38
+           v0: (0.0000, 0.0000, 0.0000)
+  cmd# 10 off=  329 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 11 off=  341 size=  12 op= 23 SET_LINEWEIGHT
+  cmd# 12 off=  353 size=  84 op= 32 POLYLINE_WITH_NORMALS
+  cmd# 13 off=  437 size=   8 op= 31 POP_MATRIX
+  cmd# 14 off=  445 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 15 off=  457 size=  12 op= 19 SET_MARKER
+  cmd# 16 off=  469 size= 108 op=  6 POLYLINE
+        polyline vertices=4
+           v0: (23.8391, 30.9887, 0.0000)
+           v1: (38.8257, 39.2472, 0.0000)
+           v2: (45.1864, 39.2472, 0.0000)
+           v3: (50.8544, 40.1285, 0.0000)
+  cmd# 17 off=  577 size=  12 op= 19 SET_MARKER
+  cmd# 18 off=  589 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 19 off=  601 size=  12 op= 18 SET_LINETYPE
+  cmd# 20 off=  613 size=  12 op= 23 SET_LINEWEIGHT
+  cmd# 21 off=  625 size=  12 op= 22 SET_TRUE_COLOR
+  cmd# 22 off=  637 size=  12 op= 19 SET_MARKER
+  cmd# 23 off=  649 size= 200 op= 38 UNICODE_TEXT2
+  Total commands parsed: 23, offset reached 849/849

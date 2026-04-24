@@ -26,17 +26,25 @@
   - Чтобы отключить парсинг LWPOLYLINE — исключить этот файл из проекта
 
   Формат данных (AcGiWorldDraw, OpCode = 33 = pgcLwPolyline):
-    Flags         — int32   — флаги (бит 0: замкнутая, бит 512: спланированная)
-    ConstWidth    — double  — постоянная ширина (0 = нет)
-    Elevation     — double  — высота Z (все вершины на этом Z)
-    Thickness     — double  — толщина экструзии
-    Normal        — 3 × double — нормаль (ось Z локальной СК)
-    VertexCount   — int32   — количество вершин
-    Для каждой вершины:
-      Point2D     — 2 × double (16 байт) — координаты X,Y
-      Bulge       — double   — выпуклость (0 = прямой сегмент)
-      StartWidth  — double   — начальная ширина сегмента
-      EndWidth    — double   — конечная ширина сегмента
+    Внутри команды LWPOLYLINE данные хранятся в DWG-подобной бит-упакованной
+    форме (Open Design Specification, раздел 20.4.85 «LWPLINE»). Используем
+    TProxyBitStream и читаем поля в строгом порядке:
+      RL  num_data_bytes — длина бит-упакованной части в байтах;
+      BS  flag           — битовые флаги (см. ниже);
+      BD  const_width    — если flag & 4;
+      BD  elevation      — если flag & 8;
+      BD  thickness      — если flag & 2;
+      3×BD extrusion     — если flag & 1;
+      BL  num_points     — количество вершин;
+      BL  num_bulges     — если flag & 16;
+      (только для R2010+: BL num_vertex_ids — если flag & 1024,
+                          BL num_widths     — если flag & 32);
+      RD,RD первая вершина (без сжатия);
+      BDD x,y остальных вершин (delta-кодирование от предыдущей);
+      BD  bulges[num_bulges];
+      BL  vertex_ids[num_vertex_ids];
+      (BD,BD) widths[num_widths];
+    Замкнутость определяется битом 9 (flag & 512).
 
   Текущая реализация:
   - Выпуклость (Bulge) не тесселируется — сегменты рисуются прямыми
@@ -74,6 +82,16 @@ const
   { Максимально допустимое количество вершин (защита от повреждённых данных) }
   LWPOLYLINE_MAX_VERTEX_COUNT = 100000;
 
+  { Битовые флаги формата LWPLINE (Open Design Specification 20.4.85) }
+  LWPLINE_FLAG_EXTRUSION   = 1;     { бит 0: задана нормаль }
+  LWPLINE_FLAG_THICKNESS   = 2;     { бит 1: задана толщина }
+  LWPLINE_FLAG_CONST_WIDTH = 4;     { бит 2: постоянная ширина }
+  LWPLINE_FLAG_ELEVATION   = 8;     { бит 3: задана высота }
+  LWPLINE_FLAG_HAS_BULGES  = 16;    { бит 4: заданы выпуклости }
+  LWPLINE_FLAG_HAS_WIDTHS  = 32;    { бит 5: заданы ширины (R2010+) }
+  LWPLINE_FLAG_CLOSED      = 512;   { бит 9: замкнутая полилиния }
+  LWPLINE_FLAG_HAS_VIDS    = 1024;  { бит 10: заданы vertex IDs (R2010+) }
+
 { --- Вспомогательные процедуры --- }
 
 { Расширяет BBox точкой Vertex, обновляя BBoxMin и BBoxMax.
@@ -99,78 +117,181 @@ end;
 { --- Обработчик OpCode --- }
 
 { Читает данные 2D полилинии из потока, заполняет вершины и BBox.
-  Регистрируется в TProxyOpCodeDispatcher как обработчик OpCode=33. }
+  Регистрируется в TProxyOpCodeDispatcher как обработчик OpCode=33.
+
+  Данные команды LWPOLYLINE в Proxy Graphic хранятся в бит-упакованной
+  DWG-форме (см. описание формата в шапке модуля). Чтобы не ломать общий
+  байтовый указатель FStream основного потока, читаем оставшиеся байты
+  команды в локальный TBytes и парсим их через TProxyBitStream. }
 procedure HandleLwPolyline(
   Stream: TProxyByteStream;
   out HandlerResult: TProxyHandlerResult);
 var
-  VertexCount: Integer;
-  Flags: Integer;
-  Elevation: Double;
-  I: Integer;
-  Pt2D: TzePoint2d;
+  NumDataBytes, I: Integer;
+  Flag: Integer;
+  ConstWidth, Elevation, Thickness: Double;
+  ExtrX, ExtrY, ExtrZ: Double;
+  NumPoints, NumBulges, NumVertexIds, NumWidths: Integer;
+  IsClosed: Boolean;
+  Payload: TBytes;
+  Bits: TProxyBitStream;
+  PrevX, PrevY, X, Y: Double;
   Vertex: TzePoint3d;
   BBoxInitialized: Boolean;
 begin
   HandlerResult.Valid := False;
   HandlerResult.HasVertices := False;
   HandlerResult.HasBBox := False;
+  ConstWidth := 0.0;
+  Elevation := 0.0;
+  Thickness := 0.0;
+  ExtrX := 0.0;
+  ExtrY := 0.0;
+  ExtrZ := 1.0;
+  NumBulges := 0;
+  NumVertexIds := 0;
+  NumWidths := 0;
 
-  { Читаем заголовок LWPOLYLINE }
-  Flags := Stream.ReadInt32; { Flags: бит 9 (512) = замкнутая полилиния }
-  Stream.ReadDouble;  { ConstWidth: постоянная ширина (не используется в отрисовке) }
-  Elevation := Stream.ReadDouble; { Elevation: Z-координата всех вершин }
-  Stream.ReadDouble;  { Thickness: толщина экструзии (не используется) }
-  Stream.ReadVector;  { Normal: нормаль (не применяется — вершины уже в OCS) }
-
-  VertexCount := Stream.ReadInt32;
-
-  programlog.LogOutFormatStr(
-    'uzeentproxyparserlwpolyline: VertexCount=%d Elevation=%.4f',
-    [VertexCount, Elevation], LM_Info);
-
-  { Проверяем корректность количества вершин }
-  if (VertexCount < LWPOLYLINE_MIN_VERTEX_COUNT)
-    or (VertexCount > LWPOLYLINE_MAX_VERTEX_COUNT) then
+  { Бит-упакованная часть команды LWPOLYLINE имеет вид:
+      [RL: NumDataBytes — длина бит-упакованного блока в байтах]
+      [BitPacked: NumDataBytes байт]
+    После них в команде может оставаться padding/traits, который
+    пропустит ParseCommand по ExpectedEnd. Поэтому handler читает
+    ровно (4 + NumDataBytes) байт основного потока. }
+  if Stream.RemainingBytes < 4 then
   begin
     programlog.LogOutFormatStr(
-      'uzeentproxyparserlwpolyline: VertexCount=%d is invalid, skipping',
-      [VertexCount], LM_Info);
+      'uzeentproxyparserlwpolyline: too few bytes for length prefix',
+      [], LM_Info);
     Exit;
   end;
 
-  HandlerResult.Vertices.init(VertexCount);
-  BBoxInitialized := False;
-
-  { Читаем все вершины }
-  for I := 0 to VertexCount - 1 do
+  NumDataBytes := Stream.ReadInt32;
+  if (NumDataBytes <= 0) or (NumDataBytes > Stream.RemainingBytes) then
   begin
-    Pt2D := Stream.ReadPoint2D;
-    Stream.ReadDouble; { Bulge: выпуклость сегмента (тесселяция не реализована) }
-    Stream.ReadDouble; { StartWidth: начальная ширина сегмента }
-    Stream.ReadDouble; { EndWidth: конечная ширина сегмента }
-
-    { Формируем 3D-вершину: Z берём из поля Elevation }
-    Vertex.x := Pt2D.x;
-    Vertex.y := Pt2D.y;
-    Vertex.z := Elevation;
-
-    HandlerResult.Vertices.PushBackData(Vertex);
-    UpdateBBoxWithVertex(Vertex,
-      HandlerResult.BBoxMin, HandlerResult.BBoxMax, BBoxInitialized);
+    programlog.LogOutFormatStr(
+      'uzeentproxyparserlwpolyline: NumDataBytes=%d does not fit in stream ' +
+      '(remaining=%d), skipping',
+      [NumDataBytes, Stream.RemainingBytes], LM_Info);
+    Exit;
   end;
+  SetLength(Payload, NumDataBytes);
+  for I := 0 to NumDataBytes - 1 do
+    Payload[I] := Stream.ReadByte;
 
-  HandlerResult.HasVertices := True;
-  HandlerResult.Closed := (Flags and 512) <> 0;
-  HandlerResult.HasBBox := BBoxInitialized;
-  HandlerResult.Valid := True;
+  Bits := TProxyBitStream.Create(Payload);
+  try
+    try
+      Flag := Bits.ReadBitShort;
 
-  programlog.LogOutFormatStr(
-    'uzeentproxyparserlwpolyline: OK, %d vertices, closed=%s, BBox=(%.3f,%.3f)-(%.3f,%.3f)',
-    [HandlerResult.Vertices.Count,
-     BoolToStr(HandlerResult.Closed, True),
-     HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
-     HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
+      programlog.LogOutFormatStr(
+        'uzeentproxyparserlwpolyline: bitpacked numDataBytes=%d flag=0x%x',
+        [NumDataBytes, Flag], LM_Info);
+
+      if (Flag and LWPLINE_FLAG_CONST_WIDTH) <> 0 then
+        ConstWidth := Bits.ReadBitDouble;
+      if (Flag and LWPLINE_FLAG_ELEVATION) <> 0 then
+        Elevation := Bits.ReadBitDouble;
+      if (Flag and LWPLINE_FLAG_THICKNESS) <> 0 then
+        Thickness := Bits.ReadBitDouble;
+      if (Flag and LWPLINE_FLAG_EXTRUSION) <> 0 then
+      begin
+        ExtrX := Bits.ReadBitDouble;
+        ExtrY := Bits.ReadBitDouble;
+        ExtrZ := Bits.ReadBitDouble;
+      end;
+
+      IsClosed := (Flag and LWPLINE_FLAG_CLOSED) <> 0;
+      NumPoints := Bits.ReadBitLong;
+
+      if (NumPoints < LWPOLYLINE_MIN_VERTEX_COUNT)
+        or (NumPoints > LWPOLYLINE_MAX_VERTEX_COUNT) then
+      begin
+        programlog.LogOutFormatStr(
+          'uzeentproxyparserlwpolyline: NumPoints=%d invalid, skipping',
+          [NumPoints], LM_Info);
+        Exit;
+      end;
+
+      if (Flag and LWPLINE_FLAG_HAS_BULGES) <> 0 then
+        NumBulges := Bits.ReadBitLong;
+
+      { Поля vertex_ids и widths появились в формате R2010+ (AC1024).
+        Для DXF 2007 (AC1021) их нет. Поскольку версия здесь не известна,
+        читаем их только если соответствующие биты выставлены и в потоке
+        достаточно данных — иначе пропускаем. }
+      if (Flag and LWPLINE_FLAG_HAS_VIDS) <> 0 then
+        NumVertexIds := Bits.ReadBitLong;
+      if (Flag and LWPLINE_FLAG_HAS_WIDTHS) <> 0 then
+        NumWidths := Bits.ReadBitLong;
+
+      programlog.LogOutFormatStr(
+        'uzeentproxyparserlwpolyline: numPoints=%d closed=%s bulges=%d ' +
+        'vids=%d widths=%d',
+        [NumPoints, BoolToStr(IsClosed, True), NumBulges,
+         NumVertexIds, NumWidths], LM_Info);
+
+      HandlerResult.Vertices.init(NumPoints);
+      BBoxInitialized := False;
+
+      { Первая вершина: 2 raw double }
+      PrevX := Bits.ReadRawDouble;
+      PrevY := Bits.ReadRawDouble;
+      Vertex.x := PrevX;
+      Vertex.y := PrevY;
+      Vertex.z := Elevation;
+      HandlerResult.Vertices.PushBackData(Vertex);
+      UpdateBBoxWithVertex(Vertex,
+        HandlerResult.BBoxMin, HandlerResult.BBoxMax, BBoxInitialized);
+
+      { Остальные вершины — delta от предыдущей }
+      for I := 1 to NumPoints - 1 do
+      begin
+        X := Bits.ReadBitDoubleDefault(PrevX);
+        Y := Bits.ReadBitDoubleDefault(PrevY);
+        PrevX := X;
+        PrevY := Y;
+        Vertex.x := X;
+        Vertex.y := Y;
+        Vertex.z := Elevation;
+        HandlerResult.Vertices.PushBackData(Vertex);
+        UpdateBBoxWithVertex(Vertex,
+          HandlerResult.BBoxMin, HandlerResult.BBoxMax, BBoxInitialized);
+      end;
+
+      { Bulge / vertex_ids / widths далее в потоке игнорируем —
+        их чтение влияет только на оставшийся хвост, который пропустит
+        ParseCommand по ExpectedEnd. }
+
+      HandlerResult.HasVertices := True;
+      HandlerResult.Closed := IsClosed;
+      HandlerResult.HasBBox := BBoxInitialized;
+      HandlerResult.Valid := True;
+
+      programlog.LogOutFormatStr(
+        'uzeentproxyparserlwpolyline: OK, %d vertices, closed=%s, ' +
+        'BBox=(%.3f,%.3f)-(%.3f,%.3f)',
+        [HandlerResult.Vertices.Count, BoolToStr(IsClosed, True),
+         HandlerResult.BBoxMin.x, HandlerResult.BBoxMin.y,
+         HandlerResult.BBoxMax.x, HandlerResult.BBoxMax.y], LM_Info);
+    except
+      on E: Exception do
+      begin
+        programlog.LogOutFormatStr(
+          'uzeentproxyparserlwpolyline: bit-stream parse error: %s',
+          [E.Message], LM_Info);
+        if HandlerResult.HasVertices then
+        begin
+          HandlerResult.Vertices.done;
+          HandlerResult.HasVertices := False;
+        end;
+        HandlerResult.Valid := False;
+      end;
+    end;
+  finally
+    Bits.Free;
+    SetLength(Payload, 0);
+  end;
 end;
 
 { --- Построитель подпримитивов --- }
