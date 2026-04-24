@@ -89,6 +89,44 @@ type
     property UnicodeText: Boolean read FUnicodeText write FUnicodeText;
   end;
 
+  { Битовый поток для разбора DWG-подобных бит-упакованных данных,
+    встречающихся внутри отдельных команд Proxy Graphic (например,
+    LWPOLYLINE — формат описан в Open Design Specification 20.4.85
+    «LWPLINE»). Поддерживает классические DWG-кодировки:
+      BS  (read_bit_short)         — 2-битовый префикс + 16-битовое значение,
+      BL  (read_bit_long)          — 2-битовый префикс + 32-битовое значение,
+      BD  (read_bit_double)        — 2-битовый префикс + 64-битовое double,
+      BDD (read_bit_double_default)— значение, заданное относительно default,
+      RD  (read_raw_double)        — 64-битовое double без сжатия,
+      RL  (read_unsigned_long)     — 32-битовое little-endian unsigned. }
+  TProxyBitStream = class
+  private
+    FData: TBytes;
+    FBitIndex: Integer;
+    FBitLength: Integer;
+    function ReadBitsInt(Count: Integer): Integer;
+    function ReadAlignedByte: Byte;
+    function ReadAlignedBytes(Count: Integer): TBytes;
+    function ReadFloat64: Double;
+  public
+    constructor Create(const Data: TBytes);
+
+    function ReadBit: Integer;
+    function ReadBits(Count: Integer): Integer;
+    function ReadUnsignedByte: Byte;
+    function ReadUnsignedLong: Cardinal;
+    function ReadSignedLong: Integer;
+    function ReadSignedShort: SmallInt;
+    function ReadBitShort: Integer;
+    function ReadBitLong: Integer;
+    function ReadBitDouble: Double;
+    function ReadBitDoubleDefault(Default: Double): Double;
+    function ReadRawDouble: Double;
+
+    property BitIndex: Integer read FBitIndex;
+    property BitLength: Integer read FBitLength;
+  end;
+
 implementation
 
 { === TProxyByteStream === }
@@ -382,6 +420,241 @@ end;
 function TProxyByteStream.RemainingBytes: Integer;
 begin
   Result := FLength - FIndex;
+end;
+
+{ === TProxyBitStream === }
+
+constructor TProxyBitStream.Create(const Data: TBytes);
+begin
+  inherited Create;
+  FData := Copy(Data, 0, system.Length(Data));
+  FBitIndex := 0;
+  FBitLength := system.Length(Data) * 8;
+end;
+
+{ Читает Count бит (0..32) из потока, начиная с FBitIndex. Биты
+  читаются от старшего к младшему внутри байта (как в DWG/ezdxf). }
+function TProxyBitStream.ReadBitsInt(Count: Integer): Integer;
+var
+  Idx, ByteIdx, TestBit, TestByte: Integer;
+begin
+  Result := 0;
+  if Count <= 0 then
+    Exit;
+  Idx := FBitIndex;
+  if (Idx + Count) > FBitLength then
+    raise Exception.CreateFmt(
+      'TProxyBitStream.ReadBits: out of buffer (idx=%d, count=%d, len=%d)',
+      [Idx, Count, FBitLength]);
+  FBitIndex := Idx + Count;
+  TestBit := $80 shr (Idx and 7);
+  ByteIdx := Idx shr 3;
+  TestByte := FData[ByteIdx];
+  while Count > 0 do
+  begin
+    Result := Result shl 1;
+    if (TestByte and TestBit) <> 0 then
+      Result := Result or 1;
+    Dec(Count);
+    TestBit := TestBit shr 1;
+    if (TestBit = 0) and (Count > 0) then
+    begin
+      TestBit := $80;
+      Inc(ByteIdx);
+      TestByte := FData[ByteIdx];
+    end;
+  end;
+end;
+
+function TProxyBitStream.ReadBit: Integer;
+begin
+  Result := ReadBitsInt(1);
+end;
+
+function TProxyBitStream.ReadBits(Count: Integer): Integer;
+begin
+  Result := ReadBitsInt(Count);
+end;
+
+function TProxyBitStream.ReadAlignedByte: Byte;
+var
+  ByteIdx: Integer;
+begin
+  ByteIdx := FBitIndex shr 3;
+  if ByteIdx >= system.Length(FData) then
+    raise Exception.Create('TProxyBitStream.ReadAlignedByte: end of buffer');
+  Result := FData[ByteIdx];
+  Inc(FBitIndex, 8);
+end;
+
+function TProxyBitStream.ReadAlignedBytes(Count: Integer): TBytes;
+var
+  StartIdx, EndIdx, I: Integer;
+begin
+  Result := nil;
+  StartIdx := FBitIndex shr 3;
+  EndIdx := StartIdx + Count;
+  if EndIdx > system.Length(FData) then
+    raise Exception.Create('TProxyBitStream.ReadAlignedBytes: end of buffer');
+  SetLength(Result, Count);
+  for I := 0 to Count - 1 do
+    Result[I] := FData[StartIdx + I];
+  Inc(FBitIndex, Count shl 3);
+end;
+
+function TProxyBitStream.ReadFloat64: Double;
+var
+  Buf: array[0..7] of Byte;
+  Aligned: TBytes;
+  I: Integer;
+begin
+  if (FBitIndex and 7) = 0 then
+  begin
+    Aligned := ReadAlignedBytes(8);
+    Move(Aligned[0], Buf[0], 8);
+  end
+  else
+    for I := 0 to 7 do
+      Buf[I] := Byte(ReadBitsInt(8));
+  Move(Buf[0], Result, 8);
+end;
+
+function TProxyBitStream.ReadUnsignedByte: Byte;
+begin
+  Result := Byte(ReadBitsInt(8));
+end;
+
+function TProxyBitStream.ReadUnsignedLong: Cardinal;
+var
+  L1, L2, L3, L4: Cardinal;
+  Aligned: TBytes;
+begin
+  if (FBitIndex and 7) <> 0 then
+  begin
+    L1 := ReadBitsInt(8);
+    L2 := ReadBitsInt(8);
+    L3 := ReadBitsInt(8);
+    L4 := ReadBitsInt(8);
+  end
+  else
+  begin
+    Aligned := ReadAlignedBytes(4);
+    L1 := Aligned[0];
+    L2 := Aligned[1];
+    L3 := Aligned[2];
+    L4 := Aligned[3];
+  end;
+  Result := (L4 shl 24) or (L3 shl 16) or (L2 shl 8) or L1;
+end;
+
+function TProxyBitStream.ReadSignedLong: Integer;
+var
+  V: Cardinal;
+begin
+  V := ReadUnsignedLong;
+  Result := Integer(V);
+end;
+
+function TProxyBitStream.ReadSignedShort: SmallInt;
+var
+  L1, L2: Word;
+  Aligned: TBytes;
+  V: Word;
+begin
+  if (FBitIndex and 7) <> 0 then
+  begin
+    L1 := ReadBitsInt(8);
+    L2 := ReadBitsInt(8);
+  end
+  else
+  begin
+    Aligned := ReadAlignedBytes(2);
+    L1 := Aligned[0];
+    L2 := Aligned[1];
+  end;
+  V := Word((L2 shl 8) or L1);
+  Result := SmallInt(V);
+end;
+
+function TProxyBitStream.ReadBitShort: Integer;
+var
+  Bits: Integer;
+begin
+  Bits := ReadBitsInt(2);
+  case Bits of
+    0: Result := ReadSignedShort;
+    1: Result := ReadUnsignedByte;
+    2: Result := 0;
+  else
+    Result := 256;
+  end;
+end;
+
+function TProxyBitStream.ReadBitLong: Integer;
+var
+  Bits: Integer;
+begin
+  Bits := ReadBitsInt(2);
+  case Bits of
+    0: Result := ReadSignedLong;
+    1: Result := ReadUnsignedByte;
+    2: Result := 0;
+  else
+    Result := 256;
+  end;
+end;
+
+function TProxyBitStream.ReadBitDouble: Double;
+var
+  Bits: Integer;
+begin
+  Bits := ReadBitsInt(2);
+  case Bits of
+    0: Result := ReadFloat64;
+    1: Result := 1.0;
+    2: Result := 0.0;
+  else
+    Result := 0.0;
+  end;
+end;
+
+function TProxyBitStream.ReadBitDoubleDefault(Default: Double): Double;
+var
+  Bits: Integer;
+  Buf: array[0..7] of Byte;
+begin
+  Move(Default, Buf[0], 8);
+  Bits := ReadBitsInt(2);
+  case Bits of
+    0: Result := Default;
+    1:
+      begin
+        { 4 младших байта читаются из потока, 4 старших — из default. }
+        Buf[0] := ReadUnsignedByte;
+        Buf[1] := ReadUnsignedByte;
+        Buf[2] := ReadUnsignedByte;
+        Buf[3] := ReadUnsignedByte;
+        Move(Buf[0], Result, 8);
+      end;
+    2:
+      begin
+        { 2 средних байта (4..5) и 4 младших (0..3) переписываются. }
+        Buf[4] := ReadUnsignedByte;
+        Buf[5] := ReadUnsignedByte;
+        Buf[0] := ReadUnsignedByte;
+        Buf[1] := ReadUnsignedByte;
+        Buf[2] := ReadUnsignedByte;
+        Buf[3] := ReadUnsignedByte;
+        Move(Buf[0], Result, 8);
+      end;
+  else
+    Result := ReadFloat64;
+  end;
+end;
+
+function TProxyBitStream.ReadRawDouble: Double;
+begin
+  Result := ReadFloat64;
 end;
 
 end.

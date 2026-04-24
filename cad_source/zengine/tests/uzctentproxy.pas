@@ -151,6 +151,26 @@ type
       подпримитивы каждого прокси должны получить ClByLayer, а не цвет
       самого прокси. }
     procedure SpdsConstructionLineColorSubEntitiesUseByLayer;
+    { Регрессия на issue #1012: мультивыноска (MULTILEADER), сохранённая
+      в DXF 2007, содержит в Proxy Graphic команду LWPOLYLINE (OpCode=33)
+      в бит-упакованном формате (Open Design Spec 20.4.85). Раньше
+      handler читал её как обычные int32+double, ронял исключение и
+      аборт ивал разбор всего блока — пропадали сегменты выноски после
+      LWPOLYLINE. После исправления должны корректно прочитаться все
+      сегменты, в частности 4-вершинная POLYLINE с конкретными
+      координатами. Проверяем именно тот сегмент, отсутствие которого
+      зафиксировано в описании issue. }
+    procedure MLeader2007ProxyParsesLeaderPolyline;
+    { Парный тест на issue #1012 для DXF 2000 — формат, который и
+      до исправления работал правильно. Здесь проверяем, что после
+      изменений парсер по-прежнему читает мультивыноску из DXF 2000. }
+    procedure MLeader2000ProxyParsesLeaderPolyline;
+    { Регрессия на issue #1012: убеждаемся, что после исправления
+      DXF 2000 и DXF 2007 одной и той же мультивыноски дают
+      одинаковое количество сегментов выноски (4-вершинная POLYLINE
+      с координатами из описания issue). До исправления в DXF 2007
+      эта POLYLINE не доходила до парсера. }
+    procedure MLeader2000And2007ProduceSameLeaderSegments;
   end;
 
 implementation
@@ -1895,6 +1915,154 @@ begin
   finally
     drawing.done;
   end;
+end;
+
+{ Считает, в скольких примитивах ParseResult присутствует POLYLINE/LWPOLYLINE,
+  состоящая ровно из NumVertices вершин. Используется для проверки, что
+  выноска (4-вершинная POLYLINE из описания issue #1012) не теряется при
+  разборе DXF 2007. }
+function CountPolylinesWithVertices(
+  const ParseResult: TProxyGraphicParseResult; NumVertices: Integer): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].HandlerResult.HasVertices
+      and (ParseResult.Primitives[I].HandlerResult.Vertices.Count = NumVertices) then
+      Inc(Result);
+end;
+
+{ Проверяет, что в любом из распаршенных примитивов есть отрезок
+  с указанными координатами концов. Сегменты выноски многострочной
+  выноски (мультивыноски) описаны в issue #1012 — последний из них
+  соединяет (45.1864, 39.2472) и (50.8544, 40.1285). }
+function ParseResultHasSegment(
+  const ParseResult: TProxyGraphicParseResult;
+  const X1, Y1, X2, Y2: Double): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to High(ParseResult.Primitives) do
+    if ParseResult.Primitives[I].HandlerResult.HasVertices
+      and PrimitiveHasSegment(
+        ParseResult.Primitives[I].HandlerResult.Vertices,
+        X1, Y1, X2, Y2) then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+procedure TProxyEntityLoadTest.MLeader2007ProxyParsesLeaderPolyline;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2007notwork.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData,
+    'Не удалось извлечь proxy graphic из mleader2007notwork.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  { Сегменты выноски, описанные в issue #1012:
+      №1 (22.2626,30.1200) — (38.8257,39.2472)
+      №2 (38.8257,39.2472) — (45.1864,39.2472)
+      №3 (45.1864,39.2472) — (50.8544,40.1285)
+      №4 (50.8544,40.1285) — (51.2144,40.1285)
+    В Proxy Graphic эта выноска хранится одной POLYLINE (OpCode=6)
+    с 4-мя вершинами + последний короткий отрезок отдельной POLYLINE.
+    Раньше (до фикса) команда LWPOLYLINE между ними роняла парсер,
+    и 4-вершинная POLYLINE никогда не доходила до построителя. }
+  CheckTrue(ParseResultHasSegment(ParseResult,
+      38.8257, 39.2472, 45.1864, 39.2472),
+    'DXF 2007: должен присутствовать сегмент выноски ' +
+    '(38.8257,39.2472)-(45.1864,39.2472)');
+  CheckTrue(ParseResultHasSegment(ParseResult,
+      45.1864, 39.2472, 50.8544, 40.1285),
+    'DXF 2007: должен присутствовать сегмент выноски ' +
+    '(45.1864,39.2472)-(50.8544,40.1285)');
+end;
+
+procedure TProxyEntityLoadTest.MLeader2000ProxyParsesLeaderPolyline;
+var
+  HexData: string;
+  Parser: TProxyGraphicParser;
+  ParseResult: TProxyGraphicParseResult;
+begin
+  HexData := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2000notwork.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData,
+    'Не удалось извлечь proxy graphic из mleader2000notwork.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData));
+  try
+    ParseResult := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  { Те же сегменты выноски, что и в MLeader2007ProxyParsesLeaderPolyline,
+    должны присутствовать и в DXF 2000. }
+  CheckTrue(ParseResultHasSegment(ParseResult,
+      38.8257, 39.2472, 45.1864, 39.2472),
+    'DXF 2000: должен присутствовать сегмент выноски ' +
+    '(38.8257,39.2472)-(45.1864,39.2472)');
+  CheckTrue(ParseResultHasSegment(ParseResult,
+      45.1864, 39.2472, 50.8544, 40.1285),
+    'DXF 2000: должен присутствовать сегмент выноски ' +
+    '(45.1864,39.2472)-(50.8544,40.1285)');
+end;
+
+procedure TProxyEntityLoadTest.MLeader2000And2007ProduceSameLeaderSegments;
+var
+  HexData2000, HexData2007: string;
+  Parser: TProxyGraphicParser;
+  Result2000, Result2007: TProxyGraphicParseResult;
+  Polylines2000, Polylines2007: Integer;
+begin
+  HexData2000 := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2000notwork.dxf', 'MULTILEADER');
+  HexData2007 := ExtractProxyGraphicHexFromDXF(
+    'cad_source/test/mleader2007notwork.dxf', 'MULTILEADER');
+  CheckNotEquals('', HexData2000,
+    'Не удалось извлечь proxy graphic из mleader2000notwork.dxf');
+  CheckNotEquals('', HexData2007,
+    'Не удалось извлечь proxy graphic из mleader2007notwork.dxf');
+
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData2000));
+  try
+    Result2000 := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+  Parser := TProxyGraphicParser.Create(HexToBytes(HexData2007));
+  try
+    Result2007 := Parser.Parse;
+  finally
+    Parser.Free;
+  end;
+
+  { Количество 4-вершинных POLYLINE (это и есть выноска: 4 точки) должно
+    совпадать в обоих форматах. До фикса в DXF 2007 их было 0
+    (ParseCommand выходил из цикла после исключения в LWPOLYLINE),
+    а в DXF 2000 — 1. }
+  Polylines2000 := CountPolylinesWithVertices(Result2000, 4);
+  Polylines2007 := CountPolylinesWithVertices(Result2007, 4);
+  CheckEquals(Polylines2000, Polylines2007,
+    'Число 4-вершинных POLYLINE в выноске должно совпадать ' +
+    'для DXF 2000 и DXF 2007');
+  CheckTrue(Polylines2007 >= 1,
+    'В DXF 2007 должна присутствовать хотя бы одна ' +
+    '4-вершинная POLYLINE выноски');
 end;
 
 begin

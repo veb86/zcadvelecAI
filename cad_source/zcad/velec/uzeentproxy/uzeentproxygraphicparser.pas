@@ -703,104 +703,125 @@ begin
   if CommandSize < COMMAND_HEADER_SIZE then
     Exit;
 
-  { Сначала проверяем системные OpCode }
-  case OpCode of
-    OPCODE_EXTENTS:
-      HandleExtents;
+  { Обёртываем диспетчеризацию в try..finally, чтобы любая ошибка
+    внутри обработчика (например, бит-упакованный формат LWPOLYLINE
+    или повреждённые данные) не оставила FStream посреди команды:
+    позиция гарантированно будет сдвинута на ExpectedEnd, и парсер
+    продолжит разбор следующей команды. До этой защиты единичная
+    ошибка в одном примитиве (например, LWPOLYLINE в DXF 2007,
+    issue #1012) теряла все последующие сегменты выноски. }
+  try
+    { Сначала проверяем системные OpCode }
+    case OpCode of
+      OPCODE_EXTENTS:
+        HandleExtents;
 
-    OPCODE_SET_COLOR:
-      HandleSetColor;
+      OPCODE_SET_COLOR:
+        HandleSetColor;
 
-    OPCODE_SET_LAYER:
-      HandleSetLayer;
+      OPCODE_SET_LAYER:
+        HandleSetLayer;
 
-    OPCODE_SET_LINETYPE:
-      HandleSetLinetype;
+      OPCODE_SET_LINETYPE:
+        HandleSetLinetype;
 
-    OPCODE_SET_MARKER:
-      HandleSetMarker;
+      OPCODE_SET_MARKER:
+        HandleSetMarker;
 
-    OPCODE_SET_FILL:
-      HandleSetFill;
+      OPCODE_SET_FILL:
+        HandleSetFill;
 
-    OPCODE_SET_TRUE_COLOR:
-      HandleSetTrueColor;
+      OPCODE_SET_TRUE_COLOR:
+        HandleSetTrueColor;
 
-    OPCODE_SET_LINEWEIGHT:
-      HandleSetLineweight;
+      OPCODE_SET_LINEWEIGHT:
+        HandleSetLineweight;
 
-    OPCODE_SET_LTSCALE:
-      HandleSetLtScale;
+      OPCODE_SET_LTSCALE:
+        HandleSetLtScale;
 
-    OPCODE_SET_THICKNESS:
-      HandleSetThickness;
+      OPCODE_SET_THICKNESS:
+        HandleSetThickness;
 
-    OPCODE_PUSH_MATRIX, OPCODE_PUSH_MATRIX2:
-      HandlePushMatrix;
+      OPCODE_PUSH_MATRIX, OPCODE_PUSH_MATRIX2:
+        HandlePushMatrix;
 
-    OPCODE_POP_MATRIX:
-      HandlePopMatrix;
+      OPCODE_POP_MATRIX:
+        HandlePopMatrix;
 
-  else
-    { Передаём в диспетчер — каждый зарегистрированный модуль-парсер
-      получит вызов своего обработчика }
-    if TProxyOpCodeDispatcher.IsRegistered(OpCode) then
-    begin
-      if TProxyOpCodeDispatcher.HandleOpCode(OpCode, FStream, HandlerResult) then
+    else
+      { Передаём в диспетчер — каждый зарегистрированный модуль-парсер
+        получит вызов своего обработчика }
+      if TProxyOpCodeDispatcher.IsRegistered(OpCode) then
       begin
-        { Применяем матрицу трансформации из стека (если есть) }
-        TransformHandlerVertices(HandlerResult);
+        if TProxyOpCodeDispatcher.HandleOpCode(OpCode, FStream, HandlerResult) then
+        begin
+          { Применяем матрицу трансформации из стека (если есть) }
+          TransformHandlerVertices(HandlerResult);
 
-        { Обновляем суммарный BBox }
-        MergeHandlerBBox(HandlerResult);
+          { Обновляем суммарный BBox }
+          MergeHandlerBBox(HandlerResult);
 
-        { Определяем заливку: флаг FFillActive применяется
-          к замкнутым контурам (Polygon, Shell и др.).
-          Аналогично ezdxf: SetFill(1) → Polygon/Shell = SOLID. }
-        if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0)
-          and FFillActive and HandlerResult.Closed then
-          HandlerResult.Filled := True;
+          { Определяем заливку: флаг FFillActive применяется
+            к замкнутым контурам (Polygon, Shell и др.).
+            Аналогично ezdxf: SetFill(1) → Polygon/Shell = SOLID. }
+          if HandlerResult.HasVertices and (HandlerResult.Vertices.Count > 0)
+            and FFillActive and HandlerResult.Closed then
+            HandlerResult.Filled := True;
 
-        { Сохраняем примитив — владение данными (Vertices) переходит к
-          результату парсера и будет освобождено через FreeParseResult. }
-        AppendPrimitive(OpCode, HandlerResult);
-        Inc(FResult.PrimitiveCount);
+          { Сохраняем примитив — владение данными (Vertices) переходит к
+            результату парсера и будет освобождено через FreeParseResult. }
+          AppendPrimitive(OpCode, HandlerResult);
+          Inc(FResult.PrimitiveCount);
 
-        { Сбрасываем флаг заливки после каждого примитива
-          (аналогично ezdxf: fill auto-reset после entity) }
-        FFillActive := False;
+          { Сбрасываем флаг заливки после каждого примитива
+            (аналогично ezdxf: fill auto-reset после entity) }
+          FFillActive := False;
+        end
+        else
+        begin
+          programlog.LogOutFormatStr(
+            'uzeentproxygraphicparser: Handler for OpCode=%d returned invalid result',
+            [OpCode], LM_Info);
+          { Handler вернул invalid — на всякий случай освобождаем вершины,
+            если они были инициализированы. }
+          if HandlerResult.HasVertices then
+            HandlerResult.Vertices.done;
+          SkipDataBytes(CommandSize);
+        end;
       end
       else
       begin
         programlog.LogOutFormatStr(
-          'uzeentproxygraphicparser: Handler for OpCode=%d returned invalid result',
-          [OpCode], LM_Info);
-        { Handler вернул invalid — на всякий случай освобождаем вершины,
-          если они были инициализированы. }
-        if HandlerResult.HasVertices then
-          HandlerResult.Vertices.done;
+          'uzeentproxygraphicparser: OpCode=%d not registered, skipping %d bytes',
+          [OpCode, CommandSize - COMMAND_HEADER_SIZE], LM_Info);
         SkipDataBytes(CommandSize);
       end;
-    end
-    else
+    end;
+  finally
+    { Корректируем позицию потока: если обработчик не прочитал все
+      данные команды (например, traits у Shell), пропускаем остаток.
+      Это гарантирует, что следующая команда будет прочитана с верной
+      позиции — даже если выше произошло исключение. }
+    BytesRemaining := ExpectedEnd - FStream.Index;
+    if BytesRemaining > 0 then
     begin
       programlog.LogOutFormatStr(
-        'uzeentproxygraphicparser: OpCode=%d not registered, skipping %d bytes',
-        [OpCode, CommandSize - COMMAND_HEADER_SIZE], LM_Info);
-      SkipDataBytes(CommandSize);
+        'uzeentproxygraphicparser: Skipping %d trailing bytes for OpCode=%d',
+        [BytesRemaining, OpCode], LM_Info);
+      FStream.Skip(BytesRemaining);
+    end
+    else if BytesRemaining < 0 then
+    begin
+      { Обработчик прочитал больше, чем размер команды (битая команда).
+        В этом случае возвращаемся к ExpectedEnd, иначе следующая
+        команда будет прочитана с неверной позиции. Пропускать назад
+        TProxyByteStream не умеет — это поможет лишь обнаружить
+        проблему в логах. }
+      programlog.LogOutFormatStr(
+        'uzeentproxygraphicparser: WARNING OpCode=%d overran by %d bytes',
+        [OpCode, -BytesRemaining], LM_Info);
     end;
-  end;
-
-  { Корректируем позицию потока: если обработчик не прочитал все
-    данные команды (например, traits у Shell), пропускаем остаток.
-    Это гарантирует, что следующая команда будет прочитана с верной позиции. }
-  BytesRemaining := ExpectedEnd - FStream.Index;
-  if BytesRemaining > 0 then
-  begin
-    programlog.LogOutFormatStr(
-      'uzeentproxygraphicparser: Skipping %d trailing bytes for OpCode=%d',
-      [BytesRemaining, OpCode], LM_Info);
-    FStream.Skip(BytesRemaining);
   end;
 end;
 
@@ -835,10 +856,23 @@ begin
       except
         on E: Exception do
         begin
+          { Одиночное исключение в обработчике (например, из-за
+            бит-упакованного формата команды или повреждённых данных)
+            не должно прерывать разбор всего блока Proxy Graphic.
+            Иначе все последующие команды теряются — именно это
+            ломает мультивыноску в DXF 2007 (issue #1012): после
+            попытки разобрать LWPOLYLINE стримом байтов остальные
+            сегменты выноски просто не доходили до построителей.
+
+            ParseCommand уже сдвигает FStream на ExpectedEnd при
+            обычном выходе; здесь мы обрабатываем случай аварийного
+            выхода — продолжаем со следующей команды по тому же
+            принципу: ищем границу команды и сбрасываем флаги
+            заливки/состояния как при штатной обработке. }
           programlog.LogOutFormatStr(
-            'uzeentproxygraphicparser: Command %d exception: %s',
+            'uzeentproxygraphicparser: Command %d exception (continuing): %s',
             [I, E.Message], LM_Info);
-          Break;
+          FFillActive := False;
         end;
       end;
     end;
