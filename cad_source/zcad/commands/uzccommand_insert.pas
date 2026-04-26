@@ -35,6 +35,7 @@ uses
 
 type
   TAfterInsertProc=procedure(PInsert:PGDBObjBlockInsert);
+  TInsertCommandEndProc=procedure;
 
 procedure Internal_Insert_com_CommandEnd(const Context:TZCADCommandContext;
   _self:pointer);
@@ -43,6 +44,8 @@ function Internal_Insert_com_BeforeClick(const Context:TZCADCommandContext;wc:Tz
   const AIP:TAfterInsertProc):integer;
 function Internal_Insert_com_CommandStart(const Context:TZCADCommandContext;
   operands:TCommandOperands):integer;
+procedure SetInsertOneShotCallbacks(const AAfterInsert:TAfterInsertProc;
+  const ACommandEnd:TInsertCommandEndProc);
 
 implementation
 
@@ -56,6 +59,21 @@ type
 var
   BIProp:TBlockInsert;
   pb:PGDBObjBlockInsert;
+  OneShotAfterInsertProc:TAfterInsertProc;
+  OneShotInsertCommandEndProc:TInsertCommandEndProc;
+
+procedure ClearInsertOneShotCallbacks;
+begin
+  OneShotAfterInsertProc:=nil;
+  OneShotInsertCommandEndProc:=nil;
+end;
+
+procedure SetInsertOneShotCallbacks(const AAfterInsert:TAfterInsertProc;
+  const ACommandEnd:TInsertCommandEndProc);
+begin
+  OneShotAfterInsertProc:=AAfterInsert;
+  OneShotInsertCommandEndProc:=ACommandEnd;
+end;
 
 function Internal_Insert_com_CommandStart(const Context:TZCADCommandContext;
   operands:TCommandOperands):integer;
@@ -221,15 +239,29 @@ end;
 
 
 procedure Insert_com_CommandEnd(const Context:TZCADCommandContext;_self:pointer);
+var
+  CommandEndProc:TInsertCommandEndProc;
 begin
   Internal_Insert_com_CommandEnd(Context,_self);
+  CommandEndProc:=OneShotInsertCommandEndProc;
+  if Assigned(CommandEndProc) then begin
+    ClearInsertOneShotCallbacks;
+    CommandEndProc;
+  end;
 end;
 
 
 function Insert_com_BeforeClick(const Context:TZCADCommandContext;wc:TzePoint3d;
   mc:TzePoint2i;var button:byte;osp:pos_record;mclick:integer):integer;
+var
+  AfterInsertProc:TAfterInsertProc;
 begin
-  Result:=Internal_Insert_com_BeforeClick(Context,wc,mc,button,osp,mclick,nil);
+  AfterInsertProc:=OneShotAfterInsertProc;
+  Result:=Internal_Insert_com_BeforeClick(Context,wc,mc,button,osp,mclick,
+    AfterInsertProc);
+  if ((button and MZW_LBUTTON)<>0)and(Result=cmd_ok)and
+    Assigned(AfterInsertProc) then
+    ClearInsertOneShotCallbacks;
 end;
 
 
