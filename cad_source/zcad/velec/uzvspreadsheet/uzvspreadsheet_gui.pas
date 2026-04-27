@@ -368,10 +368,10 @@ begin
   FBtnDeleteColumn.ShowHint := True;
   FBtnDeleteColumn.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_column');
 
-  // Кнопка "Объединить ячейки"
+  // Кнопка "Объединить/разъединить ячейки"
   FBtnMergeCells := TToolButton.Create(FToolBar);
   FBtnMergeCells.Parent := FToolBar;
-  FBtnMergeCells.Hint := 'Объединить выделенные ячейки';
+  FBtnMergeCells.Hint := 'Объединить выделенные ячейки или разъединить объединённую ячейку';
   FBtnMergeCells.ShowHint := True;
   FBtnMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells');
 

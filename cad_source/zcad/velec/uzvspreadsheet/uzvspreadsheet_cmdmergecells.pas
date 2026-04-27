@@ -29,10 +29,11 @@ uses
   SysUtils,
   Grids,
   fpspreadsheet,
+  fpsTypes,
   fpspreadsheetctrls,
   fpspreadsheetgrid;
 
-{ Объединяет выделенные ячейки }
+{ Объединяет выделенные ячейки или разъединяет объединённую ячейку }
 procedure ExecuteMergeCells(aWorkbookSource: TsWorkbookSource;
   aWorksheetGrid: TsWorksheetGrid);
 
@@ -42,7 +43,7 @@ uses
   uzclog,
   uzcinterface;
 
-{ Объединяет выделенные ячейки }
+{ Объединяет выделенные ячейки или разъединяет объединённую ячейку }
 procedure ExecuteMergeCells(aWorkbookSource: TsWorkbookSource;
   aWorksheetGrid: TsWorksheetGrid);
 var
@@ -51,6 +52,8 @@ var
   selection: TGridRect;
   startRow, endRow, startCol, endCol: Integer;
   temp: Integer;
+  cell: PCell;
+  mergedRow1, mergedCol1, mergedRow2, mergedCol2: Cardinal;
 begin
   if (aWorkbookSource = nil) or (aWorksheetGrid = nil) then
   begin
@@ -99,6 +102,29 @@ begin
     begin
       zcUI.TextMessage('Ошибка: выделенный диапазон выходит за пределы листа',
         TMWOHistoryOut);
+      Exit;
+    end;
+
+    cell := worksheet.FindCell(Cardinal(startRow), Cardinal(startCol));
+    if worksheet.IsMerged(cell) then
+    begin
+      if worksheet.FindMergedRange(cell, mergedRow1, mergedCol1, mergedRow2,
+        mergedCol2) then
+        programlog.LogOutFormatStr(
+          'Разъединены ячейки [%d, %d] - [%d, %d]',
+          [Integer(mergedRow1), Integer(mergedCol1), Integer(mergedRow2),
+           Integer(mergedCol2)],
+          LM_Info
+        )
+      else
+        programlog.LogOutFormatStr(
+          'Разъединена объединённая ячейка [%d, %d]',
+          [startRow, startCol],
+          LM_Info
+        );
+
+      worksheet.UnmergeCells(Cardinal(startRow), Cardinal(startCol));
+      zcUI.TextMessage('Ячейки разъединены', TMWOHistoryOut);
       Exit;
     end;
 
