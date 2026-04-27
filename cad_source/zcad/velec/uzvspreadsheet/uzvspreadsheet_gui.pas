@@ -92,6 +92,7 @@ type
     FBtnAddColumnLeft: TToolButton;
     FBtnDeleteRow: TToolButton;
     FBtnDeleteColumn: TToolButton;
+    FBtnMergeCells: TToolButton;
     FBtnSeparator4: TToolButton;
     FBtnFillSpaceRoom: TToolButton;
     FBtnSeparator5: TToolButton;
@@ -220,6 +221,7 @@ begin
   FBtnAddColumnLeft.Action := FSpreadsheetActions.ActAddColumnLeft;
   FBtnDeleteRow.Action := FSpreadsheetActions.ActDeleteRow;
   FBtnDeleteColumn.Action := FSpreadsheetActions.ActDeleteColumn;
+  FBtnMergeCells.Action := FSpreadsheetActions.ActMergeCells;
   FBtnFillSpaceRoom.Action := FSpreadsheetActions.ActFillSpaceRoom;
   FBtnInsertTable.Action := FSpreadsheetActions.ActInsertTable;
 end;
@@ -365,6 +367,13 @@ begin
   FBtnDeleteColumn.Hint := 'Удалить столбец, в котором выделена ячейка';
   FBtnDeleteColumn.ShowHint := True;
   FBtnDeleteColumn.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_column');
+
+  // Кнопка "Объединить ячейки"
+  FBtnMergeCells := TToolButton.Create(FToolBar);
+  FBtnMergeCells.Parent := FToolBar;
+  FBtnMergeCells.Hint := 'Объединить выделенные ячейки';
+  FBtnMergeCells.ShowHint := True;
+  FBtnMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells');
 
   // Разделитель 4
   FBtnSeparator4 := TToolButton.Create(FToolBar);
