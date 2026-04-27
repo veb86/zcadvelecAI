@@ -59,6 +59,7 @@ type
     FActAddColumnLeft: TAction;
     FActDeleteRow: TAction;
     FActDeleteColumn: TAction;
+    FActMergeCells: TAction;
     FActFillSpaceRoom: TAction;
     FActInsertTable: TAction;
 
@@ -81,6 +82,7 @@ type
     procedure OnActAddColumnLeftExecute(Sender: TObject);
     procedure OnActDeleteRowExecute(Sender: TObject);
     procedure OnActDeleteColumnExecute(Sender: TObject);
+    procedure OnActMergeCellsExecute(Sender: TObject);
     procedure OnActFillSpaceRoomExecute(Sender: TObject);
     procedure OnActInsertTableExecute(Sender: TObject);
 
@@ -131,6 +133,9 @@ type
     { Возвращает действие "Удалить столбец" }
     property ActDeleteColumn: TAction read FActDeleteColumn;
 
+    { Возвращает действие "Объединить ячейки" }
+    property ActMergeCells: TAction read FActMergeCells;
+
     { Возвращает действие "Заполнить пространства помещений" }
     property ActFillSpaceRoom: TAction read FActFillSpaceRoom;
 
@@ -151,6 +156,7 @@ uses
   uzvspreadsheet_cmdcalc,
   uzvspreadsheet_cmdundoredo,
   uzvspreadsheet_cmdrowcolumns,
+  uzvspreadsheet_cmdmergecells,
   uzvspreadsheet_cmdfillspaceroom,
   uzvspreadsheet_cmdinserttable,
   uzvspreadsheet_gui,
@@ -293,6 +299,14 @@ begin
   FActDeleteColumn.Hint := 'Удалить столбец, в котором выделена ячейка';
   FActDeleteColumn.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_column');
   FActDeleteColumn.OnExecute := @OnActDeleteColumnExecute;
+
+  // Действие "Объединить ячейки"
+  FActMergeCells := TAction.Create(FActionList);
+  FActMergeCells.ActionList := FActionList;
+  FActMergeCells.Caption := 'Объединить ячейки';
+  FActMergeCells.Hint := 'Объединить выделенные ячейки';
+  FActMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells');
+  FActMergeCells.OnExecute := @OnActMergeCellsExecute;
 
   // Действие "Заполнить пространства помещений"
   FActFillSpaceRoom := TAction.Create(FActionList);
@@ -449,6 +463,16 @@ end;
 procedure TSpreadsheetActions.OnActDeleteColumnExecute(Sender: TObject);
 begin
   ExecuteDeleteColumn(FWorkbookSource, FWorksheetGrid);
+
+  // Принудительное обновление отображения таблицы
+  if FWorksheetGrid <> nil then
+    FWorksheetGrid.Invalidate;
+end;
+
+{ Обработчик действия "Объединить ячейки" }
+procedure TSpreadsheetActions.OnActMergeCellsExecute(Sender: TObject);
+begin
+  ExecuteMergeCells(FWorkbookSource, FWorksheetGrid);
 
   // Принудительное обновление отображения таблицы
   if FWorksheetGrid <> nil then
