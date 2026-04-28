@@ -91,9 +91,11 @@ begin
 
   // Определяем ориентацию линии
   // Горизонтальная: малая разница по Y и достаточная длина по X
-  isHorizontal := (dy < COORDINATE_TOLERANCE) and (dx > MIN_CELL_WIDTH);
+  isHorizontal := (dy < LINE_ORIENTATION_TOLERANCE) and
+                  (dx > MIN_TABLE_LINE_LENGTH);
   // Вертикальная: малая разница по X и достаточная длина по Y
-  isVertical := (dx < COORDINATE_TOLERANCE) and (dy > MIN_CELL_HEIGHT);
+  isVertical := (dx < LINE_ORIENTATION_TOLERANCE) and
+                (dy > MIN_TABLE_LINE_LENGTH);
 
   // Обработка горизонтальной линии
   if isHorizontal then
