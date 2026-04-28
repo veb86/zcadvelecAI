@@ -133,7 +133,7 @@ type
     { Возвращает действие "Удалить столбец" }
     property ActDeleteColumn: TAction read FActDeleteColumn;
 
-    { Возвращает действие "Объединить ячейки" }
+    { Возвращает действие "Объединить/разъединить ячейки" }
     property ActMergeCells: TAction read FActMergeCells;
 
     { Возвращает действие "Заполнить пространства помещений" }
@@ -300,11 +300,11 @@ begin
   FActDeleteColumn.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_column');
   FActDeleteColumn.OnExecute := @OnActDeleteColumnExecute;
 
-  // Действие "Объединить ячейки"
+  // Действие "Объединить/разъединить ячейки"
   FActMergeCells := TAction.Create(FActionList);
   FActMergeCells.ActionList := FActionList;
-  FActMergeCells.Caption := 'Объединить ячейки';
-  FActMergeCells.Hint := 'Объединить выделенные ячейки';
+  FActMergeCells.Caption := 'Объединить/разъединить ячейки';
+  FActMergeCells.Hint := 'Объединить выделенные ячейки или разъединить объединённую ячейку';
   FActMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells');
   FActMergeCells.OnExecute := @OnActMergeCellsExecute;
 
@@ -469,7 +469,7 @@ begin
     FWorksheetGrid.Invalidate;
 end;
 
-{ Обработчик действия "Объединить ячейки" }
+{ Обработчик действия "Объединить/разъединить ячейки" }
 procedure TSpreadsheetActions.OnActMergeCellsExecute(Sender: TObject);
 begin
   ExecuteMergeCells(FWorkbookSource, FWorksheetGrid);

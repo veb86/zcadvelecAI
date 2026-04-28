@@ -34,6 +34,19 @@ def require(text: str, needle: str, path: Path) -> None:
         )
 
 
+def require_order(text: str, first: str, second: str, path: Path) -> None:
+    first_pos = text.find(first)
+    second_pos = text.find(second)
+    if first_pos == -1:
+        raise AssertionError(f"Missing {first!r} in {path.relative_to(ROOT)}")
+    if second_pos == -1:
+        raise AssertionError(f"Missing {second!r} in {path.relative_to(ROOT)}")
+    if first_pos > second_pos:
+        raise AssertionError(
+            f"{first!r} must appear before {second!r} in {path.relative_to(ROOT)}"
+        )
+
+
 def require_png(path: Path, expected_size: tuple[int, int]) -> None:
     if not path.exists():
         raise AssertionError(f"Missing runtime icon: {path.relative_to(ROOT)}")
@@ -61,6 +74,15 @@ def main() -> None:
     require(command_text, "unit uzvspreadsheet_cmdmergecells;", command_path)
     require(command_text, "procedure ExecuteMergeCells", command_path)
     require(command_text, "aWorksheetGrid.MergeCells", command_path)
+    require(command_text, "worksheet.IsMerged(cell)", command_path)
+    require(command_text, "worksheet.UnmergeCells(Cardinal(startRow), Cardinal(startCol));", command_path)
+    require(command_text, "Ячейки разъединены", command_path)
+    require_order(
+        command_text,
+        "worksheet.IsMerged(cell)",
+        "if (startRow = endRow) and (startCol = endCol) then",
+        command_path,
+    )
 
     actions_text = read_text(actions_path)
     for needle in (
@@ -68,6 +90,8 @@ def main() -> None:
         "procedure OnActMergeCellsExecute(Sender: TObject);",
         "property ActMergeCells: TAction read FActMergeCells;",
         "uzvspreadsheet_cmdmergecells",
+        "FActMergeCells.Caption := 'Объединить/разъединить ячейки';",
+        "FActMergeCells.Hint := 'Объединить выделенные ячейки или разъединить объединённую ячейку';",
         "FActMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells')",
         "ExecuteMergeCells(FWorkbookSource, FWorksheetGrid);",
     ):
@@ -77,6 +101,7 @@ def main() -> None:
     for needle in (
         "FBtnMergeCells: TToolButton;",
         "FBtnMergeCells.Action := FSpreadsheetActions.ActMergeCells;",
+        "FBtnMergeCells.Hint := 'Объединить выделенные ячейки или разъединить объединённую ячейку';",
         "FBtnMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells')",
     ):
         require(gui_text, needle, gui_path)
