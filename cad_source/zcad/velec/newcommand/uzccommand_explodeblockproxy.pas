@@ -224,6 +224,26 @@ begin
   Result := Cloned;
 end;
 
+{ Возвращает True для подпримитивов, которые в TransformAt не используют
+  source.objmatrix, а напрямую преобразуют собственные OCS-точки. Для таких
+  сущностей при расчленении ProxyEntity нужно передавать матрицу владельца
+  прокси, иначе локальные координаты подпримитива станут мировыми после
+  переноса в корень чертежа. }
+function SubEntityTransformUsesRawCoordinates(
+  SubEntity: PGDBObjEntity): Boolean;
+begin
+  Result := False;
+  if SubEntity = nil then
+    Exit;
+  case SubEntity^.GetObjType of
+    GDBLineID,
+    GDBPointID,
+    GDB3DfaceID,
+    GDBSolidID:
+      Result := True;
+  end;
+end;
+
 { Расчленяет одну вставку блока. Для каждого элемента из определения
   блока создаётся клон в корневом массиве чертежа с применением
   матрицы исходной вставки. Возвращает количество добавленных
@@ -275,19 +295,19 @@ end;
   форматирование прокси их построит. Возвращает число добавленных
   подсущностей.
 
-  Ключевая особенность: после Proxy.FormatEntity подсущности в
-  ConstObjArray имеют владельцем сам прокси-объект, поэтому их
-  objmatrix уже содержит мировую матрицу (Local * Proxy.objmatrix,
-  см. GDBObjWithLocalCS.CalcObjMatrix). Поэтому в качестве матрицы
-  трансформации передаётся единичная матрица: TransformAt(source, I)
-  присвоит objmatrix клона = source.objmatrix, то есть сохранит
-  мировые координаты подсущности в чертеже. }
+  Ключевая особенность: разные примитивы по-разному реализуют TransformAt.
+  Подсущности с локальной СК (TEXT/MTEXT/CIRCLE/ARC и т.п.) после
+  Proxy.FormatEntity уже имеют мировую objmatrix, поэтому им нужна
+  единичная матрица: TransformAt(source, I) сохранит source.objmatrix.
+  LINE/SOLID/POINT/3DFACE, наоборот, трансформируют собственные OCS-точки
+  и не читают source.objmatrix. Для них нужно применить Proxy.objmatrix,
+  чтобы перевести локальные координаты прокси в WCS до переноса в корень. }
 function ExplodeOneProxyEntity(Proxy: PGDBObjAcdProxy;
   Drawing: PTZCADDrawing; var DC: TDrawContext): Integer;
 var
   SubEntity, Cloned: PGDBObjEntity;
   IR: itrec;
-  IdentityTransform: TzeTypedMatrix4d;
+  IdentityTransform, ProxyTransform, SubEntityTransform: TzeTypedMatrix4d;
 begin
   Result := 0;
   { Принудительное форматирование гарантирует, что ConstObjArray
@@ -296,11 +316,16 @@ begin
     мировых координатах. }
   Proxy^.FormatEntity(Drawing^, DC);
   IdentityTransform := OneMatrix;
+  ProxyTransform := Proxy^.objMatrix;
   SubEntity := Proxy^.ConstObjArray.beginiterate(IR);
   if SubEntity <> nil then
     repeat
+      if SubEntityTransformUsesRawCoordinates(SubEntity) then
+        SubEntityTransform := ProxyTransform
+      else
+        SubEntityTransform := IdentityTransform;
       Cloned := CloneSubEntityToRoot(SubEntity, Drawing,
-        IdentityTransform, DC);
+        SubEntityTransform, DC);
       if Cloned <> nil then
       begin
         zcAddEntToDrawingWithUndo(Cloned, Drawing^);

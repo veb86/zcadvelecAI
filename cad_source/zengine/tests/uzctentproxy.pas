@@ -79,6 +79,10 @@ type
     procedure SpdsDoorProxyUsesGraphicBBoxForGripCenter;
     { Проверяет локальную СК proxy-объекта относительно ручки }
     procedure SpdsDoorProxySubEntitiesAreLocalToGripCenter;
+    { Регрессия на issue #1023: при расчленении ProxyEntity LINE-клоны
+      должны получать матрицу прокси, иначе локальные координаты становятся
+      мировыми и линии съезжают к началу координат. }
+    procedure ProxyLineCloneToRootRequiresProxyMatrix;
     { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
     procedure ProxyGraphicContourStoresDrawingAttributesForLog;
     { Проверяет, что OpCode=38 UnicodeText2 сохраняет TypeFace, FontName
@@ -1023,6 +1027,81 @@ begin
     CheckEquals(line^.CoordInOCS.lBegin.y + proxy^.GetCenterPoint.y,
       line^.CoordInWCS.lBegin.y, 1e-6,
       'После смещения подпримитив должен оставаться локальным к grip center');
+  finally
+    drawing.done;
+  end;
+end;
+
+procedure TProxyEntityLoadTest.ProxyLineCloneToRootRequiresProxyMatrix;
+var
+  drawing: TSimpleDrawing;
+  dc: TDrawContext;
+  proxy: PGDBObjAcdProxy;
+  sourceLine, identityClone, proxyClone: PGDBObjLine;
+  entity, cloned: PGDBObjEntity;
+  expectedBegin, expectedEnd: TzePoint3d;
+  proxyTransform: TzeTypedMatrix4d;
+  I: Integer;
+
+  function CloneLineWithTransform(
+    const ATransform: TzeTypedMatrix4d): PGDBObjLine;
+  var
+    localTransform: TzeTypedMatrix4d;
+  begin
+    localTransform := ATransform;
+    cloned := sourceLine^.Clone(sourceLine^.bp.ListPos.Owner);
+    CheckTrue(cloned <> nil,
+      'Clone должен создать копию LINE-подпримитива');
+
+    cloned^.TransformAt(PGDBObjEntity(sourceLine), @localTransform);
+    cloned^.bp.ListPos.Owner := drawing.GetCurrentROOT;
+    cloned^.FormatEntity(drawing, dc);
+    drawing.GetCurrentROOT^.ObjArray.AddPEntity(cloned^);
+
+    Result := PGDBObjLine(cloned);
+  end;
+
+begin
+  LoadSpdsDoorProxy(drawing, dc, proxy);
+  try
+    sourceLine := nil;
+    for I := 0 to proxy^.ConstObjArray.Count - 1 do
+    begin
+      entity := PGDBObjEntity(proxy^.ConstObjArray.GetData(I));
+      if (entity <> nil) and (entity^.GetObjType = GDBLineID) then
+      begin
+        sourceLine := PGDBObjLine(entity);
+        Break;
+      end;
+    end;
+
+    CheckTrue(sourceLine <> nil,
+      'Тестовый proxy должен содержать хотя бы один LINE-подпримитив');
+
+    expectedBegin := sourceLine^.CoordInWCS.lBegin;
+    expectedEnd := sourceLine^.CoordInWCS.lEnd;
+
+    { Это поведение старого ExplodeOneProxyEntity: identity сохраняет
+      локальные OCS-точки LINE как мировые после переноса в root. }
+    identityClone := CloneLineWithTransform(OneMatrix);
+    CheckTrue(
+      (Abs(identityClone^.CoordInWCS.lBegin.x - expectedBegin.x) > 1e-3)
+      or (Abs(identityClone^.CoordInWCS.lBegin.y - expectedBegin.y) > 1e-3),
+      'Identity-transform для LINE воспроизводит съезд к локальным координатам');
+
+    { Исправленное поведение: LINE.TransformAt преобразует OCS-точки,
+      поэтому перед переносом клона в root нужна матрица ProxyEntity. }
+    proxyTransform := proxy^.objMatrix;
+    proxyClone := CloneLineWithTransform(proxyTransform);
+
+    CheckEquals(expectedBegin.x, proxyClone^.CoordInWCS.lBegin.x, 1e-6,
+      'Начало LINE-клона должно остаться в прежней WCS X');
+    CheckEquals(expectedBegin.y, proxyClone^.CoordInWCS.lBegin.y, 1e-6,
+      'Начало LINE-клона должно остаться в прежней WCS Y');
+    CheckEquals(expectedEnd.x, proxyClone^.CoordInWCS.lEnd.x, 1e-6,
+      'Конец LINE-клона должен остаться в прежней WCS X');
+    CheckEquals(expectedEnd.y, proxyClone^.CoordInWCS.lEnd.y, 1e-6,
+      'Конец LINE-клона должен остаться в прежней WCS Y');
   finally
     drawing.done;
   end;
