@@ -161,7 +161,9 @@ uses
   uzvspreadsheet_cmdinserttable,
   uzvspreadsheet_gui,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzccommandsmanager,
+  uzcdrawings;
 
 { TSpreadsheetActions }
 
@@ -577,7 +579,11 @@ end;
 { Обработчик действия "Вставить таблицу в чертёж" }
 procedure TSpreadsheetActions.OnActInsertTableExecute(Sender: TObject);
 begin
-  InsertTableFromEditor_GUI;
+  commandmanager.executecommand(
+    'InsertTableFromEditor',
+    drawings.GetCurrentDWG,
+    drawings.GetCurrentOGLWParam
+  );
 end;
 
 end.
