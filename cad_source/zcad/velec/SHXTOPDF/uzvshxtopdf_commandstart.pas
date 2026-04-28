@@ -31,6 +31,9 @@ uses
   uzcinterface,
   uzcdrawings,
   uzeenttext,
+  uzeentity,
+  gzctnrVectorTypes,
+  uzeconsts,
   uzvshxtopdf_shxglyph,
   uzvshxtopdf_shxreader,
   uzvshxtopdf_shxdebugsvg,
@@ -80,6 +83,8 @@ function SHX_TO_PDF_TEST4_com(
   const Context: TZCADCommandContext;
   operands: TCommandOperands
 ): TCommandResult;
+
+procedure ApplyStage2(const ShxFont: TShxFont; const OutputDir: string);
 
 implementation
 
@@ -337,7 +342,7 @@ begin
       TMWOHistoryOut
     );
     zcUI.TextMessage(
-      'ПРИМЕР: SHX_TO_PDF_READ C:\Fonts\simplex.shx',
+      'ПРИМЕР: SHX_TO_PDF_READ(c:\zcad\zcad\cad\data\fonts\_mipGost.shx)',
       TMWOHistoryOut
     );
 
