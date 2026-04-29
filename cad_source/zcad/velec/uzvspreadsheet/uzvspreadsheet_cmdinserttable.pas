@@ -38,6 +38,7 @@ uses
   uzcdrawings,
   uzcinterface,
   uzcutils,
+  uzcstrconsts,
   uzeenttable,
   uzeconsts,
   uzeTypes,
@@ -240,55 +241,46 @@ begin
   Result := pt;
 end;
 
-// Вставляет таблицу в основной root чертежа
-// @param pt - указатель на таблицу для вставки
-// @return True если успешно
-function InsertTableToDrawing(pt: PGDBObjTable): Boolean;
+// Перемещает таблицу из конструктивного root в чертёж с запросом точки вставки
+// @return True если пользователь указал точку и таблица успешно вставлена
+function MoveTableToDrawingInteractive: Boolean;
 begin
   Result := False;
 
-  if pt = nil then
+  if commandmanager.MoveConstructRootTo(rscmSpecifyFirstPoint) = IRNormal then
   begin
-    programlog.LogOutFormatStr(
-      'InsertTableToDrawing: table is nil',
-      [],
-      LM_Info
-    );
-    Exit;
-  end;
-
-  try
-    // Перемещаем таблицу из конструктивного root в текущий чертёж с возможностью перемещения
     zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('InsertTable');
 
     programlog.LogOutFormatStr(
-      'InsertTableToDrawing: table inserted successfully',
+      'MoveTableToDrawingInteractive: table inserted successfully',
       [],
       LM_Info
     );
 
     Result := True;
-  except
-    on E: Exception do
-    begin
-      programlog.LogOutFormatStr(
-        'InsertTableToDrawing: error inserting table: %s',
-        [E.Message],
-        LM_Info
-      );
-    end;
+  end
+  else
+  begin
+    programlog.LogOutFormatStr(
+      'MoveTableToDrawingInteractive: user cancelled insertion',
+      [],
+      LM_Info
+    );
   end;
 end;
 
-// Вставляет таблицу из редактора в текущий чертёж (вызывается из GUI)
-procedure InsertTableFromEditor_GUI;
+// Создаёт таблицу из редактора и помещает её в конструктивную область чертежа.
+// Возвращает количество строк и столбцов через параметры.
+// @return True если таблица успешно создана в конструктивной области
+function BuildTableInConstructRoot(out lastRow, lastCol: Cardinal): Boolean;
 var
   workbookSource: TsWorkbookSource;
   worksheet: TsWorksheet;
-  lastRow: Cardinal;
-  lastCol: Cardinal;
-  pt: PGDBObjTable;
 begin
+  Result := False;
+  lastRow := 0;
+  lastCol := 0;
+
   // Проверяем, открыта ли форма редактора
   if uzvSpreadsheetForm = nil then
   begin
@@ -326,7 +318,7 @@ begin
   lastCol := FindLastFilledCol(worksheet);
 
   programlog.LogOutFormatStr(
-    'InsertTableFromEditor_GUI: filled range is rows 0..%d, cols 0..%d',
+    'BuildTableInConstructRoot: filled range is rows 0..%d, cols 0..%d',
     [lastRow, lastCol],
     LM_Info
   );
@@ -334,7 +326,6 @@ begin
   // Проверяем, есть ли данные
   if (lastRow = 0) and (lastCol = 0) then
   begin
-    // Проверяем первую ячейку
     if worksheet.FindCell(0, 0) = nil then
     begin
       zcUI.TextMessage(
@@ -345,9 +336,8 @@ begin
     end;
   end;
 
-  // Создаём таблицу из данных редактора
-  pt := CreateTableFromWorksheet(worksheet, lastRow, lastCol);
-  if pt = nil then
+  // Создаём таблицу из данных редактора в конструктивном root
+  if CreateTableFromWorksheet(worksheet, lastRow, lastCol) = nil then
   begin
     zcUI.TextMessage(
       'Ошибка: не удалось создать таблицу из данных редактора',
@@ -356,25 +346,18 @@ begin
     Exit;
   end;
 
-  // Вставляем таблицу в чертёж
-  if InsertTableToDrawing(pt) then
-  begin
-    zcUI.TextMessage(
-      Format('Таблица успешно вставлена (%d строк, %d столбцов)',
-        [lastRow + 1, lastCol + 1]),
-      TMWOHistoryOut
-    );
+  Result := True;
+end;
 
-    // Перерисовываем чертёж
-    zcRedrawCurrentDrawing;
-  end
-  else
-  begin
-    zcUI.TextMessage(
-      'Ошибка: не удалось вставить таблицу в чертёж',
-      TMWOHistoryOut
-    );
-  end;
+// Вставляет таблицу из редактора в текущий чертёж (вызывается из GUI)
+procedure InsertTableFromEditor_GUI;
+begin
+  // Данная процедура оставлена для обратной совместимости.
+  // Реальная вставка с выбором точки происходит в InsertTableFromEditor_com.
+  zcUI.TextMessage(
+    'Используйте команду InsertTableFromEditor для вставки таблицы.',
+    TMWOHistoryOut
+  );
 end;
 
 // Основная функция команды вставки таблицы
@@ -382,6 +365,8 @@ function InsertTableFromEditor_com(
   const Context: TZCADCommandContext;
   operands: TCommandOperands
 ): TCommandResult;
+var
+  lastRow, lastCol: Cardinal;
 begin
   Result := cmd_ok;
 
@@ -391,8 +376,25 @@ begin
     LM_Info
   );
 
-  // Вызываем GUI-версию команды
-  InsertTableFromEditor_GUI;
+  // Создаём таблицу в конструктивной области
+  if not BuildTableInConstructRoot(lastRow, lastCol) then
+  begin
+    Result := cmd_cancel;
+    Exit;
+  end;
+
+  // Предлагаем пользователю указать точку вставки и перемещаем таблицу в чертёж
+  if MoveTableToDrawingInteractive then
+  begin
+    zcUI.TextMessage(
+      Format('Таблица успешно вставлена (%d строк, %d столбцов)',
+        [lastRow + 1, lastCol + 1]),
+      TMWOHistoryOut
+    );
+    zcRedrawCurrentDrawing;
+  end
+  else
+    Result := cmd_cancel;
 
   programlog.LogOutFormatStr(
     'InsertTableFromEditor_com: command finished',
