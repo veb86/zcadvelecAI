@@ -37,23 +37,31 @@ interface
  * modified by Reini Urban
  * modified by Michal Josef Špaček
   }
-{ === h2pas preparation stubs (issue #1029) === }
+{ === Pascal equivalents of C99 stdint.h / dwg.h macros (issue #1033) === }
 
   type
-    BITCODE_RC = longint;
-
-    BITCODE_BD = double;
-
-    BITCODE_RS = longint;
-
-    BITCODE_RL = longint;
-
-    BITCODE_H = pointer;
-
-    BITCODE_RD = double;
-
-    BITCODE_BL = longint;
-{ === end of stubs === }
+    int8_t   = shortint;
+    uint8_t  = byte;
+    int16_t  = smallint;
+    uint16_t = word;
+    int32_t  = longint;
+    uint32_t = longword;
+    int64_t  = int64;
+    uint64_t = qword;
+    BITCODE_DOUBLE = double;
+    { size_t is a C standard type used throughout dwg.h.  Pascal does not
+      define it natively; we map it to the platform-native unsigned word
+      (NativeUInt is 32-bit on i386/64-bit on x86_64, matching C's size_t). }
+    size_t = NativeUInt;
+    { DWGCHAR is wchar_t in the original C header; on the platforms we
+      target (LibreDWG forces 16-bit UCS-2 wchar) it is equivalent to
+      uint16_t.  See HAVE_NATIVE_WCHAR2 in dwg.h. }
+    DWGCHAR = uint16_t;
+    { Pointer-to-pointer aliases.  Pascal does not allow nested
+      pointer expressions directly in record fields, so we introduce
+      explicit one-level pointer aliases here. }
+    PPAnsiChar2 = ^PAnsiChar;
+{ === end of standard type aliases === }
 { #ifndef DWG_H }
 { #define DWG_H }
 { keep in sync with release tags  }
@@ -283,11 +291,15 @@ interface
 { #define FORMAT_D2T "%s" }
 { TODO: implement version dependent string parsing  }
 { encode codepages/utf8  }
-{ #define BITCODE_T  BITCODE_TV }
+    { issue #1033: BITCODE_T / BITCODE_T16 / BITCODE_T32 / BITCODE_TU32 are
+      C macros that expand to BITCODE_TV; h2pas does not expand them, so we
+      add explicit Pascal aliases. }
+    BITCODE_T = BITCODE_TV;
+    BITCODE_T16 = BITCODE_TV;
+    BITCODE_T32 = BITCODE_TV;
+    BITCODE_TU32 = BITCODE_TV;
 { #ifdef HAVE_NATIVE_WCHAR2 }
-
-    BITCODE_TU = ^dwg_wchar_t;
-{ native UCS-2 wchar_t  }
+{    BITCODE_TU = ^dwg_wchar_t; native UCS-2 wchar_t }
 { # define FORMAT_TU "\"%ls\"" }
 { #else }
 
@@ -408,9 +420,14 @@ interface
 {R_2021,	/* AC1035/0x24 AutoCAD 2021 */ }
 { AC103-4 AutoCAD 2022 beta?  }
 
+    { Note: in the original C header R_12 is declared as `R_12 = R_11`,
+      i.e. an alias for R_11. Pascal enumeration types require unique
+      ascending ordinal values, so the alias is not representable in the
+      enumeration itself. R_12 is therefore re-introduced as a constant
+      below. }
     DWG_VERSION_TYPE = (R_INVALID,R_1_1,R_1_2,R_1_3,R_1_4,R_2_0b,
       R_2_0,R_2_10,R_2_21,R_2_22,R_2_4,R_2_5,R_2_6,
-      R_9,R_9c1,R_10,R_11b1,R_11b2,R_11,R_12 := R_11,
+      R_9,R_9c1,R_10,R_11b1,R_11b2,R_11,
       R_13b1,R_13b2,R_13,R_13c3,R_14,R_2000b,R_2000,
       R_2000i,R_2002,R_2004a,R_2004b,R_2004c,R_2004,
       R_2007a,R_2007b,R_2007,R_2010b,R_2010,R_2013b,
@@ -435,7 +452,7 @@ interface
     DWG_CLASS_STABILITY = (DWG_CLASS_STABLE,DWG_CLASS_UNSTABLE,DWG_CLASS_DEBUGGING,
       DWG_CLASS_UNHANDLED);
 
-    DWG_ENTITY_SECTIONS = (DWG_ENTITY_SECTION := &,DWG_BLOCKS_SECTION := $40,
+    DWG_ENTITY_SECTIONS = (DWG_ENTITY_SECTION := 0,DWG_BLOCKS_SECTION := $40,
       DWG_EXTRA_SECTION := $80);
 {*
  Object supertypes that exist in dwg-files.
@@ -1203,7 +1220,7 @@ interface
 { also mesh/pface vertices }
 { all types }
 
-    DWG_OBJECT_TYPE_R11 = (DWG_TYPE_UNUSED_r11 := &,DWG_TYPE_LINE_r11 := 1,
+    DWG_OBJECT_TYPE_R11 = (DWG_TYPE_UNUSED_r11 := 0,DWG_TYPE_LINE_r11 := 1,
       DWG_TYPE_POINT_r11 := 2,DWG_TYPE_CIRCLE_r11 := 3,
       DWG_TYPE_SHAPE_r11 := 4,DWG_TYPE_REPEAT_r11 := 5,
       DWG_TYPE_ENDREP_r11 := 6,DWG_TYPE_TEXT_r11 := 7,
@@ -1236,7 +1253,7 @@ interface
 { 4096  }
 { 8192  }
 
-    DWG_ERROR = (DWG_NOERR := &,DWG_ERR_WRONGCRC := 1,
+    DWG_ERROR = (DWG_NOERR := 0,DWG_ERR_WRONGCRC := 1,
       DWG_ERR_NOTYETSUPPORTED := 1 shl 1,DWG_ERR_UNHANDLEDCLASS := 1 shl 2,
       DWG_ERR_INVALIDTYPE := 1 shl 3,DWG_ERR_INVALIDHANDLE := 1 shl 4,
       DWG_ERR_INVALIDEED := 1 shl 5,DWG_ERR_VALUEOUTOFBOUNDS := 1 shl 6,
@@ -1302,11 +1319,12 @@ Used as \ref Dwg_Object_Ref
         r11_idx : BITCODE_RSd;
       end;
     Dwg_Object_Ref = _dwg_object_ref;
+    PDwg_Object_Ref = ^Dwg_Object_Ref;
 
     BITCODE_H = ^Dwg_Object_Ref;
 { can be relative }
 
-    DWG_HDL_CODE = (DWG_HDL_OWNER := &,DWG_HDL_SOFTOWN := 2,
+    DWG_HDL_CODE = (DWG_HDL_OWNER := 0,DWG_HDL_SOFTOWN := 2,
       DWG_HDL_HARDOWN := 3,DWG_HDL_SOFTPTR := 4,
       DWG_HDL_HARDPTR := 5);
 { (also c3 and rgb of 0x100)  }
@@ -1315,7 +1333,7 @@ Used as \ref Dwg_Object_Ref
                                       with names with an additional name flag RC  }
 { (also c3 and rgb of 0x101)  }
 
-    DWG_COLOR_METHOD = (DWG_COLOR_METHOD_VOID := &,DWG_COLOR_METHOD_BYLAYER := $c0,
+    DWG_COLOR_METHOD = (DWG_COLOR_METHOD_VOID := 0,DWG_COLOR_METHOD_BYLAYER := $c0,
       DWG_COLOR_METHOD_BYBLOCK := $c1,DWG_COLOR_METHOD_ACI := $c2,
       DWG_COLOR_METHOD_TRUECOLOR := $c3,DWG_COLOR_METHOD_FGCOLOR := $c5,
       DWG_COLOR_METHOD_NONE := $c8);
@@ -1372,22 +1390,14 @@ Used as \ref Dwg_Object_Ref
       end;
 
 
-  const
-    bm__dwg_binary_chunk_codepage = $7FFF;
-    bp__dwg_binary_chunk_codepage = 0;
-    bm__dwg_binary_chunk_is_tu = $8000;
-    bp__dwg_binary_chunk_is_tu = 15;
-
-  function codepage(var a : _dwg_binary_chunk) : dword;
-  procedure set_codepage(var a : _dwg_binary_chunk; __codepage : dword);
-  function is_tu(var a : _dwg_binary_chunk) : dword;
-  procedure set_is_tu(var a : _dwg_binary_chunk; __is_tu : dword);
+{ issue #1033: const block + function decls relocated to end of interface so
+  this `type` section can continue uninterrupted (forward record references
+  must be resolved within the same type block). }
 {*
  result buffers: xdata linked list of dxf group - value pairs.
  Used as \ref Dwg_Resbuf
   }
 
-  type
     _dwg_resbuf = record
         _type : smallint;
         value : record
@@ -2402,7 +2412,7 @@ Used as \ref Dwg_Object_Ref
         parent : ^_dwg_object_entity;
         z_is_zero : BITCODE_RC;
         start : BITCODE_3BD;
-        end : BITCODE_3BD;
+        end_ : BITCODE_3BD;
         thickness : BITCODE_BT;
         extrusion : BITCODE_BE;
         unknown_r11 : BITCODE_2RD;
@@ -3070,7 +3080,7 @@ Used as \ref Dwg_Object_Ref
       SPLINE_SPLINEFLAGS_CLOSED := 4);
 
 { 2013+  }
-    _h2pas_anon_enum_4 = (SPLINE_KNOTPARAM_CHORD := &,SPLINE_KNOTPARAM_SQUARE_ROOT := 1,
+    _h2pas_anon_enum_4 = (SPLINE_KNOTPARAM_CHORD := 0,SPLINE_KNOTPARAM_SQUARE_ROOT := 1,
       SPLINE_KNOTPARAM_UNIFORM := 2,SPLINE_KNOTPARAM_CUSTOM := 15
       );
 
@@ -3200,6 +3210,13 @@ Used as \ref Dwg_Object_Ref
 { is it the best approach?  }
 { #endif }
 
+    { Note: the original C header contains a `#if 0` block that
+      duplicates all of these fields with a slightly different layout
+      (kept around for historical reasons).  Because issue #1029 had to
+      strip out preprocessor directives in order to feed the header to
+      h2pas, that disabled block was inlined as if it were live code,
+      yielding duplicate field names.  We keep only the active
+      `_3DSOLID_FIELDS` expansion here, as the C compiler would. }
     _dwg_entity_3DSOLID = record
         parent : ^_dwg_object_entity;
         acis_empty : BITCODE_B;
@@ -3207,7 +3224,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -3232,27 +3249,6 @@ Used as \ref Dwg_Object_Ref
         end_marker : BITCODE_BL;
         history_id : BITCODE_H;
         has_revision_guid : BITCODE_B;
-        acis_empty_bit : BITCODE_B;
-        acis_empty : BITCODE_B;
-        unknown : BITCODE_B;
-        version : BITCODE_BS;
-        num_blocks : BITCODE_BL;
-        block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
-        acis_data : ^BITCODE_RC;
-        wireframe_data_present : BITCODE_B;
-        point_present : BITCODE_B;
-        point : BITCODE_3BD;
-        num_isolines : BITCODE_BL;
-        isoline_present : BITCODE_B;
-        num_wires : BITCODE_BL;
-        wires : ^Dwg_3DSOLID_wire;
-        num_silhouettes : BITCODE_BL;
-        silhouettes : ^Dwg_3DSOLID_silhouette;
-        acis_empty2 : BITCODE_B;
-        extra_acis_data : ^_dwg_entity_3DSOLID;
-        unknown_2007 : BITCODE_BL;
-        history_id : BITCODE_H;
         acis_empty_bit : BITCODE_B;
       end;
     Dwg_Entity__3DSOLID = _dwg_entity_3DSOLID;
@@ -4338,7 +4334,7 @@ Used as \ref Dwg_Object_Ref
 
     _dwg_LWPOLYLINE_width = record
         start : BITCODE_BD;
-        end : BITCODE_BD;
+        end_ : BITCODE_BD;
       end;
     Dwg_LWPOLYLINE_width = _dwg_LWPOLYLINE_width;
 { from flags to *widths  }
@@ -4629,7 +4625,7 @@ Used as \ref Dwg_Object_Ref
     _dwg_LEADER_Break = record
         parent : ^_dwg_LEADER_Line;
         start : BITCODE_3BD;
-        end : BITCODE_3BD;
+        end_ : BITCODE_3BD;
       end;
     Dwg_LEADER_Break = _dwg_LEADER_Break;
 { as documented by DXF }
@@ -5156,7 +5152,7 @@ Used as \ref Dwg_Object_Ref
         parent : ^_dwg_entity_TABLE;
         position : BITCODE_3BD;
         start : BITCODE_BL;
-        end : BITCODE_BL;
+        end_ : BITCODE_BL;
       end;
     Dwg_TABLE_BreakRow = _dwg_TABLE_BreakRow;
 { max 16, dxf 1 }
@@ -5683,9 +5679,12 @@ Used as \ref Dwg_Object_Ref
         name : BITCODE_T;
       end;
     Dwg_Object_UNDERLAYDEFINITION = _dwg_abstractobject_UNDERLAYDEFINITION;
-    _dwg_abstractobject_UNDERLAYDEFINITION = Dwg_Object_PDFDEFINITION;
-    _dwg_abstractobject_UNDERLAYDEFINITION = Dwg_Object_DGNDEFINITION;
-    _dwg_abstractobject_UNDERLAYDEFINITION = Dwg_Object_DWFDEFINITION;
+    { h2pas reversed the typedef direction; restored to match the C
+      header (Dwg_Object_PDFDEFINITION etc. are aliases of the abstract
+      type, not the other way around). }
+    Dwg_Object_PDFDEFINITION = _dwg_abstractobject_UNDERLAYDEFINITION;
+    Dwg_Object_DGNDEFINITION = _dwg_abstractobject_UNDERLAYDEFINITION;
+    Dwg_Object_DWFDEFINITION = _dwg_abstractobject_UNDERLAYDEFINITION;
 {*
  Abstract entity UNDERLAY, the reference (varies)
  As IMAGE or WIPEOUT but snappable, and with holes.
@@ -5725,9 +5724,11 @@ Used as \ref Dwg_Object_Ref
         definition_id : BITCODE_H;
       end;
     Dwg_Entity_UNDERLAY = _dwg_abstractentity_UNDERLAY;
-    _dwg_abstractentity_UNDERLAY = Dwg_Entity_PDFUNDERLAY;
-    _dwg_abstractentity_UNDERLAY = Dwg_Entity_DGNUNDERLAY;
-    _dwg_abstractentity_UNDERLAY = Dwg_Entity_DWFUNDERLAY;
+    { h2pas reversed the typedef direction; restored to match the C
+      header. }
+    Dwg_Entity_PDFUNDERLAY = _dwg_abstractentity_UNDERLAY;
+    Dwg_Entity_DGNUNDERLAY = _dwg_abstractentity_UNDERLAY;
+    Dwg_Entity_DWFUNDERLAY = _dwg_abstractentity_UNDERLAY;
 {*
  Class DBCOLOR (varies)
   }
@@ -6869,7 +6870,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -6968,7 +6969,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -7060,7 +7061,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -7137,7 +7138,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -7194,7 +7195,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -7259,7 +7260,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -8284,7 +8285,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -8488,10 +8489,12 @@ Used as \ref Dwg_Object_Ref
         numlevels : BITCODE_BL;
       end;
     Dwg_Object_ASSOCARRAYPARAMETERS = _dwg_abstractobject_ASSOCARRAYPARAMETERS;
-    _dwg_abstractobject_ASSOCARRAYPARAMETERS = Dwg_Object_ASSOCARRAYMODIFYPARAMETERS;
-    _dwg_abstractobject_ASSOCARRAYPARAMETERS = Dwg_Object_ASSOCARRAYPATHPARAMETERS;
-    _dwg_abstractobject_ASSOCARRAYPARAMETERS = Dwg_Object_ASSOCARRAYPOLARPARAMETERS;
-    _dwg_abstractobject_ASSOCARRAYPARAMETERS = Dwg_Object_ASSOCARRAYRECTANGULARPARAMETERS;
+    { h2pas reversed the typedef direction; restored to match the C
+      header. }
+    Dwg_Object_ASSOCARRAYMODIFYPARAMETERS = _dwg_abstractobject_ASSOCARRAYPARAMETERS;
+    Dwg_Object_ASSOCARRAYPATHPARAMETERS = _dwg_abstractobject_ASSOCARRAYPARAMETERS;
+    Dwg_Object_ASSOCARRAYPOLARPARAMETERS = _dwg_abstractobject_ASSOCARRAYPARAMETERS;
+    Dwg_Object_ASSOCARRAYRECTANGULARPARAMETERS = _dwg_abstractobject_ASSOCARRAYPARAMETERS;
 { === inlined macro ASSOCACTIONBODY_fields (issue #1031) === }
 { DXF 90. r2013+: 2, earlier 1  }
 { === end of inlined ASSOCACTIONBODY_fields === }
@@ -9106,7 +9109,7 @@ Used as \ref Dwg_Object_Ref
         version : BITCODE_BS;
         num_blocks : BITCODE_BL;
         block_size : ^BITCODE_BL;
-        encr_sat_data : ^^ansichar;
+        encr_sat_data : PPAnsiChar2;
         sab_size : BITCODE_BL;
         acis_data : ^BITCODE_RC;
         wireframe_data_present : BITCODE_B;
@@ -12305,7 +12308,7 @@ Used as \ref Dwg_Object_Ref
     _dwg_entity_3DLINE = record
         parent : ^_dwg_object_entity;
         start : BITCODE_3RD;
-        end : BITCODE_3RD;
+        end_ : BITCODE_3RD;
         extrusion : BITCODE_3RD;
         thickness : BITCODE_RD;
       end;
@@ -12344,6 +12347,8 @@ Used as \ref Dwg_Object_Ref
 { 70 short int  }
 { 71 long int  }
 
+    { issue #1033: C99 flexible array members (string[0]) became (&)-1 — fix to [0..0];
+      removed duplicate fields from #ifndef SWIG / #else h2pas double-translation. }
     _dwg_entity_eed_data = record
         code : BITCODE_RC;
         u : record
@@ -12351,19 +12356,16 @@ Used as \ref Dwg_Object_Ref
               0 : ( eed_0 : record
                   length : BITCODE_RS;
                   flag0 : word;
-                  _string : array[0..(&)-1] of ansichar;
-                  _string : array[0..(&)-1] of ansichar;
+                  _string : array[0..0] of ansichar;
                 end );
               1 : ( eed_0_r2007 : record
                   length : BITCODE_RS;
                   flag0 : word;
-                  _string : array[0..(&)-1] of DWGCHAR;
-                  _string : array[0..(&)-1] of DWGCHAR;
+                  _string : array[0..0] of DWGCHAR;
                 end );
               2 : ( eed_1 : record
                   appid_index : BITCODE_RS;
-                  invalid : array[0..(&)-1] of ansichar;
-                  invalid : array[0..(&)-1] of ansichar;
+                  invalid : array[0..0] of ansichar;
                 end );
               3 : ( eed_2 : record
                   close : BITCODE_RC;
@@ -12373,7 +12375,7 @@ Used as \ref Dwg_Object_Ref
                 end );
               5 : ( eed_4 : record
                   length : BITCODE_RC;
-                  data : array[0..(&)-1] of ansichar;
+                  data : array[0..0] of ansichar;
                 end );
               6 : ( eed_5 : record
                   entity : BITCODE_RLL;
@@ -12394,23 +12396,13 @@ Used as \ref Dwg_Object_Ref
       end;
     Dwg_Eed_Data = _dwg_entity_eed_data;
 
-  const
-    bm__dwg_entity_eed_data_codepage = $7FFF;
-    bp__dwg_entity_eed_data_codepage = 0;
-    bm__dwg_entity_eed_data_is_tu = $8000;
-    bp__dwg_entity_eed_data_is_tu = 15;
-    bm__dwg_entity_eed_data__padding = $7FFF;
-    bp__dwg_entity_eed_data__padding = 0;
-    bm__dwg_entity_eed_data_is_tu = $8000;
-    bp__dwg_entity_eed_data_is_tu = 15;
-
+{ issue #1033: const block relocated to end of interface; type block continues. }
 { #pragma pack() }
 {*
  Extended entity data
   }
 { a binary copy of the data  }
 
-  type
     _dwg_entity_eed = record
         size : BITCODE_BS;
         handle : Dwg_Handle;
@@ -12435,7 +12427,7 @@ Used as \ref Dwg_Object_Ref
 { ie rotated, horizontal or vertical }
 { x-type if set, else y }
 { text not at default position }
-    _h2pas_anon_enum_7 = (FLAG_R11_DIMENSION_LINEAR := &,FLAG_R11_DIMENSION_ALIGNED := 1,
+    _h2pas_anon_enum_7 = (FLAG_R11_DIMENSION_LINEAR := 0,FLAG_R11_DIMENSION_ALIGNED := 1,
       FLAG_R11_DIMENSION_ANG2LN := 2,FLAG_R11_DIMENSION_DIAMETER := 3,
       FLAG_R11_DIMENSION_RADIUS := 4,FLAG_R11_DIMENSION_ANG3PT := 5,
       FLAG_R11_DIMENSION_ORDINATE := 6,FLAG_R11_DIMENSION_ORDINATE_TYPE := 64,
@@ -12622,29 +12614,29 @@ Used as \ref Dwg_Object_Ref
     _h2pas_anon_enum_37 = (TEXT_GENERATION_BACKWARDS := 2,TEXT_GENERATION_UPSIDE_DOWN := 4
       );
 
-    _h2pas_anon_enum_38 = (HORIZ_ALIGNMENT_LEFT := &,HORIZ_ALIGNMENT_CENTER := 1,
+    _h2pas_anon_enum_38 = (HORIZ_ALIGNMENT_LEFT := 0,HORIZ_ALIGNMENT_CENTER := 1,
       HORIZ_ALIGNMENT_RIGHT := 2,HORIZ_ALIGNMENT_ALIGNED := 3,
       HORIZ_ALIGNMENT_MIDDLE := 4,HORIZ_ALIGNMENT_FIT := 5
       );
 
-    _h2pas_anon_enum_39 = (VERT_ALIGNMENT_BASELINE := &,VERT_ALIGNMENT_BOTTOM := 1,
+    _h2pas_anon_enum_39 = (VERT_ALIGNMENT_BASELINE := 0,VERT_ALIGNMENT_BOTTOM := 1,
       VERT_ALIGNMENT_MIDDLE := 2,VERT_ALIGNMENT_TOP := 3
       );
 
-    _h2pas_anon_enum_40 = (MLINE_JUSTIFICATION_TOP := &,MLINE_JUSTIFICATION_MIDDLE := 1,
+    _h2pas_anon_enum_40 = (MLINE_JUSTIFICATION_TOP := 0,MLINE_JUSTIFICATION_MIDDLE := 1,
       MLINE_JUSTIFICATION_BOTTOM := 2);
 
 { 1 with a POLYLINE_3D (undocumented) }
-    _h2pas_anon_enum_41 = (POLYLINE_CURVETYPE_DEFAULT := &,POLYLINE_CURVETYPE_QUADR_BSPLINE := 5,
+    _h2pas_anon_enum_41 = (POLYLINE_CURVETYPE_DEFAULT := 0,POLYLINE_CURVETYPE_QUADR_BSPLINE := 5,
       POLYLINE_CURVETYPE_CUBIC_BSPLINE := 6,
       POLYLINE_CURVETYPE_BEZIER_SURFACE := 8
       );
 
-    _h2pas_anon_enum_42 = (LEADER_PATHTYPE_STRAIGHT := &,LEADER_PATHTYPE_SPLINE := 1
+    _h2pas_anon_enum_42 = (LEADER_PATHTYPE_STRAIGHT := 0,LEADER_PATHTYPE_SPLINE := 1
       );
 
 { default }
-    _h2pas_anon_enum_43 = (LEADER_ANNOTTYPE_MTEXT := &,LEADER_ANNOTTYPE_TOLERANCE := 1,
+    _h2pas_anon_enum_43 = (LEADER_ANNOTTYPE_MTEXT := 0,LEADER_ANNOTTYPE_TOLERANCE := 1,
       LEADER_ANNOTTYPE_INSERT := 2,LEADER_ANNOTTYPE_NO_ANNOT := 3
       );
 
@@ -12664,11 +12656,11 @@ Used as \ref Dwg_Object_Ref
     _h2pas_anon_enum_46 = (LIGHT_TYPE_DISTANT := 1,LIGHT_TYPE_POINT := 2,
       LIGHT_TYPE_SPOT := 3);
 
-    _h2pas_anon_enum_47 = (LIGHT_ATTENUATION_TYPE_NONE := &,LIGHT_ATTENUATION_TYPE_INV_LINEAR := 1,
+    _h2pas_anon_enum_47 = (LIGHT_ATTENUATION_TYPE_NONE := 0,LIGHT_ATTENUATION_TYPE_INV_LINEAR := 1,
       LIGHT_ATTENUATION_TYPE_INV_SQUARE := 2
       );
 
-    _h2pas_anon_enum_48 = (LIGHT_EXTLIGHT_SHAPE_LINEAR := &,LIGHT_EXTLIGHT_SHAPE_RECT := 1,
+    _h2pas_anon_enum_48 = (LIGHT_EXTLIGHT_SHAPE_LINEAR := 0,LIGHT_EXTLIGHT_SHAPE_RECT := 1,
       LIGHT_EXTLIGHT_SHAPE_DISK := 2,LIGHT_EXTLIGHT_SHAPE_CYLINDER := 3,
       LIGHT_EXTLIGHT_SHAPE_SPHERE := 4);
 
@@ -14077,7 +14069,7 @@ Used as \ref Dwg_Object_Ref
 { AcDb:AcDsPrototype_1b = 12 (ACIS datastorage)  }
 { also called Data Section, or Section Page Map (ODA)  }
 
-    DWG_SECTION_TYPE = (SECTION_UNKNOWN := &,SECTION_HEADER := 1,
+    DWG_SECTION_TYPE = (SECTION_UNKNOWN := 0,SECTION_HEADER := 1,
       SECTION_AUXHEADER := 2,SECTION_CLASSES := 3,
       SECTION_HANDLES := 4,SECTION_TEMPLATE := 5,
       SECTION_OBJFREESPACE := 6,SECTION_OBJECTS := 7,
@@ -14090,7 +14082,7 @@ Used as \ref Dwg_Object_Ref
 { r13 - r2000  }
 { including the 2ndheader  }
 
-    DWG_SECTION_TYPE_R13 = (SECTION_HEADER_R13 := &,SECTION_CLASSES_R13 := 1,
+    DWG_SECTION_TYPE_R13 = (SECTION_HEADER_R13 := 0,SECTION_CLASSES_R13 := 1,
       SECTION_HANDLES_R13 := 2,SECTION_OBJFREESPACE_R13 := 3,
       SECTION_TEMPLATE_R13 := 4,SECTION_AUXHEADER_R2000 := 5,
       SECTION_THUMBNAIL_R13 := 6);
@@ -14099,7 +14091,7 @@ Used as \ref Dwg_Object_Ref
 { over 160 header vars }
 { since r11: }
 
-    DWG_SECTION_TYPE_R11 = (SECTION_HEADER_R11 := &,SECTION_BLOCK := 1,
+    DWG_SECTION_TYPE_R11 = (SECTION_HEADER_R11 := 0,SECTION_BLOCK := 1,
       SECTION_LAYER := 2,SECTION_STYLE := 3,
       SECTION_LTYPE := 5,SECTION_VIEW := 6,
       SECTION_UCS := 7,SECTION_VPORT := 8,
@@ -14131,6 +14123,7 @@ Used as \ref Dwg_Object_Ref
         flags_r11 : BITCODE_RS;
       end;
     Dwg_Section = _dwg_section;
+    PDwg_Section = ^Dwg_Section;
 { Dwg_R2007_Section:
   int64_t  data_size;    // max size of page
   int64_t  max_size;
@@ -14170,7 +14163,7 @@ Used as \ref Dwg_Object_Ref
         encrypted : BITCODE_RL;
         name : array[0..63] of ansichar;
         fixedtype : Dwg_Section_Type;
-        sections : ^^Dwg_Section;
+        sections : ^PDwg_Section;
       end;
 { CUSTOMPROPERTYTAG }
 { CUSTOMPROPERTY }
@@ -14822,8 +14815,8 @@ Used as \ref Dwg_Object_Ref
         num_entities : BITCODE_BL;
         num_object_refs : BITCODE_BL;
         cur_index : BITCODE_BL;
-        object_ref : ^^Dwg_Object_Ref;
-        object_map : ^_inthash;
+        object_ref : ^PDwg_Object_Ref;
+        object_map : {^_inthash}pointer; { issue #1033: _inthash is an opaque LibreDWG-internal struct; expose as untyped pointer (matches dwg.pp reference) }
         dirty_refs : longint;
         opts : dword;
         header_vars : Dwg_Header_Variables;
@@ -14853,7 +14846,7 @@ Used as \ref Dwg_Object_Ref
         acis_sab_hdl : ^BITCODE_H;
         next_hdl : BITCODE_RLL;
         prev_entity_index : BITCODE_BL;
-        object_ordered_ref : ^^Dwg_Object_Ref;
+        object_ordered_ref : ^PDwg_Object_Ref;
         num_object_ordered_refs : BITCODE_BL;
       end;
     Dwg_Data = _dwg_struct;
@@ -14868,7 +14861,7 @@ Used as \ref Dwg_Object_Ref
 { VT_BOOL clashes with /usr/x86_64-w64-mingw32/sys-root/mingw/include/wtypes.h }
 { RLL }
 
-    RESBUF_VALUE_TYPE = (DWG_VT_INVALID := &,DWG_VT_STRING := 1,
+    RESBUF_VALUE_TYPE = (DWG_VT_INVALID := 0,DWG_VT_STRING := 1,
       DWG_VT_POINT3D := 2,DWG_VT_REAL := 3,
       DWG_VT_INT16 := 4,DWG_VT_INT32 := 5,
       DWG_VT_INT8 := 6,DWG_VT_BINARY := 7,
@@ -16235,6 +16228,28 @@ Used as \ref Dwg_Object_Ref
 {  }
 { #endif }
 { #endif }
+
+{ issue #1033: const blocks and bitfield helper declarations relocated here so
+  the preceding `type` block stays continuous and forward record references
+  resolve correctly. }
+  const
+    bm__dwg_binary_chunk_codepage = $7FFF;
+    bp__dwg_binary_chunk_codepage = 0;
+    bm__dwg_binary_chunk_is_tu = $8000;
+    bp__dwg_binary_chunk_is_tu = 15;
+
+  const
+    bm__dwg_entity_eed_data_codepage = $7FFF;
+    bp__dwg_entity_eed_data_codepage = 0;
+    bm__dwg_entity_eed_data_is_tu = $8000;
+    bp__dwg_entity_eed_data_is_tu = 15;
+    bm__dwg_entity_eed_data__padding = $7FFF;
+    bp__dwg_entity_eed_data__padding = 0;
+
+  function codepage(var a : _dwg_binary_chunk) : dword;
+  procedure set_codepage(var a : _dwg_binary_chunk; __codepage : dword);
+  function is_tu(var a : _dwg_binary_chunk) : dword;
+  procedure set_is_tu(var a : _dwg_binary_chunk; __is_tu : dword);
 
 implementation
 
