@@ -12213,7 +12213,7 @@ Used as \ref Dwg_Object_Ref
         parent : ^_dwg_object_object;
         has_object : BITCODE_B;
         name : BITCODE_T;
-        _object : BITCODE_H;
+        &object : BITCODE_H;
       end;
     Dwg_COMPOUNDOBJECTID = _dwg_COMPOUNDOBJECTID;
 { ODA Arx }
@@ -12223,7 +12223,7 @@ Used as \ref Dwg_Object_Ref
         parent : ^_dwg_object_PARTIAL_VIEWING_INDEX;
         extents_min : BITCODE_3BD;
         extents_max : BITCODE_3BD;
-        _object : BITCODE_H;
+        &object : BITCODE_H;
       end;
     Dwg_PARTIAL_VIEWING_INDEX_Entry = _dwg_PARTIAL_VIEWING_INDEX_Entry;
 
@@ -14011,7 +14011,7 @@ Used as \ref Dwg_Object_Ref
         tio : record
             case longint of
               0 : ( entity : ^Dwg_Object_Entity );
-              1 : ( _object : ^Dwg_Object_Object );
+              1 : ( &object : ^Dwg_Object_Object );
             end;
         handle : Dwg_Handle;
         parent : ^_dwg_struct;
@@ -14811,7 +14811,7 @@ Used as \ref Dwg_Object_Ref
         dwg_class : ^Dwg_Class;
         num_objects : BITCODE_BL;
         num_alloced_objects : BITCODE_BL;
-        _object : ^Dwg_Object;
+        &object : ^Dwg_Object;
         num_entities : BITCODE_BL;
         num_object_refs : BITCODE_BL;
         cur_index : BITCODE_BL;
@@ -14850,6 +14850,7 @@ Used as \ref Dwg_Object_Ref
         num_object_ordered_refs : BITCODE_BL;
       end;
     Dwg_Data = _dwg_struct;
+    PDwg_Data = ^Dwg_Data;
 { #define DWG_OPTS_LOGLEVEL 0xf }
 { #define DWG_OPTS_MINIMAL  0x10 }
 { #define DWG_OPTS_DXFB     0x20 }
