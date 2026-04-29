@@ -525,7 +525,6 @@ interface
     PBITCODE_RL  = ^BITCODE_RL;
     PBITCODE_RLd  = ^BITCODE_RLd;
     PBITCODE_RLL  = ^BITCODE_RLL;
-    PBITCODE_RLLd  = ^BITCODE_RLLd;
     PBITCODE_RLx  = ^BITCODE_RLx;
     PBITCODE_RS  = ^BITCODE_RS;
     PBITCODE_RSd  = ^BITCODE_RSd;
@@ -640,10 +639,7 @@ interface
     PDwg_Entity_HELIX  = ^Dwg_Entity_HELIX;
     PDwg_Entity_IMAGE  = ^Dwg_Entity_IMAGE;
     PDwg_Entity_INSERT  = ^Dwg_Entity_INSERT;
-    PDwg_Entity_JUMP  = ^Dwg_Entity_JUMP;
-
     PDwg_Entity_LARGE_RADIAL_DIMENSION  = ^Dwg_Entity_LARGE_RADIAL_DIMENSION;
-    PDwg_Entity_LAYOUTPRINTCONFIG  = ^Dwg_Entity_LAYOUTPRINTCONFIG;
     PDwg_Entity_LEADER  = ^Dwg_Entity_LEADER;
     PDwg_Entity_LIGHT  = ^Dwg_Entity_LIGHT;
     PDwg_Entity_LINE  = ^Dwg_Entity_LINE;
@@ -990,7 +986,6 @@ interface
     PDwg_POINTCLOUDEX_Croppings  = ^Dwg_POINTCLOUDEX_Croppings;
     PDwg_PROXY_LWPOLYLINE  = ^Dwg_PROXY_LWPOLYLINE;
     PDwg_R2004_Header  = ^Dwg_R2004_Header;
-    PDwg_R2007_Header  = ^Dwg_R2007_Header;
     PDwg_Resbuf  = ^Dwg_Resbuf;
     PDwg_Resbuf_Value_Type  = ^Dwg_Resbuf_Value_Type;
     PDwg_RevHistory  = ^Dwg_RevHistory;
@@ -1100,13 +1095,10 @@ in declaration at line 16 *)
       BITCODE_RLd = int32;
 
       //PBITCODE_MC = ^BITCODE_MC;
-      BITCODE_MC = int32;
+      BITCODE_MC = longint;
 
       //PBITCODE_UMC = ^BITCODE_UMC;
-      BITCODE_UMC = uint64;
-
-      //PBITCODE_RLLd = ^BITCODE_RLLd;
-      BITCODE_RLLd = int64;
+      BITCODE_UMC = dword;
 
       //PBITCODE_MS = ^BITCODE_MS;
       BITCODE_MS = BITCODE_BL;
@@ -1228,11 +1220,13 @@ in declaration at line 16 *)
       DWG_VERSION_TYPE = (R_INVALID,R_1_1,R_1_2,R_1_3,R_1_4,R_2_0b,
         R_2_0,R_2_10,R_2_21,R_2_22,R_2_4,R_2_5,
         R_2_6,R_9,R_9c1,R_10,R_11b1,R_11b2,R_11,
-        R_12,R_13b1,R_13b2,R_13,R_13c3,R_14,
+        R_12 := R_11,R_13b1,R_13b2,R_13,R_13c3,R_14,
         R_2000b,R_2000,R_2000i,R_2002,R_2004a,
-        R_2004b,R_2004c,R_2004,R_2007a,R_2007b,
-        R_2007,R_2010b,R_2010,R_2013b,R_2013,
-        R_2018b,R_2018,R_2022b,R_AFTER);
+        R_2004b,R_2004c,R_2004,R_2005,R_2006,R_2007b,
+        R_2007,R_2008,R_2009,R_2010b,R_2010,R_2011,
+        R_2012,R_2013b,R_2013,R_2014,R_2015,R_2016,
+        R_2017,R_2018b,R_2018,R_2019,R_2020,R_2021,
+        R_2022,R_AFTER);
 (* Const before type ignored *)
 (* Const before declarator ignored *)
 (* Const before type ignored *)
@@ -1257,49 +1251,49 @@ in declaration at line 16 *)
       //PDWG_OBJECT_SUPERTYPE = ^DWG_OBJECT_SUPERTYPE;
       DWG_OBJECT_SUPERTYPE = (DWG_SUPERTYPE_ENTITY,DWG_SUPERTYPE_OBJECT
         );
-	  
+
       //PDWG_OBJECT_TYPE = ^DWG_OBJECT_TYPE;
-      DWG_OBJECT_TYPE = (DWG_TYPE_UNUSED = $00,DWG_TYPE_TEXT = $01,
-        DWG_TYPE_ATTRIB = $02,DWG_TYPE_ATTDEF = $03,
-        DWG_TYPE_BLOCK = $04,DWG_TYPE_ENDBLK = $05,
-        DWG_TYPE_SEQEND = $06,DWG_TYPE_INSERT = $07,
-        DWG_TYPE_MINSERT = $08,DWG_TYPE_VERTEX_2D = $0a,
-        DWG_TYPE_VERTEX_3D = $0b,DWG_TYPE_VERTEX_MESH = $0c,
-        DWG_TYPE_VERTEX_PFACE = $0d,DWG_TYPE_VERTEX_PFACE_FACE = $0e,
-        DWG_TYPE_POLYLINE_2D = $0f,DWG_TYPE_POLYLINE_3D = $10,
-        DWG_TYPE_ARC = $11,DWG_TYPE_CIRCLE = $12,
-        DWG_TYPE_LINE = $13,DWG_TYPE_DIMENSION_ORDINATE = $14,
-        DWG_TYPE_DIMENSION_LINEAR = $15,DWG_TYPE_DIMENSION_ALIGNED = $16,
-        DWG_TYPE_DIMENSION_ANG3PT = $17,DWG_TYPE_DIMENSION_ANG2LN = $18,
-        DWG_TYPE_DIMENSION_RADIUS = $19,DWG_TYPE_DIMENSION_DIAMETER = $1A,
-        DWG_TYPE_POINT = $1b,DWG_TYPE__3DFACE = $1c,
-        DWG_TYPE_POLYLINE_PFACE = $1d,DWG_TYPE_POLYLINE_MESH = $1e,
-        DWG_TYPE_SOLID = $1f,DWG_TYPE_TRACE = $20,
-        DWG_TYPE_SHAPE = $21,DWG_TYPE_VIEWPORT = $22,
-        DWG_TYPE_ELLIPSE = $23,DWG_TYPE_SPLINE = $24,
-        DWG_TYPE_REGION = $25,DWG_TYPE__3DSOLID = $26,
-        DWG_TYPE_BODY = $27,DWG_TYPE_RAY = $28,
-        DWG_TYPE_XLINE = $29,DWG_TYPE_DICTIONARY = $2a,
-        DWG_TYPE_OLEFRAME = $2b,DWG_TYPE_MTEXT = $2c,
-        DWG_TYPE_LEADER = $2d,DWG_TYPE_TOLERANCE = $2e,
-        DWG_TYPE_MLINE = $2f,DWG_TYPE_BLOCK_CONTROL = $30,
-        DWG_TYPE_BLOCK_HEADER = $31,DWG_TYPE_LAYER_CONTROL = $32,
-        DWG_TYPE_LAYER = $33,DWG_TYPE_STYLE_CONTROL = $34,
-        DWG_TYPE_STYLE = $35,DWG_TYPE_LTYPE_CONTROL = $38,
-        DWG_TYPE_LTYPE = $39,DWG_TYPE_VIEW_CONTROL = $3c,
-        DWG_TYPE_VIEW = $3d,DWG_TYPE_UCS_CONTROL = $3e,
-        DWG_TYPE_UCS = $3f,DWG_TYPE_VPORT_CONTROL = $40,
-        DWG_TYPE_VPORT = $41,DWG_TYPE_APPID_CONTROL = $42,
-        DWG_TYPE_APPID = $43,DWG_TYPE_DIMSTYLE_CONTROL = $44,
-        DWG_TYPE_DIMSTYLE = $45,DWG_TYPE_VX_CONTROL = $46,
-        DWG_TYPE_VX_TABLE_RECORD = $47,DWG_TYPE_GROUP = $48,
-        DWG_TYPE_MLINESTYLE = $49,DWG_TYPE_OLE2FRAME = $4a,
-        DWG_TYPE_DUMMY = $4b,DWG_TYPE_LONG_TRANSACTION = $4c,
-        DWG_TYPE_LWPOLYLINE = $4d,DWG_TYPE_HATCH = $4e,
-        DWG_TYPE_XRECORD = $4f,DWG_TYPE_PLACEHOLDER = $50,
-        DWG_TYPE_VBA_PROJECT = $51,DWG_TYPE_LAYOUT = $52,
-        DWG_TYPE_PROXY_ENTITY = $1f2,DWG_TYPE_PROXY_OBJECT = $1f3,
-        DWG_TYPE_ACDSRECORD = 500,DWG_TYPE_ACDSSCHEMA,
+      DWG_OBJECT_TYPE = (DWG_TYPE_UNUSED := $00,DWG_TYPE_TEXT := $01,
+        DWG_TYPE_ATTRIB := $02,DWG_TYPE_ATTDEF := $03,
+        DWG_TYPE_BLOCK := $04,DWG_TYPE_ENDBLK := $05,
+        DWG_TYPE_SEQEND := $06,DWG_TYPE_INSERT := $07,
+        DWG_TYPE_MINSERT := $08,DWG_TYPE_VERTEX_2D := $0a,
+        DWG_TYPE_VERTEX_3D := $0b,DWG_TYPE_VERTEX_MESH := $0c,
+        DWG_TYPE_VERTEX_PFACE := $0d,DWG_TYPE_VERTEX_PFACE_FACE := $0e,
+        DWG_TYPE_POLYLINE_2D := $0f,DWG_TYPE_POLYLINE_3D := $10,
+        DWG_TYPE_ARC := $11,DWG_TYPE_CIRCLE := $12,
+        DWG_TYPE_LINE := $13,DWG_TYPE_DIMENSION_ORDINATE := $14,
+        DWG_TYPE_DIMENSION_LINEAR := $15,DWG_TYPE_DIMENSION_ALIGNED := $16,
+        DWG_TYPE_DIMENSION_ANG3PT := $17,DWG_TYPE_DIMENSION_ANG2LN := $18,
+        DWG_TYPE_DIMENSION_RADIUS := $19,DWG_TYPE_DIMENSION_DIAMETER := $1A,
+        DWG_TYPE_POINT := $1b,DWG_TYPE__3DFACE := $1c,
+        DWG_TYPE_POLYLINE_PFACE := $1d,DWG_TYPE_POLYLINE_MESH := $1e,
+        DWG_TYPE_SOLID := $1f,DWG_TYPE_TRACE := $20,
+        DWG_TYPE_SHAPE := $21,DWG_TYPE_VIEWPORT := $22,
+        DWG_TYPE_ELLIPSE := $23,DWG_TYPE_SPLINE := $24,
+        DWG_TYPE_REGION := $25,DWG_TYPE__3DSOLID := $26,
+        DWG_TYPE_BODY := $27,DWG_TYPE_RAY := $28,
+        DWG_TYPE_XLINE := $29,DWG_TYPE_DICTIONARY := $2a,
+        DWG_TYPE_OLEFRAME := $2b,DWG_TYPE_MTEXT := $2c,
+        DWG_TYPE_LEADER := $2d,DWG_TYPE_TOLERANCE := $2e,
+        DWG_TYPE_MLINE := $2f,DWG_TYPE_BLOCK_CONTROL := $30,
+        DWG_TYPE_BLOCK_HEADER := $31,DWG_TYPE_LAYER_CONTROL := $32,
+        DWG_TYPE_LAYER := $33,DWG_TYPE_STYLE_CONTROL := $34,
+        DWG_TYPE_STYLE := $35,DWG_TYPE_LTYPE_CONTROL := $38,
+        DWG_TYPE_LTYPE := $39,DWG_TYPE_VIEW_CONTROL := $3c,
+        DWG_TYPE_VIEW := $3d,DWG_TYPE_UCS_CONTROL := $3e,
+        DWG_TYPE_UCS := $3f,DWG_TYPE_VPORT_CONTROL := $40,
+        DWG_TYPE_VPORT := $41,DWG_TYPE_APPID_CONTROL := $42,
+        DWG_TYPE_APPID := $43,DWG_TYPE_DIMSTYLE_CONTROL := $44,
+        DWG_TYPE_DIMSTYLE := $45,DWG_TYPE_VX_CONTROL := $46,
+        DWG_TYPE_VX_TABLE_RECORD := $47,DWG_TYPE_GROUP := $48,
+        DWG_TYPE_MLINESTYLE := $49,DWG_TYPE_OLE2FRAME := $4a,
+        DWG_TYPE_DUMMY := $4b,DWG_TYPE_LONG_TRANSACTION := $4c,
+        DWG_TYPE_LWPOLYLINE := $4d,DWG_TYPE_HATCH := $4e,
+        DWG_TYPE_XRECORD := $4f,DWG_TYPE_PLACEHOLDER := $50,
+        DWG_TYPE_VBA_PROJECT := $51,DWG_TYPE_LAYOUT := $52,
+        DWG_TYPE_PROXY_ENTITY := $1f2,DWG_TYPE_PROXY_OBJECT := $1f3,
+        DWG_TYPE_ACDSRECORD := 500,DWG_TYPE_ACDSSCHEMA,
         DWG_TYPE_ACMECOMMANDHISTORY,DWG_TYPE_ACMESCOPE,
         DWG_TYPE_ACMESTATEMGR,DWG_TYPE_ACSH_BOOLEAN_CLASS,
         DWG_TYPE_ACSH_BOX_CLASS,DWG_TYPE_ACSH_BREP_CLASS,
@@ -1431,41 +1425,41 @@ in declaration at line 16 *)
         DWG_TYPE_BREAKPOINTREF,DWG_TYPE_FLIPGRIPENTITY,
         DWG_TYPE_LINEARGRIPENTITY,DWG_TYPE_ROTATIONGRIPENTITY,
         DWG_TYPE_XYGRIPENTITY,DWG_TYPE__3DLINE,
-        DWG_TYPE_REPEAT,DWG_TYPE_ENDREP,DWG_TYPE_JUMP,DWG_TYPE_LOAD,
-        DWG_TYPE_FREED = $fffd,DWG_TYPE_UNKNOWN_ENT = $fffe,
-        DWG_TYPE_UNKNOWN_OBJ = $ffff);
+        DWG_TYPE_REPEAT,DWG_TYPE_ENDREP,DWG_TYPE_LOAD,
+        DWG_TYPE_FREED := $fffd,DWG_TYPE_UNKNOWN_ENT := $fffe,
+        DWG_TYPE_UNKNOWN_OBJ := $ffff);
 
       //PDWG_OBJECT_TYPE_R11 = ^DWG_OBJECT_TYPE_R11;
-      DWG_OBJECT_TYPE_R11 = (DWG_TYPE_UNUSED_R11 = 0,DWG_TYPE_LINE_R11 = 1,
-        DWG_TYPE_POINT_R11 = 2,DWG_TYPE_CIRCLE_R11 = 3,
-        DWG_TYPE_SHAPE_R11 = 4,DWG_TYPE_REPEAT_R11 = 5,
-        DWG_TYPE_ENDREP_R11 = 6,DWG_TYPE_TEXT_R11 = 7,
-        DWG_TYPE_ARC_R11 = 8,DWG_TYPE_TRACE_R11 = 9,
-        DWG_TYPE_LOAD_R11 = 10,DWG_TYPE_SOLID_R11 = 11,
-        DWG_TYPE_BLOCK_R11 = 12,DWG_TYPE_ENDBLK_R11 = 13,
-        DWG_TYPE_INSERT_R11 = 14,DWG_TYPE_ATTDEF_R11 = 15,
-        DWG_TYPE_ATTRIB_R11 = 16,DWG_TYPE_SEQEND_R11 = 17,
-        DWG_TYPE_PLINE_R11 = 18,DWG_TYPE_POLYLINE_R11 = 19,
-        DWG_TYPE_VERTEX_R11 = 20,DWG_TYPE_3DLINE_R11 = 21,
-        DWG_TYPE_3DFACE_R11 = 22,DWG_TYPE_DIMENSION_R11 = 23,
-        DWG_TYPE_VIEWPORT_R11 = 24,DWG_TYPE_UNKNOWN_R11 = 25
+      DWG_OBJECT_TYPE_R11 = (DWG_TYPE_UNUSED_R11 := 0,DWG_TYPE_LINE_R11 := 1,
+        DWG_TYPE_POINT_R11 := 2,DWG_TYPE_CIRCLE_R11 := 3,
+        DWG_TYPE_SHAPE_R11 := 4,DWG_TYPE_REPEAT_R11 := 5,
+        DWG_TYPE_ENDREP_R11 := 6,DWG_TYPE_TEXT_R11 := 7,
+        DWG_TYPE_ARC_R11 := 8,DWG_TYPE_TRACE_R11 := 9,
+        DWG_TYPE_LOAD_R11 := 10,DWG_TYPE_SOLID_R11 := 11,
+        DWG_TYPE_BLOCK_R11 := 12,DWG_TYPE_ENDBLK_R11 := 13,
+        DWG_TYPE_INSERT_R11 := 14,DWG_TYPE_ATTDEF_R11 := 15,
+        DWG_TYPE_ATTRIB_R11 := 16,DWG_TYPE_SEQEND_R11 := 17,
+        DWG_TYPE_PLINE_R11 := 18,DWG_TYPE_POLYLINE_R11 := 19,
+        DWG_TYPE_VERTEX_R11 := 20,DWG_TYPE_3DLINE_R11 := 21,
+        DWG_TYPE_3DFACE_R11 := 22,DWG_TYPE_DIMENSION_R11 := 23,
+        DWG_TYPE_VIEWPORT_R11 := 24,DWG_TYPE_UNKNOWN_R11 := 25
         );
 
       //PDWG_ERROR = ^DWG_ERROR;
-      DWG_ERROR = (DWG_NOERR = 0,DWG_ERR_WRONGCRC = 1,
-        DWG_ERR_NOTYETSUPPORTED = 1 shl 1,DWG_ERR_UNHANDLEDCLASS = 1 shl 2,
-        DWG_ERR_INVALIDTYPE = 1 shl 3,DWG_ERR_INVALIDHANDLE = 1 shl 4,
-        DWG_ERR_INVALIDEED = 1 shl 5,DWG_ERR_VALUEOUTOFBOUNDS = 1 shl 6,
-        DWG_ERR_CLASSESNOTFOUND = 1 shl 7,DWG_ERR_SECTIONNOTFOUND = 1 shl 8,
-        DWG_ERR_PAGENOTFOUND = 1 shl 9,DWG_ERR_INTERNALERROR = 1 shl 10,
-        DWG_ERR_INVALIDDWG = 1 shl 11,DWG_ERR_IOERROR = 1 shl 12,
-        DWG_ERR_OUTOFMEM = 1 shl 13);
+      DWG_ERROR = (DWG_NOERR := 0,DWG_ERR_WRONGCRC := 1,
+        DWG_ERR_NOTYETSUPPORTED := 1 shl 1,DWG_ERR_UNHANDLEDCLASS := 1 shl 2,
+        DWG_ERR_INVALIDTYPE := 1 shl 3,DWG_ERR_INVALIDHANDLE := 1 shl 4,
+        DWG_ERR_INVALIDEED := 1 shl 5,DWG_ERR_VALUEOUTOFBOUNDS := 1 shl 6,
+        DWG_ERR_CLASSESNOTFOUND := 1 shl 7,DWG_ERR_SECTIONNOTFOUND := 1 shl 8,
+        DWG_ERR_PAGENOTFOUND := 1 shl 9,DWG_ERR_INTERNALERROR := 1 shl 10,
+        DWG_ERR_INVALIDDWG := 1 shl 11,DWG_ERR_IOERROR := 1 shl 12,
+        DWG_ERR_OUTOFMEM := 1 shl 13);
 
       //P_dwg_handle = ^_dwg_handle;
       _dwg_handle = record
           code : BITCODE_RC;
           size : BITCODE_RC;
-          value : BITCODE_RLL;
+          value : dword;
           is_global : BITCODE_B;
         end;
       Dwg_Handle = _dwg_handle;
@@ -1475,8 +1469,8 @@ in declaration at line 16 *)
       _dwg_object_ref = record
           obj : P_dwg_object;
           handleref : Dwg_Handle;
-          absolute_ref : BITCODE_RLL;
-          r11_idx : BITCODE_RSd;
+          absolute_ref : dword;
+          r11_idx : BITCODE_RS;
         end;
       Dwg_Object_Ref = _dwg_object_ref;
       //PDwg_Object_Ref = ^Dwg_Object_Ref;
@@ -1485,9 +1479,9 @@ in declaration at line 16 *)
       BITCODE_H = PDwg_Object_Ref;
 
       //PDWG_HDL_CODE = ^DWG_HDL_CODE;
-      DWG_HDL_CODE = (DWG_HDL_OWNER = 0,DWG_HDL_SOFTOWN = 2,
-        DWG_HDL_HARDOWN = 3,DWG_HDL_SOFTPTR = 4,
-        DWG_HDL_HARDPTR = 5);
+      DWG_HDL_CODE = (DWG_HDL_OWNER := 0,DWG_HDL_SOFTOWN := 2,
+        DWG_HDL_HARDOWN := 3,DWG_HDL_SOFTPTR := 4,
+        DWG_HDL_HARDPTR := 5);
 
       //P_dwg_color = ^_dwg_color;
       _dwg_color = record
@@ -1499,7 +1493,6 @@ in declaration at line 16 *)
           name : BITCODE_TV;
           book_name : BITCODE_TV;
           handle : BITCODE_H;
-          alpha_raw : BITCODE_BL;
           alpha_type : BITCODE_BB;
           alpha : BITCODE_RC;
         end;
@@ -2210,7 +2203,6 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
           &end : BITCODE_3BD;
           thickness : BITCODE_BT;
           extrusion : BITCODE_BE;
-          unknown_r11 : BITCODE_2RD;
         end;
       Dwg_Entity_LINE = _dwg_entity_LINE;
       //PDwg_Entity_LINE = ^Dwg_Entity_LINE;
@@ -3083,7 +3075,6 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
           is_xref_resolved : BITCODE_BS;
           is_xref_dep : BITCODE_B;
           xref : BITCODE_H;
-          flag0 : BITCODE_BS;
           frozen : BITCODE_B;
           on : BITCODE_B;
           frozen_in_new : BITCODE_B;
@@ -3095,7 +3086,7 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
           material : BITCODE_H;
           ltype : BITCODE_H;
           visualstyle : BITCODE_H;
-          //unknown_r2 : BITCODE_RC;
+          unknown_r2 : BITCODE_RC;
         end;
       Dwg_Object_LAYER = _dwg_object_LAYER;
       //PDwg_Object_LAYER = ^Dwg_Object_LAYER;
@@ -9325,21 +9316,6 @@ __attribute__((visibility("default"))) const char* dwg_color_method_name (unsign
       //PDwg_Object_UNKNOWN_OBJ = ^Dwg_Object_UNKNOWN_OBJ;
 
       //P_dwg_entity_REPEAT = ^_dwg_entity_REPEAT;
-      //P_dwg_entity_JUMP = ^_dwg_entity_JUMP;
-      _dwg_entity_JUMP = record
-          parent : P_dwg_object_entity;
-        end;
-      Dwg_Entity_JUMP = _dwg_entity_JUMP;
-      //PDwg_Entity_JUMP = ^Dwg_Entity_JUMP;
-
-      //P_dwg_entity_LAYOUTPRINTCONFIG = ^_dwg_entity_LAYOUTPRINTCONFIG;
-      _dwg_entity_LAYOUTPRINTCONFIG = record
-          parent : P_dwg_object_entity;
-        end;
-      Dwg_Entity_LAYOUTPRINTCONFIG = _dwg_entity_LAYOUTPRINTCONFIG;
-      //PDwg_Entity_LAYOUTPRINTCONFIG = ^Dwg_Entity_LAYOUTPRINTCONFIG;
-
-      //P_dwg_entity_REPEAT = ^_dwg_entity_REPEAT;
       _dwg_entity_REPEAT = record
           parent : P_dwg_object_entity;
         end;
@@ -9508,50 +9484,48 @@ in declaration at line 7399 *)
                 52 : ( DWFUNDERLAY : PDwg_Entity_DWFUNDERLAY );
                 53 : ( HATCH : PDwg_Entity_HATCH );
                 54 : ( IMAGE : PDwg_Entity_IMAGE );
-                55 : ( JUMP : PDwg_Entity_JUMP );
-                56 : ( LIGHT : PDwg_Entity_LIGHT );
-                57 : ( LWPOLYLINE : PDwg_Entity_LWPOLYLINE );
-                58 : ( MESH : PDwg_Entity_MESH );
-                59 : ( MULTILEADER : PDwg_Entity_MULTILEADER );
-                60 : ( OLE2FRAME : PDwg_Entity_OLE2FRAME );
-                61 : ( PDFUNDERLAY : PDwg_Entity_PDFUNDERLAY );
-                62 : ( SECTIONOBJECT : PDwg_Entity_SECTIONOBJECT );
-                63 : ( _3DLINE : PDwg_Entity__3DLINE );
-                64 : ( ARC_DIMENSION : PDwg_Entity_ARC_DIMENSION );
-                65 : ( ENDREP : PDwg_Entity_ENDREP );
-                66 : ( HELIX : PDwg_Entity_HELIX );
-                67 : ( LARGE_RADIAL_DIMENSION : PDwg_Entity_LARGE_RADIAL_DIMENSION );
-                68 : ( LAYOUTPRINTCONFIG : PDwg_Entity_LAYOUTPRINTCONFIG );
-                69 : ( PLANESURFACE : PDwg_Entity_PLANESURFACE );
-                70 : ( POINTCLOUD : PDwg_Entity_POINTCLOUD );
-                71 : ( POINTCLOUDEX : PDwg_Entity_POINTCLOUDEX );
-                72 : ( &REPEAT : PDwg_Entity_REPEAT );
-                73 : ( WIPEOUT : PDwg_Entity_WIPEOUT );
-                74 : ( ALIGNMENTPARAMETERENTITY : PDwg_Entity_ALIGNMENTPARAMETERENTITY );
-                75 : ( ARCALIGNEDTEXT : PDwg_Entity_ARCALIGNEDTEXT );
-                76 : ( BASEPOINTPARAMETERENTITY : PDwg_Entity_BASEPOINTPARAMETERENTITY );
-                77 : ( EXTRUDEDSURFACE : PDwg_Entity_EXTRUDEDSURFACE );
-                78 : ( FLIPGRIPENTITY : PDwg_Entity_FLIPGRIPENTITY );
-                79 : ( FLIPPARAMETERENTITY : PDwg_Entity_FLIPPARAMETERENTITY );
-                80 : ( GEOPOSITIONMARKER : PDwg_Entity_GEOPOSITIONMARKER );
-                81 : ( LINEARGRIPENTITY : PDwg_Entity_LINEARGRIPENTITY );
-                82 : ( LINEARPARAMETERENTITY : PDwg_Entity_LINEARPARAMETERENTITY );
-                83 : ( LOFTEDSURFACE : PDwg_Entity_LOFTEDSURFACE );
-                84 : ( MPOLYGON : PDwg_Entity_MPOLYGON );
-                85 : ( NAVISWORKSMODEL : PDwg_Entity_NAVISWORKSMODEL );
-                86 : ( NURBSURFACE : PDwg_Entity_NURBSURFACE );
-                87 : ( POINTPARAMETERENTITY : PDwg_Entity_POINTPARAMETERENTITY );
-                88 : ( POLARGRIPENTITY : PDwg_Entity_POLARGRIPENTITY );
-                89 : ( REVOLVEDSURFACE : PDwg_Entity_REVOLVEDSURFACE );
-                90 : ( ROTATIONGRIPENTITY : PDwg_Entity_ROTATIONGRIPENTITY );
-                91 : ( ROTATIONPARAMETERENTITY : PDwg_Entity_ROTATIONPARAMETERENTITY );
-                92 : ( RTEXT : PDwg_Entity_RTEXT );
-                93 : ( SWEPTSURFACE : PDwg_Entity_SWEPTSURFACE );
-                94 : ( TABLE : PDwg_Entity_TABLE );
-                95 : ( VISIBILITYGRIPENTITY : PDwg_Entity_VISIBILITYGRIPENTITY );
-                96 : ( VISIBILITYPARAMETERENTITY : PDwg_Entity_VISIBILITYPARAMETERENTITY );
-                97 : ( XYGRIPENTITY : PDwg_Entity_XYGRIPENTITY );
-                98 : ( XYPARAMETERENTITY : PDwg_Entity_XYPARAMETERENTITY );
+                55 : ( LIGHT : PDwg_Entity_LIGHT );
+                56 : ( LWPOLYLINE : PDwg_Entity_LWPOLYLINE );
+                57 : ( MESH : PDwg_Entity_MESH );
+                58 : ( MULTILEADER : PDwg_Entity_MULTILEADER );
+                59 : ( OLE2FRAME : PDwg_Entity_OLE2FRAME );
+                60 : ( PDFUNDERLAY : PDwg_Entity_PDFUNDERLAY );
+                61 : ( SECTIONOBJECT : PDwg_Entity_SECTIONOBJECT );
+                62 : ( _3DLINE : PDwg_Entity__3DLINE );
+                63 : ( ARC_DIMENSION : PDwg_Entity_ARC_DIMENSION );
+                64 : ( ENDREP : PDwg_Entity_ENDREP );
+                65 : ( HELIX : PDwg_Entity_HELIX );
+                66 : ( LARGE_RADIAL_DIMENSION : PDwg_Entity_LARGE_RADIAL_DIMENSION );
+                67 : ( PLANESURFACE : PDwg_Entity_PLANESURFACE );
+                68 : ( POINTCLOUD : PDwg_Entity_POINTCLOUD );
+                69 : ( POINTCLOUDEX : PDwg_Entity_POINTCLOUDEX );
+                70 : ( _REPEAT : PDwg_Entity_REPEAT );
+                71 : ( WIPEOUT : PDwg_Entity_WIPEOUT );
+                72 : ( ALIGNMENTPARAMETERENTITY : PDwg_Entity_ALIGNMENTPARAMETERENTITY );
+                73 : ( ARCALIGNEDTEXT : PDwg_Entity_ARCALIGNEDTEXT );
+                74 : ( BASEPOINTPARAMETERENTITY : PDwg_Entity_BASEPOINTPARAMETERENTITY );
+                75 : ( EXTRUDEDSURFACE : PDwg_Entity_EXTRUDEDSURFACE );
+                76 : ( FLIPGRIPENTITY : PDwg_Entity_FLIPGRIPENTITY );
+                77 : ( FLIPPARAMETERENTITY : PDwg_Entity_FLIPPARAMETERENTITY );
+                78 : ( GEOPOSITIONMARKER : PDwg_Entity_GEOPOSITIONMARKER );
+                79 : ( LINEARGRIPENTITY : PDwg_Entity_LINEARGRIPENTITY );
+                80 : ( LINEARPARAMETERENTITY : PDwg_Entity_LINEARPARAMETERENTITY );
+                81 : ( LOFTEDSURFACE : PDwg_Entity_LOFTEDSURFACE );
+                82 : ( MPOLYGON : PDwg_Entity_MPOLYGON );
+                83 : ( NAVISWORKSMODEL : PDwg_Entity_NAVISWORKSMODEL );
+                84 : ( NURBSURFACE : PDwg_Entity_NURBSURFACE );
+                85 : ( POINTPARAMETERENTITY : PDwg_Entity_POINTPARAMETERENTITY );
+                86 : ( POLARGRIPENTITY : PDwg_Entity_POLARGRIPENTITY );
+                87 : ( REVOLVEDSURFACE : PDwg_Entity_REVOLVEDSURFACE );
+                88 : ( ROTATIONGRIPENTITY : PDwg_Entity_ROTATIONGRIPENTITY );
+                89 : ( ROTATIONPARAMETERENTITY : PDwg_Entity_ROTATIONPARAMETERENTITY );
+                90 : ( RTEXT : PDwg_Entity_RTEXT );
+                91 : ( SWEPTSURFACE : PDwg_Entity_SWEPTSURFACE );
+                92 : ( TABLE : PDwg_Entity_TABLE );
+                93 : ( VISIBILITYGRIPENTITY : PDwg_Entity_VISIBILITYGRIPENTITY );
+                94 : ( VISIBILITYPARAMETERENTITY : PDwg_Entity_VISIBILITYPARAMETERENTITY );
+                95 : ( XYGRIPENTITY : PDwg_Entity_XYGRIPENTITY );
+                96 : ( XYPARAMETERENTITY : PDwg_Entity_XYPARAMETERENTITY );
               end;
           dwg : P_dwg_struct;
           num_eed : BITCODE_BL;
@@ -9579,7 +9553,7 @@ in declaration at line 7399 *)
           linewt : BITCODE_RC;
           flag_r11 : BITCODE_RC;
           opts_r11 : BITCODE_RS;
-          extra_r11 : BITCODE_RS;
+          extra_r11 : BITCODE_RC;
           color_r11 : BITCODE_RCd;
           elevation_r11 : BITCODE_RD;
           thickness_r11 : BITCODE_RD;
@@ -9815,18 +9789,19 @@ in declaration at line 7399 *)
                 205 : ( DMDIMOBJECTCONTEXTDATA : PDwg_Object_DMDIMOBJECTCONTEXTDATA );
                 206 : ( DYNAMICBLOCKPROXYNODE : PDwg_Object_DYNAMICBLOCKPROXYNODE );
                 207 : ( GEOMAPIMAGE : PDwg_Object_GEOMAPIMAGE );
-                208 : ( MLEADEROBJECTCONTEXTDATA : PDwg_Object_MLEADEROBJECTCONTEXTDATA );
-                209 : ( MOTIONPATH : PDwg_Object_MOTIONPATH );
-                210 : ( MTEXTATTRIBUTEOBJECTCONTEXTDATA : PDwg_Object_MTEXTATTRIBUTEOBJECTCONTEXTDATA );
-                211 : ( NAVISWORKSMODELDEF : PDwg_Object_NAVISWORKSMODELDEF );
-                212 : ( ORDDIMOBJECTCONTEXTDATA : PDwg_Object_ORDDIMOBJECTCONTEXTDATA );
-                213 : ( PERSUBENTMGR : PDwg_Object_PERSUBENTMGR );
-                214 : ( POINTPATH : PDwg_Object_POINTPATH );
-                215 : ( RADIMLGOBJECTCONTEXTDATA : PDwg_Object_RADIMLGOBJECTCONTEXTDATA );
-                216 : ( RADIMOBJECTCONTEXTDATA : PDwg_Object_RADIMOBJECTCONTEXTDATA );
-                217 : ( SUNSTUDY : PDwg_Object_SUNSTUDY );
-                218 : ( TABLECONTENT : PDwg_Object_TABLECONTENT );
-                219 : ( TVDEVICEPROPERTIES : PDwg_Object_TVDEVICEPROPERTIES );
+                208 : ( LAYOUTPRINTCONFIG : PDwg_Object_LAYOUTPRINTCONFIG );
+                209 : ( MLEADEROBJECTCONTEXTDATA : PDwg_Object_MLEADEROBJECTCONTEXTDATA );
+                210 : ( MOTIONPATH : PDwg_Object_MOTIONPATH );
+                211 : ( MTEXTATTRIBUTEOBJECTCONTEXTDATA : PDwg_Object_MTEXTATTRIBUTEOBJECTCONTEXTDATA );
+                212 : ( NAVISWORKSMODELDEF : PDwg_Object_NAVISWORKSMODELDEF );
+                213 : ( ORDDIMOBJECTCONTEXTDATA : PDwg_Object_ORDDIMOBJECTCONTEXTDATA );
+                214 : ( PERSUBENTMGR : PDwg_Object_PERSUBENTMGR );
+                215 : ( POINTPATH : PDwg_Object_POINTPATH );
+                216 : ( RADIMLGOBJECTCONTEXTDATA : PDwg_Object_RADIMLGOBJECTCONTEXTDATA );
+                217 : ( RADIMOBJECTCONTEXTDATA : PDwg_Object_RADIMOBJECTCONTEXTDATA );
+                218 : ( SUNSTUDY : PDwg_Object_SUNSTUDY );
+                219 : ( TABLECONTENT : PDwg_Object_TABLECONTENT );
+                220 : ( TVDEVICEPROPERTIES : PDwg_Object_TVDEVICEPROPERTIES );
               end;
           dwg : P_dwg_struct;
           num_eed : BITCODE_BL;
@@ -9864,33 +9839,31 @@ in declaration at line 7399 *)
       //P_dwg_object = ^_dwg_object;
       _dwg_object = record
           size : BITCODE_RL;
-          address : PtrUInt;
-          _type : BITCODE_BS;
+          address : dword;
+          _type : dword;
           index : BITCODE_RL;
           fixedtype : DWG_OBJECT_TYPE;
           name : Pchar;
           dxfname : Pchar;
-          supertype : DWG_OBJECT_SUPERTYPE;
-            tio : record
-              case integer of
-                0: (entity : PDwg_Object_Entity);
-                1: (&object : PDwg_Object_Object);
+          supertype : Dwg_Object_Supertype;
+          tio : record
+              case longint of
+                0 : ( entity : PDwg_Object_Entity );
+                1 : ( &object : PDwg_Object_Object );
               end;
           handle : Dwg_Handle;
           parent : P_dwg_struct;
           klass : PDwg_Class;
           bitsize : BITCODE_RL;
-          bitsize_pos : PtrUInt;
-          hdlpos : PtrUInt;
+          bitsize_pos : dword;
+          hdlpos : dword;
           was_bitsize_set : BITCODE_B;
           has_strings : BITCODE_B;
           stringstream_size : BITCODE_RL;
           handlestream_size : BITCODE_UMC;
-          common_size : PtrUInt;
+          common_size : dword;
           num_unknown_bits : BITCODE_RL;
           unknown_bits : BITCODE_TF;
-          num_unknown_rest : BITCODE_RL;
-          unknown_rest : BITCODE_TF;
         end;
       Dwg_Object = _dwg_object;
       //PDwg_Object = ^Dwg_Object;
@@ -9914,30 +9887,30 @@ in declaration at line 7399 *)
       //PDwg_Chain = ^Dwg_Chain;
 
       //PDWG_SECTION_TYPE = ^DWG_SECTION_TYPE;
-      DWG_SECTION_TYPE = (SECTION_UNKNOWN = 0,SECTION_HEADER = 1,
-        SECTION_AUXHEADER = 2,SECTION_CLASSES = 3,
-        SECTION_HANDLES = 4,SECTION_TEMPLATE = 5,
-        SECTION_OBJFREESPACE = 6,SECTION_OBJECTS = 7,
-        SECTION_REVHISTORY = 8,SECTION_SUMMARYINFO = 9,
-        SECTION_PREVIEW = 10,SECTION_APPINFO = 11,
-        SECTION_APPINFOHISTORY = 12,SECTION_FILEDEPLIST = 13,
+      DWG_SECTION_TYPE = (SECTION_UNKNOWN := 0,SECTION_HEADER := 1,
+        SECTION_AUXHEADER := 2,SECTION_CLASSES := 3,
+        SECTION_HANDLES := 4,SECTION_TEMPLATE := 5,
+        SECTION_OBJFREESPACE := 6,SECTION_OBJECTS := 7,
+        SECTION_REVHISTORY := 8,SECTION_SUMMARYINFO := 9,
+        SECTION_PREVIEW := 10,SECTION_APPINFO := 11,
+        SECTION_APPINFOHISTORY := 12,SECTION_FILEDEPLIST := 13,
         SECTION_SECURITY,SECTION_VBAPROJECT,
         SECTION_SIGNATURE,SECTION_ACDS,SECTION_INFO,
         SECTION_SYSTEM_MAP);
 
       //PDWG_SECTION_TYPE_R13 = ^DWG_SECTION_TYPE_R13;
-      DWG_SECTION_TYPE_R13 = (SECTION_HEADER_R13 = 0,SECTION_CLASSES_R13 = 1,
-        SECTION_HANDLES_R13 = 2,SECTION_2NDHEADER_R13 = 3,
-        SECTION_MEASUREMENT_R13 = 4,SECTION_AUXHEADER_R2000 = 5
+      DWG_SECTION_TYPE_R13 = (SECTION_HEADER_R13 := 0,SECTION_CLASSES_R13 := 1,
+        SECTION_HANDLES_R13 := 2,SECTION_2NDHEADER_R13 := 3,
+        SECTION_MEASUREMENT_R13 := 4,SECTION_AUXHEADER_R2000 := 5
         );
 
       //PDWG_SECTION_TYPE_R11 = ^DWG_SECTION_TYPE_R11;
-      DWG_SECTION_TYPE_R11 = (SECTION_HEADER_R11 = 0,SECTION_BLOCK = 1,
-        SECTION_LAYER = 2,SECTION_STYLE = 3,
-        SECTION_LTYPE = 5,SECTION_VIEW = 6,
-        SECTION_UCS = 7,SECTION_VPORT = 8,
-        SECTION_APPID = 9,SECTION_DIMSTYLE = 10,
-        SECTION_VX = 11);
+      DWG_SECTION_TYPE_R11 = (SECTION_HEADER_R11 := 0,SECTION_BLOCK := 1,
+        SECTION_LAYER := 2,SECTION_STYLE := 3,
+        SECTION_LTYPE := 5,SECTION_VIEW := 6,
+        SECTION_UCS := 7,SECTION_VPORT := 8,
+        SECTION_APPID := 9,SECTION_DIMSTYLE := 10,
+        SECTION_VX := 11);
 
       //P_dwg_section = ^_dwg_section;
       _dwg_section = record
@@ -10259,19 +10232,14 @@ in declaration at line 7399 *)
       _dwg_header = record
           version : Dwg_Version_Type;
           from_version : Dwg_Version_Type;
+          zero_5 : array[0..4] of BITCODE_RC;
           is_maint : BITCODE_RC;
           zero_one_or_three : BITCODE_RC;
-          numentity_sections : BITCODE_RS;
+          unknown_3 : BITCODE_RS;
           numheader_vars : BITCODE_RS;
           thumbnail_address : BITCODE_RL;
           dwg_version : BITCODE_RC;
           maint_version : BITCODE_RC;
-          entities_start : BITCODE_RL;
-          entities_end : BITCODE_RL;
-          blocks_start : BITCODE_RL;
-          blocks_size : BITCODE_RL;
-          extras_start : BITCODE_RL;
-          extras_size : BITCODE_RL;
           codepage : BITCODE_RS;
           unknown_0 : BITCODE_RC;
           app_dwg_version : BITCODE_RC;
@@ -10281,8 +10249,7 @@ in declaration at line 7399 *)
           summaryinfo_address : BITCODE_RL;
           vbaproj_address : BITCODE_RL;
           r2004_header_address : BITCODE_RL;
-          sections : BITCODE_RL;
-          num_sections : BITCODE_RL;
+          numsections : BITCODE_RL;
           section : PDwg_Section;
           section_infohdr : Dwg_Section_InfoHdr;
           section_info : PDwg_Section_Info;
@@ -10326,53 +10293,6 @@ in declaration at line 7399 *)
       Dwg_R2004_Header = _dwg_R2004_Header;
       //PDwg_R2004_Header = ^Dwg_R2004_Header;
 (** unsupported pragma#pragma pack()*)
-
-      //P_dwg_r2007_header = ^_dwg_r2007_header;
-      _dwg_r2007_header = record
-          header_size : int64;
-          file_size : int64;
-          pages_map_crc_compressed : int64;
-          pages_map_correction : int64;
-          pages_map_crc_seed : int64;
-          pages_map2_offset : int64;
-          pages_map2_id : int64;
-          pages_map_offset : int64;
-          pages_map_id : int64;
-          header2_offset : int64;
-          pages_map_size_comp : int64;
-          pages_map_size_uncomp : int64;
-          pages_amount : int64;
-          pages_maxid : int64;
-          unknown1 : int64;
-          unknown2 : int64;
-          pages_map_crc_uncomp : int64;
-          unknown3 : int64;
-          unknown4 : int64;
-          unknown5 : int64;
-          num_sections : int64;
-          sections_map_crc_uncomp : int64;
-          sections_map_size_comp : int64;
-          sections_map2_id : int64;
-          sections_map_id : int64;
-          sections_map_size_uncomp : int64;
-          sections_map_crc_comp : int64;
-          sections_map_correction : int64;
-          sections_map_crc_seed : int64;
-          stream_version : int64;
-          crc_seed : int64;
-          crc_seed_encoded : int64;
-          random_seed : int64;
-          header_crc : int64;
-        end;
-      Dwg_R2007_Header = _dwg_r2007_header;
-      //PDwg_R2007_Header = ^Dwg_R2007_Header;
-
-      _dwg_header_union = record
-          case integer of
-            0: (r2004_header : Dwg_R2004_Header);
-            1: (r2007_file_header : Dwg_R2007_Header);
-        end;
-      Dwg_Header_Union = _dwg_header_union;
 
 
       //P_dwg_auxheader = ^_dwg_auxheader;
@@ -10567,7 +10487,7 @@ in declaration at line 7399 *)
           opts : dword;
           header_vars : Dwg_Header_Variables;
           thumbnail : Dwg_Chain;
-          header_union : Dwg_Header_Union;
+          r2004_header : Dwg_R2004_Header;
           mspace_block : PDwg_Object;
           pspace_block : PDwg_Object;
           block_control : Dwg_Object_BLOCK_CONTROL;
@@ -10592,12 +10512,12 @@ in declaration at line 7399 *)
       //PDwg_Data = ^Dwg_Data;
 
       //PRESBUF_VALUE_TYPE = ^RESBUF_VALUE_TYPE;
-      RESBUF_VALUE_TYPE = (DWG_VT_INVALID = 0,DWG_VT_STRING = 1,
-        DWG_VT_POINT3D = 2,DWG_VT_REAL = 3,
-        DWG_VT_INT16 = 4,DWG_VT_INT32 = 5,
-        DWG_VT_INT8 = 6,DWG_VT_BINARY = 7,
-        DWG_VT_HANDLE = 8,DWG_VT_OBJECTID = 9,
-        DWG_VT_BOOL = 10,DWG_VT_INT64 = 11
+      RESBUF_VALUE_TYPE = (DWG_VT_INVALID := 0,DWG_VT_STRING := 1,
+        DWG_VT_POINT3D := 2,DWG_VT_REAL := 3,
+        DWG_VT_INT16 := 4,DWG_VT_INT32 := 5,
+        DWG_VT_INT8 := 6,DWG_VT_BINARY := 7,
+        DWG_VT_HANDLE := 8,DWG_VT_OBJECTID := 9,
+        DWG_VT_BOOL := 10,DWG_VT_INT64 := 11
         );
       Dwg_Resbuf_Value_Type = RESBUF_VALUE_TYPE;
       //PDwg_Resbuf_Value_Type = ^Dwg_Resbuf_Value_Type;

@@ -92,7 +92,6 @@ interface
     dxf_read_file : function(const filename:pchar;
                              dwg:PDwg_Data):integer;extdecl;
     dwg_free : procedure(dwg:PDwg_Data);extdecl;
-    dwg_get_entity_layer : function(entity:PDwg_Object_Entity):PDwg_Object_LAYER;extdecl;
 
   procedure FreeLibreDWG;
   procedure LoadLibreDWG(lib : pchar = LibreDWG_Lib; reloadlib : Boolean = False);
@@ -192,29 +191,23 @@ implementation
     i:BITCODE_BL;
     dod:TDWGObjectData;
     DWGContext:TDWGCtx;
-   begin
-     DWGContext.CreateRec(dwg);
-      if DWGObj2LPDict<>nil then begin
-        i:=0;
-        while (i<dwg.num_objects) do begin
-          try
-            if DWGObj2LPDict.GetValue(dwg.&object[i].fixedtype,dod) then begin
-              if (dod.LoadEntityProc<>nil) then
-                dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.entity^.tio.UNUSED)
-              else if (dod.LoadObjectProc<>nil) then
-                dod.LoadObjectProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.&object^.tio.DUMMY);
-            end;
-            if @lpp<>nil then
-              lpp(data,i);
-          except
-            on E: Exception do begin
-              // Skip corrupted objects to prevent crashes
-            end;
-          end;
-          inc(i);
+  begin
+    DWGContext.CreateRec(dwg);
+    if DWGObj2LPDict<>nil then begin
+      i:=0;
+      while (i<dwg.num_objects) do begin
+        if DWGObj2LPDict.GetValue(dwg.&object[i].fixedtype,dod) then begin
+          if dod.LoadEntityProc<>nil then
+            dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.entity^.tio.UNUSED)
+          else if dod.LoadObjectProc<>nil then
+            dod.LoadObjectProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.&object^.tio.DUMMY);
         end;
+        if @lpp<>nil then
+          lpp(data,i);
+        inc(i);
       end;
-   end;
+    end;
+  end;
 
   //work in fpc3.2.2
   //function GDWGParser.TDWGObjectsDataDict.GetMutableValue(key:DWG_OBJECT_TYPE; out PAValue:PTDWGObjectData):Boolean;
@@ -267,7 +260,6 @@ implementation
     dwg_read_file:=nil;
     dxf_read_file:=nil;
     dwg_free:=nil;
-    dwg_get_entity_layer:=nil;
   end;
 
   procedure LoadLibreDWG(lib : pchar = LibreDWG_Lib; reloadlib : Boolean = False);
@@ -279,7 +271,6 @@ implementation
       pointer(dwg_read_file):=GetProcAddress(hlib,'dwg_read_file');
       pointer(dxf_read_file):=GetProcAddress(hlib,'dxf_read_file');
       pointer(dwg_free):=GetProcAddress(hlib,'dwg_free');
-      pointer(dwg_get_entity_layer):=GetProcAddress(hlib,'dwg_get_entity_layer');
     end;
     if hlib=0 then
       raise Exception.Create(format(rsCouldNotLoadLib,[lib]));
