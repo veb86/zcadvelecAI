@@ -123,7 +123,10 @@ interface
 { #define BITCODE_DOUBLE double }
 { The FORMAT_* are for logging only  }
 
-    BITCODE_RC = ansichar;
+    { issue #1037: h2pas mapped `unsigned char` to ansichar; these BITCODE
+      types are used as integer byte values, not characters, so map them to
+      byte/shortint to allow numeric/boolean usage. }
+    BITCODE_RC = byte;
 { #if defined _MSC_VER && !defined __clang__ }
 { # define FORMAT_RC "0x%2x" }
 { # define SCANF_2X "%2hhX" }
@@ -135,20 +138,20 @@ interface
 { #define FORMAT_RCu "%u" }
 { #define FORMAT_RCx "0x%x" }
 
-    BITCODE_RCd = ansichar;
+    BITCODE_RCd = shortint;
 
-    BITCODE_RCu = ansichar;
+    BITCODE_RCu = byte;
 
-    BITCODE_RCx = ansichar;
+    BITCODE_RCx = byte;
 
-    BITCODE_B = ansichar;
+    BITCODE_B = byte;
 { #define FORMAT_B "%d" }
 
-    BITCODE_BB = ansichar;
+    BITCODE_BB = byte;
 { #define FORMAT_BB "%u" }
 { Since R24  }
 
-    BITCODE_3B = ansichar;
+    BITCODE_3B = byte;
 { #define FORMAT_3B "%u" }
 {#ifdef HAVE_STDINT_H }
 {#define BITCODE_BS uint16_t }
@@ -2418,6 +2421,7 @@ Used as \ref Dwg_Object_Ref
         unknown_r11 : BITCODE_2RD;
       end;
     Dwg_Entity_LINE = _dwg_entity_LINE;
+    PDwg_Entity_LINE = ^Dwg_Entity_LINE;
 {*
  * Macro for common DIMENSION declaration
  *
@@ -3608,6 +3612,7 @@ Used as \ref Dwg_Object_Ref
         block_offset_r11 : BITCODE_RL;
       end;
     Dwg_Object_BLOCK_HEADER = _dwg_object_BLOCK_HEADER;
+    PDwg_Object_BLOCK_HEADER = ^Dwg_Object_BLOCK_HEADER;
 {*
  LAYER_CONTROL (50) object, table header
   }
@@ -3668,6 +3673,7 @@ Used as \ref Dwg_Object_Ref
         visualstyle : BITCODE_H;
       end;
     Dwg_Object_LAYER = _dwg_object_LAYER;
+    PDwg_Object_LAYER = ^Dwg_Object_LAYER;
 {*
  STYLE_CONTROL (52) object, table header
   }
@@ -3793,6 +3799,7 @@ Used as \ref Dwg_Object_Ref
         unknown_r11 : BITCODE_RC;
       end;
     Dwg_Object_LTYPE = _dwg_object_LTYPE;
+    PDwg_Object_LTYPE = ^Dwg_Object_LTYPE;
 { 58 and 59 are UNKNOWN OBJECTS  }
 {*
  VIEW_CONTROL (60) object, table header
