@@ -32,6 +32,22 @@
         <Filename Value="inspector\fpdwg_libredwg_utils.pp"/>
         <UnitName Value="fpdwg_libredwg_utils"/>
       </Item>
+      <Item>
+        <Filename Value="inspector\model\fpdwg_model_base.pp"/>
+        <UnitName Value="fpdwg_model_base"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\model\fpdwg_model_unknown.pp"/>
+        <UnitName Value="fpdwg_model_unknown"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_registry.pp"/>
+        <UnitName Value="fpdwg_registry"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_document.pp"/>
+        <UnitName Value="fpdwg_document"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
