@@ -20,6 +20,18 @@
         <Filename Value="dwgproc.pp"/>
         <UnitName Value="dwgproc"/>
       </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_types.pp"/>
+        <UnitName Value="fpdwg_types"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_logger.pp"/>
+        <UnitName Value="fpdwg_logger"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_libredwg_utils.pp"/>
+        <UnitName Value="fpdwg_libredwg_utils"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
