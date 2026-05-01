@@ -43,7 +43,7 @@
       <Filename Value="fpdwg_tests"/>
     </Target>
     <SearchPaths>
-      <OtherUnitFiles Value="..;..\..;..\model"/>
+      <OtherUnitFiles Value="..;..\..;..\model;..\mappers"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
   </CompilerOptions>

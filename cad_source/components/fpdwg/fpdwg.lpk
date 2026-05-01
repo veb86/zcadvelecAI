@@ -37,12 +37,52 @@
         <UnitName Value="fpdwg_reader"/>
       </Item>
       <Item>
+        <Filename Value="inspector\fpdwg_filter.pp"/>
+        <UnitName Value="fpdwg_filter"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_factory.pp"/>
+        <UnitName Value="fpdwg_factory"/>
+      </Item>
+      <Item>
         <Filename Value="inspector\model\fpdwg_model_base.pp"/>
         <UnitName Value="fpdwg_model_base"/>
       </Item>
       <Item>
+        <Filename Value="inspector\model\fpdwg_model_tables.pp"/>
+        <UnitName Value="fpdwg_model_tables"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\model\fpdwg_model_blocks.pp"/>
+        <UnitName Value="fpdwg_model_blocks"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\model\fpdwg_model_entities.pp"/>
+        <UnitName Value="fpdwg_model_entities"/>
+      </Item>
+      <Item>
         <Filename Value="inspector\model\fpdwg_model_unknown.pp"/>
         <UnitName Value="fpdwg_model_unknown"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_unknown.pp"/>
+        <UnitName Value="fpdwg_map_unknown"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_layer.pp"/>
+        <UnitName Value="fpdwg_map_layer"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_linetype.pp"/>
+        <UnitName Value="fpdwg_map_linetype"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_block.pp"/>
+        <UnitName Value="fpdwg_map_block"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_line.pp"/>
+        <UnitName Value="fpdwg_map_line"/>
       </Item>
       <Item>
         <Filename Value="inspector\fpdwg_registry.pp"/>
