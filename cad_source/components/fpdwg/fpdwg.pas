@@ -9,8 +9,8 @@ interface
 
 uses
   dwg, dwgproc, fpdwg_types, fpdwg_logger, fpdwg_libredwg_utils,
-  fpdwg_model_base, fpdwg_model_unknown, fpdwg_registry, fpdwg_document,
-  LazarusPackageIntf;
+  fpdwg_reader, fpdwg_model_base, fpdwg_model_unknown, fpdwg_registry,
+  fpdwg_document, LazarusPackageIntf;
 
 implementation
 
