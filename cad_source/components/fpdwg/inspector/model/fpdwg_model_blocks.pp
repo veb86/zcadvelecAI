@@ -19,6 +19,11 @@ type
     LastEntityHandle: TDWGHandleRef;
     EndBlockEntityHandle: TDWGHandleRef;
     LayoutHandle: TDWGHandleRef;
+    BlockEntity: TDWGObject;
+    FirstEntity: TDWGObject;
+    LastEntity: TDWGObject;
+    EndBlockEntity: TDWGObject;
+    Layout: TDWGObject;
     constructor Create; override;
   end;
 
@@ -37,6 +42,11 @@ begin
   LastEntityHandle := TDWGHandleRef.Null;
   EndBlockEntityHandle := TDWGHandleRef.Null;
   LayoutHandle := TDWGHandleRef.Null;
+  BlockEntity := nil;
+  FirstEntity := nil;
+  LastEntity := nil;
+  EndBlockEntity := nil;
+  Layout := nil;
 end;
 
 end.

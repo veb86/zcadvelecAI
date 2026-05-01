@@ -92,6 +92,14 @@
         <Filename Value="inspector\fpdwg_document.pp"/>
         <UnitName Value="fpdwg_document"/>
       </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_resolver.pp"/>
+        <UnitName Value="fpdwg_resolver"/>
+      </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_validator.pp"/>
+        <UnitName Value="fpdwg_validator"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

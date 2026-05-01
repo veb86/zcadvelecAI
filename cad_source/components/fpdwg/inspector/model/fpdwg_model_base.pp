@@ -54,8 +54,12 @@ type
     LinetypeHandle: TDWGHandleRef;
     MaterialHandle: TDWGHandleRef;
     PlotStyleHandle: TDWGHandleRef;
+    PrevEntityHandle: TDWGHandleRef;
+    NextEntityHandle: TDWGHandleRef;
     Layer: TDWGObject;
     Linetype: TDWGObject;
+    PrevEntity: TDWGEntity;
+    NextEntity: TDWGEntity;
     ColorIndex: Integer;
     LineWeight: Integer;
     Visible: Boolean;
@@ -99,8 +103,12 @@ begin
   LinetypeHandle := TDWGHandleRef.Null;
   MaterialHandle := TDWGHandleRef.Null;
   PlotStyleHandle := TDWGHandleRef.Null;
+  PrevEntityHandle := TDWGHandleRef.Null;
+  NextEntityHandle := TDWGHandleRef.Null;
   Layer := nil;
   Linetype := nil;
+  PrevEntity := nil;
+  NextEntity := nil;
   ColorIndex := 0;
   LineWeight := 0;
   Visible := True;

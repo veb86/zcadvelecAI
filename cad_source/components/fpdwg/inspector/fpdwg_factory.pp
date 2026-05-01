@@ -147,6 +147,8 @@ begin
   Entity.LinetypeHandle := HandleRefFromBitCode(RawEntity^.ltype);
   Entity.MaterialHandle := HandleRefFromBitCode(RawEntity^.material);
   Entity.PlotStyleHandle := HandleRefFromBitCode(RawEntity^.plotstyle);
+  Entity.PrevEntityHandle := HandleRefFromBitCode(RawEntity^.prev_entity);
+  Entity.NextEntityHandle := HandleRefFromBitCode(RawEntity^.next_entity);
   Entity.ColorIndex := RawEntity^.color.index;
   Entity.LineWeight := RawEntity^.linewt;
   Entity.Visible := RawEntity^.invisible = 0;

@@ -8,7 +8,9 @@ uses
   fpdwg_test_factory,
   fpdwg_test_handles,
   fpdwg_test_reader,
-  fpdwg_test_registry;
+  fpdwg_test_registry,
+  fpdwg_test_resolver,
+  fpdwg_test_validator;
 
 var
   Application: TTestRunner;
