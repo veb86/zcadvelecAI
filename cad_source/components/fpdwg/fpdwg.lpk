@@ -100,6 +100,10 @@
         <Filename Value="inspector\fpdwg_validator.pp"/>
         <UnitName Value="fpdwg_validator"/>
       </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_reporter.pp"/>
+        <UnitName Value="fpdwg_reporter"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
