@@ -33,6 +33,10 @@
         <UnitName Value="fpdwg_libredwg_utils"/>
       </Item>
       <Item>
+        <Filename Value="inspector\fpdwg_reader.pp"/>
+        <UnitName Value="fpdwg_reader"/>
+      </Item>
+      <Item>
         <Filename Value="inspector\model\fpdwg_model_base.pp"/>
         <UnitName Value="fpdwg_model_base"/>
       </Item>

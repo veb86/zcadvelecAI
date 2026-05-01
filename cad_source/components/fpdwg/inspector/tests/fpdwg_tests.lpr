@@ -6,6 +6,7 @@ uses
   Classes,
   consoletestrunner,
   fpdwg_test_handles,
+  fpdwg_test_reader,
   fpdwg_test_registry;
 
 var
