@@ -13,7 +13,7 @@ uses
   fpdwg_model_tables, fpdwg_model_blocks, fpdwg_model_entities,
   fpdwg_model_unknown, fpdwg_map_unknown, fpdwg_map_layer,
   fpdwg_map_linetype, fpdwg_map_block, fpdwg_map_line, fpdwg_registry,
-  fpdwg_document, fpdwg_resolver, fpdwg_validator, fpdwg_reporter,
+  fpdwg_document, fpdwg_resolver, fpdwg_validator, fpdwg_reporter, fpdwg_cli,
   LazarusPackageIntf;
 
 implementation

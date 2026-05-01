@@ -5,6 +5,7 @@ program fpdwg_tests;
 uses
   Classes,
   consoletestrunner,
+  fpdwg_test_cli,
   fpdwg_test_factory,
   fpdwg_test_handles,
   fpdwg_test_reader,
