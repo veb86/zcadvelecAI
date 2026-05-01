@@ -5,7 +5,8 @@ program fpdwg_tests;
 uses
   Classes,
   consoletestrunner,
-  fpdwg_test_handles;
+  fpdwg_test_handles,
+  fpdwg_test_registry;
 
 var
   Application: TTestRunner;
