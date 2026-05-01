@@ -104,6 +104,10 @@
         <Filename Value="inspector\fpdwg_reporter.pp"/>
         <UnitName Value="fpdwg_reporter"/>
       </Item>
+      <Item>
+        <Filename Value="inspector\fpdwg_cli.pp"/>
+        <UnitName Value="fpdwg_cli"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
