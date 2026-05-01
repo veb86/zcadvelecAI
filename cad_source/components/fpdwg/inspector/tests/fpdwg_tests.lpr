@@ -12,6 +12,8 @@ uses
   fpdwg_test_reporter,
   fpdwg_test_registry,
   fpdwg_test_resolver,
+  fpdwg_test_smoke,
+  fpdwg_test_utils,
   fpdwg_test_validator;
 
 var

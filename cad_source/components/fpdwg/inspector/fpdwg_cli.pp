@@ -66,6 +66,9 @@ function ParseDWGInspectorArgs(
 function DWGInspectorHelpText: string;
 function RunDWGInspector(const Options: TDWGInspectorOptions;
   out OutputText: string; Logger: IDWGLogger = nil): Integer;
+function RunDWGInspectorWithApi(const Options: TDWGInspectorOptions;
+  out OutputText: string; Logger: IDWGLogger;
+  Api: IDWGLibreDWGApi): Integer;
 
 implementation
 
@@ -571,8 +574,9 @@ begin
   end;
 end;
 
-function RunDWGInspector(const Options: TDWGInspectorOptions;
-  out OutputText: string; Logger: IDWGLogger): Integer;
+function RunDWGInspectorWithApi(const Options: TDWGInspectorOptions;
+  out OutputText: string; Logger: IDWGLogger;
+  Api: IDWGLibreDWGApi): Integer;
 var
   LocalLogger: IDWGLogger;
   Reader: TDWGReader;
@@ -591,7 +595,7 @@ begin
   else
     LocalLogger := TDWGConsoleLogger.Create(Options.Verbose);
 
-  Reader := TDWGReader.Create(LocalLogger);
+  Reader := TDWGReader.Create(LocalLogger, Api);
   FillChar(Raw, SizeOf(Raw), 0);
   try
     try
@@ -660,6 +664,12 @@ begin
     Reader.Free;
     LocalLogger := nil;
   end;
+end;
+
+function RunDWGInspector(const Options: TDWGInspectorOptions;
+  out OutputText: string; Logger: IDWGLogger): Integer;
+begin
+  Result := RunDWGInspectorWithApi(Options, OutputText, Logger, nil);
 end;
 
 end.
