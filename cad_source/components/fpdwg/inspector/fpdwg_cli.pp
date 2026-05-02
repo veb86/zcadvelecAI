@@ -39,6 +39,8 @@ type
     Mode: TDWGLoadMode;
     ReportOptions: TDWGReportOptions;
     ReaderOptions: TDWGReaderOptions;
+    OutputFile: string;
+    OutputToStdout: Boolean;
     Verbose: Boolean;
     DumpUnknown: Boolean;
     EntityFilter: TDWGInspectorEntityFilter;
@@ -90,6 +92,8 @@ begin
   Result.Mode := lmTolerant;
   Result.ReportOptions := TDWGReportOptions.Default;
   Result.ReaderOptions := TDWGReaderOptions.Default;
+  Result.OutputFile := '';
+  Result.OutputToStdout := False;
   Result.Verbose := False;
   Result.DumpUnknown := False;
   Result.EntityFilter := iefAll;
@@ -244,6 +248,16 @@ begin
   end;
 end;
 
+function DefaultOutputFileName(const Options: TDWGInspectorOptions): string;
+begin
+  case Options.Format of
+    drfJSON:
+      Result := ChangeFileExt(Options.InputFile, '.json');
+  else
+    Result := ChangeFileExt(Options.InputFile, '.txt');
+  end;
+end;
+
 function ParseMode(const Value: string; var Options: TDWGInspectorOptions;
   out ErrorMessage: string): Boolean;
 begin
@@ -369,6 +383,18 @@ begin
           Format('Invalid resolve depth "%s"', [Value])));
       Options.ResolveDepth := ParsedDepth;
     end
+    else if ConsumeValue(Args, I, Arg, '--output', Value, ErrorMessage) or
+            ConsumeValue(Args, I, Arg, '-o', Value, ErrorMessage) then
+    begin
+      if ErrorMessage <> '' then
+        Exit(TDWGInspectorParseResult.Failure(DWG_INSPECT_EXIT_USAGE,
+          ErrorMessage));
+      Options.OutputToStdout := Value = '-';
+      if Options.OutputToStdout then
+        Options.OutputFile := ''
+      else
+        Options.OutputFile := Value;
+    end
     else if Arg = '--summary' then
     begin
       EnsureExplicitReportSelection(Options, SelectionExplicit);
@@ -437,6 +463,9 @@ begin
     Exit(TDWGInspectorParseResult.Failure(DWG_INSPECT_EXIT_USAGE,
       'Input DWG file is required'));
 
+  if (not Options.OutputToStdout) and (Options.OutputFile = '') then
+    Options.OutputFile := DefaultOutputFileName(Options);
+
   Result := TDWGInspectorParseResult.Ok(Options);
 end;
 
@@ -447,6 +476,7 @@ begin
     LineEnding +
     'Output:' + LineEnding +
     '  --format=text|json       Report format, default text' + LineEnding +
+    '  --output=<path>|-        Write report file, or stdout with "-"' + LineEnding +
     '  --summary                Include summary/statistics' + LineEnding +
     '  --layers                 Include layer list' + LineEnding +
     '  --linetypes              Include linetype list' + LineEnding +
@@ -464,6 +494,31 @@ begin
     '  --resolve-depth=<n>      Accepted for script compatibility' + LineEnding +
     '  --verbose                Print info logs to stderr' + LineEnding +
     '  --help                   Show help' + LineEnding;
+end;
+
+procedure SaveInspectorOutput(const Options: TDWGInspectorOptions;
+  const OutputText: string);
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+  OutputDir: string;
+begin
+  if Options.OutputToStdout then
+    Exit;
+  if Options.OutputFile = '' then
+    raise EDWGReporterError.Create('Output file path is empty');
+
+  OutputDir := ExtractFileDir(ExpandFileName(Options.OutputFile));
+  if OutputDir <> '' then
+    ForceDirectories(OutputDir);
+  Bytes := TEncoding.UTF8.GetBytes(OutputText);
+  Stream := TFileStream.Create(Options.OutputFile, fmCreate);
+  try
+    if Length(Bytes) > 0 then
+      Stream.WriteBuffer(Bytes[0], Length(Bytes));
+  finally
+    Stream.Free;
+  end;
 end;
 
 function CreateFilter(const Options: TDWGInspectorOptions): TFilterStrategy;
@@ -578,6 +633,7 @@ function RunDWGInspectorWithApi(const Options: TDWGInspectorOptions;
   out OutputText: string; Logger: IDWGLogger;
   Api: IDWGLibreDWGApi): Integer;
 var
+  EffectiveOptions: TDWGInspectorOptions;
   LocalLogger: IDWGLogger;
   Reader: TDWGReader;
   Raw: Dwg_Data;
@@ -590,17 +646,23 @@ var
   Reporter: TDWGBaseReporter;
 begin
   OutputText := '';
+  EffectiveOptions := Options;
+  if (not EffectiveOptions.OutputToStdout) and
+     (EffectiveOptions.OutputFile = '') and
+     (EffectiveOptions.InputFile <> '') then
+    EffectiveOptions.OutputFile := DefaultOutputFileName(EffectiveOptions);
+
   if Logger <> nil then
     LocalLogger := Logger
   else
-    LocalLogger := TDWGConsoleLogger.Create(Options.Verbose);
+    LocalLogger := TDWGConsoleLogger.Create(EffectiveOptions.Verbose);
 
   Reader := TDWGReader.Create(LocalLogger, Api);
   FillChar(Raw, SizeOf(Raw), 0);
   try
     try
-      ReadResult := Reader.ReadFile(Options.InputFile, Raw,
-        Options.ReaderOptions);
+      ReadResult := Reader.ReadFile(EffectiveOptions.InputFile, Raw,
+        EffectiveOptions.ReaderOptions);
       if not ReadResult.Success then
         Exit(ReadFailureExitCode(ReadResult));
 
@@ -608,8 +670,9 @@ begin
       Document := nil;
       Validation := nil;
       try
-        Filter := CreateFilter(Options);
-        Document := BuildDocumentFromRaw(Raw, Options, LocalLogger, Filter);
+        Filter := CreateFilter(EffectiveOptions);
+        Document := BuildDocumentFromRaw(Raw, EffectiveOptions, LocalLogger,
+          Filter);
 
         Resolver := TDWGResolver.Create(Document.Registry, LocalLogger);
         try
@@ -625,18 +688,22 @@ begin
           Validator.Free;
         end;
 
-        Reporter := CreateReporter(Document, Validation, Options);
+        Reporter := CreateReporter(Document, Validation, EffectiveOptions);
         try
-          if Options.HasObjectDetailHandle then
+          if EffectiveOptions.HasObjectDetailHandle then
             OutputText := Reporter.RenderObjectDetail(
-              Options.ObjectDetailHandle)
+              EffectiveOptions.ObjectDetailHandle)
           else
             OutputText := Reporter.Render;
+          SaveInspectorOutput(EffectiveOptions, OutputText);
+          if not EffectiveOptions.OutputToStdout then
+            OutputText := '';
         finally
           Reporter.Free;
         end;
 
-        if (Options.Mode = lmStrict) and ValidationHasIssues(Validation) then
+        if (EffectiveOptions.Mode = lmStrict) and
+           ValidationHasIssues(Validation) then
           Result := DWG_INSPECT_EXIT_STRICT_VALIDATION
         else
           Result := DWG_INSPECT_EXIT_SUCCESS;

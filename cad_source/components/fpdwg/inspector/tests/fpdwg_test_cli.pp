@@ -15,6 +15,8 @@ type
     procedure HelpDoesNotRequireInputFile;
     procedure DefaultsUseTextTolerantAndAllReportSections;
     procedure ParsesFormatModeLibraryAndLineFilter;
+    procedure FormatSelectsDefaultOutputFileExtension;
+    procedure OutputDashKeepsReportOnStdout;
     procedure SectionFlagsSwitchToExplicitSelection;
     procedure ShowOptionParsesHexHandle;
     procedure InvalidFormatFailsWithUsageExitCode;
@@ -52,6 +54,8 @@ begin
   AssertEquals(Ord(icRun), Ord(ResultInfo.Command));
   AssertEquals('sample.dwg', ResultInfo.Options.InputFile);
   AssertEquals(Ord(drfText), Ord(ResultInfo.Options.Format));
+  AssertEquals('sample.txt', ResultInfo.Options.OutputFile);
+  AssertFalse(ResultInfo.Options.OutputToStdout);
   AssertEquals(Ord(lmTolerant), Ord(ResultInfo.Options.Mode));
   AssertEquals(Ord(iefAll), Ord(ResultInfo.Options.EntityFilter));
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeSummary);
@@ -86,6 +90,33 @@ begin
   AssertEquals(Ord(iefLine), Ord(ResultInfo.Options.EntityFilter));
   AssertTrue(ResultInfo.Options.DumpUnknown);
   AssertTrue(ResultInfo.Options.Verbose);
+end;
+
+procedure TFPDWGCLITest.FormatSelectsDefaultOutputFileExtension;
+var
+  ResultInfo: TDWGInspectorParseResult;
+begin
+  ResultInfo := ParseDWGInspectorArgs(['sample.dwg', '--format=json']);
+
+  AssertTrue(ResultInfo.Success);
+  AssertEquals(Ord(drfJSON), Ord(ResultInfo.Options.Format));
+  AssertEquals('sample.json', ResultInfo.Options.OutputFile);
+  AssertFalse(ResultInfo.Options.OutputToStdout);
+end;
+
+procedure TFPDWGCLITest.OutputDashKeepsReportOnStdout;
+var
+  ResultInfo: TDWGInspectorParseResult;
+begin
+  ResultInfo := ParseDWGInspectorArgs([
+    'sample.dwg',
+    '--format=json',
+    '--output=-'
+  ]);
+
+  AssertTrue(ResultInfo.Success);
+  AssertTrue(ResultInfo.Options.OutputToStdout);
+  AssertEquals('', ResultInfo.Options.OutputFile);
 end;
 
 procedure TFPDWGCLITest.SectionFlagsSwitchToExplicitSelection;
