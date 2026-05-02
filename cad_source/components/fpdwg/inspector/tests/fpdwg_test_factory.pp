@@ -17,6 +17,7 @@ type
     procedure LinetypeMapperCopiesDescriptionAndPattern;
     procedure BlockHeaderMapperCopiesNamesAndEntityReferences;
     procedure LineMapperCopiesGeometryAndCommonEntityHandles;
+    procedure CircleMapperCopiesGeometryAndCommonEntityHandles;
     procedure FilterByDomainTypeMaterializesAllowedTypesAndStubsOthers;
     procedure UnknownFallbackCopiesDiagnosticsRawBytesAndWarning;
   end;
@@ -78,7 +79,8 @@ begin
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LTYPE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_BLOCK_HEADER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LINE, Mapper));
-    AssertEquals(4, Factory.MapperCount);
+    AssertTrue(Factory.TryGetMapper(DWG_TYPE_CIRCLE, Mapper));
+    AssertEquals(5, Factory.MapperCount);
   finally
     Factory.Free;
   end;
@@ -298,6 +300,71 @@ begin
   end;
 end;
 
+procedure TFPDWGFactoryTest.CircleMapperCopiesGeometryAndCommonEntityHandles;
+var
+  Factory: TDWGObjectFactory;
+  Raw: Dwg_Object;
+  RawEntity: Dwg_Object_Entity;
+  RawCircle: Dwg_Entity_CIRCLE;
+  OwnerRef, LayerRef, LTypeRef: Dwg_Object_Ref;
+  Obj: TDWGObject;
+  Circle: TDWGCircle;
+begin
+  Factory := TDWGObjectFactory.CreateDefault;
+  try
+    InitRawObject(Raw, DWG_TYPE_CIRCLE, DWG_SUPERTYPE_ENTITY, $45);
+    FillChar(RawEntity, SizeOf(RawEntity), 0);
+    FillChar(RawCircle, SizeOf(RawCircle), 0);
+    InitAbsoluteRef(OwnerRef, $46);
+    InitAbsoluteRef(LayerRef, $47);
+    InitFallbackRef(LTypeRef, $48);
+
+    Raw.tio.entity := @RawEntity;
+    RawEntity.tio.CIRCLE := @RawCircle;
+    RawEntity.ownerhandle := @OwnerRef;
+    RawEntity.layer := @LayerRef;
+    RawEntity.ltype := @LTypeRef;
+    RawEntity.color.index := 3;
+    RawEntity.linewt := 20;
+    RawEntity.invisible := 1;
+    RawCircle.center.x := 10.0;
+    RawCircle.center.y := 20.0;
+    RawCircle.center.z := 30.0;
+    RawCircle.radius := 7.5;
+    RawCircle.thickness := 2.25;
+    RawCircle.extrusion.x := 0.0;
+    RawCircle.extrusion.y := 0.0;
+    RawCircle.extrusion.z := -1.0;
+
+    Obj := Factory.CreateObject(Raw, TestContext);
+    try
+      AssertTrue(Obj is TDWGCircle);
+      Circle := TDWGCircle(Obj);
+      AssertEquals(Int64($46), Int64(Circle.OwnerHandle.Value));
+      AssertEquals(Int64($47), Int64(Circle.LayerHandle.Value));
+      AssertEquals(Int64($48), Int64(Circle.LinetypeHandle.Value));
+      AssertEquals(Ord(hsHandleref), Ord(Circle.LinetypeHandle.Source));
+      AssertEquals(3, Circle.ColorIndex);
+      AssertEquals(20, Circle.LineWeight);
+      AssertFalse(Circle.Visible);
+      AssertEquals(10.0, Circle.Center.X, 0.000001);
+      AssertEquals(20.0, Circle.Center.Y, 0.000001);
+      AssertEquals(30.0, Circle.Center.Z, 0.000001);
+      AssertEquals(7.5, Circle.Radius, 0.000001);
+      AssertEquals(15.0, Circle.Diameter, 0.000001);
+      AssertEquals(2.25, Circle.Thickness, 0.000001);
+      AssertEquals(-1.0, Circle.Extrusion.Z, 0.000001);
+      AssertTrue(Circle.Layer = nil);
+      AssertTrue(Circle.Linetype = nil);
+      AssertEquals(Ord(osRaw), Ord(Circle.Status));
+    finally
+      Obj.Free;
+    end;
+  finally
+    Factory.Free;
+  end;
+end;
+
 procedure TFPDWGFactoryTest.FilterByDomainTypeMaterializesAllowedTypesAndStubsOthers;
 var
   Factory: TDWGObjectFactory;
@@ -364,7 +431,7 @@ begin
   Logger := MemoryLogger;
   Factory := TDWGObjectFactory.CreateDefault;
   try
-    InitRawObject(Raw, DWG_TYPE_CIRCLE, DWG_SUPERTYPE_ENTITY, $60);
+    InitRawObject(Raw, DWG_TYPE_ARC, DWG_SUPERTYPE_ENTITY, $60);
     Raw.size := 42;
     Raw.bitsize := 104;
     Raw.num_unknown_bits := 16;
