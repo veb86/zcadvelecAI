@@ -76,6 +76,7 @@ implementation
 
 uses
   fpdwg_map_block,
+  fpdwg_map_circle,
   fpdwg_map_layer,
   fpdwg_map_line,
   fpdwg_map_linetype,
@@ -174,6 +175,7 @@ begin
   Result.RegisterMapper(DWG_TYPE_LTYPE, TDWGLinetypeMapper.Create);
   Result.RegisterMapper(DWG_TYPE_BLOCK_HEADER, TDWGBlockHeaderMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LINE, TDWGLineMapper.Create);
+  Result.RegisterMapper(DWG_TYPE_CIRCLE, TDWGCircleMapper.Create);
 end;
 
 function TDWGObjectFactory.FindMapperIndex(DWGType: DWG_OBJECT_TYPE): Integer;

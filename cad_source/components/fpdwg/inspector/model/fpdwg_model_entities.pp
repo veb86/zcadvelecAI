@@ -20,6 +20,16 @@ type
     function LengthXY: Double;
   end;
 
+  TDWGCircle = class(TDWGEntity)
+  public
+    Center: TDWGPoint3D;
+    Radius: Double;
+    Thickness: Double;
+    Extrusion: TDWGPoint3D;
+    constructor Create; override;
+    function Diameter: Double;
+  end;
+
 implementation
 
 constructor TDWGLine.Create;
@@ -45,6 +55,25 @@ function TDWGLine.LengthXY: Double;
 begin
   Result := Sqrt(Sqr(EndPoint.X - StartPoint.X) +
                  Sqr(EndPoint.Y - StartPoint.Y));
+end;
+
+constructor TDWGCircle.Create;
+begin
+  inherited Create;
+  DomainType := dotCircle;
+  Center.X := 0.0;
+  Center.Y := 0.0;
+  Center.Z := 0.0;
+  Radius := 0.0;
+  Thickness := 0.0;
+  Extrusion.X := 0.0;
+  Extrusion.Y := 0.0;
+  Extrusion.Z := 1.0;
+end;
+
+function TDWGCircle.Diameter: Double;
+begin
+  Result := Radius * 2.0;
 end;
 
 end.
