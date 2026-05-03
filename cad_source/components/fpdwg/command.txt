@@ -1,0 +1,7 @@
+fpdwginspect 1.dwg --lib=libredwg-0.dll --lines --format=text
+fpdwginspect 1.dwg --lib=libredwg-0.dll --unknown
+fpdwginspect 1.dwg --lib=libredwg-0.dll --summary
+fpdwginspect 1.dwg --lib=libredwg-0.dll --objects
+fpdwginspect.exe
+fpdwginspect 1.dwg --lib=libredwg-0.dll --layers --format=text
+fpdwginspect 1.dwg --lib=libredwg-0.dll --layers
