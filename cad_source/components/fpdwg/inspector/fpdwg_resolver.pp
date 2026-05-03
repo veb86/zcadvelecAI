@@ -121,6 +121,7 @@ var
   RequiredBroken, OptionalBroken: Integer;
   Layer: TDWGLayer;
   Entity: TDWGEntity;
+  Text: TDWGText;
   BlockHeader: TDWGBlockHeader;
 begin
   if Obj = nil then
@@ -189,6 +190,20 @@ begin
       if ResolveHandleRef(Obj, Entity.NextEntityHandle, 'next_entity',
         TDWGEntity, False, Target) then
         Entity.NextEntity := TDWGEntity(Target)
+      else
+        Inc(OptionalBroken);
+    end;
+  end;
+
+  if Obj is TDWGText then
+  begin
+    Text := TDWGText(Obj);
+    Text.Style := nil;
+    if not Text.StyleHandle.IsNull then
+    begin
+      if ResolveHandleRef(Obj, Text.StyleHandle, 'style', nil, False,
+        Target) then
+        Text.Style := Target
       else
         Inc(OptionalBroken);
     end;

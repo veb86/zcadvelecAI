@@ -15,6 +15,7 @@ type
     procedure ResolvesOwnerLayerAndLinetypeReferences;
     procedure BrokenRequiredReferencesMarkObjectBrokenAndWarn;
     procedure ResolvesEntityPrevNextReferences;
+    procedure ResolvesTextStyleReference;
   end;
 
 implementation
@@ -73,6 +74,17 @@ begin
   Result.LinetypeHandle := Ref(ALinetypeHandle);
 end;
 
+function NewText(AHandle, AOwnerHandle, ALayerHandle, ALinetypeHandle,
+  AStyleHandle: TDWGHandle): TDWGText;
+begin
+  Result := TDWGText.Create;
+  Result.Handle := AHandle;
+  Result.OwnerHandle := Ref(AOwnerHandle);
+  Result.LayerHandle := Ref(ALayerHandle);
+  Result.LinetypeHandle := Ref(ALinetypeHandle);
+  Result.StyleHandle := Ref(AStyleHandle);
+end;
+
 procedure TFPDWGResolverTest.ResolvesOwnerLayerAndLinetypeReferences;
 var
   Doc: TDWGDocument;
@@ -121,6 +133,51 @@ begin
     AssertTrue(Line.Layer = Layer);
     AssertTrue(Line.Linetype = Linetype);
     AssertEquals(Ord(osResolved), Ord(Line.Status));
+  finally
+    Doc.Free;
+  end;
+end;
+
+procedure TFPDWGResolverTest.ResolvesTextStyleReference;
+var
+  Doc: TDWGDocument;
+  Resolver: TDWGResolver;
+  Linetype: TDWGLinetype;
+  Layer: TDWGLayer;
+  BlockHeader: TDWGBlockHeader;
+  Style: TDWGObject;
+  Text: TDWGText;
+begin
+  Doc := TDWGDocument.Create(lmTolerant, nil);
+  try
+    Doc.RegisterSyntheticTables;
+    Linetype := NewLinetype($20, 'Continuous');
+    Layer := NewLayer($10, $20, 'Walls');
+    BlockHeader := NewBlockHeader($30, '*Model_Space');
+    Style := TDWGObject.Create;
+    Style.Handle := $50;
+    Style.DomainType := dotStyle;
+    Style.Status := osResolved;
+    Text := NewText($49, $30, $10, $20, $50);
+
+    Doc.AddObject(Linetype);
+    Doc.AddObject(Layer);
+    Doc.AddObject(BlockHeader);
+    Doc.AddObject(Style);
+    Doc.AddObject(Text);
+
+    Resolver := TDWGResolver.Create(Doc.Registry, nil);
+    try
+      Resolver.ResolveAll;
+    finally
+      Resolver.Free;
+    end;
+
+    AssertTrue(Text.Owner = BlockHeader);
+    AssertTrue(Text.Layer = Layer);
+    AssertTrue(Text.Linetype = Linetype);
+    AssertTrue(Text.Style = Style);
+    AssertEquals(Ord(osResolved), Ord(Text.Status));
   finally
     Doc.Free;
   end;
