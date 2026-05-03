@@ -226,11 +226,14 @@ var
   Api: IDWGLibreDWGApi;
   FakeApi: TFPDWGSmokeLibreDWGApi;
   FileName: string;
+  OutputFileName: string;
   Options: TDWGInspectorOptions;
   OutputText: string;
+  ReportText: string;
   ExitCode: Integer;
 begin
   FileName := CreateTempDWGFixture('AC1015');
+  OutputFileName := ChangeFileExt(FileName, '.txt');
   FakeApi := TFPDWGSmokeLibreDWGApi.Create('AC1015');
   Api := FakeApi;
   try
@@ -244,14 +247,24 @@ begin
     AssertEquals(1, FakeApi.LoadCount);
     AssertEquals(1, FakeApi.ReadCount);
     AssertEquals(1, FakeApi.FreeCount);
-    AssertTrue(Pos('DWG version: R_2000', OutputText) > 0);
-    AssertTrue(Pos('Layers: 1', OutputText) > 0);
-    AssertTrue(Pos('LINE handle=40', OutputText) > 0);
-    AssertTrue(Pos('length_3d=13.000', OutputText) > 0);
-    AssertTrue(Pos('length_xy=5.000', OutputText) > 0);
-    AssertTrue(Pos('Warnings: 0', OutputText) > 0);
+    AssertEquals('', OutputText);
+    AssertTrue(FileExists(OutputFileName));
+    with TStringList.Create do
+    try
+      LoadFromFile(OutputFileName);
+      ReportText := Text;
+    finally
+      Free;
+    end;
+    AssertTrue(Pos('DWG version: R_2000', ReportText) > 0);
+    AssertTrue(Pos('Layers: 1', ReportText) > 0);
+    AssertTrue(Pos('LINE handle=40', ReportText) > 0);
+    AssertTrue(Pos('length_3d=13.000', ReportText) > 0);
+    AssertTrue(Pos('length_xy=5.000', ReportText) > 0);
+    AssertTrue(Pos('Warnings: 0', ReportText) > 0);
   finally
     Api := nil;
+    DeleteFile(OutputFileName);
     DeleteFile(FileName);
   end;
 end;
@@ -261,11 +274,14 @@ var
   Api: IDWGLibreDWGApi;
   FakeApi: TFPDWGSmokeLibreDWGApi;
   FileName: string;
+  OutputFileName: string;
   Options: TDWGInspectorOptions;
   OutputText: string;
+  ReportText: string;
   ExitCode: Integer;
 begin
   FileName := CreateTempDWGFixture('AC1021');
+  OutputFileName := ChangeFileExt(FileName, '.json');
   FakeApi := TFPDWGSmokeLibreDWGApi.Create('AC1021');
   Api := FakeApi;
   try
@@ -279,14 +295,24 @@ begin
     AssertEquals(1, FakeApi.LoadCount);
     AssertEquals(1, FakeApi.ReadCount);
     AssertEquals(1, FakeApi.FreeCount);
-    AssertTrue(Pos('"version": "R_2007"', OutputText) > 0);
-    AssertTrue(Pos('"layers": 1', OutputText) > 0);
-    AssertTrue(Pos('"handle": "40"', OutputText) > 0);
-    AssertTrue(Pos('"length_3d": 13', OutputText) > 0);
-    AssertTrue(Pos('"length_xy": 5', OutputText) > 0);
-    AssertTrue(Pos('"warnings": [', OutputText) > 0);
+    AssertEquals('', OutputText);
+    AssertTrue(FileExists(OutputFileName));
+    with TStringList.Create do
+    try
+      LoadFromFile(OutputFileName);
+      ReportText := Text;
+    finally
+      Free;
+    end;
+    AssertTrue(Pos('"version": "R_2007"', ReportText) > 0);
+    AssertTrue(Pos('"layers": 1', ReportText) > 0);
+    AssertTrue(Pos('"handle": "40"', ReportText) > 0);
+    AssertTrue(Pos('"length_3d": 13', ReportText) > 0);
+    AssertTrue(Pos('"length_xy": 5', ReportText) > 0);
+    AssertTrue(Pos('"warnings": [', ReportText) > 0);
   finally
     Api := nil;
+    DeleteFile(OutputFileName);
     DeleteFile(FileName);
   end;
 end;
