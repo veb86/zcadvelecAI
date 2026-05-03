@@ -78,6 +78,7 @@ uses
   fpdwg_map_block,
   fpdwg_map_circle,
   fpdwg_map_layer,
+  fpdwg_map_layer_control,
   fpdwg_map_line,
   fpdwg_map_linetype,
   fpdwg_map_text,
@@ -172,6 +173,7 @@ end;
 class function TDWGObjectFactory.CreateDefault: TDWGObjectFactory;
 begin
   Result := TDWGObjectFactory.Create;
+  Result.RegisterMapper(DWG_TYPE_LAYER_CONTROL, TDWGLayerControlMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LAYER, TDWGLayerMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LTYPE, TDWGLinetypeMapper.Create);
   Result.RegisterMapper(DWG_TYPE_BLOCK_HEADER, TDWGBlockHeaderMapper.Create);

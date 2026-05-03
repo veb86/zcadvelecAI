@@ -10,6 +10,13 @@ uses
   fpdwg_model_base;
 
 type
+  TDWGTableControl = class(TDWGObject)
+  public
+    TableKind: string;
+    EntryHandles: array of TDWGHandleRef;
+    constructor Create; override;
+  end;
+
   TDWGLinetype = class(TDWGTableRecord)
   public
     LinetypeName: string;
@@ -32,6 +39,14 @@ type
   end;
 
 implementation
+
+constructor TDWGTableControl.Create;
+begin
+  inherited Create;
+  DomainType := dotSyntheticTable;
+  TableKind := '';
+  SetLength(EntryHandles, 0);
+end;
 
 constructor TDWGLinetype.Create;
 begin
