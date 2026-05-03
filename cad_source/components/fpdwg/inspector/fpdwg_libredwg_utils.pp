@@ -18,6 +18,8 @@ function DWGVersionFromLibre(Version: DWG_VERSION_TYPE): TDWGVersion; overload;
 function DWGVersionFromLibre(Version, FromVersion: DWG_VERSION_TYPE): TDWGVersion; overload;
 function SafeDecodeText(P: PAnsiChar; Codepage: Integer;
   Logger: IDWGLogger): string;
+function SafeDecodeLibreDWGText(P: PAnsiChar; Codepage: Integer;
+  Logger: IDWGLogger): string;
 
 implementation
 
@@ -109,6 +111,21 @@ begin
 
   L := StrLen(P);
   SetString(Result, P, SizeInt(L));
+end;
+
+function LooksLikeUTF16LE(P: PAnsiChar): Boolean;
+begin
+  Result := (P <> nil) and (P[0] <> #0) and (P[1] = #0);
+end;
+
+function UTF16LELength(P: PAnsiChar): Integer;
+begin
+  Result := 0;
+  if P = nil then
+    Exit;
+
+  while (P[Result * 2] <> #0) or (P[Result * 2 + 1] <> #0) do
+    Inc(Result);
 end;
 
 function RawBytesToHex(const Raw: RawByteString): string;
@@ -266,6 +283,28 @@ begin
   end;
 end;
 
+function UTF16LEBytesToUTF8(P: PAnsiChar; CharCount: Integer;
+  out Text: string): Boolean;
+var
+  I: Integer;
+  CodePoint: Cardinal;
+begin
+  Result := False;
+  Text := '';
+  if (P = nil) or (CharCount < 0) then
+    Exit;
+
+  for I := 0 to CharCount - 1 do
+  begin
+    CodePoint := Ord(P[I * 2]) or (Ord(P[I * 2 + 1]) shl 8);
+    if CodePoint = 0 then
+      Exit;
+    AppendUTF8CodePoint(Text, CodePoint);
+  end;
+
+  Result := True;
+end;
+
 function CP1251ByteToCodePoint(B: Byte): Cardinal;
 begin
   if B < $80 then
@@ -319,6 +358,24 @@ begin
     Result := string(Raw)
   else
     Result := HexFallback(Raw, Codepage, Logger);
+end;
+
+function SafeDecodeLibreDWGText(P: PAnsiChar; Codepage: Integer;
+  Logger: IDWGLogger): string;
+var
+  CharCount: Integer;
+begin
+  if P = nil then
+    Exit('');
+
+  if LooksLikeUTF16LE(P) then
+  begin
+    CharCount := UTF16LELength(P);
+    if UTF16LEBytesToUTF8(P, CharCount, Result) then
+      Exit;
+  end;
+
+  Result := SafeDecodeText(P, Codepage, Logger);
 end;
 
 end.

@@ -16,6 +16,7 @@ type
     procedure SafeDecodeTextKeepsValidUTF8;
     procedure SafeDecodeTextConvertsCP1251ToUTF8;
     procedure SafeDecodeTextFallsBackToHexAndWarns;
+    procedure SafeDecodeLibreDWGTextKeepsFullUTF16LEText;
     procedure VersionConversionFallsBackToFromVersion;
   end;
 
@@ -69,6 +70,16 @@ begin
   finally
     Logger := nil;
   end;
+end;
+
+procedure TFPDWGUtilsTest.SafeDecodeLibreDWGTextKeepsFullUTF16LEText;
+var
+  Raw: AnsiString;
+begin
+  Raw := 'Z'#0'C'#0'A'#0'D'#0'Z'#0'C'#0'A'#0'D'#0#0#0;
+
+  AssertEquals('ZCADZCAD', SafeDecodeLibreDWGText(PAnsiChar(Raw), 65001,
+    nil));
 end;
 
 procedure TFPDWGUtilsTest.VersionConversionFallsBackToFromVersion;
