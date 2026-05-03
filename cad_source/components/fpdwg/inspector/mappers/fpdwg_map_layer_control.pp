@@ -36,7 +36,7 @@ procedure TDWGLayerControlMapper.FillObject(Obj: TDWGObject;
   const Raw: Dwg_Object; const Ctx: TDWGBuilderContext);
 var
   LayerControl: TDWGTableControl;
-  RawLayerControl: PDwg_Object_LAYER_CONTROL;
+  RawLayerControl: ^Dwg_Object_LAYER_CONTROL;
   I: Integer;
 begin
   if not (Obj is TDWGTableControl) then
