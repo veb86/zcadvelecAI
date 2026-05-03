@@ -18,6 +18,7 @@ type
     procedure BlockHeaderMapperCopiesNamesAndEntityReferences;
     procedure LineMapperCopiesGeometryAndCommonEntityHandles;
     procedure CircleMapperCopiesGeometryAndCommonEntityHandles;
+    procedure TextMapperCopiesTextGeometryAndCommonEntityHandles;
     procedure FilterByDomainTypeMaterializesAllowedTypesAndStubsOthers;
     procedure UnknownFallbackCopiesDiagnosticsRawBytesAndWarning;
   end;
@@ -80,7 +81,8 @@ begin
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_BLOCK_HEADER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LINE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_CIRCLE, Mapper));
-    AssertEquals(5, Factory.MapperCount);
+    AssertTrue(Factory.TryGetMapper(DWG_TYPE_TEXT, Mapper));
+    AssertEquals(6, Factory.MapperCount);
   finally
     Factory.Free;
   end;
@@ -357,6 +359,94 @@ begin
       AssertTrue(Circle.Layer = nil);
       AssertTrue(Circle.Linetype = nil);
       AssertEquals(Ord(osRaw), Ord(Circle.Status));
+    finally
+      Obj.Free;
+    end;
+  finally
+    Factory.Free;
+  end;
+end;
+
+procedure TFPDWGFactoryTest.TextMapperCopiesTextGeometryAndCommonEntityHandles;
+var
+  Factory: TDWGObjectFactory;
+  Raw: Dwg_Object;
+  RawEntity: Dwg_Object_Entity;
+  RawText: Dwg_Entity_TEXT;
+  OwnerRef, LayerRef, LTypeRef, StyleRef: Dwg_Object_Ref;
+  TextValue: AnsiString;
+  Obj: TDWGObject;
+  Text: TDWGText;
+begin
+  Factory := TDWGObjectFactory.CreateDefault;
+  try
+    InitRawObject(Raw, DWG_TYPE_TEXT, DWG_SUPERTYPE_ENTITY, $49);
+    FillChar(RawEntity, SizeOf(RawEntity), 0);
+    FillChar(RawText, SizeOf(RawText), 0);
+    InitAbsoluteRef(OwnerRef, $4A);
+    InitAbsoluteRef(LayerRef, $4B);
+    InitFallbackRef(LTypeRef, $4C);
+    InitAbsoluteRef(StyleRef, $4D);
+    TextValue := 'Panel A1';
+
+    Raw.tio.entity := @RawEntity;
+    RawEntity.tio.TEXT := @RawText;
+    RawEntity.ownerhandle := @OwnerRef;
+    RawEntity.layer := @LayerRef;
+    RawEntity.ltype := @LTypeRef;
+    RawEntity.color.index := 2;
+    RawEntity.linewt := 15;
+    RawEntity.invisible := 0;
+    RawText.elevation := 9.0;
+    RawText.ins_pt.x := 1.0;
+    RawText.ins_pt.y := 2.0;
+    RawText.alignment_pt.x := 3.0;
+    RawText.alignment_pt.y := 4.0;
+    RawText.extrusion.x := 0.0;
+    RawText.extrusion.y := 0.0;
+    RawText.extrusion.z := 1.0;
+    RawText.thickness := 0.25;
+    RawText.oblique_angle := 0.5;
+    RawText.rotation := 1.25;
+    RawText.height := 2.5;
+    RawText.width_factor := 0.85;
+    RawText.text_value := PAnsiChar(TextValue);
+    RawText.generation := 2;
+    RawText.horiz_alignment := 1;
+    RawText.vert_alignment := 3;
+    RawText.style := @StyleRef;
+
+    Obj := Factory.CreateObject(Raw, TestContext);
+    try
+      AssertTrue(Obj is TDWGText);
+      Text := TDWGText(Obj);
+      AssertEquals(Int64($4A), Int64(Text.OwnerHandle.Value));
+      AssertEquals(Int64($4B), Int64(Text.LayerHandle.Value));
+      AssertEquals(Int64($4C), Int64(Text.LinetypeHandle.Value));
+      AssertEquals(Ord(hsHandleref), Ord(Text.LinetypeHandle.Source));
+      AssertEquals(Int64($4D), Int64(Text.StyleHandle.Value));
+      AssertEquals('Panel A1', Text.TextValue);
+      AssertEquals(2, Text.ColorIndex);
+      AssertEquals(15, Text.LineWeight);
+      AssertTrue(Text.Visible);
+      AssertEquals(1.0, Text.InsertPoint.X, 0.000001);
+      AssertEquals(2.0, Text.InsertPoint.Y, 0.000001);
+      AssertEquals(9.0, Text.InsertPoint.Z, 0.000001);
+      AssertEquals(3.0, Text.AlignmentPoint.X, 0.000001);
+      AssertEquals(4.0, Text.AlignmentPoint.Y, 0.000001);
+      AssertEquals(9.0, Text.AlignmentPoint.Z, 0.000001);
+      AssertEquals(0.25, Text.Thickness, 0.000001);
+      AssertEquals(0.5, Text.ObliqueAngle, 0.000001);
+      AssertEquals(1.25, Text.Rotation, 0.000001);
+      AssertEquals(2.5, Text.Height, 0.000001);
+      AssertEquals(0.85, Text.WidthFactor, 0.000001);
+      AssertEquals(2, Text.Generation);
+      AssertEquals(1, Text.HorizontalAlignment);
+      AssertEquals(3, Text.VerticalAlignment);
+      AssertTrue(Text.Layer = nil);
+      AssertTrue(Text.Linetype = nil);
+      AssertTrue(Text.Style = nil);
+      AssertEquals(Ord(osRaw), Ord(Text.Status));
     finally
       Obj.Free;
     end;

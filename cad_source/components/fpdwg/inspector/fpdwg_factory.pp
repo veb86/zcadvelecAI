@@ -80,6 +80,7 @@ uses
   fpdwg_map_layer,
   fpdwg_map_line,
   fpdwg_map_linetype,
+  fpdwg_map_text,
   fpdwg_map_unknown;
 
 class function TDWGBuilderContext.Default: TDWGBuilderContext;
@@ -176,6 +177,7 @@ begin
   Result.RegisterMapper(DWG_TYPE_BLOCK_HEADER, TDWGBlockHeaderMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LINE, TDWGLineMapper.Create);
   Result.RegisterMapper(DWG_TYPE_CIRCLE, TDWGCircleMapper.Create);
+  Result.RegisterMapper(DWG_TYPE_TEXT, TDWGTextMapper.Create);
 end;
 
 function TDWGObjectFactory.FindMapperIndex(DWGType: DWG_OBJECT_TYPE): Integer;

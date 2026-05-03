@@ -28,6 +28,7 @@ type
     LayerCount: Integer;
     LinetypeCount: Integer;
     LineCount: Integer;
+    TextCount: Integer;
     UnknownCount: Integer;
     WarningCount: Integer;
   end;
@@ -37,6 +38,7 @@ type
     IncludeLayers: Boolean;
     IncludeLinetypes: Boolean;
     IncludeLines: Boolean;
+    IncludeTexts: Boolean;
     IncludeUnknown: Boolean;
     IncludeObjects: Boolean;
     IncludeWarnings: Boolean;
@@ -67,6 +69,7 @@ type
     procedure AppendLayers(Lines: TStrings);
     procedure AppendLinetypes(Lines: TStrings);
     procedure AppendLines(Lines: TStrings);
+    procedure AppendTexts(Lines: TStrings);
     procedure AppendUnknown(Lines: TStrings);
     procedure AppendWarnings(Lines: TStrings);
     procedure AppendObjectDetail(Lines: TStrings; Obj: TDWGObject);
@@ -81,6 +84,7 @@ type
     function LayerJSON(Obj: TDWGObject): string;
     function LinetypeJSON(Obj: TDWGObject): string;
     function LineJSON(Obj: TDWGObject): string;
+    function TextJSON(Obj: TDWGObject): string;
     function UnknownJSON(Obj: TDWGObject): string;
     function ObjectJSON(Obj: TDWGObject): string;
     procedure AppendObjectArray(Lines: TStrings; const Name: string;
@@ -88,6 +92,7 @@ type
     procedure CollectLayerItems(Items: TStrings);
     procedure CollectLinetypeItems(Items: TStrings);
     procedure CollectLineItems(Items: TStrings);
+    procedure CollectTextItems(Items: TStrings);
     procedure CollectUnknownItems(Items: TStrings);
     procedure CollectObjectItems(Items: TStrings);
     procedure CollectWarningItems(Items: TStrings);
@@ -116,6 +121,7 @@ begin
   Result.IncludeLayers := True;
   Result.IncludeLinetypes := True;
   Result.IncludeLines := True;
+  Result.IncludeTexts := True;
   Result.IncludeUnknown := True;
   Result.IncludeObjects := True;
   Result.IncludeWarnings := True;
@@ -326,6 +332,8 @@ begin
       Inc(Result.LinetypeCount)
     else if Obj is TDWGLine then
       Inc(Result.LineCount)
+    else if Obj is TDWGText then
+      Inc(Result.TextCount)
     else if Obj is TDWGUnknownObject then
       Inc(Result.UnknownCount);
   end;
@@ -364,6 +372,7 @@ begin
   Lines.Add(Format('Layers: %d', [Stats.LayerCount]));
   Lines.Add(Format('Linetypes: %d', [Stats.LinetypeCount]));
   Lines.Add(Format('Lines: %d', [Stats.LineCount]));
+  Lines.Add(Format('Texts: %d', [Stats.TextCount]));
   Lines.Add(Format('Unknown: %d', [Stats.UnknownCount]));
   Lines.Add(Format('Warnings: %d', [Stats.WarningCount]));
 end;
@@ -448,6 +457,36 @@ begin
   end;
 end;
 
+procedure TDWGTextReporter.AppendTexts(Lines: TStrings);
+var
+  I: Integer;
+  Obj: TDWGObject;
+  Text: TDWGText;
+begin
+  AddBlank(Lines);
+  Lines.Add('Texts:');
+  for I := 0 to FDocument.Registry.Count - 1 do
+  begin
+    Obj := FDocument.Registry.ObjectAt(I);
+    if not (Obj is TDWGText) then
+      Continue;
+    Text := TDWGText(Obj);
+    Lines.Add(Format(
+      '  TEXT handle=%s owner=%s layer=%s linetype=%s style=%s color=%d lineweight=%d visible=%s status=%s value=%s',
+      [HandleText(Text.Handle), Text.OwnerHandle.ToString,
+       ResolvedOrRefText(Text.Layer, Text.LayerHandle),
+       ResolvedOrRefText(Text.Linetype, Text.LinetypeHandle),
+       ResolvedOrRefText(Text.Style, Text.StyleHandle),
+       Text.ColorIndex, Text.LineWeight, BooleanText(Text.Visible),
+       DWGObjectStatusToString(Text.Status), QuoteText(Text.TextValue)]));
+    Lines.Add(Format('    insert=%s', [PointText(Text.InsertPoint)]));
+    Lines.Add(Format('    alignment=%s', [PointText(Text.AlignmentPoint)]));
+    Lines.Add(Format('    height=%s rotation=%s width_factor=%s',
+      [FloatText(Text.Height), FloatText(Text.Rotation),
+       FloatText(Text.WidthFactor)]));
+  end;
+end;
+
 procedure TDWGTextReporter.AppendUnknown(Lines: TStrings);
 var
   I: Integer;
@@ -514,6 +553,7 @@ var
   Layer: TDWGLayer;
   Linetype: TDWGLinetype;
   Line: TDWGLine;
+  Text: TDWGText;
   BlockHeader: TDWGBlockHeader;
   Unknown: TDWGUnknownObject;
 begin
@@ -550,6 +590,19 @@ begin
     Lines.Add(Format('  length_3d=%s', [FloatText(Line.Length3D)]));
     Lines.Add(Format('  length_xy=%s', [FloatText(Line.LengthXY)]));
   end
+  else if Obj is TDWGText then
+  begin
+    Text := TDWGText(Obj);
+    Lines.Add(Format('  text=%s', [QuoteText(Text.TextValue)]));
+    Lines.Add(Format('  layer=%s', [Text.LayerHandle.ToString]));
+    Lines.Add(Format('  linetype=%s', [Text.LinetypeHandle.ToString]));
+    Lines.Add(Format('  style=%s', [Text.StyleHandle.ToString]));
+    Lines.Add(Format('  insert=%s', [PointText(Text.InsertPoint)]));
+    Lines.Add(Format('  alignment=%s', [PointText(Text.AlignmentPoint)]));
+    Lines.Add(Format('  height=%s', [FloatText(Text.Height)]));
+    Lines.Add(Format('  rotation=%s', [FloatText(Text.Rotation)]));
+    Lines.Add(Format('  width_factor=%s', [FloatText(Text.WidthFactor)]));
+  end
   else if Obj is TDWGBlockHeader then
   begin
     BlockHeader := TDWGBlockHeader(Obj);
@@ -579,6 +632,8 @@ begin
       AppendLinetypes(Lines);
     if FOptions.IncludeLines then
       AppendLines(Lines);
+    if FOptions.IncludeTexts then
+      AppendTexts(Lines);
     if FOptions.IncludeUnknown then
       AppendUnknown(Lines);
     if FOptions.IncludeWarnings then
@@ -617,6 +672,7 @@ begin
     '"layers": ' + IntToStr(Stats.LayerCount) + ', ' +
     '"linetypes": ' + IntToStr(Stats.LinetypeCount) + ', ' +
     '"lines": ' + IntToStr(Stats.LineCount) + ', ' +
+    '"texts": ' + IntToStr(Stats.TextCount) + ', ' +
     '"unknown": ' + IntToStr(Stats.UnknownCount) + ', ' +
     '"warnings": ' + IntToStr(Stats.WarningCount) +
     '}';
@@ -680,6 +736,41 @@ begin
     '}';
 end;
 
+function TDWGJSONReporter.TextJSON(Obj: TDWGObject): string;
+var
+  Text: TDWGText;
+begin
+  Text := TDWGText(Obj);
+  Result := '{' +
+    '"handle": ' + HandleJSON(Text.Handle) + ', ' +
+    '"owner": ' + HandleRefJSON(Text.OwnerHandle) + ', ' +
+    '"layer": ' + HandleRefJSON(Text.LayerHandle) + ', ' +
+    '"layerName": ' + ResolvedNameJSON(Text.Layer) + ', ' +
+    '"linetype": ' + HandleRefJSON(Text.LinetypeHandle) + ', ' +
+    '"linetypeName": ' + ResolvedNameJSON(Text.Linetype) + ', ' +
+    '"style": ' + HandleRefJSON(Text.StyleHandle) + ', ' +
+    '"styleName": ' + ResolvedNameJSON(Text.Style) + ', ' +
+    '"color": ' + IntToStr(Text.ColorIndex) + ', ' +
+    '"lineweight": ' + IntToStr(Text.LineWeight) + ', ' +
+    '"visible": ' + BooleanText(Text.Visible) + ', ' +
+    '"status": ' + JSONString(DWGObjectStatusToString(Text.Status)) + ', ' +
+    '"text": ' + JSONString(Text.TextValue) + ', ' +
+    '"geometry": {' +
+      '"insert": ' + PointJSON(Text.InsertPoint) + ', ' +
+      '"alignment": ' + PointJSON(Text.AlignmentPoint) + ', ' +
+      '"extrusion": ' + PointJSON(Text.Extrusion) + ', ' +
+      '"thickness": ' + FloatJSON(Text.Thickness) + ', ' +
+      '"obliqueAngle": ' + FloatJSON(Text.ObliqueAngle) + ', ' +
+      '"rotation": ' + FloatJSON(Text.Rotation) + ', ' +
+      '"height": ' + FloatJSON(Text.Height) + ', ' +
+      '"widthFactor": ' + FloatJSON(Text.WidthFactor) +
+    '}, ' +
+    '"generation": ' + IntToStr(Text.Generation) + ', ' +
+    '"horizontalAlignment": ' + IntToStr(Text.HorizontalAlignment) + ', ' +
+    '"verticalAlignment": ' + IntToStr(Text.VerticalAlignment) +
+    '}';
+end;
+
 function TDWGJSONReporter.UnknownJSON(Obj: TDWGObject): string;
 var
   Unknown: TDWGUnknownObject;
@@ -718,6 +809,8 @@ begin
     Result := Result + ', "linetype": ' + LinetypeJSON(Obj)
   else if Obj is TDWGLine then
     Result := Result + ', "line": ' + LineJSON(Obj)
+  else if Obj is TDWGText then
+    Result := Result + ', "text": ' + TextJSON(Obj)
   else if Obj is TDWGUnknownObject then
     Result := Result + ', "unknown": ' + UnknownJSON(Obj)
   else if Obj is TDWGBlockHeader then
@@ -809,6 +902,19 @@ begin
     Obj := FDocument.Registry.ObjectAt(I);
     if Obj is TDWGLine then
       Items.Add(LineJSON(Obj));
+  end;
+end;
+
+procedure TDWGJSONReporter.CollectTextItems(Items: TStrings);
+var
+  I: Integer;
+  Obj: TDWGObject;
+begin
+  for I := 0 to FDocument.Registry.Count - 1 do
+  begin
+    Obj := FDocument.Registry.ObjectAt(I);
+    if Obj is TDWGText then
+      Items.Add(TextJSON(Obj));
   end;
 end;
 
@@ -914,6 +1020,13 @@ begin
       Items.Clear;
       CollectLineItems(Items);
       AppendObjectArray(Lines, 'lines', Items, True);
+    end;
+
+    if FOptions.IncludeTexts then
+    begin
+      Items.Clear;
+      CollectTextItems(Items);
+      AppendObjectArray(Lines, 'texts', Items, True);
     end;
 
     if FOptions.IncludeUnknown then
