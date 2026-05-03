@@ -13,6 +13,7 @@ type
   TFPDWGFactoryTest = class(TTestCase)
   published
     procedure DefaultFactoryRegistersStage4Mappers;
+    procedure LayerControlMapperCopiesEntryReferences;
     procedure LayerMapperCopiesScalarFieldsAndKeepsReferencesUnresolved;
     procedure LinetypeMapperCopiesDescriptionAndPattern;
     procedure BlockHeaderMapperCopiesNamesAndEntityReferences;
@@ -76,13 +77,64 @@ var
 begin
   Factory := TDWGObjectFactory.CreateDefault;
   try
+    AssertTrue(Factory.TryGetMapper(DWG_TYPE_LAYER_CONTROL, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LAYER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LTYPE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_BLOCK_HEADER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LINE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_CIRCLE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_TEXT, Mapper));
-    AssertEquals(6, Factory.MapperCount);
+    AssertEquals(7, Factory.MapperCount);
+  finally
+    Factory.Free;
+  end;
+end;
+
+procedure TFPDWGFactoryTest.LayerControlMapperCopiesEntryReferences;
+var
+  Factory: TDWGObjectFactory;
+  Raw: Dwg_Object;
+  RawObject: Dwg_Object_Object;
+  RawLayerControl: Dwg_Object_LAYER_CONTROL;
+  Layer1Ref, Layer2Ref: Dwg_Object_Ref;
+  Entries: array[0..1] of BITCODE_H;
+  Obj: TDWGObject;
+  LayerControl: TDWGTableControl;
+begin
+  Factory := TDWGObjectFactory.CreateDefault;
+  try
+    InitRawObject(Raw, DWG_TYPE_LAYER_CONTROL, DWG_SUPERTYPE_OBJECT, $2);
+    FillChar(RawObject, SizeOf(RawObject), 0);
+    FillChar(RawLayerControl, SizeOf(RawLayerControl), 0);
+    InitAbsoluteRef(Layer1Ref, $10);
+    InitFallbackRef(Layer2Ref, $11);
+    Entries[0] := @Layer1Ref;
+    Entries[1] := @Layer2Ref;
+
+    Raw.tio.&object := @RawObject;
+    RawObject.tio.LAYER_CONTROL := @RawLayerControl;
+    RawLayerControl.num_entries := 2;
+    RawLayerControl.entries := @Entries[0];
+
+    Obj := Factory.CreateObject(Raw, TestContext);
+    try
+      AssertTrue(Obj is TDWGTableControl);
+      LayerControl := TDWGTableControl(Obj);
+      AssertEquals(Int64($2), Int64(LayerControl.Handle));
+      AssertEquals(Ord(DWG_TYPE_LAYER_CONTROL), Ord(LayerControl.RawObjectType));
+      AssertEquals(Ord(dotSyntheticTable), Ord(LayerControl.DomainType));
+      AssertEquals('LAYER', LayerControl.TableKind);
+      AssertEquals('LAYER table control', LayerControl.Name);
+      AssertEquals('LAYER_CONTROL', LayerControl.DxfName);
+      AssertEquals(2, Length(LayerControl.EntryHandles));
+      AssertEquals(Int64($10), Int64(LayerControl.EntryHandles[0].Value));
+      AssertEquals(Ord(hsAbsoluteRef), Ord(LayerControl.EntryHandles[0].Source));
+      AssertEquals(Int64($11), Int64(LayerControl.EntryHandles[1].Value));
+      AssertEquals(Ord(hsHandleref), Ord(LayerControl.EntryHandles[1].Source));
+      AssertEquals(Ord(osRaw), Ord(LayerControl.Status));
+    finally
+      Obj.Free;
+    end;
   finally
     Factory.Free;
   end;
