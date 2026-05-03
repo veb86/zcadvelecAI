@@ -69,7 +69,7 @@ begin
   end;
 
   RawText := Raw.tio.entity^.tio.TEXT;
-  Text.TextValue := SafeDecodeText(RawText^.text_value, Ctx.Codepage,
+  Text.TextValue := SafeDecodeLibreDWGText(RawText^.text_value, Ctx.Codepage,
     Ctx.Logger);
   Text.InsertPoint := Point2DFromRaw(RawText^.ins_pt, RawText^.elevation);
   Text.AlignmentPoint := Point2DFromRaw(RawText^.alignment_pt,
