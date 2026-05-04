@@ -5,11 +5,13 @@
 ## Содержимое
 
 - [TZ_loadDWG.md](TZ_loadDWG.md) — техническое задание: анализ существующих архитектур (DXF и DWG), матрица паритета сущностей и таблиц, целевая модульная структура (модули 300–500 строк, одна ответственность), этапы разработки.
+- [../../../components/fpdwg/TZ_DWG_LOAD_TO_ZCAD.md](../../../components/fpdwg/TZ_DWG_LOAD_TO_ZCAD.md) — уточнение для issue #1079: загрузка DWG напрямую в существующую модель ZCAD через LibreDWG и import context, без создания новой DWG domain model.
 
 ## Связанные issue / PR
 
 - Issue [#1039](https://github.com/veb86/zcadvelecAI/issues/1039) — постановка задачи (исследование и ТЗ, без кодинга).
 - PR [#1040](https://github.com/veb86/zcadvelecAI/pull/1040) — этот документ.
+- Issue [#1079](https://github.com/veb86/zcadvelecAI/issues/1079) — корректировка подхода: не создавать отдельную domain model для ZCAD-загрузки, учесть отложенное разрешение родителей.
 - Предшествующие PR по стабилизации LibreDWG-биндинга: #1033, #1035, #1037.
 
 ## Связанный код
