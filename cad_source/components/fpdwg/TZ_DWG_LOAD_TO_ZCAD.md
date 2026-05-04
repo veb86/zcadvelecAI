@@ -1,9 +1,10 @@
 # Техническое задание: загрузка DWG в ZCAD через LibreDWG без новой domain model
 
-> Issue: [veb86/zcadvelecAI#1079](https://github.com/veb86/zcadvelecAI/issues/1079)
+> Issue: [veb86/zcadvelecAI#1079](https://github.com/veb86/zcadvelecAI/issues/1079), уточнение по [veb86/zcadvelecAI#1082](https://github.com/veb86/zcadvelecAI/issues/1082)
 > Рабочая зона: `cad_source/components/fpdwg/`, `cad_source/zengine/fileformats/`
-> Статус документа: техническое задание и план реализации, без реализации кода в рамках issue #1079.
+> Статус документа: техническое задание и план реализации, без реализации кода загрузчика в рамках issues #1079/#1082.
 > Главная корректировка: для загрузки DWG в ZCAD не создается третья domain model. Источник данных - LibreDWG `Dwg_Data`; целевая модель - существующий ZCAD drawing/entity graph.
+> Уточнение #1082: порядок `Dwg_Data.objects[]` нельзя использовать как порядок добавления в ZCAD. Handle-index, shell registry, pending owner/ref queues и защита от циклов являются обязательной частью загрузчика.
 
 ## 1. Цель
 
@@ -27,6 +28,8 @@ DWG file
 - использует ZCAD как единственную целевую прикладную модель;
 - не создает `TDWGDocument` как обязательный мост для ZCAD;
 - корректно переживает порядок объектов, где сущность может встретиться раньше родителя;
+- корректно решает случай, когда block/table owner прочитан позже entity, без временного добавления entity в `pObjRoot`;
+- защищается от циклических owner/ref-ссылок и не уходит в бесконечную рекурсию;
 - строит таблицы, блоки, сущности, стили и геометрию в правильных фазах;
 - сохраняет диагностику по неизвестным и частично загруженным объектам.
 
@@ -38,7 +41,7 @@ DWG file
 |---|---|---|
 | `cad_source/zcad/velec/loadDWG/TZ_loadDWG.md` | Анализ DXF/DWG-паритета, список сущностей, текущие дефекты `uzefflibredwg*` | Там допустима отдельная модульная архитектура DWG-загрузки, но не зафиксирован запрет на новую domain model |
 | `cad_source/components/fpdwg/TZ_DWG_CONSOLE_INSPECTOR.md` | Двухфазность, handle registry, диагностика unknown, safe text decode | Это ТЗ про инспектор, не про ZCAD-импорт |
-| `cad_source/components/fpdwg/TZ_DWG_DOMAIN_MODEL_CORRECTION.md` | Аудит текущего `fpdwg`, границы inspector/raw binding | Для issue #1079 не применяем идею "ZCAD через TDWGDocument"; ZCAD импортируется напрямую из LibreDWG raw в ZCAD |
+| `cad_source/components/fpdwg/TZ_DWG_DOMAIN_MODEL_CORRECTION.md` | Аудит текущего `fpdwg`, границы inspector/raw binding | Для issues #1079/#1082 не применяем идею "ZCAD через TDWGDocument"; ZCAD импортируется напрямую из LibreDWG raw в ZCAD |
 
 Текущее ТЗ не удаляет предыдущую работу. Оно задает отдельное направление: "DWG -> ZCAD" без обязательного промежуточного `TDWGDocument`.
 
@@ -168,9 +171,12 @@ TDWGZCADLoadContext
   - RawHandle -> raw object index
   - RawHandle -> ZCAD object pointer
   - RawHandle -> ZCAD object kind
+  - RawHandle -> shell/materialize state
+  - RawHandle -> owner attach state
   - pending owner links
   - pending style/layer/linetype/block refs
   - pending geometry finalization
+  - current resolve stack for cycle diagnostics
   - warnings/errors/statistics
 ```
 
@@ -190,15 +196,18 @@ Phase 0. Read raw
 
 Phase 1. Scan raw graph
   collect handles, raw indexes, object classes, owner refs
+  detect duplicate handles before any ZCAD allocation
 
 Phase 2. Create ZCAD shells
   create tables, block definitions, entity objects
   register RawHandle -> ZCAD pointer immediately after allocation
   do not require owner to exist at this moment
+  do not attach entities to owners yet
 
 Phase 3. Resolve ownership and references
   attach entities to real owners
   resolve layer, linetype, style, block, dimension refs
+  detect owner cycles and break them with fallback owner + warning
 
 Phase 4. Finalize visual state
   BuildGeometry
@@ -235,7 +244,47 @@ for object in dwg.object[]
 - позднее появляется настоящий родитель, но LINE уже в неправильном месте;
 - transform, block membership и последующая отрисовка могут быть неверными.
 
-### 5.2 Обязательный алгоритм
+### 5.2 Вывод по предложенному lazy-recursive варианту
+
+Предложенный вариант:
+
+1. один раз собрать `map<handle,index>`;
+2. держать `ZcadObjects[]` того же размера, что `Dwg_Data.objects[]`;
+3. при встрече LINE с owner handle `10` найти индекс owner;
+4. если `ZcadObjects[ownerIndex] = nil`, сначала создать owner, затем вернуться к LINE.
+
+Это правильное направление, потому что оно отрывает resolve от физического
+порядка `dwg.object[]`. Но в production-loader не нужно делать основной
+алгоритм рекурсивным из entity handler-а. Причины:
+
+- рекурсия смешивает чтение raw object, создание ZCAD shell, attachment к owner и finalization;
+- без отдельного состояния `creating/resolving` она зациклится на self-owner или A -> B -> A;
+- при duplicate handle непонятно, какой объект должен победить в рекурсивном вызове;
+- handler снова становится местом, где принимается решение о жизненном цикле всего графа.
+
+Оптимальная адаптация: оставить идею `RawHandle -> raw index` и
+`RawHandle -> ZCAD pointer`, но выполнять ее фазами. Если для удобства нужен
+метод `EnsureShell(Handle)`, он должен быть тонкой оберткой над shell registry
+со state guard, а не полноценным recursive loader-ом.
+
+Разрешенные состояния materialize-фазы:
+
+| State | Значение | Действие при повторном входе |
+|---|---|---|
+| `msUnseen` | shell еще не создавался | создать shell |
+| `msCreating` | shell создается сейчас | зафиксировать cycle/re-entry warning, вернуть `nil` |
+| `msCreated` | shell создан и зарегистрирован | вернуть pointer |
+| `msSkipped` | тип unsupported или raw object поврежден | вернуть `nil`, оставить warning |
+| `msFailed` | mapper упал в tolerant mode | вернуть `nil`, оставить error |
+
+Для основной реализации предпочтительно вообще не вызывать `EnsureShell` из
+mapper-а: scan-фаза строит raw index, shell-фаза одним циклом создает все shells,
+resolve-фаза связывает их. Тогда "блок прочитался позже линии" решается
+естественно: LINE уже имеет shell и pending owner, BLOCK_HEADER получает shell
+позже в той же phase, а attachment происходит только после завершения всей
+shell-фазы.
+
+### 5.3 Обязательный алгоритм
 
 Алгоритм загрузки должен быть таким:
 
@@ -246,7 +295,8 @@ for object in dwg.object[]
    RawOwnerIndex[Raw.handle.value] = owner handle
    ```
 
-2. На shell-фазе создать ZCAD-объект, но не требовать готового owner:
+2. На shell-фазе создать все ZCAD shell-объекты, но не требовать готового owner
+   и не добавлять entity в `pObjRoot`:
 
    ```text
    line := AllocAndInitLine(nil)
@@ -256,7 +306,9 @@ for object in dwg.object[]
    AddPendingFinalize(line)
    ```
 
-3. На resolve-фазе пройти `PendingOwner[]` после создания всех shell-объектов:
+3. На resolve-фазе пройти `PendingOwner[]` после создания всех shell-объектов.
+   Attachment должен быть idempotent: один ZCAD entity добавляется ровно один
+   раз, а повторный resolve того же handle только возвращает уже выбранного owner:
 
    ```text
    for pending in PendingOwner
@@ -280,7 +332,85 @@ for object in dwg.object[]
    - defer formatting для block content;
    - при необходимости применить transform относительно owner после resolve.
 
-### 5.3 Варианты fallback для unresolved owner
+### 5.4 Защита от циклических owner-ссылок
+
+Циклы нужно искать не только в inspector validator, но и в production ZCAD-loader,
+потому что owner cycle может привести к бесконечной рекурсии, повторному `AddMi`
+или неверному `ListPos.owner`.
+
+Минимальный контракт resolver-а:
+
+- у каждого pending owner есть `AttachState`;
+- resolver ведет stack handle-ов текущей owner-chain;
+- self-owner (`EntityHandle = OwnerHandle`) считается циклом;
+- A -> B -> A и более длинные циклы считаются циклом;
+- при цикле текущая ветка attach-ится к fallback owner, а warning сохраняет весь stack;
+- entity, попавшая в cycle fallback, не пытается снова attach-иться к циклическому owner;
+- `BuildGeometry`/`FormatAfterDXFLoad` запускаются только после финального owner decision.
+
+Рекомендуемые состояния attachment:
+
+| State | Значение |
+|---|---|
+| `asPending` | attachment еще не выполнялся |
+| `asResolving` | object находится в текущем owner stack |
+| `asAttached` | object добавлен в выбранный owner |
+| `asFallback` | object добавлен в fallback owner из-за broken/cycle owner |
+| `asSkipped` | object нельзя добавить как entity/container |
+
+Псевдокод:
+
+```text
+function ResolveOwnerFor(entityHandle):
+  pending := PendingOwnerByHandle[entityHandle]
+
+  if pending.AttachState in [asAttached, asFallback, asSkipped]
+    return pending.Owner
+
+  if pending.AttachState = asResolving
+    ReportOwnerCycle(CurrentStack + entityHandle)
+    AttachToFallback(pending, reason='owner cycle')
+    return pending.Owner
+
+  pending.AttachState := asResolving
+  Push(CurrentStack, entityHandle)
+  try
+    ownerHandle := pending.OwnerHandle
+
+    if ownerHandle = 0
+      AttachToFallback(pending, reason='null owner')
+    else if ownerHandle = entityHandle
+      AttachToFallback(pending, reason='self owner cycle')
+    else if not H2Z.TryGet(ownerHandle, ownerEntry)
+      AttachToFallback(pending, reason='owner handle not found')
+    else if ownerEntry.Kind not in [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer]
+      AttachToFallback(pending, reason='owner is not container')
+    else
+      if OwnerItselfHasPendingOwner(ownerHandle)
+        ResolveOwnerFor(ownerHandle)
+      if OwnerIsStillInCurrentStack(ownerHandle)
+        AttachToFallback(pending, reason='owner cycle')
+      else
+        AttachToOwner(pending, ownerEntry.Ptr)
+  finally
+    Pop(CurrentStack)
+    if pending.AttachState = asResolving
+      pending.AttachState := asSkipped
+  end
+```
+
+На практике `BLOCK_HEADER` обычно является container shell и не обязан сам
+attach-иться как entity перед своими children. Но resolver все равно должен иметь
+общую защиту: если DWG поврежден и container/owner refs образуют цикл, загрузка
+не падает и не зависает.
+
+Для ссылок, которые не являются ownership (`layer`, `linetype`, `style`,
+`block insert target`, `prev/next entity`), цикл не должен менять owner. Такие
+refs помечаются как `partial/broken`, записываются в diagnostics, а ZCAD entity
+получает fallback visual property или остается без optional link по правилам
+конкретного mapper-а.
+
+### 5.5 Варианты fallback для unresolved owner
 
 | Ситуация | Поведение |
 |---|---|
@@ -288,6 +418,8 @@ for object in dwg.object[]
 | owner handle есть, но не найден | Добавить в `ZCDCtx.POwner`, записать warning |
 | owner найден, но это не container | Добавить в `ZCDCtx.POwner`, записать warning с типом найденного объекта |
 | owner найден как block definition | Добавить в block definition через `AddMi` / `DXFLoadAddMi`, геометрию отложить |
+| owner указывает на сам entity | Добавить в `ZCDCtx.POwner`, записать owner-cycle warning |
+| owner chain образует A -> B -> A | Разорвать цикл на текущем pending item, добавить его в fallback owner, записать stack |
 | duplicate raw handle | strict mode: ошибка; tolerant mode: первый объект остается, второй пропускается с warning |
 
 Fallback не должен молча терять объект.
@@ -419,7 +551,7 @@ cad_source/zengine/fileformats/
 |---|---|---|
 | `uzefflibredwg.pas` | Регистрация формата, `dwg_read_file`, guaranteed `dwg_free`, запуск `TDWGZCADLoader` | Entity-specific mapping, таблицы, resolver |
 | `uzefflibredwg2ents.pas` | Временный facade для старых handlers и registration shim | Новые entity implementations |
-| `dwg/uzedwgtypes.pas` | Общие enums/records: object kind, pending item, stats modes | LibreDWG binding declarations, ZCAD entity allocation |
+| `dwg/uzedwgtypes.pas` | Общие enums/records: object kind, shell/attach state, pending item, stats modes | LibreDWG binding declarations, ZCAD entity allocation |
 | `dwg/uzedwghandle.pas` | `BITCODE_H` / `Dwg_Object` handle extraction, formatting, null/duplicate helpers | Owner attachment, layer/style resolve |
 | `dwg/uzedwgtext.pas` | Safe text decode, codepage policy, fallback diagnostics | Direct entity creation |
 | `dwg/uzedwgdiagnostics.pas` | Warning/error records, counters, `LogProc` adapter | Phase orchestration |
@@ -428,7 +560,7 @@ cad_source/zengine/fileformats/
 | `dwg/uzedwgloader.pas` | Phase orchestration: scan -> shell -> resolve -> finalize | Low-level field copying |
 | `dwg/uzedwgtables.pas` | Header/table shells: layers, linetypes, text styles, dimstyles | Entity geometry |
 | `dwg/uzedwgblocks.pas` | Block definitions, model/paper space containers, block metadata | INSERT entity mapper internals |
-| `dwg/uzedwgresolver.pas` | Owner/ref resolution, fallback root, duplicate/broken ref policy | Raw LibreDWG read/free |
+| `dwg/uzedwgresolver.pas` | Owner/ref resolution, cycle detection, fallback root, duplicate/broken ref policy | Raw LibreDWG read/free |
 | `dwg/uzedwgfinalize.pas` | `BuildGeometry`, `FormatAfterDXFLoad`, postprocess hooks | Handle registry mutation except finalize status |
 | `dwg/uzedwgentityregistry.pas` | Registration of entity mapper units by `DWG_OBJECT_TYPE` | Mapper implementation details |
 | `dwg/entities/uzedwgentbase.pas` | Common mapper contract and helpers shared by entity units | All entity types in one unit |
@@ -439,6 +571,9 @@ cad_source/zengine/fileformats/
 - общий helper выносится в `uzedwgentbase.pas` только если он нужен минимум двум entity units;
 - table/block/header logic не смешивается с entity logic;
 - resolver не копирует raw scalar fields, а работает только с queues/indexes из context;
+- resolver является единственным местом, где entity добавляется в owner;
+- resolver должен быть idempotent: повторный вызов для того же handle не делает второй `AddMi`;
+- resolver обязан обнаруживать self-owner и owner-chain cycles до attachment;
 - mapper не вызывает `BuildGeometry` и не добавляет entity в owner напрямую;
 - при добавлении нового DWG type сначала создается отдельный mapper unit и тест рядом с `dwg/tests/`;
 - если entity становится сложнее 700 строк, ее нужно дробить на parser/helper поддиректорию до превышения 1000 строк.
@@ -465,7 +600,26 @@ type
     dokTextStyle,
     dokDimStyle,
     dokBlockDef,
+    dokModelSpace,
+    dokPaperSpace,
+    dokContainer,
     dokEntity
+  );
+
+  TDWGShellState = (
+    msUnseen,
+    msCreating,
+    msCreated,
+    msSkipped,
+    msFailed
+  );
+
+  TDWGAttachState = (
+    asPending,
+    asResolving,
+    asAttached,
+    asFallback,
+    asSkipped
   );
 
   TDWGZCADHandleEntry = record
@@ -473,6 +627,7 @@ type
     Kind: TDWGZCADObjectKind;
     Ptr: Pointer;
     RawIndex: Integer;
+    ShellState: TDWGShellState;
   end;
 
   TDWGZCADPendingOwner = record
@@ -481,6 +636,8 @@ type
     OwnerHandle: QWord;
     FallbackOwner: PGDBObjGenericSubEntry;
     RawIndex: Integer;
+    AttachState: TDWGAttachState;
+    AttachedOwner: PGDBObjGenericSubEntry;
   end;
 
   TDWGZCADPendingFinalize = record
@@ -497,6 +654,7 @@ type
     PendingOwners: TDWGPendingOwnerList;
     PendingRefs: TDWGPendingReferenceList;
     PendingFinalize: TDWGPendingFinalizeList;
+    ResolveStack: TDWGHandleStack;
     Warnings: TDWGImportWarningList;
     Stats: TDWGImportStats;
     procedure Init(var AZ: TZDrawingContext; var ARaw: Dwg_Data);
@@ -662,7 +820,9 @@ QueueEntityRefs(Ctx, Line, RawObject);
 - добавить `uzedwgloadcontext.pas`;
 - добавить raw scan phase `RawHandle -> raw index`;
 - добавить `RawHandle -> ZCAD pointer` registry;
+- добавить `ShellState` и `AttachState`;
 - добавить `PendingOwner` queue;
+- добавить cycle-safe resolver stack;
 - перевести LINE на shell + pending owner + finalize;
 - не добавлять entity в `pObjRoot` до resolve-фазы.
 
@@ -670,7 +830,9 @@ QueueEntityRefs(Ctx, Line, RawObject);
 
 - fake test: raw LINE имеет owner handle блока, raw BLOCK_HEADER идет позже;
 - после resolve LINE находится в block definition, а не в root;
-- broken owner падает в fallback root с warning.
+- broken owner падает в fallback root с warning;
+- self-owner падает в fallback root с owner-cycle warning;
+- owner chain A -> B -> A не зависает и разрывается с диагностикой stack.
 
 ### Этап 3. Таблицы и ссылки визуальных свойств
 
@@ -771,7 +933,7 @@ QueueEntityRefs(Ctx, Line, RawObject);
 
 ## 13. Тестовая стратегия
 
-Так как issue #1079 просит ТЗ, а не код, в рамках этого PR автоматизированный reproducing test не создается. Для реализации по этому ТЗ тесты обязательны.
+Так как issues #1079/#1082 просят ТЗ, а не код загрузчика, в рамках этого PR автоматизированный reproducing test не создается. Для реализации по этому ТЗ тесты обязательны.
 
 Минимальный набор будущих тестов:
 
@@ -781,6 +943,9 @@ QueueEntityRefs(Ctx, Line, RawObject);
 | `line_z_coordinate` | unit | LINE переносит `.z`, а не `.x` |
 | `line_owner_declared_later` | unit/fake raw | parent-after-child resolve |
 | `missing_owner_fallback` | unit/fake raw | fallback root + warning |
+| `self_owner_cycle_fallback` | unit/fake raw | self-owner не вызывает рекурсию, entity попадает в fallback root |
+| `owner_chain_cycle_fallback` | unit/fake raw | A -> B -> A разрывается с owner-cycle warning |
+| `attach_idempotency` | unit/fake raw | повторный resolve не вызывает второй `AddMi` |
 | `layer_declared_later` | unit/fake raw | deferred layer resolve |
 | `dwg_fixture_smoke` | integration optional | чтение реального DWG при наличии LibreDWG |
 | `unknown_entity_no_crash` | unit/integration | unsupported entity не роняет загрузку |
@@ -796,16 +961,18 @@ QueueEntityRefs(Ctx, Line, RawObject);
 - LINE/LAYER загружаются без старого Z-coordinate бага;
 - entity с owner, объявленным позже, попадает в правильный owner после resolve;
 - entity без owner не теряется и получает warning;
+- self-owner и A -> B -> A owner cycles не приводят к рекурсии/зависанию и дают warning;
+- attachment/finalize idempotent: entity не добавляется в owner дважды;
 - `BuildGeometry` и `FormatAfterDXFLoad` запускаются после attachment к owner;
 - ZCAD loader не зависит от `fpdwg/inspector/fpdwg_document.pp`;
-- есть unit tests на delayed owner resolve и LINE geometry;
+- есть unit tests на delayed owner resolve, owner cycles, idempotent attach и LINE geometry;
 - есть PR-описание с ручной проверкой на fixture DWG или объяснением, почему LibreDWG integration test был skipped.
 
 ## 15. Практический порядок следующих PR
 
 1. PR "DWG loader stabilization": `try/finally`, LINE Z fix, common handle helpers, tests.
-2. PR "DWG import context": `TDWGZCADLoadContext`, raw scan, handle registry, pending owner.
-3. PR "DWG delayed owner resolve": LINE через pending owner, tests для parent-after-child.
+2. PR "DWG import context": `TDWGZCADLoadContext`, raw scan, handle registry, shell/attach states, pending owner.
+3. PR "DWG delayed owner resolve": LINE через pending owner, tests для parent-after-child, self-owner и A -> B -> A cycle.
 4. PR "DWG tables phase": LAYER/LTYPE/STYLE + pending visual refs.
 5. PR "DWG blocks phase": BLOCK_HEADER, block definition shells, model/paper space.
 6. PR "DWG visible MVP": CIRCLE/ARC/POINT/LWPOLYLINE/TEXT/MTEXT.
