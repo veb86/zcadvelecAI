@@ -19,6 +19,7 @@ type
     procedure BlockHeaderMapperCopiesNamesAndEntityReferences;
     procedure LineMapperCopiesGeometryAndCommonEntityHandles;
     procedure CircleMapperCopiesGeometryAndCommonEntityHandles;
+    procedure LWPolylineMapperCopiesVerticesAndCommonEntityHandles;
     procedure TextMapperCopiesTextGeometryAndCommonEntityHandles;
     procedure FilterByDomainTypeMaterializesAllowedTypesAndStubsOthers;
     procedure UnknownFallbackCopiesDiagnosticsRawBytesAndWarning;
@@ -83,8 +84,9 @@ begin
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_BLOCK_HEADER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LINE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_CIRCLE, Mapper));
+    AssertTrue(Factory.TryGetMapper(DWG_TYPE_LWPOLYLINE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_TEXT, Mapper));
-    AssertEquals(7, Factory.MapperCount);
+    AssertEquals(8, Factory.MapperCount);
   finally
     Factory.Free;
   end;
@@ -411,6 +413,104 @@ begin
       AssertTrue(Circle.Layer = nil);
       AssertTrue(Circle.Linetype = nil);
       AssertEquals(Ord(osRaw), Ord(Circle.Status));
+    finally
+      Obj.Free;
+    end;
+  finally
+    Factory.Free;
+  end;
+end;
+
+procedure TFPDWGFactoryTest.LWPolylineMapperCopiesVerticesAndCommonEntityHandles;
+var
+  Factory: TDWGObjectFactory;
+  Raw: Dwg_Object;
+  RawEntity: Dwg_Object_Entity;
+  RawLWPolyline: Dwg_Entity_LWPOLYLINE;
+  OwnerRef, LayerRef, LTypeRef: Dwg_Object_Ref;
+  Points: array[0..2] of BITCODE_2RD;
+  Bulges: array[0..2] of BITCODE_BD;
+  VertexIds: array[0..2] of BITCODE_BL;
+  Widths: array[0..1] of Dwg_LWPOLYLINE_width;
+  Obj: TDWGObject;
+  LWPolyline: TDWGLWPolyline;
+begin
+  Factory := TDWGObjectFactory.CreateDefault;
+  try
+    InitRawObject(Raw, DWG_TYPE_LWPOLYLINE, DWG_SUPERTYPE_ENTITY, $4E);
+    FillChar(RawEntity, SizeOf(RawEntity), 0);
+    FillChar(RawLWPolyline, SizeOf(RawLWPolyline), 0);
+    InitAbsoluteRef(OwnerRef, $4F);
+    InitAbsoluteRef(LayerRef, $50);
+    InitFallbackRef(LTypeRef, $51);
+
+    Points[0].x := 1.0;
+    Points[0].y := 2.0;
+    Points[1].x := 3.0;
+    Points[1].y := 4.0;
+    Points[2].x := 5.0;
+    Points[2].y := 6.0;
+    Bulges[0] := 0.0;
+    Bulges[1] := 0.5;
+    Bulges[2] := -0.25;
+    VertexIds[0] := 10;
+    VertexIds[1] := 11;
+    VertexIds[2] := 12;
+    Widths[0].start := 0.1;
+    Widths[0].end_ := 0.2;
+    Widths[1].start := 0.3;
+    Widths[1].end_ := 0.4;
+
+    Raw.tio.entity := @RawEntity;
+    RawEntity.tio.LWPOLYLINE := @RawLWPolyline;
+    RawEntity.ownerhandle := @OwnerRef;
+    RawEntity.layer := @LayerRef;
+    RawEntity.ltype := @LTypeRef;
+    RawEntity.color.index := 5;
+    RawEntity.linewt := 30;
+    RawEntity.invisible := 0;
+    RawLWPolyline.flag := Integer(FLAG_LWPOLYLINE_CLOSED) or
+      Integer(FLAG_LWPOLYLINE_PLINEGEN);
+    RawLWPolyline.const_width := 0.75;
+    RawLWPolyline.elevation := 9.0;
+    RawLWPolyline.thickness := 1.25;
+    RawLWPolyline.extrusion.x := 0.0;
+    RawLWPolyline.extrusion.y := 0.0;
+    RawLWPolyline.extrusion.z := 1.0;
+    RawLWPolyline.num_points := 3;
+    RawLWPolyline.points := @Points[0];
+    RawLWPolyline.num_bulges := 3;
+    RawLWPolyline.bulges := @Bulges[0];
+    RawLWPolyline.num_vertexids := 3;
+    RawLWPolyline.vertexids := @VertexIds[0];
+    RawLWPolyline.num_widths := 2;
+    RawLWPolyline.widths := @Widths[0];
+
+    Obj := Factory.CreateObject(Raw, TestContext);
+    try
+      AssertTrue(Obj is TDWGLWPolyline);
+      LWPolyline := TDWGLWPolyline(Obj);
+      AssertEquals(Int64($4F), Int64(LWPolyline.OwnerHandle.Value));
+      AssertEquals(Int64($50), Int64(LWPolyline.LayerHandle.Value));
+      AssertEquals(Int64($51), Int64(LWPolyline.LinetypeHandle.Value));
+      AssertEquals(Ord(hsHandleref), Ord(LWPolyline.LinetypeHandle.Source));
+      AssertEquals(5, LWPolyline.ColorIndex);
+      AssertEquals(30, LWPolyline.LineWeight);
+      AssertTrue(LWPolyline.Visible);
+      AssertTrue(LWPolyline.IsClosed);
+      AssertEquals(3, LWPolyline.PointCount);
+      AssertEquals(1.0, LWPolyline.Points[0].X, 0.000001);
+      AssertEquals(6.0, LWPolyline.Points[2].Y, 0.000001);
+      AssertEquals(0.5, LWPolyline.Bulges[1], 0.000001);
+      AssertEquals(12, LWPolyline.VertexIds[2]);
+      AssertEquals(0.75, LWPolyline.ConstWidth, 0.000001);
+      AssertEquals(9.0, LWPolyline.Elevation, 0.000001);
+      AssertEquals(1.25, LWPolyline.Thickness, 0.000001);
+      AssertEquals(0.3, LWPolyline.Widths[1].StartWidth, 0.000001);
+      AssertEquals(0.4, LWPolyline.Widths[1].EndWidth, 0.000001);
+      AssertTrue(LWPolyline.Layer = nil);
+      AssertTrue(LWPolyline.Linetype = nil);
+      AssertEquals(Ord(osRaw), Ord(LWPolyline.Status));
     finally
       Obj.Free;
     end;

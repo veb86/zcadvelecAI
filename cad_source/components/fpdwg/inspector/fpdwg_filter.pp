@@ -58,6 +58,8 @@ begin
       Result := dotLine;
     DWG_TYPE_CIRCLE:
       Result := dotCircle;
+    DWG_TYPE_LWPOLYLINE:
+      Result := dotLWPolyline;
     DWG_TYPE_TEXT, DWG_TYPE_MTEXT:
       Result := dotText;
   else
