@@ -75,6 +75,7 @@ function SyntheticHandleRef(AHandle: TDWGHandle): TDWGHandleRef;
 implementation
 
 uses
+  fpdwg_map_arc,
   fpdwg_map_block,
   fpdwg_map_circle,
   fpdwg_map_layer,
@@ -179,6 +180,7 @@ begin
   Result.RegisterMapper(DWG_TYPE_LTYPE, TDWGLinetypeMapper.Create);
   Result.RegisterMapper(DWG_TYPE_BLOCK_HEADER, TDWGBlockHeaderMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LINE, TDWGLineMapper.Create);
+  Result.RegisterMapper(DWG_TYPE_ARC, TDWGArcMapper.Create);
   Result.RegisterMapper(DWG_TYPE_CIRCLE, TDWGCircleMapper.Create);
   Result.RegisterMapper(DWG_TYPE_LWPOLYLINE, TDWGLWPolylineMapper.Create);
   Result.RegisterMapper(DWG_TYPE_TEXT, TDWGTextMapper.Create);

@@ -30,7 +30,8 @@ type
 
   TDWGInspectorEntityFilter = (
     iefAll,
-    iefLine
+    iefLine,
+    iefArc
   );
 
   TDWGInspectorOptions = record
@@ -218,6 +219,7 @@ begin
   Options.IncludeLayers := False;
   Options.IncludeLinetypes := False;
   Options.IncludeLines := False;
+  Options.IncludeArcs := False;
   Options.IncludeUnknown := False;
   Options.IncludeObjects := False;
   Options.IncludeWarnings := False;
@@ -282,9 +284,11 @@ begin
     Options.EntityFilter := iefAll
   else if SameText(Value, 'line') or SameText(Value, 'lines') then
     Options.EntityFilter := iefLine
+  else if SameText(Value, 'arc') or SameText(Value, 'arcs') then
+    Options.EntityFilter := iefArc
   else
   begin
-    ErrorMessage := Format('Unsupported entity filter "%s"; expected all or line',
+    ErrorMessage := Format('Unsupported entity filter "%s"; expected all, line, or arc',
       [Value]);
     Result := False;
   end;
@@ -420,6 +424,11 @@ begin
       EnsureExplicitReportSelection(Options, SelectionExplicit);
       Options.ReportOptions.IncludeLines := True;
     end
+    else if Arg = '--arcs' then
+    begin
+      EnsureExplicitReportSelection(Options, SelectionExplicit);
+      Options.ReportOptions.IncludeArcs := True;
+    end
     else if Arg = '--unknown' then
     begin
       EnsureExplicitReportSelection(Options, SelectionExplicit);
@@ -481,13 +490,14 @@ begin
     '  --layers                 Include layer list' + LineEnding +
     '  --linetypes              Include linetype list' + LineEnding +
     '  --lines                  Include LINE entities' + LineEnding +
+    '  --arcs                   Include ARC entities' + LineEnding +
     '  --unknown                Include unknown object list' + LineEnding +
     '  --objects                Include all object details in JSON' + LineEnding +
     '  --warnings               Include validation warnings' + LineEnding +
     '  --show=<handle>          Render one object by hex handle' + LineEnding +
     LineEnding +
     'Filtering and loading:' + LineEnding +
-    '  --entities=all|line      Materialize all objects or LINE-focused model' + LineEnding +
+    '  --entities=all|line|arc  Materialize all objects or entity-focused model' + LineEnding +
     '  --mode=strict|tolerant   Duplicate/broken-ref policy, default tolerant' + LineEnding +
     '  --dump-unknown           Copy unknown raw bytes into diagnostics' + LineEnding +
     '  --lib=<path>             Explicit LibreDWG library path' + LineEnding +
@@ -530,6 +540,13 @@ begin
         dotLinetype,
         dotBlockHeader,
         dotLine
+      ]);
+    iefArc:
+      Result := TFilterByDomainType.Create([
+        dotLayer,
+        dotLinetype,
+        dotBlockHeader,
+        dotArc
       ]);
   else
     Result := TFilterAll.Create;

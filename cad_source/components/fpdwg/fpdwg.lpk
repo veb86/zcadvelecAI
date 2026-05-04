@@ -85,6 +85,10 @@
         <UnitName Value="fpdwg_map_line"/>
       </Item>
       <Item>
+        <Filename Value="inspector\mappers\fpdwg_map_arc.pp"/>
+        <UnitName Value="fpdwg_map_arc"/>
+      </Item>
+      <Item>
         <Filename Value="inspector\mappers\fpdwg_map_lwpolyline.pp"/>
         <UnitName Value="fpdwg_map_lwpolyline"/>
       </Item>

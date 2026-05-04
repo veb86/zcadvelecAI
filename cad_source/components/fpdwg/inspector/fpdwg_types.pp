@@ -60,6 +60,7 @@ type
     dotBlockHeader,
     dotBlock,
     dotLine,
+    dotArc,
     dotCircle,
     dotLWPolyline,
     dotText,

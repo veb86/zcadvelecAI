@@ -56,6 +56,8 @@ begin
       Result := dotBlock;
     DWG_TYPE_LINE:
       Result := dotLine;
+    DWG_TYPE_ARC:
+      Result := dotArc;
     DWG_TYPE_CIRCLE:
       Result := dotCircle;
     DWG_TYPE_LWPOLYLINE:

@@ -28,6 +28,7 @@ type
     LayerCount: Integer;
     LinetypeCount: Integer;
     LineCount: Integer;
+    ArcCount: Integer;
     TextCount: Integer;
     UnknownCount: Integer;
     WarningCount: Integer;
@@ -38,6 +39,7 @@ type
     IncludeLayers: Boolean;
     IncludeLinetypes: Boolean;
     IncludeLines: Boolean;
+    IncludeArcs: Boolean;
     IncludeTexts: Boolean;
     IncludeUnknown: Boolean;
     IncludeObjects: Boolean;
@@ -69,6 +71,7 @@ type
     procedure AppendLayers(Lines: TStrings);
     procedure AppendLinetypes(Lines: TStrings);
     procedure AppendLines(Lines: TStrings);
+    procedure AppendArcs(Lines: TStrings);
     procedure AppendTexts(Lines: TStrings);
     procedure AppendUnknown(Lines: TStrings);
     procedure AppendWarnings(Lines: TStrings);
@@ -84,6 +87,7 @@ type
     function LayerJSON(Obj: TDWGObject): string;
     function LinetypeJSON(Obj: TDWGObject): string;
     function LineJSON(Obj: TDWGObject): string;
+    function ArcJSON(Obj: TDWGObject): string;
     function TextJSON(Obj: TDWGObject): string;
     function UnknownJSON(Obj: TDWGObject): string;
     function ObjectJSON(Obj: TDWGObject): string;
@@ -92,6 +96,7 @@ type
     procedure CollectLayerItems(Items: TStrings);
     procedure CollectLinetypeItems(Items: TStrings);
     procedure CollectLineItems(Items: TStrings);
+    procedure CollectArcItems(Items: TStrings);
     procedure CollectTextItems(Items: TStrings);
     procedure CollectUnknownItems(Items: TStrings);
     procedure CollectObjectItems(Items: TStrings);
@@ -121,6 +126,7 @@ begin
   Result.IncludeLayers := True;
   Result.IncludeLinetypes := True;
   Result.IncludeLines := True;
+  Result.IncludeArcs := True;
   Result.IncludeTexts := True;
   Result.IncludeUnknown := True;
   Result.IncludeObjects := True;
@@ -332,6 +338,8 @@ begin
       Inc(Result.LinetypeCount)
     else if Obj is TDWGLine then
       Inc(Result.LineCount)
+    else if Obj is TDWGArc then
+      Inc(Result.ArcCount)
     else if Obj is TDWGText then
       Inc(Result.TextCount)
     else if Obj is TDWGUnknownObject then
@@ -372,6 +380,7 @@ begin
   Lines.Add(Format('Layers: %d', [Stats.LayerCount]));
   Lines.Add(Format('Linetypes: %d', [Stats.LinetypeCount]));
   Lines.Add(Format('Lines: %d', [Stats.LineCount]));
+  Lines.Add(Format('Arcs: %d', [Stats.ArcCount]));
   Lines.Add(Format('Texts: %d', [Stats.TextCount]));
   Lines.Add(Format('Unknown: %d', [Stats.UnknownCount]));
   Lines.Add(Format('Warnings: %d', [Stats.WarningCount]));
@@ -454,6 +463,36 @@ begin
     Lines.Add(Format('    end=%s', [PointText(Line.EndPoint)]));
     Lines.Add(Format('    length_3d=%s', [FloatText(Line.Length3D)]));
     Lines.Add(Format('    length_xy=%s', [FloatText(Line.LengthXY)]));
+  end;
+end;
+
+procedure TDWGTextReporter.AppendArcs(Lines: TStrings);
+var
+  I: Integer;
+  Obj: TDWGObject;
+  Arc: TDWGArc;
+begin
+  AddBlank(Lines);
+  Lines.Add('Arcs:');
+  for I := 0 to FDocument.Registry.Count - 1 do
+  begin
+    Obj := FDocument.Registry.ObjectAt(I);
+    if not (Obj is TDWGArc) then
+      Continue;
+    Arc := TDWGArc(Obj);
+    Lines.Add(Format(
+      '  ARC handle=%s owner=%s layer=%s linetype=%s color=%d lineweight=%d visible=%s status=%s',
+      [HandleText(Arc.Handle), Arc.OwnerHandle.ToString,
+       ResolvedOrRefText(Arc.Layer, Arc.LayerHandle),
+       ResolvedOrRefText(Arc.Linetype, Arc.LinetypeHandle),
+       Arc.ColorIndex, Arc.LineWeight, BooleanText(Arc.Visible),
+       DWGObjectStatusToString(Arc.Status)]));
+    Lines.Add(Format('    center=%s', [PointText(Arc.Center)]));
+    Lines.Add(Format('    radius=%s', [FloatText(Arc.Radius)]));
+    Lines.Add(Format('    thickness=%s', [FloatText(Arc.Thickness)]));
+    Lines.Add(Format('    extrusion=%s', [PointText(Arc.Extrusion)]));
+    Lines.Add(Format('    start_angle=%s', [FloatText(Arc.StartAngle)]));
+    Lines.Add(Format('    end_angle=%s', [FloatText(Arc.EndAngle)]));
   end;
 end;
 
@@ -553,6 +592,7 @@ var
   Layer: TDWGLayer;
   Linetype: TDWGLinetype;
   Line: TDWGLine;
+  Arc: TDWGArc;
   Text: TDWGText;
   BlockHeader: TDWGBlockHeader;
   Unknown: TDWGUnknownObject;
@@ -589,6 +629,18 @@ begin
     Lines.Add(Format('  end=%s', [PointText(Line.EndPoint)]));
     Lines.Add(Format('  length_3d=%s', [FloatText(Line.Length3D)]));
     Lines.Add(Format('  length_xy=%s', [FloatText(Line.LengthXY)]));
+  end
+  else if Obj is TDWGArc then
+  begin
+    Arc := TDWGArc(Obj);
+    Lines.Add(Format('  layer=%s', [Arc.LayerHandle.ToString]));
+    Lines.Add(Format('  linetype=%s', [Arc.LinetypeHandle.ToString]));
+    Lines.Add(Format('  center=%s', [PointText(Arc.Center)]));
+    Lines.Add(Format('  radius=%s', [FloatText(Arc.Radius)]));
+    Lines.Add(Format('  thickness=%s', [FloatText(Arc.Thickness)]));
+    Lines.Add(Format('  extrusion=%s', [PointText(Arc.Extrusion)]));
+    Lines.Add(Format('  start_angle=%s', [FloatText(Arc.StartAngle)]));
+    Lines.Add(Format('  end_angle=%s', [FloatText(Arc.EndAngle)]));
   end
   else if Obj is TDWGText then
   begin
@@ -632,6 +684,8 @@ begin
       AppendLinetypes(Lines);
     if FOptions.IncludeLines then
       AppendLines(Lines);
+    if FOptions.IncludeArcs then
+      AppendArcs(Lines);
     if FOptions.IncludeTexts then
       AppendTexts(Lines);
     if FOptions.IncludeUnknown then
@@ -672,6 +726,7 @@ begin
     '"layers": ' + IntToStr(Stats.LayerCount) + ', ' +
     '"linetypes": ' + IntToStr(Stats.LinetypeCount) + ', ' +
     '"lines": ' + IntToStr(Stats.LineCount) + ', ' +
+    '"arcs": ' + IntToStr(Stats.ArcCount) + ', ' +
     '"texts": ' + IntToStr(Stats.TextCount) + ', ' +
     '"unknown": ' + IntToStr(Stats.UnknownCount) + ', ' +
     '"warnings": ' + IntToStr(Stats.WarningCount) +
@@ -732,6 +787,33 @@ begin
       '"end": ' + PointJSON(Line.EndPoint) + ', ' +
       '"length_3d": ' + FloatJSON(Line.Length3D) + ', ' +
       '"length_xy": ' + FloatJSON(Line.LengthXY) +
+    '}' +
+    '}';
+end;
+
+function TDWGJSONReporter.ArcJSON(Obj: TDWGObject): string;
+var
+  Arc: TDWGArc;
+begin
+  Arc := TDWGArc(Obj);
+  Result := '{' +
+    '"handle": ' + HandleJSON(Arc.Handle) + ', ' +
+    '"owner": ' + HandleRefJSON(Arc.OwnerHandle) + ', ' +
+    '"layer": ' + HandleRefJSON(Arc.LayerHandle) + ', ' +
+    '"layerName": ' + ResolvedNameJSON(Arc.Layer) + ', ' +
+    '"linetype": ' + HandleRefJSON(Arc.LinetypeHandle) + ', ' +
+    '"linetypeName": ' + ResolvedNameJSON(Arc.Linetype) + ', ' +
+    '"color": ' + IntToStr(Arc.ColorIndex) + ', ' +
+    '"lineweight": ' + IntToStr(Arc.LineWeight) + ', ' +
+    '"visible": ' + BooleanText(Arc.Visible) + ', ' +
+    '"status": ' + JSONString(DWGObjectStatusToString(Arc.Status)) + ', ' +
+    '"geometry": {' +
+      '"center": ' + PointJSON(Arc.Center) + ', ' +
+      '"radius": ' + FloatJSON(Arc.Radius) + ', ' +
+      '"thickness": ' + FloatJSON(Arc.Thickness) + ', ' +
+      '"extrusion": ' + PointJSON(Arc.Extrusion) + ', ' +
+      '"startAngle": ' + FloatJSON(Arc.StartAngle) + ', ' +
+      '"endAngle": ' + FloatJSON(Arc.EndAngle) +
     '}' +
     '}';
 end;
@@ -809,6 +891,8 @@ begin
     Result := Result + ', "linetype": ' + LinetypeJSON(Obj)
   else if Obj is TDWGLine then
     Result := Result + ', "line": ' + LineJSON(Obj)
+  else if Obj is TDWGArc then
+    Result := Result + ', "arc": ' + ArcJSON(Obj)
   else if Obj is TDWGText then
     Result := Result + ', "text": ' + TextJSON(Obj)
   else if Obj is TDWGUnknownObject then
@@ -902,6 +986,19 @@ begin
     Obj := FDocument.Registry.ObjectAt(I);
     if Obj is TDWGLine then
       Items.Add(LineJSON(Obj));
+  end;
+end;
+
+procedure TDWGJSONReporter.CollectArcItems(Items: TStrings);
+var
+  I: Integer;
+  Obj: TDWGObject;
+begin
+  for I := 0 to FDocument.Registry.Count - 1 do
+  begin
+    Obj := FDocument.Registry.ObjectAt(I);
+    if Obj is TDWGArc then
+      Items.Add(ArcJSON(Obj));
   end;
 end;
 
@@ -1020,6 +1117,13 @@ begin
       Items.Clear;
       CollectLineItems(Items);
       AppendObjectArray(Lines, 'lines', Items, True);
+    end;
+
+    if FOptions.IncludeArcs then
+    begin
+      Items.Clear;
+      CollectArcItems(Items);
+      AppendObjectArray(Lines, 'arcs', Items, True);
     end;
 
     if FOptions.IncludeTexts then

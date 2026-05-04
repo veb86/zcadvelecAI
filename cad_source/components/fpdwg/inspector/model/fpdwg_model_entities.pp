@@ -30,6 +30,17 @@ type
     function LengthXY: Double;
   end;
 
+  TDWGArc = class(TDWGEntity)
+  public
+    Center: TDWGPoint3D;
+    Radius: Double;
+    Thickness: Double;
+    Extrusion: TDWGPoint3D;
+    StartAngle: Double;
+    EndAngle: Double;
+    constructor Create; override;
+  end;
+
   TDWGCircle = class(TDWGEntity)
   public
     Center: TDWGPoint3D;
@@ -101,6 +112,22 @@ function TDWGLine.LengthXY: Double;
 begin
   Result := Sqrt(Sqr(EndPoint.X - StartPoint.X) +
                  Sqr(EndPoint.Y - StartPoint.Y));
+end;
+
+constructor TDWGArc.Create;
+begin
+  inherited Create;
+  DomainType := dotArc;
+  Center.X := 0.0;
+  Center.Y := 0.0;
+  Center.Z := 0.0;
+  Radius := 0.0;
+  Thickness := 0.0;
+  Extrusion.X := 0.0;
+  Extrusion.Y := 0.0;
+  Extrusion.Z := 1.0;
+  StartAngle := 0.0;
+  EndAngle := 0.0;
 end;
 
 constructor TDWGCircle.Create;
