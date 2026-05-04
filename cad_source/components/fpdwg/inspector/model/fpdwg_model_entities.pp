@@ -11,6 +11,16 @@ uses
   fpdwg_model_base;
 
 type
+  TDWGPoint2D = record
+    X: Double;
+    Y: Double;
+  end;
+
+  TDWGPolylineWidth = record
+    StartWidth: Double;
+    EndWidth: Double;
+  end;
+
   TDWGLine = class(TDWGEntity)
   public
     StartPoint: TDWGPoint3D;
@@ -28,6 +38,23 @@ type
     Extrusion: TDWGPoint3D;
     constructor Create; override;
     function Diameter: Double;
+  end;
+
+  TDWGLWPolyline = class(TDWGEntity)
+  public
+    Flag: Integer;
+    ConstWidth: Double;
+    Elevation: Double;
+    Thickness: Double;
+    Extrusion: TDWGPoint3D;
+    Points: array of TDWGPoint2D;
+    Bulges: array of Double;
+    VertexIds: array of Integer;
+    Widths: array of TDWGPolylineWidth;
+    constructor Create; override;
+    destructor Destroy; override;
+    function IsClosed: Boolean;
+    function PointCount: Integer;
   end;
 
   TDWGText = class(TDWGEntity)
@@ -93,6 +120,42 @@ end;
 function TDWGCircle.Diameter: Double;
 begin
   Result := Radius * 2.0;
+end;
+
+constructor TDWGLWPolyline.Create;
+begin
+  inherited Create;
+  DomainType := dotLWPolyline;
+  Flag := 0;
+  ConstWidth := 0.0;
+  Elevation := 0.0;
+  Thickness := 0.0;
+  Extrusion.X := 0.0;
+  Extrusion.Y := 0.0;
+  Extrusion.Z := 1.0;
+  SetLength(Points, 0);
+  SetLength(Bulges, 0);
+  SetLength(VertexIds, 0);
+  SetLength(Widths, 0);
+end;
+
+destructor TDWGLWPolyline.Destroy;
+begin
+  SetLength(Points, 0);
+  SetLength(Bulges, 0);
+  SetLength(VertexIds, 0);
+  SetLength(Widths, 0);
+  inherited Destroy;
+end;
+
+function TDWGLWPolyline.IsClosed: Boolean;
+begin
+  Result := (Flag and Integer(FLAG_LWPOLYLINE_CLOSED)) <> 0;
+end;
+
+function TDWGLWPolyline.PointCount: Integer;
+begin
+  Result := Length(Points);
 end;
 
 constructor TDWGText.Create;

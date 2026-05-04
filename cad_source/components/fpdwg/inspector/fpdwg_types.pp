@@ -61,6 +61,7 @@ type
     dotBlock,
     dotLine,
     dotCircle,
+    dotLWPolyline,
     dotText,
     dotSyntheticTable,
     dotUnknown
