@@ -101,6 +101,45 @@ allocate entity
 
 DWG-загрузчик должен прийти к тому же жизненному циклу, но с отдельной фазой deferred resolve, потому что порядок `dwg.object[]` не гарантирует, что owner уже создан.
 
+### 3.4 Уже разработанные inspector-мапперы как reference
+
+В `cad_source/components/fpdwg/inspector/mappers/` уже есть рабочий пример того,
+как разбивать LibreDWG-маппинг по файлам. Эти units не нужно подключать к
+production ZCAD-loader напрямую, потому что они создают inspector domain objects.
+Их нужно использовать как reference для:
+
+- проверки `nil` у `Raw.tio.entity` / `Raw.tio.&object` и typed pointer;
+- копирования только scalar-полей и handle-ссылок;
+- безопасного decode текста через общий helper;
+- регистрации mapper по `DWG_OBJECT_TYPE`;
+- deferred resolve handle-ссылок после materialize-фазы;
+- диагностики unsupported/unknown объектов без падения загрузки.
+
+Текущая разбивка уже показывает правильный масштаб: mapper-файлы занимают
+примерно 64-98 строк, `fpdwg_factory.pp` - около 300 строк, resolver/model units -
+до 300 строк. Для нового ZCAD-loader нужно сохранить тот же принцип: один
+ответственный unit, один компактный mapper, без файла-накопителя на тысячи строк.
+
+| Reference unit | Что подсмотреть | Как адаптировать для ZCAD-loader |
+|---|---|---|
+| `inspector/fpdwg_factory.pp` | `IDWGObjectMapper`, `TDWGBuilderContext`, `CreateDefault`, `FillCommonObjectFields`, `FillCommonEntityFields` | Ввести аналогичный registry mapper-ов, но результатом должен быть ZCAD shell/entity, а не `TDWGObject` |
+| `inspector/mappers/fpdwg_map_line.pp` | Минимальный entity mapper, `PointFromRaw`, корректное копирование `start.z` / `end.z` | Первый ZCAD MVP: `GDBObjLine`, pending owner/ref/finalize |
+| `inspector/mappers/fpdwg_map_circle.pp` | Простая геометрия `center`, `radius`, `thickness`, `extrusion` | Отдельный `uzedwgentcircle.pas` без общей логики загрузчика |
+| `inspector/mappers/fpdwg_map_arc.pp` | `center`, `radius`, angles, `extrusion`, failure logging | Отдельный `uzedwgentarc.pas`; углы привести к ожиданиям ZCAD entity |
+| `inspector/mappers/fpdwg_map_lwpolyline.pp` | Копирование массивов `points`, `bulges`, `vertexids`, `widths` по счетчикам LibreDWG | Отдельный mapper с defensive bounds/nil checks и deferred geometry build |
+| `inspector/mappers/fpdwg_map_text.pp` | `SafeDecodeLibreDWGText`, elevation -> Z, alignment, style handle | Отдельные `TEXT` / `MTEXT` units; style resolve делать через pending refs |
+| `inspector/mappers/fpdwg_map_layer.pp` | Layer name, color, lineweight, off/lock/plot, linetype handle | Перенести поля в `LayerTable.MergeItem`, linetype оставить pending ref |
+| `inspector/mappers/fpdwg_map_linetype.pp` | Name, description, pattern length | Реализовать `LTypeStyleTable`-merge до entity finalization |
+| `inspector/mappers/fpdwg_map_block.pp` | Block name, base point, first/last entity, endblk/layout refs | Создавать `BlockDefArray` shells и owner containers до attachment entities |
+| `inspector/mappers/fpdwg_map_layer_control.pp` | Table control entries как массив handle refs | Использовать на raw scan/diagnostics phase, не как обязательную ZCAD model |
+| `inspector/mappers/fpdwg_map_unknown.pp` | Причина unsupported object, optional raw bytes dump | Для ZCAD-loader: warning/stats и optional proxy/placeholder, без хранения raw pointer после `dwg_free` |
+| `inspector/fpdwg_resolver.pp` | Обход registry после materialize, status `resolved/partial/broken` | В ZCAD-loader resolver должен прикреплять ZCAD objects к owners и применять fallback root |
+
+Правило адаптации: inspector-маппер отвечает на вопрос "как безопасно прочитать
+LibreDWG object"; ZCAD-маппер отвечает на вопрос "как из этого object создать
+или обновить существующую структуру ZCAD". Между ними нельзя добавлять новую
+долгоживущую DWG domain model.
+
 ## 4. Архитектурное решение
 
 ### 4.1 Что НЕ создаем
@@ -319,36 +358,92 @@ end;
 - перевести handlers на использование `TDWGZCADLoadContext`;
 - для новых сущностей создавать отдельные units.
 
-Целевое состояние:
+Целевое состояние - файл `uzefflibredwg2ents.pas` перестает быть местом, куда
+добавляется вся новая логика. Он может временно оставаться фасадом/registration
+unit для обратной совместимости, но все новые handlers должны жить в отдельных
+units ниже.
+
+### 6.5 Целевая файловая структура и лимиты размера
+
+Общее правило: ни один новый hand-written unit не должен превышать 1000 строк.
+Практический целевой размер - 300-500 строк. Если файл приближается к 800 строкам,
+его нужно разделить до следующего расширения. Исключение - generated/raw binding
+`dwg.pp`, потому что он отражает `libredwg/dwg.h`.
 
 ```text
 cad_source/zengine/fileformats/
-  uzefflibredwg.pas
-  uzefflibredwg2ents.pas          compatibility/registration only
+  uzefflibredwg.pas                    <= 300 lines
+  uzefflibredwg2ents.pas               <= 250 lines, compatibility/registration only
   dwg/
-    uzedwgloadcontext.pas
-    uzedwghandle.pas
-    uzedwgrawscan.pas
-    uzedwgloader.pas
-    uzedwgtables.pas
-    uzedwgblocks.pas
-    uzedwgresolver.pas
-    uzedwgfinalize.pas
-    uzedwgdiagnostics.pas
+    uzedwgtypes.pas                    <= 300 lines
+    uzedwghandle.pas                   <= 350 lines
+    uzedwgtext.pas                     <= 250 lines
+    uzedwgdiagnostics.pas              <= 400 lines
+    uzedwgloadcontext.pas              <= 600 lines
+    uzedwgrawscan.pas                  <= 450 lines
+    uzedwgloader.pas                   <= 500 lines
+    uzedwgtables.pas                   <= 700 lines
+    uzedwgblocks.pas                   <= 700 lines
+    uzedwgresolver.pas                 <= 700 lines
+    uzedwgfinalize.pas                 <= 400 lines
+    uzedwgentityregistry.pas           <= 400 lines
     entities/
-      uzedwgentline.pas
-      uzedwgentcircle.pas
-      uzedwgentarc.pas
-      uzedwgentlwpolyline.pas
-      uzedwgenttext.pas
-      uzedwgentmtext.pas
-      uzedwgentinsert.pas
-      uzedwgentunknown.pas
+      uzedwgentbase.pas                <= 500 lines
+      uzedwgentline.pas                <= 250 lines
+      uzedwgentcircle.pas              <= 250 lines
+      uzedwgentarc.pas                 <= 300 lines
+      uzedwgentpoint.pas               <= 250 lines
+      uzedwgentlwpolyline.pas          <= 500 lines
+      uzedwgentpolyline.pas            <= 600 lines
+      uzedwgenttext.pas                <= 400 lines
+      uzedwgentmtext.pas               <= 500 lines
+      uzedwgentinsert.pas              <= 500 lines
+      uzedwgentattrib.pas              <= 450 lines
+      uzedwgentdimension.pas           <= 700 lines
+      uzedwgenthatch.pas               <= 700 lines
+      uzedwgentspline.pas              <= 650 lines
+      uzedwgentellipse.pas             <= 450 lines
+      uzedwgentsolid.pas               <= 350 lines
+      uzedwgent3dface.pas              <= 350 lines
+      uzedwgentunknown.pas             <= 350 lines
+    tests/
+      uzedwgtesthandles.pas            <= 400 lines
+      uzedwgtestline.pas               <= 400 lines
+      uzedwgtestresolver.pas           <= 500 lines
+      uzedwgtesttables.pas             <= 500 lines
 ```
 
-Каждый модуль должен иметь одну ответственность и целевой размер до 300-500 строк, кроме generated binding.
+Назначение файлов верхнего уровня:
 
-### 6.5 `fpdwg/inspector/*`
+| Файл | Ответственность | Что не должно попадать в файл |
+|---|---|---|
+| `uzefflibredwg.pas` | Регистрация формата, `dwg_read_file`, guaranteed `dwg_free`, запуск `TDWGZCADLoader` | Entity-specific mapping, таблицы, resolver |
+| `uzefflibredwg2ents.pas` | Временный facade для старых handlers и registration shim | Новые entity implementations |
+| `dwg/uzedwgtypes.pas` | Общие enums/records: object kind, pending item, stats modes | LibreDWG binding declarations, ZCAD entity allocation |
+| `dwg/uzedwghandle.pas` | `BITCODE_H` / `Dwg_Object` handle extraction, formatting, null/duplicate helpers | Owner attachment, layer/style resolve |
+| `dwg/uzedwgtext.pas` | Safe text decode, codepage policy, fallback diagnostics | Direct entity creation |
+| `dwg/uzedwgdiagnostics.pas` | Warning/error records, counters, `LogProc` adapter | Phase orchestration |
+| `dwg/uzedwgloadcontext.pas` | Import context, handle indexes, pending owner/ref/finalize queues | Per-type mapper code |
+| `dwg/uzedwgrawscan.pas` | Scan `dwg.object[]`, collect raw handle/object metadata | ZCAD object allocation |
+| `dwg/uzedwgloader.pas` | Phase orchestration: scan -> shell -> resolve -> finalize | Low-level field copying |
+| `dwg/uzedwgtables.pas` | Header/table shells: layers, linetypes, text styles, dimstyles | Entity geometry |
+| `dwg/uzedwgblocks.pas` | Block definitions, model/paper space containers, block metadata | INSERT entity mapper internals |
+| `dwg/uzedwgresolver.pas` | Owner/ref resolution, fallback root, duplicate/broken ref policy | Raw LibreDWG read/free |
+| `dwg/uzedwgfinalize.pas` | `BuildGeometry`, `FormatAfterDXFLoad`, postprocess hooks | Handle registry mutation except finalize status |
+| `dwg/uzedwgentityregistry.pas` | Registration of entity mapper units by `DWG_OBJECT_TYPE` | Mapper implementation details |
+| `dwg/entities/uzedwgentbase.pas` | Common mapper contract and helpers shared by entity units | All entity types in one unit |
+
+Правила разбиения:
+
+- один DWG entity type - один `dwg/entities/uzedwgent*.pas` unit;
+- общий helper выносится в `uzedwgentbase.pas` только если он нужен минимум двум entity units;
+- table/block/header logic не смешивается с entity logic;
+- resolver не копирует raw scalar fields, а работает только с queues/indexes из context;
+- mapper не вызывает `BuildGeometry` и не добавляет entity в owner напрямую;
+- при добавлении нового DWG type сначала создается отдельный mapper unit и тест рядом с `dwg/tests/`;
+- если entity становится сложнее 700 строк, ее нужно дробить на parser/helper поддиректорию до превышения 1000 строк.
+
+### 6.6 `fpdwg/inspector/*`
 
 Контракт:
 
