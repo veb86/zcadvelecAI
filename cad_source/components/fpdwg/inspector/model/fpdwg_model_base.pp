@@ -149,6 +149,7 @@ begin
     dotBlockHeader: Result := 'block_header';
     dotBlock: Result := 'block';
     dotLine: Result := 'line';
+    dotArc: Result := 'arc';
     dotCircle: Result := 'circle';
     dotText: Result := 'text';
     dotSyntheticTable: Result := 'synthetic_table';

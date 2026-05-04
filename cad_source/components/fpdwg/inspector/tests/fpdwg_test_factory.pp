@@ -18,6 +18,7 @@ type
     procedure LinetypeMapperCopiesDescriptionAndPattern;
     procedure BlockHeaderMapperCopiesNamesAndEntityReferences;
     procedure LineMapperCopiesGeometryAndCommonEntityHandles;
+    procedure ArcMapperCopiesGeometryAndCommonEntityHandles;
     procedure CircleMapperCopiesGeometryAndCommonEntityHandles;
     procedure LWPolylineMapperCopiesVerticesAndCommonEntityHandles;
     procedure TextMapperCopiesTextGeometryAndCommonEntityHandles;
@@ -83,10 +84,11 @@ begin
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LTYPE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_BLOCK_HEADER, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LINE, Mapper));
+    AssertTrue(Factory.TryGetMapper(DWG_TYPE_ARC, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_CIRCLE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_LWPOLYLINE, Mapper));
     AssertTrue(Factory.TryGetMapper(DWG_TYPE_TEXT, Mapper));
-    AssertEquals(8, Factory.MapperCount);
+    AssertEquals(9, Factory.MapperCount);
   finally
     Factory.Free;
   end;
@@ -348,6 +350,75 @@ begin
       AssertTrue(Line.Layer = nil);
       AssertTrue(Line.Linetype = nil);
       AssertEquals(Ord(osRaw), Ord(Line.Status));
+    finally
+      Obj.Free;
+    end;
+  finally
+    Factory.Free;
+  end;
+end;
+
+procedure TFPDWGFactoryTest.ArcMapperCopiesGeometryAndCommonEntityHandles;
+var
+  Factory: TDWGObjectFactory;
+  Raw: Dwg_Object;
+  RawEntity: Dwg_Object_Entity;
+  RawArc: Dwg_Entity_ARC;
+  OwnerRef, LayerRef, LTypeRef: Dwg_Object_Ref;
+  Obj: TDWGObject;
+  Arc: TDWGArc;
+begin
+  Factory := TDWGObjectFactory.CreateDefault;
+  try
+    InitRawObject(Raw, DWG_TYPE_ARC, DWG_SUPERTYPE_ENTITY, $44);
+    FillChar(RawEntity, SizeOf(RawEntity), 0);
+    FillChar(RawArc, SizeOf(RawArc), 0);
+    InitAbsoluteRef(OwnerRef, $45);
+    InitAbsoluteRef(LayerRef, $46);
+    InitFallbackRef(LTypeRef, $47);
+
+    Raw.tio.entity := @RawEntity;
+    RawEntity.ownerhandle := @OwnerRef;
+    RawEntity.layer := @LayerRef;
+    RawEntity.ltype := @LTypeRef;
+    RawEntity.color.index := 4;
+    RawEntity.linewt := 18;
+    RawEntity.invisible := 0;
+    RawEntity.tio.ARC := @RawArc;
+    RawArc.center.x := 10.0;
+    RawArc.center.y := 20.0;
+    RawArc.center.z := 30.0;
+    RawArc.radius := 5.5;
+    RawArc.thickness := 0.25;
+    RawArc.extrusion.x := 0.0;
+    RawArc.extrusion.y := 0.0;
+    RawArc.extrusion.z := 1.0;
+    RawArc.start_angle := 0.5;
+    RawArc.end_angle := 1.5;
+
+    Obj := Factory.CreateObject(Raw, TestContext);
+    try
+      AssertTrue(Obj is TDWGArc);
+      Arc := TDWGArc(Obj);
+      AssertEquals(Int64($44), Int64(Arc.Handle));
+      AssertEquals(Ord(dotArc), Ord(Arc.DomainType));
+      AssertEquals(Int64($45), Int64(Arc.OwnerHandle.Value));
+      AssertEquals(Int64($46), Int64(Arc.LayerHandle.Value));
+      AssertEquals(Int64($47), Int64(Arc.LinetypeHandle.Value));
+      AssertEquals(4, Arc.ColorIndex);
+      AssertEquals(18, Arc.LineWeight);
+      AssertTrue(Arc.Visible);
+      AssertEquals(10.0, Arc.Center.X, 0.000001);
+      AssertEquals(20.0, Arc.Center.Y, 0.000001);
+      AssertEquals(30.0, Arc.Center.Z, 0.000001);
+      AssertEquals(5.5, Arc.Radius, 0.000001);
+      AssertEquals(0.25, Arc.Thickness, 0.000001);
+      AssertEquals(1.0, Arc.Extrusion.Z, 0.000001);
+      AssertEquals(0.5, Arc.StartAngle, 0.000001);
+      AssertEquals(1.5, Arc.EndAngle, 0.000001);
+      AssertTrue(Arc.Layer = nil);
+      AssertTrue(Arc.Linetype = nil);
+      AssertEquals(Ord(osRaw), Ord(Arc.Status));
     finally
       Obj.Free;
     end;
@@ -673,7 +744,7 @@ begin
   Logger := MemoryLogger;
   Factory := TDWGObjectFactory.CreateDefault;
   try
-    InitRawObject(Raw, DWG_TYPE_ARC, DWG_SUPERTYPE_ENTITY, $60);
+    InitRawObject(Raw, DWG_TYPE__3DSOLID, DWG_SUPERTYPE_ENTITY, $60);
     Raw.size := 42;
     Raw.bitsize := 104;
     Raw.num_unknown_bits := 16;

@@ -15,6 +15,7 @@ type
     procedure HelpDoesNotRequireInputFile;
     procedure DefaultsUseTextTolerantAndAllReportSections;
     procedure ParsesFormatModeLibraryAndLineFilter;
+    procedure ParsesArcFilter;
     procedure FormatSelectsDefaultOutputFileExtension;
     procedure OutputDashKeepsReportOnStdout;
     procedure SectionFlagsSwitchToExplicitSelection;
@@ -62,6 +63,7 @@ begin
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeLayers);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeLinetypes);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeLines);
+  AssertTrue(ResultInfo.Options.ReportOptions.IncludeArcs);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeUnknown);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeObjects);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeWarnings);
@@ -90,6 +92,16 @@ begin
   AssertEquals(Ord(iefLine), Ord(ResultInfo.Options.EntityFilter));
   AssertTrue(ResultInfo.Options.DumpUnknown);
   AssertTrue(ResultInfo.Options.Verbose);
+end;
+
+procedure TFPDWGCLITest.ParsesArcFilter;
+var
+  ResultInfo: TDWGInspectorParseResult;
+begin
+  ResultInfo := ParseDWGInspectorArgs(['sample.dwg', '--entities=arc']);
+
+  AssertTrue(ResultInfo.Success);
+  AssertEquals(Ord(iefArc), Ord(ResultInfo.Options.EntityFilter));
 end;
 
 procedure TFPDWGCLITest.FormatSelectsDefaultOutputFileExtension;
@@ -135,6 +147,7 @@ begin
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeLayers);
   AssertFalse(ResultInfo.Options.ReportOptions.IncludeLinetypes);
   AssertFalse(ResultInfo.Options.ReportOptions.IncludeLines);
+  AssertFalse(ResultInfo.Options.ReportOptions.IncludeArcs);
   AssertFalse(ResultInfo.Options.ReportOptions.IncludeUnknown);
   AssertFalse(ResultInfo.Options.ReportOptions.IncludeObjects);
   AssertTrue(ResultInfo.Options.ReportOptions.IncludeWarnings);
