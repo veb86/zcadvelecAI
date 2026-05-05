@@ -100,6 +100,8 @@ type
     function GetObjType:TObjID;virtual;
   end;
 
+function AllocAndInitLWpolyline(owner:PGDBObjGenericWithSubordinated):PGDBObjLWPolyline;
+
 implementation
 
 var
