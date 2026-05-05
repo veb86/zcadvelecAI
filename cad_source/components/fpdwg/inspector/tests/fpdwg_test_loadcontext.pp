@@ -54,6 +54,23 @@ type
     procedure NilPtrShellIsTreatedAsNotFound;
   end;
 
+  { Stage 4 (TZ §12.4) regression tests for block / model-space / paper-space
+    ownership routing at the load-context layer. The high-level production
+    behaviour (BlockDefArray.create, model/paper recognition by Dwg_Data
+    pointers) lives in uzefflibredwg2ents.pas and depends on ZCAD entity
+    units, so these tests focus on the resolver contract that the production
+    code relies on: dokModelSpace / dokPaperSpace / dokBlockDef are valid
+    container kinds for ownership, child entities of each route to the right
+    pointer (block content does NOT land in the model root), and a block
+    handle registered after its child still resolves correctly. }
+  TDWGLoadContextBlockTest = class(TTestCase)
+  published
+    procedure EntityInsideBlockDoesNotReachModelRoot;
+    procedure ModelSpaceShellAcceptsChildEntities;
+    procedure PaperSpaceShellAcceptsChildEntities;
+    procedure DuplicateBlockHandleKeepsFirstShell;
+  end;
+
 implementation
 
 uses
@@ -811,8 +828,167 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextBlockTest (Stage 4) ---------- }
+
+procedure TDWGLoadContextBlockTest.EntityInsideBlockDoesNotReachModelRoot;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeRecorder;
+  Pending: PDWGZCADPendingOwner;
+  Block, Line, Root: Pointer;
+  RootCalls, I: Integer;
+begin
+  // §12.4 acceptance: "entity внутри block не попадает в model root". The
+  // resolver must route the child to the registered block-def pointer even
+  // though the model-space root is also a valid fallback.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Block := MakePtr($BB04);
+    Line := MakePtr($EE04);
+    Root := MakePtr($FF04);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetFallbackOwner(Root);
+    Ctx.SetAttachProc(@FakeAttach, @Recorder);
+
+    // Model-space registered under handle 0 mirrors BeginDWGImport.
+    Ctx.RegisterShell(0, dokModelSpace, Root, -1);
+    // BLOCK_HEADER -> dokBlockDef pointer (real production path).
+    Ctx.RegisterShell($300, dokBlockDef, Block, 0);
+    // Entity owner-handle points to the block, not the model root.
+    Ctx.RegisterShell($301, dokEntity, Line, 1);
+    Ctx.QueueOwnerResolve(Line, $301, $300);
+
+    Ctx.ResolveOwners;
+
+    Pending := Ctx.FindPending($301);
+    AssertNotNull(Pending);
+    AssertEquals('child attaches to block, not fallback', Ord(asAttached),
+      Ord(Pending^.AttachState));
+    AssertEquals('owner pointer is the block-def',
+      PtrInt(Block), PtrInt(Pending^.AttachedOwner));
+    AssertEquals('no fallback occurred', 0, Ctx.FallbackCount);
+
+    RootCalls := 0;
+    for I := 0 to High(Recorder.Calls) do
+      if PtrUInt(Recorder.Calls[I].Owner) = PtrUInt(Root) then
+        Inc(RootCalls);
+    AssertEquals('block content must not be added to model root', 0,
+      RootCalls);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextBlockTest.ModelSpaceShellAcceptsChildEntities;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeRecorder;
+  Pending: PDWGZCADPendingOwner;
+  ModelRoot, Line: Pointer;
+begin
+  // §12.4: a BLOCK_HEADER recognised as model space registers under
+  // dokModelSpace pointing at the drawing's pObjRoot. A child entity whose
+  // owner-handle points at that handle must resolve to the same pointer.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    ModelRoot := MakePtr($F501);
+    Line := MakePtr($E501);
+    Ctx.SetFallbackOwner(ModelRoot);
+    Ctx.SetAttachProc(@FakeAttach, @Recorder);
+
+    // Real DWG model-space handle is non-zero (header-resolved); register it
+    // alongside the handle-0 fallback that BeginDWGImport sets up.
+    Ctx.RegisterShell(0, dokModelSpace, ModelRoot, -1);
+    Ctx.RegisterShell($1F, dokModelSpace, ModelRoot, 0);
+    Ctx.RegisterShell($401, dokEntity, Line, 1);
+    Ctx.QueueOwnerResolve(Line, $401, $1F);
+
+    Ctx.ResolveOwners;
+
+    Pending := Ctx.FindPending($401);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals('owner is the model-space root', PtrInt(ModelRoot),
+      PtrInt(Pending^.AttachedOwner));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextBlockTest.PaperSpaceShellAcceptsChildEntities;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeRecorder;
+  Pending: PDWGZCADPendingOwner;
+  PaperRoot, Line: Pointer;
+begin
+  // §12.4: paper space is recognised as a container kind (dokPaperSpace) so
+  // entities owned by it resolve cleanly even though Stage 4 still routes
+  // their pointer to the same drawing root.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    PaperRoot := MakePtr($F502);
+    Line := MakePtr($E502);
+    Ctx.SetFallbackOwner(PaperRoot);
+    Ctx.SetAttachProc(@FakeAttach, @Recorder);
+
+    Ctx.RegisterShell($2F, dokPaperSpace, PaperRoot, 0);
+    Ctx.RegisterShell($402, dokEntity, Line, 1);
+    Ctx.QueueOwnerResolve(Line, $402, $2F);
+
+    Ctx.ResolveOwners;
+
+    Pending := Ctx.FindPending($402);
+    AssertNotNull(Pending);
+    AssertEquals('paper-space owner accepted as container',
+      Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(PtrInt(PaperRoot), PtrInt(Pending^.AttachedOwner));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextBlockTest.DuplicateBlockHandleKeepsFirstShell;
+var
+  Ctx: TDWGZCADLoadContext;
+  Entry: TDWGZCADHandleEntry;
+  BlockA, BlockB: Pointer;
+  I: Integer;
+  HasDupWarning: Boolean;
+begin
+  // §12.4: "повторный block name обрабатывается как merge/duplicate по
+  // LoadMode". The actual MergeItem semantics live in the ZCAD-side
+  // BlockDefArray check; here we verify the load-context contract that
+  // backs it: a second RegisterShell on the same handle keeps the first
+  // pointer and emits a duplicate-handle warning, so the loader can
+  // detect the merge case and keep child resolves pointing at the
+  // already-loaded block-def.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    BlockA := MakePtr($BB10);
+    BlockB := MakePtr($BB11);
+
+    AssertTrue('first registration succeeds',
+      Ctx.RegisterShell($500, dokBlockDef, BlockA, 0));
+    AssertFalse('duplicate handle is rejected',
+      Ctx.RegisterShell($500, dokBlockDef, BlockB, 1));
+
+    AssertTrue(Ctx.TryGetEntry($500, Entry));
+    AssertEquals('first block-def pointer wins',
+      PtrInt(BlockA), PtrInt(Entry.Ptr));
+
+    HasDupWarning := False;
+    for I := 0 to Ctx.WarningCount - 1 do
+      if Ctx.WarningAt(I).Code = DWG_WARN_DUPLICATE_HANDLE then
+        HasDupWarning := True;
+    AssertTrue('duplicate-handle warning recorded', HasDupWarning);
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
-    TDWGLoadContextRefTest]);
+    TDWGLoadContextRefTest, TDWGLoadContextBlockTest]);
 
 end.

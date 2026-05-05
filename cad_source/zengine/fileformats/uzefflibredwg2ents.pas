@@ -29,6 +29,8 @@ uses
   uzbstrproc,
   uzestyleslayers,uzestyleslinetypes,uzestylestexts,
   uzeentline,uzeentity,uzeentitiesprop,//uzgldrawcontext,
+  uzeblockdef,UGDBObjBlockdefArray,
+  uzeTypes,
   uzedwgloadcontext,
   uzeffLibreDWG,
   uzeffmanager;
@@ -55,11 +57,33 @@ var
   LoadCtx:TDWGZCADLoadContext=nil;
   LoadDrawing:PTSimpleDrawing=nil;
 
+{ Stage 4 (TZ §12.4): "block content форматируется при использовании INSERT
+  или финальной formatting-фазе drawing". DWGAttachEntity must skip
+  BuildGeometry when the resolved owner is a block definition because the
+  drawing's BlockDefArray.FormatEntity will run BuildGeometry+formatEntity
+  for every block-def child later. Walking the handle map keeps the test
+  pipeline (which never registers block defs) on the existing fast path. }
+function DWGOwnerIsBlockDef(Owner:Pointer):Boolean;
+var
+  i:Integer;
+  Entry:PDWGZCADHandleEntry;
+begin
+  Result:=False;
+  if (Owner=nil) or (LoadCtx=nil) then
+    Exit;
+  for i:=0 to LoadCtx.Handles.Count-1 do begin
+    Entry:=LoadCtx.Handles.EntryAt(i);
+    if (Entry^.Kind=dokBlockDef) and (Entry^.Ptr=Owner) then
+      Exit(True);
+  end;
+end;
+
 procedure DWGAttachEntity(Entity:Pointer;Owner:Pointer;
   Reason:TDWGAttachReason;Data:Pointer);
 var
   pobj:PGDBObjEntity;
   newowner:PGDBObjGenericSubEntry;
+  ownerIsBlockDef:Boolean;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -73,7 +97,20 @@ begin
     zDebugLn(['{WHM}LINE ',HexStr(PtrUInt(pobj),16),
       ' attached via fallback (',DWGAttachReasonToText(Reason),')']);
 
-  if LoadDrawing<>nil then begin
+  // Stage 4 (TZ §12.4): defer block-def content geometry. BuildGeometry must
+  // still run for entities landing in model/paper space (or fallback root) so
+  // they appear on screen, but block-definition contents are formatted later
+  // — either by an INSERT that materialises the block, or by the drawing's
+  // global formatting pass (BlockDefArray.FormatEntity). Running BuildGeometry
+  // here for a block-def child would duplicate the work that FormatEntity
+  // does and pollute the deferred-formatting contract the spec calls out by
+  // name ("block content форматируется при использовании INSERT или финальной
+  // formatting-фазе drawing").
+  ownerIsBlockDef:=False;
+  if LoadCtx<>nil then
+    ownerIsBlockDef:=DWGOwnerIsBlockDef(newowner);
+
+  if (LoadDrawing<>nil) and (not ownerIsBlockDef) then begin
     PGDBObjEntity(pobj)^.BuildGeometry(LoadDrawing^);
     // FormatAfterDXFLoad/FromDXFPostProcessAfterAdd belong to the DXF code path
     // and require a TDrawContext that the DWG pipeline does not yet thread
@@ -278,24 +315,110 @@ begin
   end;
 end;
 
+{ Stage 4 (TZ §12.4): a block header may describe model-space, paper-space or
+  a user block. The first two are containers but not user-visible blocks, so
+  they must NOT spawn a BlockDef and must NOT count as duplicates against
+  user-named blocks. LibreDWG exposes `mspace_block` / `pspace_block` on the
+  Dwg_Data root: comparing the object pointer is locale/version safe and
+  cheaper than a name match. We still keep a name fallback because the layout
+  pointers are only populated for real DWG files — fixture-driven tests that
+  build a Dwg_Object by hand can reach this code path with parent=nil. }
+function DWGBlockHeaderIsModelSpace(var DWGObject:Dwg_Object;
+  const Name:string):Boolean;
+var
+  Dwg:PDwg_Data;
+  upper:string;
+begin
+  Dwg:=PDwg_Data(DWGObject.parent);
+  if (Dwg<>nil) and (Dwg^.mspace_block<>nil) and
+     (Pointer(Dwg^.mspace_block)=@DWGObject) then
+    Exit(True);
+  upper:=UpperCase(Name);
+  Result:=(upper='*MODEL_SPACE') or (upper='$MODEL_SPACE');
+end;
+
+function DWGBlockHeaderIsPaperSpace(var DWGObject:Dwg_Object;
+  const Name:string):Boolean;
+var
+  Dwg:PDwg_Data;
+  upper:string;
+begin
+  Dwg:=PDwg_Data(DWGObject.parent);
+  if (Dwg<>nil) and (Dwg^.pspace_block<>nil) and
+     (Pointer(Dwg^.pspace_block)=@DWGObject) then
+    Exit(True);
+  upper:=UpperCase(Name);
+  Result:=(upper='*PAPER_SPACE') or (upper='$PAPER_SPACE') or
+          (Copy(upper,1,12)='*PAPER_SPACE');
+end;
+
 procedure AddBlockHeader(var ZContext:TZDrawingContext;var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PDWGBlock_Header:PDwg_Object_BLOCK_HEADER);
 var
   name:string;
   Handle:QWord;
+  pBlockDef:PGDBObjBlockdef;
+  existingIdx:Integer;
+  isModel,isPaper:Boolean;
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name,DWGContext,name);
+  if DWGContext.DWGVer>R_2007 then
+    name:=Tria_Utf8ToAnsi(name);
   zDebugLn(['{WH}BlockHeader: ',name]);
-  if LoadCtx<>nil then begin
-    Handle:=DWGObjectHandleValue(DWGObject);
-    if Handle<>0 then
-      // Stage 2 does not yet build a real BlockDef object; we register the
-      // block header handle as a container so children resolve to fallback
-      // root rather than landing on a non-container layer/linetype. The
-      // owner pointer is the model-space root for now: when the BlockDef
-      // mapper lands the kind stays dokBlockDef but Ptr will be replaced.
-      LoadCtx.RegisterShell(Handle,dokBlockDef,
-        ZContext.PDrawing^.pObjRoot,-1);
+
+  if LoadCtx=nil then
+    Exit;
+  Handle:=DWGObjectHandleValue(DWGObject);
+  if Handle=0 then
+    Exit;
+
+  // Stage 4 (TZ §12.4): model and paper space are containers, not user blocks.
+  // The model-space root is already registered under handle 0 in
+  // BeginDWGImport so child entities with a null/missing owner fall back to
+  // it; here we additionally register the real model-space handle so entities
+  // whose ownerhandle points to model_space land in the same drawing root and
+  // not into a freshly created BlockDef. Paper space gets its own kind so
+  // future paper-space layouts can be wired without changing this routine.
+  isModel:=DWGBlockHeaderIsModelSpace(DWGObject,name);
+  isPaper:=(not isModel) and DWGBlockHeaderIsPaperSpace(DWGObject,name);
+
+  if isModel then begin
+    LoadCtx.RegisterShell(Handle,dokModelSpace,
+      ZContext.PDrawing^.pObjRoot,-1);
+    Exit;
   end;
+  if isPaper then begin
+    // Stage 4 leaves paper-space contents in fallback root for now (TZ §12.4
+    // covers recognition, full paper-space rendering is its own future stage).
+    // Registering with pObjRoot keeps child resolve working without
+    // pretending we have a separate paper-space drawing.
+    LoadCtx.RegisterShell(Handle,dokPaperSpace,
+      ZContext.PDrawing^.pObjRoot,-1);
+    Exit;
+  end;
+
+  // Stage 4 (TZ §12.4): a real user block. Honour LoadMode the same way
+  // LayerTable.MergeItem does — TLOMerge keeps the existing definition,
+  // TLOLoad reuses it (and lets later mappers overwrite fields). The
+  // BlockDefArray itself does not provide MergeItem so we inline the lookup.
+  existingIdx:=ZContext.PDrawing^.BlockDefArray.getindex(name);
+  if existingIdx>=0 then begin
+    pBlockDef:=@PBlockdefArray(
+      ZContext.PDrawing^.BlockDefArray.parray)[existingIdx];
+    if ZContext.LoadMode=TLOMerge then begin
+      // Duplicate-by-name in merge mode: do not overwrite, but still register
+      // the new handle so children inside this duplicate landed under the
+      // already-loaded block definition.
+      zDebugLn(['{WH}BlockHeader: duplicate "',name,'" merged']);
+    end;
+  end else begin
+    pBlockDef:=ZContext.PDrawing^.BlockDefArray.create(name);
+    if pBlockDef<>nil then begin
+      pBlockDef^.Base.x:=PDWGBlock_Header^.base_pt.x;
+      pBlockDef^.Base.y:=PDWGBlock_Header^.base_pt.y;
+      pBlockDef^.Base.z:=PDWGBlock_Header^.base_pt.z;
+    end;
+  end;
+  LoadCtx.RegisterShell(Handle,dokBlockDef,pBlockDef,-1);
 end;
 
 procedure AddBlock(var ZContext:TZDrawingContext;var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PDWGBlock_Header:PDwg_Object_BLOCK_HEADER);
