@@ -38,6 +38,7 @@ uses
   uzeTypes,
   uzedwgloadcontext,
   uzeffLibreDWG,
+  uzeentsubordinated,
   uzeffmanager;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
