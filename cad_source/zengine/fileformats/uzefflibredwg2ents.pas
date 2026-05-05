@@ -86,14 +86,16 @@ end;
 procedure AddLineEntity(var ZContext:TZDrawingContext;var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PLine:PDwg_Entity_LINE);
 var
   pobj:PGDBObjEntity;
+  Endpoints:TDWGLineEndpoints;
 begin
   pobj := AllocAndInitLine(ZContext.PDrawing^.pObjRoot);
-  PGDBObjLine(pobj)^.CoordInOCS.lBegin.x:=PLine^.start.x;
-  PGDBObjLine(pobj)^.CoordInOCS.lBegin.y:=PLine^.start.y;
-  PGDBObjLine(pobj)^.CoordInOCS.lBegin.z:=PLine^.start.x;
-  PGDBObjLine(pobj)^.CoordInOCS.lEnd.x:=PLine^.end_.x;
-  PGDBObjLine(pobj)^.CoordInOCS.lEnd.y:=PLine^.end_.y;
-  PGDBObjLine(pobj)^.CoordInOCS.lEnd.z:=PLine^.end_.x;
+  DWGCopyLineEndpoints(PLine^,Endpoints);
+  PGDBObjLine(pobj)^.CoordInOCS.lBegin.x:=Endpoints.StartX;
+  PGDBObjLine(pobj)^.CoordInOCS.lBegin.y:=Endpoints.StartY;
+  PGDBObjLine(pobj)^.CoordInOCS.lBegin.z:=Endpoints.StartZ;
+  PGDBObjLine(pobj)^.CoordInOCS.lEnd.x:=Endpoints.EndX;
+  PGDBObjLine(pobj)^.CoordInOCS.lEnd.y:=Endpoints.EndY;
+  PGDBObjLine(pobj)^.CoordInOCS.lEnd.z:=Endpoints.EndZ;
   ZContext.PDrawing^.pObjRoot^.AddMi(pobj);
   //PGDBObjEntity(pobj)^.BuildGeometry(drawing);
   //PGDBObjEntity(pobj)^.formatEntity(drawing,dc);
