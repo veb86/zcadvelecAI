@@ -35,3 +35,9 @@ cad_source/zcad.res
 # Local logs and CI logs (do not commit)
 logs/
 ci-logs/
+
+# Free Pascal build artifacts under fpdwg component:
+cad_source/components/fpdwg/**/*.o
+cad_source/components/fpdwg/**/*.ppu
+cad_source/components/fpdwg/**/*.rsj
+cad_source/components/fpdwg/inspector/tests/fpdwg_tests
