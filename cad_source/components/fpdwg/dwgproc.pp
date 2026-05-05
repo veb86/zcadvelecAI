@@ -112,6 +112,13 @@ interface
   function DWGObjectHandleValue(const Obj:Dwg_Object):QWord;
   function DWGObjectOwnerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
   function DWGRefHandleValue(Ref:BITCODE_H;out Value:QWord):Boolean;
+  // Stage 3 helpers (TZ §12.3): pull layer / linetype refs off an entity-typed
+  // Dwg_Object. Returns False when Obj is not an entity, or when the ref is
+  // missing/null. Object-typed records (LAYER, LTYPE, BLOCK_HEADER) do not
+  // expose these slots, so callers reading from a non-entity object get False.
+  function DWGEntityLayerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  function DWGEntityLineTypeHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  function DWGLayerLineTypeHandleValue(const PLayer:PDwg_Object_LAYER;out Value:QWord):Boolean;
   // Safe text decode helper without inspector dependency. Falls back to ANSI for
   // <=R2004, UTF-16LE for newer DWG; nil pointer returns empty string.
   procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
@@ -290,6 +297,30 @@ implementation
           Exit(DWGRefHandleValue(Obj.tio.&object^.ownerhandle,Value));
     end;
     Result:=False;
+  end;
+
+  function DWGEntityLayerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if (Obj.supertype<>DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity=nil) then
+      Exit(False);
+    Result:=DWGRefHandleValue(Obj.tio.entity^.layer,Value);
+  end;
+
+  function DWGEntityLineTypeHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if (Obj.supertype<>DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity=nil) then
+      Exit(False);
+    Result:=DWGRefHandleValue(Obj.tio.entity^.ltype,Value);
+  end;
+
+  function DWGLayerLineTypeHandleValue(const PLayer:PDwg_Object_LAYER;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if PLayer=nil then
+      Exit(False);
+    Result:=DWGRefHandleValue(PLayer^.ltype,Value);
   end;
 
   procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);

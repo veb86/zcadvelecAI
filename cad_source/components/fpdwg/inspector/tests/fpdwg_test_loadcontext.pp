@@ -36,6 +36,24 @@ type
     procedure ChildOfBlockHeaderIsNotAttachedToRoot;
   end;
 
+  { Stage 3 (TZ §12.3) regression tests for the visual-property reference
+    queue. These cover the four failure modes the resolver must recognise:
+    null ref, missing handle, kind mismatch, and successful resolution
+    (including the layer-declared-after-entity case the spec calls out by
+    name). Tests use opaque pointers so they exercise the resolver
+    independently of any ZCAD entity. }
+  TDWGLoadContextRefTest = class(TTestCase)
+  published
+    procedure LayerDeclaredAfterEntityResolvesAtEnd;
+    procedure NullLayerHandleFallsBackToSystemLayer;
+    procedure MissingLayerHandleFallsBackToSystemLayer;
+    procedure LineTypeKindMismatchFallsBackToByLayer;
+    procedure ResolveRefsIsIdempotent;
+    procedure SecondQueueForSameSlotReplacesFirst;
+    procedure RefAttachCallbackReceivesSlotAndReason;
+    procedure NilPtrShellIsTreatedAsNotFound;
+  end;
+
 implementation
 
 uses
@@ -529,7 +547,272 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextRefTest (Stage 3) ---------- }
+
+type
+  TFakeRefAttachCall = record
+    Entity: Pointer;
+    Ref: Pointer;
+    Slot: TDWGZCADRefSlot;
+    Reason: TDWGAttachReason;
+  end;
+
+  PFakeRefRecorder = ^TFakeRefRecorder;
+  TFakeRefRecorder = record
+    Calls: array of TFakeRefAttachCall;
+  end;
+
+procedure FakeRefAttach(Entity: Pointer; Ref: Pointer;
+  Slot: TDWGZCADRefSlot; Reason: TDWGAttachReason; Data: Pointer);
+var
+  Rec: PFakeRefRecorder;
+  Call: TFakeRefAttachCall;
+begin
+  Rec := PFakeRefRecorder(Data);
+  Call.Entity := Entity;
+  Call.Ref := Ref;
+  Call.Slot := Slot;
+  Call.Reason := Reason;
+  SetLength(Rec^.Calls, Length(Rec^.Calls) + 1);
+  Rec^.Calls[High(Rec^.Calls)] := Call;
+end;
+
+procedure TDWGLoadContextRefTest.LayerDeclaredAfterEntityResolvesAtEnd;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer, SysLayer: Pointer;
+begin
+  // TZ §13: "layer_declared_later" — entity references a layer handle whose
+  // shell is registered AFTER QueueRefResolve runs. ResolveRefs at end of
+  // load must still attach to the real layer, not the fallback.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer := MakePtr($A1);
+    SysLayer := MakePtr($5A);
+    Ctx.SetFallbackLayer(SysLayer);
+    Ctx.RegisterShell($101, dokEntity, Entity, 0);
+    Ctx.QueueRefResolve(Entity, $101, $202, dokLayer, rsLayer, nil);
+    // Layer arrives later in the file — register after the entity has queued.
+    Ctx.RegisterShell($202, dokLayer, Layer, 1);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($101, rsLayer);
+    AssertNotNull('pending ref recorded', Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(Layer), PtrInt(Pending^.AttachedRef));
+    AssertEquals(1, Ctx.RefAttachCount);
+    AssertEquals(0, Ctx.RefFallbackCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.NullLayerHandleFallsBackToSystemLayer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, SysLayer: Pointer;
+begin
+  // §12.3 fallback policy: ref handle 0 (the DWG entity has no layer ref) must
+  // route to the registered system-layer fallback, not nil.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E2);
+    SysLayer := MakePtr($5A);
+    Ctx.SetFallbackLayer(SysLayer);
+    Ctx.RegisterShell($102, dokEntity, Entity, 0);
+    Ctx.QueueRefResolve(Entity, $102, 0, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($102, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(SysLayer), PtrInt(Pending^.AttachedRef));
+    AssertEquals(1, Ctx.RefFallbackCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.MissingLayerHandleFallsBackToSystemLayer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, SysLayer: Pointer;
+begin
+  // §12.3: a non-zero handle that never gets registered (broken file) must
+  // fall back the same way as a null handle, but with a different reason
+  // code so the diagnostic logger can flag the corruption.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E3);
+    SysLayer := MakePtr($5A);
+    Ctx.SetFallbackLayer(SysLayer);
+    Ctx.RegisterShell($103, dokEntity, Entity, 0);
+    Ctx.QueueRefResolve(Entity, $103, $DEAD, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($103, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNotFound), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(SysLayer), PtrInt(Pending^.AttachedRef));
+    AssertTrue('warning recorded for missing ref',
+      Ctx.WarningCount >= 1);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.LineTypeKindMismatchFallsBackToByLayer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer, ByLayer: Pointer;
+begin
+  // §12.3: if the resolver finds the handle but it points to the wrong
+  // ZCAD table (e.g. a layer pointer where a linetype was expected) the
+  // entity must NOT receive the wrong-typed pointer; it falls back to
+  // the slot-specific default and a kind-mismatch warning is emitted.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E4);
+    Layer := MakePtr($A1);
+    ByLayer := MakePtr($BB);
+    Ctx.SetFallbackLineType(ByLayer);
+    Ctx.RegisterShell($104, dokEntity, Entity, 0);
+    Ctx.RegisterShell($204, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $104, $204, dokLineType, rsLineType, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($104, rsLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefKindMismatch), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(ByLayer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.ResolveRefsIsIdempotent;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer: Pointer;
+  AttachCountBefore: Integer;
+begin
+  // §5.4 idempotency: calling ResolveRefs twice must not double-attach a
+  // pending ref. The state is checked at top of ResolveRef and returned
+  // immediately when already attached.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E5);
+    Layer := MakePtr($A2);
+    Ctx.RegisterShell($105, dokEntity, Entity, 0);
+    Ctx.RegisterShell($205, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $105, $205, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    AttachCountBefore := Ctx.RefAttachCount;
+    Ctx.ResolveRefs;
+    AssertEquals('second ResolveRefs must be a no-op',
+      AttachCountBefore, Ctx.RefAttachCount);
+    Pending := Ctx.FindPendingRef($105, rsLayer);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.SecondQueueForSameSlotReplacesFirst;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, LayerA, LayerB: Pointer;
+begin
+  // §5.4: a mapper called twice for the same entity should not produce two
+  // attached layers. AppendOrReplace overwrites the previous queue entry
+  // for the same (entity, slot) key so the resolver only fires once and
+  // the latest mapper call wins.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E6);
+    LayerA := MakePtr($AA);
+    LayerB := MakePtr($BB);
+    Ctx.RegisterShell($106, dokEntity, Entity, 0);
+    Ctx.RegisterShell($206, dokLayer, LayerA, 1);
+    Ctx.RegisterShell($207, dokLayer, LayerB, 2);
+    Ctx.QueueRefResolve(Entity, $106, $206, dokLayer, rsLayer, nil);
+    Ctx.QueueRefResolve(Entity, $106, $207, dokLayer, rsLayer, nil);
+    AssertEquals('exactly one queue entry per (entity, slot)',
+      1, Ctx.PendingRefs.Count);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($106, rsLayer);
+    AssertEquals(PtrInt(LayerB), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.RefAttachCallbackReceivesSlotAndReason;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeRefRecorder;
+  Entity, Layer: Pointer;
+begin
+  // §12.3: the ref-attach callback must be invoked once per pending ref
+  // with both the resolved Slot and the Reason so production code can
+  // route the pointer into the right vp field and emit the right log.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E7);
+    Layer := MakePtr($A3);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetRefAttachProc(@FakeRefAttach, @Recorder);
+    Ctx.RegisterShell($107, dokEntity, Entity, 0);
+    Ctx.RegisterShell($208, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $107, $208, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    AssertEquals(1, Length(Recorder.Calls));
+    AssertEquals(Ord(rsLayer), Ord(Recorder.Calls[0].Slot));
+    AssertEquals(Ord(arResolved), Ord(Recorder.Calls[0].Reason));
+    AssertEquals(PtrInt(Layer), PtrInt(Recorder.Calls[0].Ref));
+    AssertEquals(PtrInt(Entity), PtrInt(Recorder.Calls[0].Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.NilPtrShellIsTreatedAsNotFound;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, ByLayer: Pointer;
+begin
+  // The LTYPE mapper may register a shell with a nil pointer when the table
+  // is full and the entry could not be created. The resolver must treat
+  // that as "not found" instead of attaching nil to vp.LineType.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E8);
+    ByLayer := MakePtr($BC);
+    Ctx.SetFallbackLineType(ByLayer);
+    Ctx.RegisterShell($108, dokEntity, Entity, 0);
+    Ctx.RegisterShell($209, dokLineType, nil, 1);
+    Ctx.QueueRefResolve(Entity, $108, $209, dokLineType, rsLineType, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($108, rsLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNotFound), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(ByLayer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
-  RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest]);
+  RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
+    TDWGLoadContextRefTest]);
 
 end.
