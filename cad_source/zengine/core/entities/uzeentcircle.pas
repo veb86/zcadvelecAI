@@ -100,6 +100,8 @@ type
 
   end;
 
+function AllocAndInitCircle(owner:PGDBObjGenericWithSubordinated):PGDBObjCircle;
+
 implementation
 
 function GDBObjCircle.IsStagedFormatEntity:boolean;

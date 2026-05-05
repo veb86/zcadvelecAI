@@ -83,6 +83,8 @@ const
 var
   GDBObjTextDXFFeatures:TDXFEntIODataManager;
 
+function AllocAndInitText(owner:PGDBObjGenericWithSubordinated):PGDBObjText;
+
 implementation
 
 function acadvjustify(j:TTextJustify):byte;
