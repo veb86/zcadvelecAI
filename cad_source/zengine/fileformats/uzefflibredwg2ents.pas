@@ -29,6 +29,11 @@ uses
   uzbstrproc,
   uzestyleslayers,uzestyleslinetypes,uzestylestexts,
   uzeentline,uzeentity,uzeentitiesprop,//uzgldrawcontext,
+  uzeentcircle,uzeentarc,uzeentpoint,uzeentlwpolyline,
+  uzeenttext,uzeentmtext,uzeentabstracttext,
+  uzeconsts,
+  uzegeometrytypes,uzegeometry,
+  UGDBPolyLine2DArray,
   uzeblockdef,UGDBObjBlockdefArray,
   uzeTypes,
   uzedwgloadcontext,
@@ -151,9 +156,13 @@ begin
       end;
     rsTextStyle:
       begin
-        // Stage 3 reserves the slot but no entity that uses TextStyle yet
-        // goes through the DWG pipeline. Once TEXT/MTEXT mappers are wired
-        // they will read the resolved Ref from here.
+        // Stage 5 (TZ §12.5): TEXT/MTEXT entities carry a TXTStyle pointer on
+        // GDBObjText / GDBObjMText. Branch on GetObjType so we can refuse to
+        // write the slot for any other entity that may end up queued by
+        // mistake (the loader is allowed to queue defensively without knowing
+        // whether the target supports the slot).
+        if (pobj^.GetObjType=GDBtextID) or (pobj^.GetObjType=GDBMTextID) then
+          PGDBObjText(pobj)^.TXTStyle:=PGDBTextStyle(Ref);
         if Reason<>arResolved then
           zDebugLn(['{WHM}entity ',HexStr(PtrUInt(pobj),16),
             ' textstyle fallback (',DWGAttachReasonToText(Reason),')']);
@@ -476,6 +485,209 @@ begin
   end;
 end;
 
+{ Stage 5 (TZ §12.5): every entity mapper below follows the AddLineEntity
+  pattern: allocate with nil owner, copy scalars from the LibreDWG payload via
+  the testable DWGCopy*Props helpers in dwgproc, then push handle bookkeeping
+  into the load context (RegisterShell + QueueOwnerResolve + QueueRefResolve
+  for layer/linetype/textstyle as applicable). The actual AddMi happens later
+  inside DWGAttachEntity once ResolveOwners runs. The LoadCtx=nil branch is a
+  legacy fallback so an experimental host that bypasses BeginDWGImport still
+  shows the entity instead of leaking memory. }
+
+procedure DWGRegisterEntityShell(pobj:PGDBObjEntity;var DWGObject:Dwg_Object;
+  WantTextStyle:Boolean;TextStyleHandle:QWord);
+var
+  EntityHandle,OwnerHandle,LayerHandle,LtypeHandle:QWord;
+begin
+  if LoadCtx=nil then
+    Exit;
+  EntityHandle:=DWGObjectHandleValue(DWGObject);
+  if not DWGObjectOwnerHandleValue(DWGObject,OwnerHandle) then
+    OwnerHandle:=0;
+  if EntityHandle<>0 then
+    LoadCtx.RegisterShell(EntityHandle,dokEntity,pobj,-1);
+  LoadCtx.QueueOwnerResolve(pobj,EntityHandle,OwnerHandle);
+  if not DWGEntityLayerHandleValue(DWGObject,LayerHandle) then
+    LayerHandle:=0;
+  if not DWGEntityLineTypeHandleValue(DWGObject,LtypeHandle) then
+    LtypeHandle:=0;
+  LoadCtx.QueueRefResolve(pobj,EntityHandle,LayerHandle,
+    dokLayer,rsLayer,nil);
+  LoadCtx.QueueRefResolve(pobj,EntityHandle,LtypeHandle,
+    dokLineType,rsLineType,nil);
+  if WantTextStyle then
+    LoadCtx.QueueRefResolve(pobj,EntityHandle,TextStyleHandle,
+      dokTextStyle,rsTextStyle,nil);
+end;
+
+procedure AddCircleEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PCircle:PDwg_Entity_CIRCLE);
+var
+  pobj:PGDBObjCircle;
+  Props:TDWGCircleProps;
+begin
+  pobj:=AllocAndInitCircle(nil);
+  DWGCopyCircleProps(PCircle^,Props);
+  pobj^.Local.p_insert.x:=Props.CenterX;
+  pobj^.Local.p_insert.y:=Props.CenterY;
+  pobj^.Local.p_insert.z:=Props.CenterZ;
+  pobj^.Radius:=Props.Radius;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,False,0)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
+procedure AddArcEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PArc:PDwg_Entity_ARC);
+var
+  pobj:PGDBObjArc;
+  Props:TDWGArcProps;
+begin
+  pobj:=AllocAndInitArc(nil);
+  DWGCopyArcProps(PArc^,Props);
+  pobj^.Local.p_insert.x:=Props.CenterX;
+  pobj^.Local.p_insert.y:=Props.CenterY;
+  pobj^.Local.p_insert.z:=Props.CenterZ;
+  pobj^.r:=Props.Radius;
+  pobj^.startangle:=Props.StartAngle;
+  pobj^.endangle:=Props.EndAngle;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,False,0)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
+procedure AddPointEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PPoint:PDwg_Entity_POINT);
+var
+  pobj:PGDBObjPoint;
+  Props:TDWGPointProps;
+begin
+  pobj:=AllocAndInitPoint(nil);
+  DWGCopyPointProps(PPoint^,Props);
+  pobj^.P_insertInOCS.x:=Props.X;
+  pobj^.P_insertInOCS.y:=Props.Y;
+  pobj^.P_insertInOCS.z:=Props.Z;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,False,0)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
+procedure AddLWPolylineEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PLWP:PDwg_Entity_LWPOLYLINE);
+var
+  pobj:PGDBObjLWPolyline;
+  Props:TDWGLWPolylineProps;
+  i,n,wcount:Integer;
+  pp:PzePoint2d;
+  pw:PGLLWWidth;
+begin
+  pobj:=AllocAndInitLWpolyline(nil);
+  DWGCopyLWPolylineProps(PLWP^,Props);
+  pobj^.Closed:=Props.Closed;
+  pobj^.Local.p_insert.x:=0;
+  pobj^.Local.p_insert.y:=0;
+  pobj^.Local.p_insert.z:=Props.Elevation;
+  n:=Length(Props.Vertices);
+  pobj^.Vertex2D_in_OCS_Array.SetCount(n);
+  // Width-array sizing mirrors SetLWpolylineGeomProps: closed polylines have
+  // a width per segment, open ones one fewer (count-1) so the last vertex has
+  // no outgoing segment. Empty polylines get an empty array.
+  if pobj^.Closed then
+    wcount:=n
+  else if n>0 then
+    wcount:=n-1
+  else
+    wcount:=0;
+  pobj^.Width2D_in_OCS_Array.SetCount(wcount);
+  for i:=0 to n-1 do begin
+    pp:=pobj^.Vertex2D_in_OCS_Array.getDataMutable(i);
+    pp^.x:=Props.Vertices[i].X;
+    pp^.y:=Props.Vertices[i].Y;
+    if i<wcount then begin
+      pw:=pobj^.Width2D_in_OCS_Array.getDataMutable(i);
+      pw^.startw:=Props.Vertices[i].StartWidth;
+      pw^.endw:=Props.Vertices[i].EndWidth;
+      pw^.hw:=(pw^.startw<>0) or (pw^.endw<>0);
+    end;
+  end;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,False,0)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
+procedure AddTextEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PText:PDwg_Entity_TEXT);
+var
+  pobj:PGDBObjText;
+  Props:TDWGTextProps;
+  StyleHandle:QWord;
+  WantStyle:Boolean;
+  uniValue:UnicodeString;
+begin
+  pobj:=AllocAndInitText(nil);
+  DWGCopyTextProps(PText^,DWGContext.DWGVer,Props);
+  pobj^.Local.p_insert.x:=Props.InsertX;
+  pobj^.Local.p_insert.y:=Props.InsertY;
+  pobj^.Local.p_insert.z:=Props.InsertZ;
+  pobj^.textprop.size:=Props.Height;
+  if Props.WidthFactor<>0 then
+    pobj^.textprop.wfactor:=Props.WidthFactor
+  else
+    pobj^.textprop.wfactor:=1;
+  pobj^.textprop.oblique:=Props.Oblique;
+  // Stage 5 (TZ §12.5): DWGSafeDecodeText already returns the payload as a
+  // RTL string (UTF-16 path goes through punicodechar -> system codepage).
+  // Assigning to a UnicodeString-typed Content lets FPC promote it back via
+  // the default conversion. This mirrors the existing DXF loader where the
+  // content widening happens at field assignment.
+  uniValue:=UnicodeString(Props.Value);
+  pobj^.Content:=uniValue;
+  WantStyle:=DWGTextStyleHandleValue(PText,StyleHandle);
+  if not WantStyle then
+    StyleHandle:=0;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,True,StyleHandle)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
+procedure AddMTextEntity(var ZContext:TZDrawingContext;
+  var DWGContext:TDWGCtx;var DWGObject:Dwg_Object;PMText:PDwg_Entity_MTEXT);
+var
+  pobj:PGDBObjMText;
+  Props:TDWGMTextProps;
+  StyleHandle:QWord;
+  WantStyle:Boolean;
+  uniValue:UnicodeString;
+begin
+  pobj:=AllocAndInitMText(nil);
+  DWGCopyMTextProps(PMText^,DWGContext.DWGVer,Props);
+  pobj^.Local.p_insert.x:=Props.InsertX;
+  pobj^.Local.p_insert.y:=Props.InsertY;
+  pobj^.Local.p_insert.z:=Props.InsertZ;
+  pobj^.textprop.size:=Props.TextHeight;
+  pobj^.Width:=Props.RectWidth;
+  if Props.LineSpaceFactor<>0 then
+    pobj^.linespacef:=Props.LineSpaceFactor
+  else
+    pobj^.linespacef:=1;
+  // Same widening contract as AddTextEntity — DWGSafeDecodeText already
+  // returned the payload as RTL string; the FPC compiler promotes it.
+  uniValue:=UnicodeString(Props.Value);
+  pobj^.Content:=uniValue;
+  WantStyle:=DWGMTextStyleHandleValue(PMText,StyleHandle);
+  if not WantStyle then
+    StyleHandle:=0;
+  if LoadCtx<>nil then
+    DWGRegisterEntityShell(PGDBObjEntity(pobj),DWGObject,True,StyleHandle)
+  else
+    ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
+end;
+
 initialization
   ZCDWGParser.RegisterDWGObjectLoadProc(DWG_TYPE_LAYER,@AddLayer);
   ZCDWGParser.RegisterDWGObjectLoadProc(DWG_TYPE_LTYPE,@AddLineType);
@@ -484,6 +696,14 @@ initialization
 
   ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_LINE,@AddLineEntity);
   ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_BLOCK,@AddBlock);
+  // Stage 5 (TZ §12.5): MVP entity coverage. Each handler is registered once;
+  // double-registration would raise rsHandlerAlreadyReg via the parser.
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_CIRCLE,@AddCircleEntity);
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_ARC,@AddArcEntity);
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_POINT,@AddPointEntity);
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_LWPOLYLINE,@AddLWPolylineEntity);
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_TEXT,@AddTextEntity);
+  ZCDWGParser.RegisterDWGEntityLoadProc(DWG_TYPE_MTEXT,@AddMTextEntity);
 finalization
   if LoadCtx<>nil then
     FreeAndNil(LoadCtx);

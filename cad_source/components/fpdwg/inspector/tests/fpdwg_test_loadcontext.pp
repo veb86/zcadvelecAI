@@ -71,6 +71,21 @@ type
     procedure DuplicateBlockHandleKeepsFirstShell;
   end;
 
+  { Stage 5 (TZ §12.5) regression tests for the textstyle-ref slot used by
+    TEXT and MTEXT entities. The contract mirrors the rsLayer / rsLineType
+    ref slots covered in Stage 3: a real handle resolves to its registered
+    style; a null/missing handle drops onto the SetFallbackTextStyle pointer;
+    a kind mismatch (e.g. handle pointing at a layer) likewise falls back.
+    Tests use opaque pointers so they exercise the resolver alone, with no
+    ZCAD entity dependency. }
+  TDWGLoadContextTextStyleRefTest = class(TTestCase)
+  published
+    procedure StyleDeclaredAfterTextResolvesAtEnd;
+    procedure NullStyleHandleFallsBackToStandard;
+    procedure MissingStyleHandleFallsBackToStandard;
+    procedure StyleKindMismatchFallsBackToStandard;
+  end;
+
 implementation
 
 uses
@@ -987,8 +1002,126 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextTextStyleRefTest (Stage 5) ---------- }
+
+procedure TDWGLoadContextTextStyleRefTest.StyleDeclaredAfterTextResolvesAtEnd;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  TextEnt, Style, StdStyle: Pointer;
+begin
+  // Same out-of-order pattern as LayerDeclaredAfterEntityResolvesAtEnd:
+  // TEXT may queue its style ref before the STYLE shell is registered.
+  // ResolveRefs at end of load must still attach the real style.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    TextEnt := MakePtr($E1A);
+    Style := MakePtr($A1A);
+    StdStyle := MakePtr($5A1);
+    Ctx.SetFallbackTextStyle(StdStyle);
+    Ctx.RegisterShell($201, dokEntity, TextEnt, 0);
+    Ctx.QueueRefResolve(TextEnt, $201, $202, dokTextStyle, rsTextStyle, nil);
+    // STYLE arrives later in the file.
+    Ctx.RegisterShell($202, dokTextStyle, Style, 1);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($201, rsTextStyle);
+    AssertNotNull('pending ref recorded', Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(Style), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleRefTest.NullStyleHandleFallsBackToStandard;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  TextEnt, StdStyle: Pointer;
+begin
+  // §12.5 fallback: a TEXT/MTEXT with no style handle (handle 0) routes to
+  // the registered Standard fallback so subsequent FormatEntity has a usable
+  // style pointer instead of nil.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    TextEnt := MakePtr($E2A);
+    StdStyle := MakePtr($5A2);
+    Ctx.SetFallbackTextStyle(StdStyle);
+    Ctx.RegisterShell($203, dokEntity, TextEnt, 0);
+    Ctx.QueueRefResolve(TextEnt, $203, 0, dokTextStyle, rsTextStyle, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($203, rsTextStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(StdStyle), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleRefTest.MissingStyleHandleFallsBackToStandard;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  TextEnt, StdStyle: Pointer;
+begin
+  // §12.5: a non-zero style handle that is never registered (broken file)
+  // drops onto Standard with an arRefNotFound reason — the same fallback
+  // behaviour as the layer slot, so callers don't have to special-case
+  // text styles.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    TextEnt := MakePtr($E3A);
+    StdStyle := MakePtr($5A3);
+    Ctx.SetFallbackTextStyle(StdStyle);
+    Ctx.RegisterShell($204, dokEntity, TextEnt, 0);
+    Ctx.QueueRefResolve(TextEnt, $204, $DEAD2, dokTextStyle, rsTextStyle, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($204, rsTextStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNotFound), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(StdStyle), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleRefTest.StyleKindMismatchFallsBackToStandard;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  TextEnt, Layer, StdStyle: Pointer;
+begin
+  // §12.5: handle exists but points at the wrong table (e.g. a LAYER instead
+  // of a STYLE). The entity must NOT receive the wrong-typed pointer; it
+  // falls back to Standard with arRefKindMismatch so the load diagnostic
+  // can flag the corruption.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    TextEnt := MakePtr($E4A);
+    Layer := MakePtr($A4A);
+    StdStyle := MakePtr($5A4);
+    Ctx.SetFallbackTextStyle(StdStyle);
+    Ctx.RegisterShell($205, dokEntity, TextEnt, 0);
+    Ctx.RegisterShell($305, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(TextEnt, $205, $305, dokTextStyle, rsTextStyle, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($205, rsTextStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefKindMismatch), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(StdStyle), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
-    TDWGLoadContextRefTest, TDWGLoadContextBlockTest]);
+    TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
+    TDWGLoadContextTextStyleRefTest]);
 
 end.
