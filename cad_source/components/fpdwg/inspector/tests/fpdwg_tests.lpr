@@ -9,6 +9,7 @@ uses
   fpdwg_test_dwgproc,
   fpdwg_test_factory,
   fpdwg_test_handles,
+  fpdwg_test_loadcontext,
   fpdwg_test_reader,
   fpdwg_test_reporter,
   fpdwg_test_registry,

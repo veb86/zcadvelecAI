@@ -42,6 +42,9 @@ procedure addfromdxf(const filename:String;var ZCDCtx:TZDrawingContext;const Log
 
 implementation
 
+uses
+  uzeffLibreDWG2Ents;
+
 procedure DebugDWG(dwg:PDwg_Data);
 begin
   DebugLn(['{WH}header.version: '+DWG_V2Str(dwg^.header.version)]);
@@ -113,7 +116,15 @@ begin
     DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
-      ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+      // Stage 2 (TZ §12.2): wrap parseDwg_Data with the load context so the
+      // LINE handler can register shells + pending owners and the resolver
+      // attaches everything in dependency order after parseDwg_Data returns.
+      BeginDWGImport(ZCDCtx);
+      try
+        ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+      finally
+        EndDWGImport(ZCDCtx);
+      end;
     finally
       lps.EndLongProcess(lph);
     end;
@@ -157,7 +168,12 @@ begin
     DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
-      ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+      BeginDWGImport(ZCDCtx);
+      try
+        ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+      finally
+        EndDWGImport(ZCDCtx);
+      end;
     finally
       lps.EndLongProcess(lph);
     end;
