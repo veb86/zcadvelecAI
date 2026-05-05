@@ -62,6 +62,77 @@ interface
       EndX,EndY,EndZ:double;
     end;
 
+    // Stage 5 (TZ §12.5): plain mirror records that LINE/CIRCLE/ARC/POINT/
+    // LWPOLYLINE/TEXT/MTEXT mappers fill before pushing into the ZCAD entity.
+    // Keeping them in dwgproc means the scalar copy path is unit-testable
+    // against fake LibreDWG records without pulling in the zengine entity
+    // graph or libredwg.so.
+    TDWGCircleProps=record
+      CenterX,CenterY,CenterZ:double;
+      Radius:double;
+      Thickness:double;
+    end;
+
+    TDWGArcProps=record
+      CenterX,CenterY,CenterZ:double;
+      Radius:double;
+      Thickness:double;
+      StartAngle:double;
+      EndAngle:double;
+    end;
+
+    TDWGPointProps=record
+      X,Y,Z:double;
+      Thickness:double;
+      XAngle:double;
+    end;
+
+    TDWGTextProps=record
+      InsertX,InsertY,InsertZ:double;
+      AlignX,AlignY:double;
+      Height:double;
+      Rotation:double;
+      Oblique:double;
+      WidthFactor:double;
+      Generation:integer;
+      HorizAlignment:integer;
+      VertAlignment:integer;
+      Value:string;
+    end;
+
+    TDWGMTextProps=record
+      InsertX,InsertY,InsertZ:double;
+      XAxisX,XAxisY,XAxisZ:double;
+      RectWidth,RectHeight:double;
+      TextHeight:double;
+      Attachment:integer;
+      LineSpaceFactor:double;
+      Value:string;
+    end;
+
+    TDWGLWPolylineVertex=record
+      X,Y:double;
+      StartWidth,EndWidth,Bulge:double;
+    end;
+
+    TDWGLWPolylineProps=record
+      Closed:Boolean;
+      ConstWidth:double;
+      Elevation:double;
+      Thickness:double;
+      Vertices:array of TDWGLWPolylineVertex;
+    end;
+
+    // Stage 5 (TZ §12.5): the LibreDWG bindings only expose
+    // PDwg_Entity_LINE; declare the pointer aliases the Stage 5 helpers
+    // require so callers can pass &dwg.tio.entity^.tio.TEXT directly.
+    PDwg_Entity_CIRCLE=^Dwg_Entity_CIRCLE;
+    PDwg_Entity_ARC=^Dwg_Entity_ARC;
+    PDwg_Entity_POINT=^Dwg_Entity_POINT;
+    PDwg_Entity_TEXT=^Dwg_Entity_TEXT;
+    PDwg_Entity_MTEXT=^Dwg_Entity_MTEXT;
+    PDwg_Entity_LWPOLYLINE=^Dwg_Entity_LWPOLYLINE;
+
     TData=PtrInt;
     TCounter=Integer;
     TProcessLongProcess=procedure(const Data:TData;const Counter:TCounter);
@@ -119,12 +190,35 @@ interface
   function DWGEntityLayerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
   function DWGEntityLineTypeHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
   function DWGLayerLineTypeHandleValue(const PLayer:PDwg_Object_LAYER;out Value:QWord):Boolean;
+  // Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
+  // False allows the caller to fall back to the registered text-style
+  // fallback (typically Standard).
+  function DWGTextStyleHandleValue(const PText:PDwg_Entity_TEXT;out Value:QWord):Boolean;
+  function DWGMTextStyleHandleValue(const PMText:PDwg_Entity_MTEXT;out Value:QWord):Boolean;
   // Safe text decode helper without inspector dependency. Falls back to ANSI for
   // <=R2004, UTF-16LE for newer DWG; nil pointer returns empty string.
   procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
   // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
   // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
+
+  // Stage 5 (TZ §12.5): pure scalar copies into the mirror records above.
+  // Each routine is pointer-aware (nil source produces a zeroed record) so
+  // callers can drive them straight from LibreDWG output without first
+  // checking for missing payloads. The text decode goes through
+  // DWGSafeDecodeText so the loader does not crash on a stripped-down
+  // fixture that omits the payload field.
+  procedure DWGCopyCircleProps(const Circle:Dwg_Entity_CIRCLE;
+    out Props:TDWGCircleProps);
+  procedure DWGCopyArcProps(const Arc:Dwg_Entity_ARC;out Props:TDWGArcProps);
+  procedure DWGCopyPointProps(const Point:Dwg_Entity_POINT;
+    out Props:TDWGPointProps);
+  procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
+    Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
+  procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
+    Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+  procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
+    out Props:TDWGLWPolylineProps);
 
 implementation
 
@@ -342,6 +436,140 @@ implementation
     Endpoints.EndX:=Line.end_.x;
     Endpoints.EndY:=Line.end_.y;
     Endpoints.EndZ:=Line.end_.z;
+  end;
+
+  function DWGTextStyleHandleValue(const PText:PDwg_Entity_TEXT;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if PText=nil then
+      Exit(False);
+    Result:=DWGRefHandleValue(PText^.style,Value);
+  end;
+
+  function DWGMTextStyleHandleValue(const PMText:PDwg_Entity_MTEXT;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if PMText=nil then
+      Exit(False);
+    Result:=DWGRefHandleValue(PMText^.style,Value);
+  end;
+
+  procedure DWGCopyCircleProps(const Circle:Dwg_Entity_CIRCLE;
+    out Props:TDWGCircleProps);
+  begin
+    Props.CenterX:=Circle.center.x;
+    Props.CenterY:=Circle.center.y;
+    Props.CenterZ:=Circle.center.z;
+    Props.Radius:=Circle.radius;
+    Props.Thickness:=Circle.thickness;
+  end;
+
+  procedure DWGCopyArcProps(const Arc:Dwg_Entity_ARC;out Props:TDWGArcProps);
+  begin
+    Props.CenterX:=Arc.center.x;
+    Props.CenterY:=Arc.center.y;
+    Props.CenterZ:=Arc.center.z;
+    Props.Radius:=Arc.radius;
+    Props.Thickness:=Arc.thickness;
+    Props.StartAngle:=Arc.start_angle;
+    Props.EndAngle:=Arc.end_angle;
+  end;
+
+  procedure DWGCopyPointProps(const Point:Dwg_Entity_POINT;
+    out Props:TDWGPointProps);
+  begin
+    Props.X:=Point.x;
+    Props.Y:=Point.y;
+    Props.Z:=Point.z;
+    Props.Thickness:=Point.thickness;
+    Props.XAngle:=Point.x_ang;
+  end;
+
+  procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
+    Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
+  begin
+    Props.InsertX:=Text.ins_pt.x;
+    Props.InsertY:=Text.ins_pt.y;
+    Props.InsertZ:=Text.elevation;
+    Props.AlignX:=Text.alignment_pt.x;
+    Props.AlignY:=Text.alignment_pt.y;
+    Props.Height:=Text.height;
+    Props.Rotation:=Text.rotation;
+    Props.Oblique:=Text.oblique_angle;
+    Props.WidthFactor:=Text.width_factor;
+    Props.Generation:=Text.generation;
+    Props.HorizAlignment:=Text.horiz_alignment;
+    Props.VertAlignment:=Text.vert_alignment;
+    DWGSafeDecodeText(Text.text_value,Version,Props.Value);
+  end;
+
+  procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
+    Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+  begin
+    Props.InsertX:=MText.ins_pt.x;
+    Props.InsertY:=MText.ins_pt.y;
+    Props.InsertZ:=MText.ins_pt.z;
+    Props.XAxisX:=MText.x_axis_dir.x;
+    Props.XAxisY:=MText.x_axis_dir.y;
+    Props.XAxisZ:=MText.x_axis_dir.z;
+    Props.RectWidth:=MText.rect_width;
+    Props.RectHeight:=MText.rect_height;
+    Props.TextHeight:=MText.text_height;
+    Props.Attachment:=MText.attachment;
+    Props.LineSpaceFactor:=MText.linespace_factor;
+    DWGSafeDecodeText(MText.text,Version,Props.Value);
+  end;
+
+  procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
+    out Props:TDWGLWPolylineProps);
+  type
+    PBitcode2RD=^BITCODE_2RD;
+    PBitcodeBD=^BITCODE_BD;
+    PLWPWidth=^Dwg_LWPOLYLINE_width;
+  var
+    i,n:Integer;
+    pPoint:PBitcode2RD;
+    pBulge:PBitcodeBD;
+    pWidth:PLWPWidth;
+  begin
+    // Stage 5: bit 512 of `flag` marks a closed polyline (per LibreDWG header
+    // comments). Bulge / width arrays are only consulted when their counters
+    // match num_points; mismatched arrays are treated as missing so a
+    // stripped fixture cannot dereference into garbage.
+    Props.Closed:=(LWP.flag and 512)<>0;
+    Props.ConstWidth:=LWP.const_width;
+    Props.Elevation:=LWP.elevation;
+    Props.Thickness:=LWP.thickness;
+    n:=LWP.num_points;
+    if n<0 then
+      n:=0;
+    SetLength(Props.Vertices,n);
+    if (n>0) and (LWP.points<>nil) then begin
+      pPoint:=PBitcode2RD(LWP.points);
+      for i:=0 to n-1 do begin
+        Props.Vertices[i].X:=pPoint^.x;
+        Props.Vertices[i].Y:=pPoint^.y;
+        Props.Vertices[i].StartWidth:=LWP.const_width;
+        Props.Vertices[i].EndWidth:=LWP.const_width;
+        Props.Vertices[i].Bulge:=0;
+        Inc(pPoint);
+      end;
+    end;
+    if (n>0) and (LWP.num_bulges=BITCODE_BL(n)) and (LWP.bulges<>nil) then begin
+      pBulge:=PBitcodeBD(LWP.bulges);
+      for i:=0 to n-1 do begin
+        Props.Vertices[i].Bulge:=pBulge^;
+        Inc(pBulge);
+      end;
+    end;
+    if (n>0) and (LWP.num_widths=BITCODE_BL(n)) and (LWP.widths<>nil) then begin
+      pWidth:=PLWPWidth(LWP.widths);
+      for i:=0 to n-1 do begin
+        Props.Vertices[i].StartWidth:=pWidth^.start;
+        Props.Vertices[i].EndWidth:=pWidth^.end_;
+        Inc(pWidth);
+      end;
+    end;
   end;
 
 

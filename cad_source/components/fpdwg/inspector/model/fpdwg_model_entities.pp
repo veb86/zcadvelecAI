@@ -7,6 +7,7 @@ interface
 
 uses
   Math,
+  dwg,
   fpdwg_types,
   fpdwg_model_base;
 
