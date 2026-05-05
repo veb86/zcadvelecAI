@@ -184,7 +184,11 @@ begin
 end;
 
 initialization
- ZCDWGParser:=TZCADDWGParser.Create;
+  // Создаём парсер только если он ещё не создан — uzefflibredwg2ents может
+  // инициализироваться раньше при циклической зависимости через implementation
+  // uses и уже создать объект в своей секции initialization.
+  if ZCDWGParser=nil then
+    ZCDWGParser:=TZCADDWGParser.Create;
 finalization
  FreeAndNil(ZCDWGParser);
 end.

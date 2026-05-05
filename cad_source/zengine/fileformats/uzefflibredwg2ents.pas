@@ -690,6 +690,12 @@ begin
 end;
 
 initialization
+  // Защита от неправильного порядка инициализации модулей: узнаём, создан ли
+  // парсер уже в секции initialization модуля uzefflibredwg. При циклической
+  // зависимости через implementation uses FPC может инициализировать этот
+  // модуль раньше uzefflibredwg, оставляя ZCDWGParser равным nil.
+  if ZCDWGParser=nil then
+    ZCDWGParser:=TZCADDWGParser.Create;
   ZCDWGParser.RegisterDWGObjectLoadProc(DWG_TYPE_LAYER,@AddLayer);
   ZCDWGParser.RegisterDWGObjectLoadProc(DWG_TYPE_LTYPE,@AddLineType);
   ZCDWGParser.RegisterDWGObjectLoadProc(DWG_TYPE_STYLE,@AddTextStyle);
