@@ -54,6 +54,14 @@ interface
       procedure CreateRec(var ADWG:Dwg_Data);
     end;
 
+    // Plain record used by ZCAD LINE mapper and its unit tests. It exposes
+    // the bare (x,y,z) pairs that GDBObjLine needs without dragging the
+    // ZCAD entity unit into dwgproc.
+    TDWGLineEndpoints=record
+      StartX,StartY,StartZ:double;
+      EndX,EndY,EndZ:double;
+    end;
+
     TData=PtrInt;
     TCounter=Integer;
     TProcessLongProcess=procedure(const Data:TData;const Counter:TCounter);
@@ -98,6 +106,19 @@ interface
   procedure BITCODE_T2Text(const p:BITCODE_T;constref DWGContext:TDWGCtx;out text:string);
   function DWG_V2Str(v:DWG_VERSION_TYPE):string;
 
+  // Stage 1 helpers: handle extraction shared by ZCAD loader and diagnostics.
+  // Each helper accepts already-decoded raw structures so callers can run unit
+  // tests against fake records without LibreDWG being available.
+  function DWGObjectHandleValue(const Obj:Dwg_Object):QWord;
+  function DWGObjectOwnerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  function DWGRefHandleValue(Ref:BITCODE_H;out Value:QWord):Boolean;
+  // Safe text decode helper without inspector dependency. Falls back to ANSI for
+  // <=R2004, UTF-16LE for newer DWG; nil pointer returns empty string.
+  procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
+  // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
+  // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
+  procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
+
 implementation
 
   var
@@ -124,44 +145,30 @@ implementation
 
   procedure GDWGParser.RegisterDWGEntityLoadProc(const DOT:DWG_OBJECT_TYPE;const LP:TDWGObjectLoadProc);
   var
-    //pdod:PTDWGObjectData;
     dod:TDWGObjectData;
   begin
-    //work in fpc3.2.2
-    //if DWGObj2LPDict.GetMutableValue(DOT,pdod) then begin
-    //  if pdod^.LoadEntityProc<>nil then
-    //    raise Exception.Create(format(rsHandlerAlreadyReg,[DOT]))
-    //  else begin
-    //    pdod^.LoadEntityProc:=LP;
-    //    pdod^.LoadObjectProc:=nil;
-    //  end;
-    //end else begin
-      dod.Create;
-      dod.LoadEntityProc:=LP;
-      dod.LoadObjectProc:=nil;
-      DWGObj2LPDict.insert(DOT,dod);
-    //end;
+    // Stage 1: catch double registration so a later mapper does not silently
+    // overwrite an earlier one. The hashmap container does not provide a public
+    // contains() variant on the FPC version we target, so we look up via
+    // GetValue and fall back to insert when the key is absent.
+    if DWGObj2LPDict.GetValue(DOT,dod) then
+      raise Exception.Create(format(rsHandlerAlreadyReg,[Ord(DOT)]));
+    dod.Create;
+    dod.LoadEntityProc:=LP;
+    dod.LoadObjectProc:=nil;
+    DWGObj2LPDict.insert(DOT,dod);
   end;
 
   procedure GDWGParser.RegisterDWGObjectLoadProc(const DOT:DWG_OBJECT_TYPE;const LP:TDWGObjectLoadProc);
   var
-    //pdod:PTDWGObjectData;
     dod:TDWGObjectData;
   begin
-    //work in fpc3.2.2
-    //if DWGObj2LPDict.GetMutableValue(DOT,pdod) then begin
-    //  if pdod^.LoadEntityProc<>nil then
-    //    raise Exception.Create(format(rsHandlerAlreadyReg,[DOT]))
-    //  else begin
-    //    pdod^.LoadEntityProc:=nil;
-    //    pdod^.LoadObjectProc:=LP;
-    //  end;
-    //end else begin
-      dod.Create;
-      dod.LoadEntityProc:=nil;
-      dod.LoadObjectProc:=LP;
-      DWGObj2LPDict.insert(DOT,dod);
-    //end;
+    if DWGObj2LPDict.GetValue(DOT,dod) then
+      raise Exception.Create(format(rsHandlerAlreadyReg,[Ord(DOT)]));
+    dod.Create;
+    dod.LoadEntityProc:=nil;
+    dod.LoadObjectProc:=LP;
+    DWGObj2LPDict.insert(DOT,dod);
   end;
 
   procedure GDWGParser.parseDwg_Data(var ZContext:GUserCtx;var dwg:Dwg_Data;const lpp:TProcessLongProcess;const data:TData);
@@ -248,6 +255,62 @@ implementation
       text:=pchar(p)
     else
       text:=punicodechar(p)
+  end;
+
+  function DWGObjectHandleValue(const Obj:Dwg_Object):QWord;
+  begin
+    Result:=Obj.handle.value;
+  end;
+
+  function DWGRefHandleValue(Ref:BITCODE_H;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    if Ref=nil then
+      Exit(False);
+    if Ref^.absolute_ref<>0 then begin
+      Value:=Ref^.absolute_ref;
+      Exit(True);
+    end;
+    if Ref^.handleref.value<>0 then begin
+      Value:=Ref^.handleref.value;
+      Exit(True);
+    end;
+    Result:=False;
+  end;
+
+  function DWGObjectOwnerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
+  begin
+    Value:=0;
+    case Obj.supertype of
+      DWG_SUPERTYPE_ENTITY:
+        if Obj.tio.entity<>nil then
+          Exit(DWGRefHandleValue(Obj.tio.entity^.ownerhandle,Value));
+      DWG_SUPERTYPE_OBJECT:
+        if Obj.tio.&object<>nil then
+          Exit(DWGRefHandleValue(Obj.tio.&object^.ownerhandle,Value));
+    end;
+    Result:=False;
+  end;
+
+  procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
+  begin
+    text:='';
+    if p=nil then
+      Exit;
+    if Version<=R_2004 then
+      text:=pchar(p)
+    else
+      text:=punicodechar(p);
+  end;
+
+  procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
+  begin
+    Endpoints.StartX:=Line.start.x;
+    Endpoints.StartY:=Line.start.y;
+    Endpoints.StartZ:=Line.start.z;
+    Endpoints.EndX:=Line.end_.x;
+    Endpoints.EndY:=Line.end_.y;
+    Endpoints.EndZ:=Line.end_.z;
   end;
 
 

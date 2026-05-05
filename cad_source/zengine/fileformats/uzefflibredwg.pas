@@ -65,41 +65,61 @@ begin
  lps.ProgressLongProcess(TLPSHandle(Data),Counter);
 end;
 
+function IsCriticalDWGReadError(Code:integer):Boolean;
+begin
+  // LibreDWG dwg_read_file/dxf_read_file return non-zero on critical failure.
+  // The high bit (>=$80) signals an unrecoverable error per LibreDWG conventions;
+  // lower bits are informational (incomplete, partially loaded), so we only abort
+  // on the critical band.
+  Result:=(Code and $80)<>0;
+end;
+
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
   dwg:Dwg_Data;
   Success:integer;
   lph:TLPSHandle;
+  Loaded:Boolean;
   //DC:TDrawContext;
 begin
+  zDebugLn('{WH}%s',[rsNotYetImplemented]);
   try
-    zDebugLn('{WH}%s',[rsNotYetImplemented]);
-    try
-      LoadLibreDWG;
-    except
-      on E : Exception do begin
-        zDebugLn(['{EHM}LibreDWG: ',E.Message]);
-        exit;
-      end;
+    LoadLibreDWG;
+  except
+    on E : Exception do begin
+      zDebugLn(['{EHM}LibreDWG: ',E.Message]);
+      exit;
     end;
-    //fillchar(dwg,sizeof(dwg),0);
-    dwg:=default(Dwg_Data);
-    dwg.opts:=0;
-    zDebugLn(['{WH}try load file: ',ansistring(filename)]);
-    lph:=lps.StartLongProcess('LibreDWG.dwg_read_file',nil);
+  end;
+  //fillchar(dwg,sizeof(dwg),0);
+  dwg:=default(Dwg_Data);
+  dwg.opts:=0;
+  Loaded:=False;
+  zDebugLn(['{WH}try load file: ',ansistring(filename)]);
+  lph:=lps.StartLongProcess('LibreDWG.dwg_read_file',nil);
+  try
     {$IFDEF WINDOWS}
     Success:=dwg_read_file(pchar(UTF8ToWinCP(filename)),@dwg);
     {$ELSE WINDOWS}
     Success:=dwg_read_file(pchar(ansistring(filename)),@dwg);
     {$ENDIF}
+    Loaded:=True;
     lps.EndLongProcess(lph);
     zDebugLn(['{WH}Success: ',Success]);
+    if IsCriticalDWGReadError(Success) then begin
+      zDebugLn(['{EHM}LibreDWG: critical read error code ',Success,', aborting parse']);
+      exit;
+    end;
     DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
-    ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
-    lps.EndLongProcess(lph);
-    dwg_free(@dwg);
+    try
+      ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+    finally
+      lps.EndLongProcess(lph);
+    end;
   finally
+    if Loaded and Assigned(dwg_free) then
+      dwg_free(@dwg);
   end;
 end;
 procedure addfromdxf(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
@@ -107,32 +127,43 @@ var
   dwg:Dwg_Data;
   Success:integer;
   lph:TLPSHandle;
+  Loaded:Boolean;
   //DC:TDrawContext;
 begin
+  zDebugLn('{WH}%s',[rsNotYetImplemented]);
   try
-    zDebugLn('{WH}%s',[rsNotYetImplemented]);
-    try
-      LoadLibreDWG;
-    except
-      on E : Exception do begin
-        debugln('{EHM}LibreDWG: ',E.Message);
-        exit;
-      end;
+    LoadLibreDWG;
+  except
+    on E : Exception do begin
+      debugln('{EHM}LibreDWG: ',E.Message);
+      exit;
     end;
-    //fillchar(dwg,sizeof(dwg),0);
-    dwg:=default(Dwg_Data);
-    dwg.opts:=0;
-    zDebugLn(['{WH}try load file: ',ansistring(filename)]);
-    lph:=lps.StartLongProcess('LibreDWG.dxf_read_file',nil);
+  end;
+  //fillchar(dwg,sizeof(dwg),0);
+  dwg:=default(Dwg_Data);
+  dwg.opts:=0;
+  Loaded:=False;
+  zDebugLn(['{WH}try load file: ',ansistring(filename)]);
+  lph:=lps.StartLongProcess('LibreDWG.dxf_read_file',nil);
+  try
     Success:=dxf_read_file(pchar(ansistring(filename)),@dwg);
+    Loaded:=True;
     lps.EndLongProcess(lph);
     zDebugLn(['{WH}Success: ',Success]);
+    if IsCriticalDWGReadError(Success) then begin
+      zDebugLn(['{EHM}LibreDWG: critical dxf read error code ',Success,', aborting parse']);
+      exit;
+    end;
     DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
-    ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
-    lps.EndLongProcess(lph);
-    dwg_free(@dwg);
+    try
+      ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+    finally
+      lps.EndLongProcess(lph);
+    end;
   finally
+    if Loaded and Assigned(dwg_free) then
+      dwg_free(@dwg);
   end;
 end;
 
