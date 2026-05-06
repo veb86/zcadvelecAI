@@ -15,7 +15,7 @@
   fpdwg_tests without libredwg.so being present.
 
   dwgproc.pp re-exports these names through its interface uses clause so
-  existing callers (uzefflibredwg2ents.pas, fpdwg_test_dwgproc.pp) keep
+  existing callers (uzefflibredwg2ents.pas, uzedwgtestdwgproc.pas) keep
   compiling unchanged. }
 
 unit uzedwghandle;

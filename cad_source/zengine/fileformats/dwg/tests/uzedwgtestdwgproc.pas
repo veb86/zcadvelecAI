@@ -1,4 +1,4 @@
-unit fpdwg_test_dwgproc;
+unit uzedwgtestdwgproc;
 
 {$mode objfpc}{$H+}
 {$modeswitch advancedrecords}

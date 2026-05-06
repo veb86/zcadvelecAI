@@ -1,4 +1,4 @@
-unit fpdwg_test_loadcontext;
+unit uzedwgtestloadcontext;
 
 {$mode objfpc}{$H+}
 {$modeswitch advancedrecords}

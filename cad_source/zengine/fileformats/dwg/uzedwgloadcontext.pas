@@ -17,7 +17,7 @@
   Refactor R2 (per TZ_DWG_LOAD_TO_ZCAD_AUDIT §3.2 / TZ §6.5): the previous
   999-line monolith is split into four units. Public surface is preserved
   via interface re-export so existing callers (uzefflibredwg2ents.pas,
-  fpdwg_test_loadcontext.pp) keep compiling unchanged. }
+  uzedwgtestloadcontext.pas) keep compiling unchanged. }
 
 unit uzedwgloadcontext;
 
@@ -243,7 +243,26 @@ var
   Entry: TDWGZCADHandleEntry;
 begin
   if FindIndex(AHandle, Index) then
+  begin
+    // R4 (TZ §3.4): a raw-scan placeholder (Kind=dokUnknown, Ptr=nil) is not
+    // a duplicate — the mapper that runs later is allowed to upgrade it to
+    // its real kind/ptr while keeping the RawIndex captured by Phase 1.
+    if (FEntries[Index].Kind = dokUnknown)
+       and (FEntries[Index].Ptr = nil)
+       and (AKind <> dokUnknown) then
+    begin
+      FEntries[Index].Kind := AKind;
+      FEntries[Index].Ptr := APtr;
+      FEntries[Index].ShellState := AState;
+      // Mappers usually pass ARawIndex=-1 (they no longer have the index in
+      // hand). Keep the value the raw scan captured so the registry stays
+      // consistent with the LibreDWG layout.
+      if (ARawIndex >= 0) and (FEntries[Index].RawIndex < 0) then
+        FEntries[Index].RawIndex := ARawIndex;
+      Exit(True);
+    end;
     Exit(False);
+  end;
   Entry.Handle := AHandle;
   Entry.Kind := AKind;
   Entry.Ptr := APtr;
