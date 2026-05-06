@@ -20,6 +20,11 @@ type
     procedure RegisterShellRejectsDuplicate;
     procedure TryGetMissingHandleReturnsFalse;
     procedure RegisterShellAcceptsOutOfOrderHandles;
+    // R4 (TZ §3.4): the raw scan registers (dokUnknown, nil) placeholders;
+    // mappers running later must be allowed to upgrade them in place to
+    // their real kind/ptr without tripping the duplicate-rejection branch.
+    procedure RegisterShellUpgradesRawScanPlaceholder;
+    procedure RegisterShellRejectsRealDuplicateAfterUpgrade;
   end;
 
   TDWGLoadContextResolveTest = class(TTestCase)
@@ -202,6 +207,56 @@ begin
     AssertEquals(Ord(dokLayer), Ord(Entry.Kind));
     AssertTrue(Map.TryGet($30, Entry));
     AssertEquals(Ord(dokEntity), Ord(Entry.Kind));
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextHandleMapTest.RegisterShellUpgradesRawScanPlaceholder;
+var
+  Map: TDWGZCADHandleMap;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // R4 (TZ §3.4): the raw scan seeds the map with (dokUnknown, nil, raw_index)
+  // placeholders. When the entity mapper runs later it should upgrade the
+  // entry in place to its real kind/ptr while keeping the captured raw_index.
+  Map := TDWGZCADHandleMap.Create;
+  try
+    AssertTrue('placeholder accepted',
+      Map.RegisterShell($40, dokUnknown, nil, 7, msCreated));
+    AssertTrue('mapper upgrade accepted',
+      Map.RegisterShell($40, dokEntity, MakePtr($D1), -1, msCreated));
+    AssertEquals('upgrade does not duplicate the entry', 1, Map.Count);
+    AssertTrue(Map.TryGet($40, Entry));
+    AssertEquals('kind upgraded to dokEntity',
+      Ord(dokEntity), Ord(Entry.Kind));
+    AssertEquals('ptr upgraded to mapper-supplied value',
+      PtrInt($D1), PtrInt(Entry.Ptr));
+    AssertEquals('raw index preserved from the raw scan', 7, Entry.RawIndex);
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextHandleMapTest.RegisterShellRejectsRealDuplicateAfterUpgrade;
+var
+  Map: TDWGZCADHandleMap;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // After the placeholder has been upgraded by a mapper, a second mapper
+  // hitting the same handle is a real duplicate and must be rejected.
+  Map := TDWGZCADHandleMap.Create;
+  try
+    Map.RegisterShell($50, dokUnknown, nil, 3, msCreated);
+    AssertTrue(Map.RegisterShell($50, dokEntity, MakePtr($E1), -1, msCreated));
+    AssertFalse('second mapper-side registration rejected',
+      Map.RegisterShell($50, dokBlockDef, MakePtr($E2), -1, msCreated));
+    AssertEquals(1, Map.Count);
+    AssertTrue(Map.TryGet($50, Entry));
+    AssertEquals('first mapper kind wins',
+      Ord(dokEntity), Ord(Entry.Kind));
+    AssertEquals('first mapper ptr wins',
+      PtrInt($E1), PtrInt(Entry.Ptr));
   finally
     Map.Free;
   end;
