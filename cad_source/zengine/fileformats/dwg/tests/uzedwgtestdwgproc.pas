@@ -20,6 +20,14 @@ type
     procedure ObjectOwnerHandleEntityReadsOwnerRef;
     procedure ObjectOwnerHandleObjectReadsOwnerRef;
     procedure ObjectOwnerHandleNilTioReturnsFalse;
+    // Issue #1118: entmode-aware owner resolution. When LibreDWG sets
+    // entmode=1 or 2 the ownerhandle is null and the implicit owner is
+    // paper/model space. The helper must follow Dwg_Data^.pspace_block /
+    // mspace_block to recover the BLOCK_HEADER handle.
+    procedure ObjectOwnerHandleEntmodeMSpaceReturnsMSpaceBlockHandle;
+    procedure ObjectOwnerHandleEntmodePSpaceReturnsPSpaceBlockHandle;
+    procedure ObjectOwnerHandleEntmodeFallsBackWhenBlockMissing;
+    procedure ObjectOwnerHandleEntmodeExplicitReadsOwnerHandle;
   end;
 
   TFPDWGProcLineTest = class(TTestCase)
@@ -184,6 +192,99 @@ begin
 
   AssertFalse(DWGObjectOwnerHandleValue(Obj, Value));
   AssertEquals(Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeMSpaceReturnsMSpaceBlockHandle;
+var
+  Obj, MSpace: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(MSpace, SizeOf(MSpace), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  MSpace.handle.value := $1F;
+  Dwg.mspace_block := @MSpace;
+  Ent.entmode := 2; // MSPACE implicit owner
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($1F), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodePSpaceReturnsPSpaceBlockHandle;
+var
+  Obj, PSpace: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(PSpace, SizeOf(PSpace), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  PSpace.handle.value := $2E;
+  Dwg.pspace_block := @PSpace;
+  Ent.entmode := 1; // PSPACE implicit owner
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($2E), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeFallsBackWhenBlockMissing;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  OwnerRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  // entmode signals MSPACE but mspace_block is nil (e.g., parsed without
+  // layouts). The helper must fall back to ownerhandle so a present
+  // legacy ref still wins instead of returning False.
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(OwnerRef, SizeOf(OwnerRef), 0);
+  Dwg.mspace_block := nil;
+  OwnerRef.absolute_ref := $77;
+  Ent.ownerhandle := @OwnerRef;
+  Ent.entmode := 2;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($77), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeExplicitReadsOwnerHandle;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  OwnerRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  // entmode=3 means an explicit ownerhandle is present; the implicit-owner
+  // branch must not interfere even if parent is nil.
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(OwnerRef, SizeOf(OwnerRef), 0);
+  OwnerRef.absolute_ref := $88;
+  Ent.ownerhandle := @OwnerRef;
+  Ent.entmode := 3;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($88), Int64(Value));
 end;
 
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;
