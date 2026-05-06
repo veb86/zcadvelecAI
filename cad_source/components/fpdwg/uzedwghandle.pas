@@ -45,7 +45,18 @@ function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
 { Owner handle on a Dwg_Object. Returns False when the object has no owner
   (typical for top-level objects). The actual lookup goes through
-  DWGRefHandleValue so a present-but-zero ownerhandle is treated as missing. }
+  DWGRefHandleValue so a present-but-zero ownerhandle is treated as missing.
+
+  Issue #1118: LibreDWG marks model/paper-space ownership via the BITCODE_BB
+  `entmode` field instead of populating `ownerhandle`:
+    entmode=0  -> no owner (top-level)
+    entmode=1  -> implicit owner is paper-space block (ownerhandle is null)
+    entmode=2  -> implicit owner is model-space block (ownerhandle is null)
+    entmode=3  -> explicit ownerhandle (read it)
+  When entmode is 1 or 2 we resolve the owner handle through the parent
+  Dwg_Data's `pspace_block` / `mspace_block` pointers so the resolver can
+  attach the entity to the right BLOCK_HEADER instead of falling back to
+  the model-space root with `arNullOwner`. }
 function DWGObjectOwnerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
 
@@ -102,12 +113,43 @@ end;
 
 function DWGObjectOwnerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+var
+  Ent: ^Dwg_Object_Entity;
+  Dwg: ^_dwg_struct;
+  ImplicitOwner: ^Dwg_Object;
 begin
   Value := 0;
   case Obj.supertype of
     DWG_SUPERTYPE_ENTITY:
       if Obj.tio.entity <> nil then
-        Exit(DWGRefHandleValue(Obj.tio.entity^.ownerhandle, Value));
+      begin
+        Ent := Obj.tio.entity;
+        // Issue #1118: prefer entmode-derived implicit owner over ownerhandle.
+        // LibreDWG only fills ownerhandle when entmode=3; for entmode=1/2 the
+        // owner is paper/model space and ownerhandle is null. Fall through to
+        // ownerhandle when entmode=0 (no owner) or 3 (explicit ref).
+        if (Ent^.entmode = 1) or (Ent^.entmode = 2) then
+        begin
+          Dwg := Obj.parent;
+          if Dwg <> nil then
+          begin
+            if Ent^.entmode = 2 then
+              ImplicitOwner := Dwg^.mspace_block
+            else
+              ImplicitOwner := Dwg^.pspace_block;
+            if ImplicitOwner <> nil then
+            begin
+              Value := ImplicitOwner^.handle.value;
+              if Value <> 0 then
+                Exit(True);
+            end;
+          end;
+          // entmode signalled an implicit owner but we could not resolve it
+          // (parent missing or the layout block was not loaded). Fall through
+          // to ownerhandle so the legacy path still has a chance.
+        end;
+        Exit(DWGRefHandleValue(Ent^.ownerhandle, Value));
+      end;
     DWG_SUPERTYPE_OBJECT:
       if Obj.tio.&object <> nil then
         Exit(DWGRefHandleValue(Obj.tio.&object^.ownerhandle, Value));
