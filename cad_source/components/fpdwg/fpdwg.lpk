@@ -21,6 +21,82 @@
         <Filename Value="dwgproc.pp"/>
         <UnitName Value="dwgproc"/>
       </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwghandle.pas"/>
+        <UnitName Value="uzedwghandle"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgtext.pas"/>
+        <UnitName Value="uzedwgtext"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgtypes.pas"/>
+        <UnitName Value="uzedwgtypes"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgdiagnostics.pas"/>
+        <UnitName Value="uzedwgdiagnostics"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgresolver.pas"/>
+        <UnitName Value="uzedwgresolver"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgloadcontext.pas"/>
+        <UnitName Value="uzedwgloadcontext"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgblocks.pas"/>
+        <UnitName Value="uzedwgblocks"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgtables.pas"/>
+        <UnitName Value="uzedwgtables"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgentityregistry.pas"/>
+        <UnitName Value="uzedwgentityregistry"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgfinalize.pas"/>
+        <UnitName Value="uzedwgfinalize"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgimport.pas"/>
+        <UnitName Value="uzedwgimport"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\uzedwgrawscan.pas"/>
+        <UnitName Value="uzedwgrawscan"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentline.pas"/>
+        <UnitName Value="uzedwgentline"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentcircle.pas"/>
+        <UnitName Value="uzedwgentcircle"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentarc.pas"/>
+        <UnitName Value="uzedwgentarc"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentpoint.pas"/>
+        <UnitName Value="uzedwgentpoint"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentlwpolyline.pas"/>
+        <UnitName Value="uzedwgentlwpolyline"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgenttext.pas"/>
+        <UnitName Value="uzedwgenttext"/>
+      </Item>
+      <Item>
+        <Filename Value="..\..\zengine\fileformats\dwg\entities\uzedwgentmtext.pas"/>
+        <UnitName Value="uzedwgentmtext"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>
