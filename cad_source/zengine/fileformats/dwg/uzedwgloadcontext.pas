@@ -1,5 +1,5 @@
 {*************************************************************************** }
-{  fpdwg - DWG to ZCAD import context (Stage 2)                              }
+{  fpdwg - DWG to ZCAD import context (Stage 2, refactored 5.x R2)           }
 {                                                                            }
 {        Copyright (C) 2026 Andrey Zubarev <zamtmn@yandex.ru>                }
 {                                                                            }
@@ -12,7 +12,12 @@
   read order from ZCAD attachment. The unit intentionally avoids any ZCAD
   entity dependency so it can be unit tested in fpdwg_tests against opaque
   pointers / fake owner callbacks. The actual ZCAD-specific allocation,
-  AddMi and BuildGeometry calls live in uzefflibredwg2ents.pas. }
+  AddMi and BuildGeometry calls live in uzefflibredwg2ents.pas.
+
+  Refactor R2 (per TZ_DWG_LOAD_TO_ZCAD_AUDIT §3.2 / TZ §6.5): the previous
+  999-line monolith is split into four units. Public surface is preserved
+  via interface re-export so existing callers (uzefflibredwg2ents.pas,
+  fpdwg_test_loadcontext.pp) keep compiling unchanged. }
 
 unit uzedwgloadcontext;
 
@@ -22,136 +27,14 @@ unit uzedwgloadcontext;
 interface
 
 uses
-  SysUtils;
+  SysUtils,
+  // Re-exported so old callers see TDWGZCADHandle, the diagnostic codes,
+  // attach-callback types and DWGAttachReasonToText through this single unit.
+  uzedwgtypes,
+  uzedwgdiagnostics,
+  uzedwgresolver;
 
 type
-  TDWGZCADHandle = QWord;
-
-  { Section 7 of TZ: object kinds the import context recognizes. The kind is
-    used by the resolver to decide whether a handle is a valid container
-    target. The set is intentionally small; new kinds get added as new entity
-    units come online. }
-  TDWGZCADObjectKind = (
-    dokUnknown,
-    dokLayer,
-    dokLineType,
-    dokTextStyle,
-    dokDimStyle,
-    dokBlockDef,
-    dokModelSpace,
-    dokPaperSpace,
-    dokContainer,
-    dokEntity
-  );
-
-  TDWGShellState = (
-    msUnseen,
-    msCreating,
-    msCreated,
-    msSkipped,
-    msFailed
-  );
-
-  TDWGAttachState = (
-    asPending,
-    asResolving,
-    asAttached,
-    asFallback,
-    asSkipped
-  );
-
-  TDWGAttachReason = (
-    arResolved,
-    arNullOwner,
-    arOwnerNotFound,
-    arOwnerNotContainer,
-    arSelfOwnerCycle,
-    arOwnerChainCycle,
-    arOwnerSkipped,
-    arPending,
-    { Stage 3: ref-only outcomes. The owner queue never produces these. }
-    arRefNull,
-    arRefNotFound,
-    arRefKindMismatch
-  );
-
-  TDWGZCADHandleEntry = record
-    Handle: TDWGZCADHandle;
-    Kind: TDWGZCADObjectKind;
-    Ptr: Pointer;
-    RawIndex: Integer;
-    ShellState: TDWGShellState;
-  end;
-  PDWGZCADHandleEntry = ^TDWGZCADHandleEntry;
-
-  TDWGZCADPendingOwner = record
-    Entity: Pointer;
-    EntityHandle: TDWGZCADHandle;
-    OwnerHandle: TDWGZCADHandle;
-    FallbackOwner: Pointer;
-    RawIndex: Integer;
-    AttachState: TDWGAttachState;
-    AttachReason: TDWGAttachReason;
-    AttachedOwner: Pointer;
-  end;
-  PDWGZCADPendingOwner = ^TDWGZCADPendingOwner;
-
-  { Stage 3 (TZ §12.3 / §8.2-8.3): queued visual reference. The owner queue
-    handles "where does this entity attach". This queue handles "which
-    layer / linetype / textstyle / dimstyle pointer does the entity get".
-    Refs are resolved separately from owners because they come from
-    different ZCAD tables and have a different fallback policy: a missing
-    layer falls back to the system layer, a missing linetype falls back to
-    the ByLayer entry. The Slot field tells the attach callback which vp
-    field to write so the loader does not need a separate callback per
-    reference kind. }
-  TDWGZCADRefSlot = (
-    rsLayer,
-    rsLineType,
-    rsTextStyle,
-    rsDimStyle
-  );
-
-  TDWGZCADPendingRef = record
-    Entity: Pointer;
-    EntityHandle: TDWGZCADHandle;
-    RefHandle: TDWGZCADHandle;
-    ExpectedKind: TDWGZCADObjectKind;
-    Slot: TDWGZCADRefSlot;
-    Fallback: Pointer;
-    AttachState: TDWGAttachState;
-    AttachReason: TDWGAttachReason;
-    AttachedRef: Pointer;
-  end;
-  PDWGZCADPendingRef = ^TDWGZCADPendingRef;
-
-  TDWGImportSeverity = (wsInfo, wsWarning, wsError);
-
-  TDWGImportWarning = record
-    Severity: TDWGImportSeverity;
-    Code: Integer;
-    Handle: TDWGZCADHandle;
-    Text: String;
-  end;
-
-  { Callback used by ResolveOwners to perform the actual ZCAD AddMi attachment.
-    Owner is either the resolved owner pointer or FallbackOwner. The callback
-    is allowed to be nil during pure-context unit tests; in that case the
-    resolver still tracks the AttachState so tests can assert routing. }
-  TDWGAttachProc = procedure(Entity: Pointer; Owner: Pointer;
-    Reason: TDWGAttachReason; Data: Pointer);
-
-  { Stage 3 callback used by ResolveRefs to write the resolved reference
-    pointer (PGDBLayerProp / PGDBLtypeProp / PGDBTextStyle / ...) back into
-    the entity's vp record. Slot tells the production code which field to
-    update; Reason carries diagnostic context for fallback cases. As with
-    TDWGAttachProc, the callback is optional so tests can assert routing
-    without a real ZCAD entity. }
-  TDWGRefAttachProc = procedure(Entity: Pointer; Ref: Pointer;
-    Slot: TDWGZCADRefSlot; Reason: TDWGAttachReason; Data: Pointer);
-
-  EDWGLoadContext = class(Exception);
-
   { Sorted map TDWGZCADHandle -> TDWGZCADHandleEntry. Same insertion strategy
     as inspector/fpdwg_registry: a sorted dynamic array with binary search.
     Keeping this simple avoids pulling FCL generics or a hashmap dependency
@@ -215,13 +98,14 @@ type
     pending owner queue, cycle-safe resolver stack, warnings and stats.
     The context has no knowledge of ZCAD entity classes; integration is done
     by the AttachProc callback configured by the production loader. }
-  TDWGZCADLoadContext = class
+  TDWGZCADLoadContext = class(TDWGResolverHost)
   private
     FHandles: TDWGZCADHandleMap;
     FPendingOwners: TDWGZCADPendingOwnerList;
     FPendingRefs: TDWGZCADPendingRefList;
-    FResolveStack: array of TDWGZCADHandle;
-    FWarnings: array of TDWGImportWarning;
+    FWarnings: TDWGImportWarningList;
+    FStats: TDWGImportStats;
+    FResolver: TDWGZCADResolver;
     FAttachProc: TDWGAttachProc;
     FAttachData: Pointer;
     FRefAttachProc: TDWGRefAttachProc;
@@ -230,24 +114,23 @@ type
     FFallbackLayer: Pointer;
     FFallbackLineType: Pointer;
     FFallbackTextStyle: Pointer;
-    FAttachCount: Integer;
-    FFallbackCount: Integer;
-    FCycleCount: Integer;
-    FRefAttachCount: Integer;
-    FRefFallbackCount: Integer;
-    procedure PushStack(Handle: TDWGZCADHandle);
-    procedure PopStack;
-    function StackContains(Handle: TDWGZCADHandle): Boolean;
-    procedure AddWarning(Severity: TDWGImportSeverity; Code: Integer;
-      Handle: TDWGZCADHandle; const Text: String);
-    procedure DoAttach(Pending: PDWGZCADPendingOwner; Owner: Pointer;
-      State: TDWGAttachState; Reason: TDWGAttachReason);
-    procedure ResolvePending(Pending: PDWGZCADPendingOwner);
-    procedure DoRefAttach(Pending: PDWGZCADPendingRef; Ref: Pointer;
-      State: TDWGAttachState; Reason: TDWGAttachReason);
-    procedure ResolveRef(Pending: PDWGZCADPendingRef);
-    function FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer;
   public
+    { TDWGResolverHost surface (R2): exposed publicly so the resolver can
+      reach the registry and warning sink through the abstract base. }
+    function TryGetEntry(AHandle: TDWGZCADHandle;
+      out Entry: TDWGZCADHandleEntry): Boolean; override;
+    function FindPendingOwner(AEntityHandle: TDWGZCADHandle
+      ): PDWGZCADPendingOwner; override;
+    function GetFallbackOwner: Pointer; override;
+    function FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer; override;
+    procedure InvokeOwnerAttach(Entity, Owner: Pointer;
+      Reason: TDWGAttachReason); override;
+    procedure InvokeRefAttach(Entity, Ref: Pointer; Slot: TDWGZCADRefSlot;
+      Reason: TDWGAttachReason); override;
+    procedure RaiseWarning(Severity: TDWGImportSeverity; Code: Integer;
+      Handle: TDWGZCADHandle; const Text: String); override;
+    function GetStatsRef: PDWGImportStats; override;
+
     constructor Create;
     destructor Destroy; override;
 
@@ -291,8 +174,6 @@ type
     procedure ResolveRefs;
 
     { Lookup helpers }
-    function TryGetEntry(AHandle: TDWGZCADHandle;
-      out Entry: TDWGZCADHandleEntry): Boolean;
     function FindPending(AEntityHandle: TDWGZCADHandle
       ): PDWGZCADPendingOwner;
     function FindPendingRef(AEntityHandle: TDWGZCADHandle;
@@ -301,11 +182,11 @@ type
     { Diagnostics }
     function WarningCount: Integer;
     function WarningAt(Index: Integer): TDWGImportWarning;
-    property AttachCount: Integer read FAttachCount;
-    property FallbackCount: Integer read FFallbackCount;
-    property CycleCount: Integer read FCycleCount;
-    property RefAttachCount: Integer read FRefAttachCount;
-    property RefFallbackCount: Integer read FRefFallbackCount;
+    property AttachCount: Integer read FStats.AttachCount;
+    property FallbackCount: Integer read FStats.FallbackCount;
+    property CycleCount: Integer read FStats.CycleCount;
+    property RefAttachCount: Integer read FStats.RefAttachCount;
+    property RefFallbackCount: Integer read FStats.RefFallbackCount;
     property FallbackOwner: Pointer read FFallbackOwner;
     property FallbackLayer: Pointer read FFallbackLayer;
     property FallbackLineType: Pointer read FFallbackLineType;
@@ -315,46 +196,7 @@ type
     property PendingRefs: TDWGZCADPendingRefList read FPendingRefs;
   end;
 
-const
-  { Diagnostic codes; kept as integer constants so log filters can use them
-    without importing this unit's enum. Numbering picks up where the inspector
-    logger left off (1300 range used for resolver). }
-  DWG_WARN_OWNER_NULL          = 1401;
-  DWG_WARN_OWNER_NOT_FOUND     = 1402;
-  DWG_WARN_OWNER_NOT_CONTAINER = 1403;
-  DWG_WARN_OWNER_SELF_CYCLE    = 1404;
-  DWG_WARN_OWNER_CHAIN_CYCLE   = 1405;
-  DWG_WARN_OWNER_SKIPPED       = 1406;
-  DWG_WARN_DUPLICATE_HANDLE    = 1407;
-  { Stage 3 (TZ §12.3 / §13): visual-reference resolution diagnostics. The
-    spec calls for separate codes per failure mode so a log filter can spot
-    e.g. layer-not-found independently of linetype-kind-mismatch. }
-  DWG_WARN_REF_NULL            = 1408;
-  DWG_WARN_REF_NOT_FOUND       = 1409;
-  DWG_WARN_REF_KIND_MISMATCH   = 1410;
-
-function DWGAttachReasonToText(Reason: TDWGAttachReason): String;
-
 implementation
-
-function DWGAttachReasonToText(Reason: TDWGAttachReason): String;
-begin
-  case Reason of
-    arResolved:           Result := 'resolved';
-    arNullOwner:          Result := 'null owner';
-    arOwnerNotFound:      Result := 'owner not found';
-    arOwnerNotContainer:  Result := 'owner is not a container';
-    arSelfOwnerCycle:     Result := 'self owner cycle';
-    arOwnerChainCycle:    Result := 'owner chain cycle';
-    arOwnerSkipped:       Result := 'owner skipped';
-    arPending:            Result := 'pending';
-    arRefNull:            Result := 'null ref';
-    arRefNotFound:        Result := 'ref not found';
-    arRefKindMismatch:    Result := 'ref kind mismatch';
-  else
-    Result := 'unknown';
-  end;
-end;
 
 { ---------- TDWGZCADHandleMap ---------- }
 
@@ -601,10 +443,15 @@ begin
   FHandles := TDWGZCADHandleMap.Create;
   FPendingOwners := TDWGZCADPendingOwnerList.Create;
   FPendingRefs := TDWGZCADPendingRefList.Create;
+  FWarnings := TDWGImportWarningList.Create;
+  FStats.Clear;
+  FResolver := TDWGZCADResolver.Create(Self);
 end;
 
 destructor TDWGZCADLoadContext.Destroy;
 begin
+  FResolver.Free;
+  FWarnings.Free;
   FHandles.Free;
   FPendingOwners.Free;
   FPendingRefs.Free;
@@ -650,7 +497,7 @@ function TDWGZCADLoadContext.RegisterShell(AHandle: TDWGZCADHandle;
 begin
   Result := FHandles.RegisterShell(AHandle, AKind, APtr, ARawIndex, msCreated);
   if not Result then
-    AddWarning(wsWarning, DWG_WARN_DUPLICATE_HANDLE, AHandle,
+    FWarnings.Add(wsWarning, DWG_WARN_DUPLICATE_HANDLE, AHandle,
       Format('Duplicate handle %s ignored; first shell remains indexed',
         [IntToHex(AHandle, 1)]));
 end;
@@ -690,183 +537,60 @@ begin
   Result := FPendingOwners.ItemByEntityHandle(AEntityHandle);
 end;
 
-procedure TDWGZCADLoadContext.PushStack(Handle: TDWGZCADHandle);
+function TDWGZCADLoadContext.FindPendingOwner(AEntityHandle: TDWGZCADHandle
+  ): PDWGZCADPendingOwner;
 begin
-  SetLength(FResolveStack, Length(FResolveStack) + 1);
-  FResolveStack[High(FResolveStack)] := Handle;
+  Result := FPendingOwners.ItemByEntityHandle(AEntityHandle);
 end;
 
-procedure TDWGZCADLoadContext.PopStack;
-begin
-  if Length(FResolveStack) > 0 then
-    SetLength(FResolveStack, Length(FResolveStack) - 1);
-end;
-
-function TDWGZCADLoadContext.StackContains(Handle: TDWGZCADHandle): Boolean;
-var
-  I: Integer;
-begin
-  for I := 0 to High(FResolveStack) do
-    if FResolveStack[I] = Handle then
-      Exit(True);
-  Result := False;
-end;
-
-procedure TDWGZCADLoadContext.AddWarning(Severity: TDWGImportSeverity;
+procedure TDWGZCADLoadContext.RaiseWarning(Severity: TDWGImportSeverity;
   Code: Integer; Handle: TDWGZCADHandle; const Text: String);
-var
-  W: TDWGImportWarning;
 begin
-  W.Severity := Severity;
-  W.Code := Code;
-  W.Handle := Handle;
-  W.Text := Text;
-  SetLength(FWarnings, Length(FWarnings) + 1);
-  FWarnings[High(FWarnings)] := W;
+  FWarnings.Add(Severity, Code, Handle, Text);
 end;
 
-procedure TDWGZCADLoadContext.DoAttach(Pending: PDWGZCADPendingOwner;
-  Owner: Pointer; State: TDWGAttachState; Reason: TDWGAttachReason);
+procedure TDWGZCADLoadContext.InvokeOwnerAttach(Entity, Owner: Pointer;
+  Reason: TDWGAttachReason);
 begin
-  Pending^.AttachState := State;
-  Pending^.AttachedOwner := Owner;
-  Pending^.AttachReason := Reason;
-  if State = asAttached then
-    Inc(FAttachCount)
-  else if State = asFallback then
-    Inc(FFallbackCount);
-  if Reason in [arSelfOwnerCycle, arOwnerChainCycle] then
-    Inc(FCycleCount);
-  if (Owner <> nil) and Assigned(FAttachProc) then
-    FAttachProc(Pending^.Entity, Owner, Reason, FAttachData);
+  if Assigned(FAttachProc) then
+    FAttachProc(Entity, Owner, Reason, FAttachData);
 end;
 
-procedure TDWGZCADLoadContext.ResolvePending(Pending: PDWGZCADPendingOwner);
-var
-  OwnerEntry: TDWGZCADHandleEntry;
-  OwnerPending: PDWGZCADPendingOwner;
-  Fallback: Pointer;
+procedure TDWGZCADLoadContext.InvokeRefAttach(Entity, Ref: Pointer;
+  Slot: TDWGZCADRefSlot; Reason: TDWGAttachReason);
 begin
-  if Pending = nil then
-    Exit;
+  if Assigned(FRefAttachProc) then
+    FRefAttachProc(Entity, Ref, Slot, Reason, FRefAttachData);
+end;
 
-  // Section 5.4: idempotency. A second call must not double-attach.
-  if Pending^.AttachState in [asAttached, asFallback, asSkipped] then
-    Exit;
+function TDWGZCADLoadContext.GetFallbackOwner: Pointer;
+begin
+  Result := FFallbackOwner;
+end;
 
-  // Section 5.4: detect re-entry (cycle through the resolve stack).
-  if Pending^.AttachState = asResolving then
-  begin
-    AddWarning(wsWarning, DWG_WARN_OWNER_CHAIN_CYCLE, Pending^.EntityHandle,
-      Format('Owner chain cycle for entity %s, breaking',
-        [IntToHex(Pending^.EntityHandle, 1)]));
-    Fallback := Pending^.FallbackOwner;
-    if Fallback = nil then
-      Fallback := FFallbackOwner;
-    DoAttach(Pending, Fallback, asFallback, arOwnerChainCycle);
-    Exit;
+function TDWGZCADLoadContext.FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer;
+begin
+  case ASlot of
+    rsLayer:     Result := FFallbackLayer;
+    rsLineType:  Result := FFallbackLineType;
+    rsTextStyle: Result := FFallbackTextStyle;
+  else
+    Result := nil;
   end;
+end;
 
-  Pending^.AttachState := asResolving;
-  PushStack(Pending^.EntityHandle);
-  try
-    Fallback := Pending^.FallbackOwner;
-    if Fallback = nil then
-      Fallback := FFallbackOwner;
-
-    if Pending^.OwnerHandle = 0 then
-    begin
-      AddWarning(wsInfo, DWG_WARN_OWNER_NULL, Pending^.EntityHandle,
-        Format('Entity %s has null owner; using fallback root',
-          [IntToHex(Pending^.EntityHandle, 1)]));
-      DoAttach(Pending, Fallback, asFallback, arNullOwner);
-      Exit;
-    end;
-
-    if Pending^.OwnerHandle = Pending^.EntityHandle then
-    begin
-      AddWarning(wsWarning, DWG_WARN_OWNER_SELF_CYCLE, Pending^.EntityHandle,
-        Format('Self-owner cycle on entity %s; using fallback root',
-          [IntToHex(Pending^.EntityHandle, 1)]));
-      DoAttach(Pending, Fallback, asFallback, arSelfOwnerCycle);
-      Exit;
-    end;
-
-    if not FHandles.TryGet(Pending^.OwnerHandle, OwnerEntry) then
-    begin
-      AddWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND, Pending^.EntityHandle,
-        Format('Owner %s not found for entity %s; using fallback root',
-          [IntToHex(Pending^.OwnerHandle, 1),
-           IntToHex(Pending^.EntityHandle, 1)]));
-      DoAttach(Pending, Fallback, asFallback, arOwnerNotFound);
-      Exit;
-    end;
-
-    if not (OwnerEntry.Kind in
-        [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer]) then
-    begin
-      AddWarning(wsWarning, DWG_WARN_OWNER_NOT_CONTAINER, Pending^.EntityHandle,
-        Format('Owner %s for entity %s is not a container (kind=%d); '+
-               'using fallback root',
-          [IntToHex(Pending^.OwnerHandle, 1),
-           IntToHex(Pending^.EntityHandle, 1),
-           Ord(OwnerEntry.Kind)]));
-      DoAttach(Pending, Fallback, asFallback, arOwnerNotContainer);
-      Exit;
-    end;
-
-    // Section 5.3: ensure owner itself is resolved before attaching child.
-    OwnerPending := FindPending(Pending^.OwnerHandle);
-    if OwnerPending <> nil then
-    begin
-      if OwnerPending^.AttachState = asResolving then
-      begin
-        AddWarning(wsWarning, DWG_WARN_OWNER_CHAIN_CYCLE,
-          Pending^.EntityHandle,
-          Format('Owner chain cycle %s -> %s detected; using fallback root',
-            [IntToHex(Pending^.EntityHandle, 1),
-             IntToHex(Pending^.OwnerHandle, 1)]));
-        DoAttach(Pending, Fallback, asFallback, arOwnerChainCycle);
-        Exit;
-      end;
-      ResolvePending(OwnerPending);
-      if OwnerPending^.AttachState = asSkipped then
-      begin
-        AddWarning(wsWarning, DWG_WARN_OWNER_SKIPPED,
-          Pending^.EntityHandle,
-          Format('Owner %s for entity %s was skipped; using fallback root',
-            [IntToHex(Pending^.OwnerHandle, 1),
-             IntToHex(Pending^.EntityHandle, 1)]));
-        DoAttach(Pending, Fallback, asFallback, arOwnerSkipped);
-        Exit;
-      end;
-    end;
-
-    if StackContains(Pending^.OwnerHandle) then
-    begin
-      AddWarning(wsWarning, DWG_WARN_OWNER_CHAIN_CYCLE, Pending^.EntityHandle,
-        Format('Owner chain cycle reaches %s through %s; using fallback root',
-          [IntToHex(Pending^.OwnerHandle, 1),
-           IntToHex(Pending^.EntityHandle, 1)]));
-      DoAttach(Pending, Fallback, asFallback, arOwnerChainCycle);
-      Exit;
-    end;
-
-    DoAttach(Pending, OwnerEntry.Ptr, asAttached, arResolved);
-  finally
-    PopStack;
-    if Pending^.AttachState = asResolving then
-      Pending^.AttachState := asSkipped;
-  end;
+function TDWGZCADLoadContext.GetStatsRef: PDWGImportStats;
+begin
+  Result := @FStats;
 end;
 
 procedure TDWGZCADLoadContext.ResolveOwners;
 var
   I: Integer;
 begin
-  SetLength(FResolveStack, 0);
+  FResolver.ResetStack;
   for I := 0 to FPendingOwners.Count - 1 do
-    ResolvePending(FPendingOwners.ItemAt(I));
+    FResolver.ResolvePending(FPendingOwners.ItemAt(I));
 end;
 
 procedure TDWGZCADLoadContext.QueueRefResolve(AEntity: Pointer;
@@ -889,111 +613,22 @@ begin
   Result := FPendingRefs.ItemByEntityAndSlot(AEntityHandle, ASlot);
 end;
 
-function TDWGZCADLoadContext.FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer;
-begin
-  case ASlot of
-    rsLayer:     Result := FFallbackLayer;
-    rsLineType:  Result := FFallbackLineType;
-    rsTextStyle: Result := FFallbackTextStyle;
-  else
-    Result := nil;
-  end;
-end;
-
-procedure TDWGZCADLoadContext.DoRefAttach(Pending: PDWGZCADPendingRef;
-  Ref: Pointer; State: TDWGAttachState; Reason: TDWGAttachReason);
-begin
-  Pending^.AttachState := State;
-  Pending^.AttachedRef := Ref;
-  Pending^.AttachReason := Reason;
-  if State = asAttached then
-    Inc(FRefAttachCount)
-  else if State = asFallback then
-    Inc(FRefFallbackCount);
-  if Assigned(FRefAttachProc) then
-    FRefAttachProc(Pending^.Entity, Ref, Pending^.Slot, Reason,
-      FRefAttachData);
-end;
-
-procedure TDWGZCADLoadContext.ResolveRef(Pending: PDWGZCADPendingRef);
-var
-  Entry: TDWGZCADHandleEntry;
-  Fallback: Pointer;
-begin
-  if Pending = nil then
-    Exit;
-
-  // Idempotency (TZ §5.4): a second ResolveRefs call must not re-attach.
-  if Pending^.AttachState in [asAttached, asFallback, asSkipped] then
-    Exit;
-
-  Fallback := Pending^.Fallback;
-  if Fallback = nil then
-    Fallback := FallbackForSlot(Pending^.Slot);
-
-  if Pending^.RefHandle = 0 then
-  begin
-    AddWarning(wsInfo, DWG_WARN_REF_NULL, Pending^.EntityHandle,
-      Format('Entity %s has null ref in slot %d; using fallback',
-        [IntToHex(Pending^.EntityHandle, 1), Ord(Pending^.Slot)]));
-    DoRefAttach(Pending, Fallback, asFallback, arRefNull);
-    Exit;
-  end;
-
-  if not FHandles.TryGet(Pending^.RefHandle, Entry) then
-  begin
-    AddWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, Pending^.EntityHandle,
-      Format('Ref %s (slot %d) not found for entity %s; using fallback',
-        [IntToHex(Pending^.RefHandle, 1), Ord(Pending^.Slot),
-         IntToHex(Pending^.EntityHandle, 1)]));
-    DoRefAttach(Pending, Fallback, asFallback, arRefNotFound);
-    Exit;
-  end;
-
-  if Entry.Kind <> Pending^.ExpectedKind then
-  begin
-    AddWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, Pending^.EntityHandle,
-      Format('Ref %s for entity %s has kind %d, expected %d; using fallback',
-        [IntToHex(Pending^.RefHandle, 1),
-         IntToHex(Pending^.EntityHandle, 1),
-         Ord(Entry.Kind), Ord(Pending^.ExpectedKind)]));
-    DoRefAttach(Pending, Fallback, asFallback, arRefKindMismatch);
-    Exit;
-  end;
-
-  if Entry.Ptr = nil then
-  begin
-    // Shell registered without a backing object: treat as not found so the
-    // entity still ends up with a usable reference rather than nil.
-    AddWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, Pending^.EntityHandle,
-      Format('Ref %s for entity %s registered with nil ptr; using fallback',
-        [IntToHex(Pending^.RefHandle, 1),
-         IntToHex(Pending^.EntityHandle, 1)]));
-    DoRefAttach(Pending, Fallback, asFallback, arRefNotFound);
-    Exit;
-  end;
-
-  DoRefAttach(Pending, Entry.Ptr, asAttached, arResolved);
-end;
-
 procedure TDWGZCADLoadContext.ResolveRefs;
 var
   I: Integer;
 begin
   for I := 0 to FPendingRefs.Count - 1 do
-    ResolveRef(FPendingRefs.ItemAt(I));
+    FResolver.ResolveRef(FPendingRefs.ItemAt(I));
 end;
 
 function TDWGZCADLoadContext.WarningCount: Integer;
 begin
-  Result := Length(FWarnings);
+  Result := FWarnings.Count;
 end;
 
 function TDWGZCADLoadContext.WarningAt(Index: Integer): TDWGImportWarning;
 begin
-  if (Index < 0) or (Index > High(FWarnings)) then
-    raise EDWGLoadContext.CreateFmt('Warning index %d out of range', [Index]);
-  Result := FWarnings[Index];
+  Result := FWarnings.Item(Index);
 end;
 
 end.
