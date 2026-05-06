@@ -242,12 +242,30 @@ procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   WantTextStyle: Boolean; TextStyleHandle: QWord);
 var
   EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
+  EntMode: Integer;
 begin
   if LoadCtx = nil then
     Exit;
   EntityHandle := DWGObjectHandleValue(DWGObject);
   if not DWGObjectOwnerHandleValue(DWGObject, OwnerHandle) then
     OwnerHandle := 0;
+  // Issue #1120: when entmode is 1 (paper) or 2 (model) the owner is implicit
+  // and DWGObjectOwnerHandleValue tries Dwg^.mspace_block / pspace_block,
+  // header_vars.BLOCK_RECORD_*SPACE and block_control.*_space in turn. When
+  // all three paths fail OwnerHandle stays 0, the resolver attaches via
+  // arNullOwner and the segments only render under the fallback root. Log a
+  // hint so future regressions surface in the build log instead of looking
+  // like a generic "{WHM} ... attached via fallback (null owner)".
+  EntMode := -1;
+  if (DWGObject.supertype = DWG_SUPERTYPE_ENTITY) and
+     (DWGObject.tio.entity <> nil) then
+    EntMode := DWGObject.tio.entity^.entmode;
+  if (OwnerHandle = 0) and ((EntMode = 1) or (EntMode = 2)) then
+    zDebugLn(['{WH}entmode=', EntMode,
+      ' implicit owner unresolved for entity ',
+      IntToHex(EntityHandle, 1),
+      ' (mspace/pspace_block, header_vars.BLOCK_RECORD_*SPACE,',
+      ' block_control.*_space and ownerhandle all empty)']);
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, dokEntity, pobj, -1);
   LoadCtx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
