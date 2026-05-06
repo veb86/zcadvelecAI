@@ -8,6 +8,7 @@
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
+        <IncludeFiles Value="..\..\zengine"/>
         <OtherUnitFiles Value="..\..\zengine\fileformats\dwg;..\..\zengine\fileformats\dwg\entities"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
