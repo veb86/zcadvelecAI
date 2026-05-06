@@ -506,15 +506,15 @@ DroppedDueToFreedRaw: Integer;
 
 ## 7. Сводный чек-лист для следующего PR (приоритетные)
 
-- [ ] Создать `cad_source/zengine/fileformats/dwg/` и `dwg/entities/`, `dwg/tests/`.
-- [ ] Удалить `cad_source/components/fpdwg/uzedwgloadcontext.pp` (дубликат).
-- [ ] Разделить `uzedwgloadcontext.pas` на `uzedwgtypes.pas` + `uzedwgdiagnostics.pas` + ужатый `uzedwgloadcontext.pas` + `uzedwgresolver.pas`.
-- [ ] Извлечь handle/text helpers из `dwgproc.pp` в `uzedwghandle.pas` + `uzedwgtext.pas`.
-- [ ] Создать `uzedwgentityregistry.pas` и перевести регистрацию mapper'ов на него.
-- [ ] Раскатать каждый `Add*` mapper в свой `entities/uzedwgent*.pas` (8 файлов).
-- [ ] Сжать `uzefflibredwg2ents.pas` до compatibility-фасада <= 250 строк.
-- [ ] Добавить `uzedwgrawscan.pas` и `uzedwgfinalize.pas` (Phase 1 / Phase 4).
-- [ ] Перенести `fpdwg_test_loadcontext.pp` и `fpdwg_test_dwgproc.pp` в `dwg/tests/` под новыми именами.
+- [x] Создать `cad_source/zengine/fileformats/dwg/` и `dwg/entities/`, `dwg/tests/`.
+- [x] Удалить `cad_source/components/fpdwg/uzedwgloadcontext.pp` (дубликат).
+- [x] Разделить `uzedwgloadcontext.pas` на `uzedwgtypes.pas` + `uzedwgdiagnostics.pas` + ужатый `uzedwgloadcontext.pas` + `uzedwgresolver.pas`.
+- [x] Извлечь handle/text helpers из `dwgproc.pp` в `uzedwghandle.pas` + `uzedwgtext.pas`.
+- [x] Создать `uzedwgentityregistry.pas` и перевести регистрацию mapper'ов на него.
+- [x] Раскатать каждый `Add*` mapper в свой `entities/uzedwgent*.pas` (8 файлов).
+- [x] Сжать `uzefflibredwg2ents.pas` до compatibility-фасада <= 250 строк.
+- [x] Добавить `uzedwgrawscan.pas` и `uzedwgfinalize.pas` (Phase 1 / Phase 4).
+- [x] Перенести `fpdwg_test_loadcontext.pp` и `fpdwg_test_dwgproc.pp` в `dwg/tests/` под новыми именами.
 - [ ] Прогнать `fpdwg_tests` + новый набор тестов; обеспечить зеленый CI.
 
 После выполнения этого чек-листа открывается дорога к этапам 6-8 без накапливания нового долга в монолитном `uzefflibredwg2ents.pas`.

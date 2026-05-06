@@ -37,10 +37,12 @@ unit uzeffLibreDWG2Ents;
 interface
 
 uses
+  dwg,
   uzedrawingsimple,
   uzedwgimport;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 
 implementation
@@ -64,6 +66,11 @@ uses
 procedure BeginDWGImport(var ZContext: TZDrawingContext);
 begin
   uzedwgimport.BeginDWGImport(ZContext);
+end;
+
+procedure ScanDWGImport(var Raw: Dwg_Data);
+begin
+  uzedwgimport.ScanDWGImport(Raw);
 end;
 
 procedure EndDWGImport(var ZContext: TZDrawingContext);

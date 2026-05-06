@@ -37,14 +37,23 @@ uses
   uzeenttext, uzeentmtext,
   uzeconsts,
   uzeTypes,
-  uzedwgloadcontext;
+  uzedwgloadcontext,
+  uzedwgrawscan,
+  uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
   and close the per-file load context that decouples DWG read order from ZCAD
   attachment (TZ §5.3 / §12.2). Begin must be called before parseDwg_Data,
-  End after. End is responsible for calling ResolveOwners and finalizing
-  attached entities. The functions are no-ops if called out of order. }
+  End after. End is responsible for calling ResolveOwners, FinalizeImport
+  and freeing the shared load context. The functions are no-ops if called
+  out of order.
+
+  R4 (TZ §3.4) adds ScanDWGImport between Begin and parseDwg_Data: a Phase 1
+  raw-scan over the LibreDWG object array that pre-registers handle -> raw
+  index entries so duplicate detection happens once and mappers can upgrade
+  placeholders instead of fighting the duplicate-handle warning. }
 procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 
 { Mapper-side accessors. Each entity unit calls GetLoadCtx() to enqueue its
@@ -78,33 +87,11 @@ begin
   Result := LoadDrawing;
 end;
 
-{ Stage 4 (TZ §12.4): "block content форматируется при использовании INSERT
-  или финальной formatting-фазе drawing". DWGAttachEntity must skip
-  BuildGeometry when the resolved owner is a block definition because the
-  drawing's BlockDefArray.FormatEntity will run BuildGeometry+formatEntity
-  for every block-def child later. Walking the handle map keeps the test
-  pipeline (which never registers block defs) on the existing fast path. }
-function DWGOwnerIsBlockDef(Owner: Pointer): Boolean;
-var
-  i: Integer;
-  Entry: PDWGZCADHandleEntry;
-begin
-  Result := False;
-  if (Owner = nil) or (LoadCtx = nil) then
-    Exit;
-  for i := 0 to LoadCtx.Handles.Count - 1 do begin
-    Entry := LoadCtx.Handles.EntryAt(i);
-    if (Entry^.Kind = dokBlockDef) and (Entry^.Ptr = Owner) then
-      Exit(True);
-  end;
-end;
-
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
   Reason: TDWGAttachReason; Data: Pointer);
 var
   pobj: PGDBObjEntity;
   newowner: PGDBObjGenericSubEntry;
-  ownerIsBlockDef: Boolean;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -118,26 +105,11 @@ begin
     zDebugLn(['{WHM}LINE ', HexStr(PtrUInt(pobj), 16),
       ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
 
-  // Stage 4 (TZ §12.4): defer block-def content geometry. BuildGeometry must
-  // still run for entities landing in model/paper space (or fallback root) so
-  // they appear on screen, but block-definition contents are formatted later
-  // — either by an INSERT that materialises the block, or by the drawing's
-  // global formatting pass (BlockDefArray.FormatEntity). Running BuildGeometry
-  // here for a block-def child would duplicate the work that FormatEntity
-  // does and pollute the deferred-formatting contract the spec calls out by
-  // name ("block content форматируется при использовании INSERT или финальной
-  // formatting-фазе drawing").
-  ownerIsBlockDef := False;
-  if LoadCtx <> nil then
-    ownerIsBlockDef := DWGOwnerIsBlockDef(newowner);
-
-  if (LoadDrawing <> nil) and (not ownerIsBlockDef) then begin
-    PGDBObjEntity(pobj)^.BuildGeometry(LoadDrawing^);
-    // FormatAfterDXFLoad/FromDXFPostProcessAfterAdd belong to the DXF code path
-    // and require a TDrawContext that the DWG pipeline does not yet thread
-    // through Stage 2. BuildGeometry is enough to satisfy the original bug
-    // (line never built) without dragging the DXF post-processing chain in.
-  end;
+  // R7 (TZ §3.7): BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd
+  // moved to uzedwgfinalize.FinalizeImport. Attach is back to being just an
+  // AddMi: the resolver may revisit a handle without geometry being rebuilt
+  // as a side effect, and finalize gets a single place to mirror the DXF
+  // post-processing chain (TDrawContext threaded through addfromdwg).
 end;
 
 { Stage 3 (TZ §12.3): write a resolved visual-property pointer back into the
@@ -227,14 +199,24 @@ begin
   LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
 end;
 
+procedure ScanDWGImport(var Raw: Dwg_Data);
+begin
+  // R4 (TZ §3.4): Phase 1 raw scan runs between BeginDWGImport and
+  // parseDwg_Data. No-op when the loader is inactive (legacy callers that
+  // skipped the lifecycle hooks).
+  if LoadCtx = nil then
+    Exit;
+  ScanRawObjects(Raw, LoadCtx);
+end;
+
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 begin
   if LoadCtx = nil then
     Exit;
   try
-    // Stage 3: resolve refs first so DWGAttachEntity can BuildGeometry against
-    // the right vp slots. Resolving owners afterwards triggers the attach
-    // callback which then calls BuildGeometry.
+    // Phase 3: resolve refs then owners. Attach callbacks fire during
+    // ResolveOwners but only do the AddMi step now — geometry builds in
+    // Phase 4 below.
     LoadCtx.ResolveRefs;
     LoadCtx.ResolveOwners;
     zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
@@ -243,6 +225,9 @@ begin
       ', refs_attached=', LoadCtx.RefAttachCount,
       ', refs_fallback=', LoadCtx.RefFallbackCount,
       ', warnings=', LoadCtx.WarningCount]);
+    // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
+    // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
+    FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
   finally
     FreeAndNil(LoadCtx);
     LoadDrawing := nil;

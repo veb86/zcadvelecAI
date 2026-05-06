@@ -114,8 +114,12 @@ begin
       // Stage 2 (TZ §12.2): wrap parseDwg_Data with the load context so the
       // LINE handler can register shells + pending owners and the resolver
       // attaches everything in dependency order after parseDwg_Data returns.
+      // R4 (TZ §3.4): ScanDWGImport runs the Phase 1 raw scan between Begin
+      // and parseDwg_Data so duplicate-handle detection and raw-index capture
+      // happen once, before any mapper allocation.
       BeginDWGImport(ZCDCtx);
       try
+        ScanDWGImport(dwg);
         GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
       finally
         EndDWGImport(ZCDCtx);
@@ -163,6 +167,7 @@ begin
     try
       BeginDWGImport(ZCDCtx);
       try
+        ScanDWGImport(dwg);
         GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
       finally
         EndDWGImport(ZCDCtx);

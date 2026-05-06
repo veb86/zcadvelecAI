@@ -28,7 +28,7 @@ interface
   uses
     SysUtils, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
     // R3: handle / text helpers moved into their own units. Re-exported so
-    // existing callers (uzefflibredwg2ents.pas, fpdwg_test_dwgproc.pp) keep
+    // existing callers (uzefflibredwg2ents.pas, uzedwgtestdwgproc.pas) keep
     // seeing the same names through `uses dwgproc`.
     uzedwghandle, uzedwgtext;
 
