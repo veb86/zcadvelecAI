@@ -38,6 +38,7 @@ uses
   uzeconsts,
   uzeTypes,
   uzeffmanager,
+  uzedwgtypes,
   uzedwgloadcontext,
   uzedwgrawscan,
   uzedwgfinalize;
