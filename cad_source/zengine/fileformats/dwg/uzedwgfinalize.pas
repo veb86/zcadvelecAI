@@ -48,6 +48,7 @@ uses
   uzedrawingsimple,
   uzeentity,
   uzeentgenericsubentry,
+  uzgldrawcontext,
   uzedwgtypes,
   uzedwgloadcontext;
 
