@@ -13,7 +13,7 @@
 *****************************************************************************
 }
 {
-@author(Andrey Zubarev <zamtmn@yandex.ru>) 
+@author(Andrey Zubarev <zamtmn@yandex.ru>)
 }
 
 unit uzeffLibreDWG;
@@ -28,14 +28,16 @@ uses
   uzeffmanager,
   uzelongprocesssupport,{uzgldrawcontext,}forms,
   uzcstrconsts,uzeLogIntf,
+  uzedrawingsimple,
+  uzedwgentityregistry,
+  uzedwgimport,
   LazUTF8;
 
+// Re-exported alias kept for callers that referenced the type previously
+// defined in this unit (the actual definition now lives in
+// uzedwgentityregistry.pas — see TZ_DWG_LOAD_TO_ZCAD_AUDIT R5).
 type
-
-  TZCADDWGParser=specialize GDWGParser<TZDrawingContext>;
-
-var
-  ZCDWGParser:TZCADDWGParser=nil;
+  TZCADDWGParser = uzedwgentityregistry.TZCADDWGParser;
 
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 procedure addfromdxf(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
@@ -49,13 +51,8 @@ procedure DebugDWG(dwg:PDwg_Data);
 begin
   DebugLn(['{WH}header.version: '+DWG_V2Str(dwg^.header.version)]);
   zDebugLn(['{WH}header.from_version: ',DWG_V2Str(dwg^.header.from_version)]);
-  //if (dwg^.header.zero_5[0]=0)and(dwg^.header.zero_5[1]=0)and(dwg^.header.zero_5[2]=0)and(dwg^.header.zero_5[3]=0)and(dwg^.header.zero_5[4]=0)then
-  //  zDebugLn(['{WH}header.zero_5: 0,0,0,0,0'])
-  //else
-  //  zDebugLn(['{WHM}header.zero_5: ',dwg^.header.zero_5[0],',',dwg^.header.zero_5[1],',',dwg^.header.zero_5[2],',',dwg^.header.zero_5[3],',',dwg^.header.zero_5[4]]);
   zDebugLn(['{WH}header.is_maint: ',dwg^.header.is_maint]);
   zDebugLn(['{WH}header.zero_one_or_three: ',dwg^.header.zero_one_or_three]);
-  //zDebugLn(['{WH}header.unknown_3: ',dwg^.header.unknown_3]);
   zDebugLn(['{WH}header.numheader_vars: ',dwg^.header.numheader_vars]);
   zDebugLn(['{WH}header.thumbnail_address: ',dwg^.header.thumbnail_address]);
   zDebugLn(['{WH}header.dwg_version: ',dwg^.header.dwg_version]);
@@ -83,7 +80,6 @@ var
   Success:integer;
   lph:TLPSHandle;
   Loaded:Boolean;
-  //DC:TDrawContext;
 begin
   zDebugLn('{WH}%s',[rsNotYetImplemented]);
   try
@@ -94,7 +90,6 @@ begin
       exit;
     end;
   end;
-  //fillchar(dwg,sizeof(dwg),0);
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
   Loaded:=False;
@@ -121,7 +116,7 @@ begin
       // attaches everything in dependency order after parseDwg_Data returns.
       BeginDWGImport(ZCDCtx);
       try
-        ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+        GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
       finally
         EndDWGImport(ZCDCtx);
       end;
@@ -139,7 +134,6 @@ var
   Success:integer;
   lph:TLPSHandle;
   Loaded:Boolean;
-  //DC:TDrawContext;
 begin
   zDebugLn('{WH}%s',[rsNotYetImplemented]);
   try
@@ -150,7 +144,6 @@ begin
       exit;
     end;
   end;
-  //fillchar(dwg,sizeof(dwg),0);
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
   Loaded:=False;
@@ -170,7 +163,7 @@ begin
     try
       BeginDWGImport(ZCDCtx);
       try
-        ZCDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
+        GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
       finally
         EndDWGImport(ZCDCtx);
       end;
@@ -183,12 +176,4 @@ begin
   end;
 end;
 
-initialization
-  // Создаём парсер только если он ещё не создан — uzefflibredwg2ents может
-  // инициализироваться раньше при циклической зависимости через implementation
-  // uses и уже создать объект в своей секции initialization.
-  if ZCDWGParser=nil then
-    ZCDWGParser:=TZCADDWGParser.Create;
-finalization
- FreeAndNil(ZCDWGParser);
 end.
