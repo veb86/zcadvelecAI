@@ -37,6 +37,7 @@ uses
   uzeenttext, uzeentmtext,
   uzeconsts,
   uzeTypes,
+  uzeffmanager,
   uzedwgloadcontext,
   uzedwgrawscan,
   uzedwgfinalize;
