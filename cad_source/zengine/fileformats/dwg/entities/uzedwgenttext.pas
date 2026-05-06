@@ -18,12 +18,13 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc,uzedwghandle,
   uzedrawingsimple,
   uzeenttext, uzeentabstracttext, uzeentity,
   uzeentsubordinated,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzeffmanager,
   uzedwgimport;
 
 implementation

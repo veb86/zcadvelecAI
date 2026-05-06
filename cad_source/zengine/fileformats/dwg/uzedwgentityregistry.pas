@@ -27,7 +27,7 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc,uzeffmanager,
   uzedrawingsimple;
 
 type

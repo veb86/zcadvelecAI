@@ -24,12 +24,14 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc,uzedwghandle,
   uzedrawingsimple,
   uzeentline, uzeentity,
   uzeentsubordinated,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzeffmanager,
+  uzedwgtypes,
   uzedwgimport;
 
 implementation

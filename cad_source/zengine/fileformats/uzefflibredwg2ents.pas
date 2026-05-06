@@ -39,6 +39,7 @@ interface
 uses
   dwg,
   uzedrawingsimple,
+  uzeffmanager,
   uzedwgimport;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext);

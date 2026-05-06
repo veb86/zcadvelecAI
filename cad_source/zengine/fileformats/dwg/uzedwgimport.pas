@@ -29,11 +29,12 @@ interface
 uses
   uzbLogIntf,
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc,uzedwghandle,
   uzeentgenericsubentry, uzedrawingsimple,
   uzeentity,
   uzestyleslayers, uzestyleslinetypes, uzestylestexts,
   uzeentabstracttext,
+  uzeentsubordinated,
   uzeenttext, uzeentmtext,
   uzeconsts,
   uzeTypes,

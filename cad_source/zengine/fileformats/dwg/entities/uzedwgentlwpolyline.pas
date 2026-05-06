@@ -26,6 +26,7 @@ uses
   uzegeometrytypes,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzeffmanager,
   uzedwgimport;
 
 implementation

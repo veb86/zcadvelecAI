@@ -24,6 +24,7 @@ uses
   uzeentsubordinated,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzeffmanager,
   uzedwgimport;
 
 implementation

@@ -25,13 +25,15 @@ interface
 uses
   uzbLogIntf,
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc,uzedwghandle,
   uzedrawingsimple,
   uzbstrproc,
   uzeblockdef, UGDBObjBlockdefArray,
   uzeTypes,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzedwgtypes,
+  uzeffmanager,
   uzedwgimport;
 
 implementation
