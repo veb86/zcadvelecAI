@@ -9,7 +9,7 @@
       <PathDelim Value="\"/>
       <SearchPaths>
         <IncludeFiles Value="..\..\zengine"/>
-        <OtherUnitFiles Value="..\..\zengine\fileformats\dwg;..\..\zengine\fileformats\dwg\entities"/>
+        <OtherUnitFiles Value="..\..\zengine\fileformats\dwg;..\..\zengine\fileformats\dwg\entities;..\..\zengine\core\drawings;..\..\zengine\core\entities"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
