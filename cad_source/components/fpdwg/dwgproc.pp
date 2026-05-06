@@ -26,7 +26,11 @@ unit dwgproc;
 
 interface
   uses
-    SysUtils, {ctypes,} dynlibs, dwg, ghashmap, TypInfo;
+    SysUtils, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
+    // R3: handle / text helpers moved into their own units. Re-exported so
+    // existing callers (uzefflibredwg2ents.pas, fpdwg_test_dwgproc.pp) keep
+    // seeing the same names through `uses dwgproc`.
+    uzedwghandle, uzedwgtext;
 
   resourcestring
     rsHandlerAlreadyReg='Handler already registered for %d';
@@ -126,11 +130,12 @@ interface
     // Stage 5 (TZ §12.5): the LibreDWG bindings only expose
     // PDwg_Entity_LINE; declare the pointer aliases the Stage 5 helpers
     // require so callers can pass &dwg.tio.entity^.tio.TEXT directly.
+    // R3: PDwg_Entity_TEXT / PDwg_Entity_MTEXT are also declared in
+    // uzedwghandle (which is re-exported above) and reach callers from
+    // there; the rest stay here next to their TDWGCopy* mappers.
     PDwg_Entity_CIRCLE=^Dwg_Entity_CIRCLE;
     PDwg_Entity_ARC=^Dwg_Entity_ARC;
     PDwg_Entity_POINT=^Dwg_Entity_POINT;
-    PDwg_Entity_TEXT=^Dwg_Entity_TEXT;
-    PDwg_Entity_MTEXT=^Dwg_Entity_MTEXT;
     PDwg_Entity_LWPOLYLINE=^Dwg_Entity_LWPOLYLINE;
 
     TData=PtrInt;
@@ -174,30 +179,12 @@ interface
 
   procedure FreeLibreDWG;
   procedure LoadLibreDWG(lib : pchar = LibreDWG_Lib; reloadlib : Boolean = False);
+  // R3: BITCODE_T2Text remains here as a TDWGCtx-aware shim that delegates
+  // to uzedwgtext.DWGSafeDecodeText. The real handle/text helpers live in
+  // uzedwghandle and uzedwgtext (both re-exported by this unit).
   procedure BITCODE_T2Text(const p:BITCODE_T;constref DWGContext:TDWGCtx;out text:string);
   function DWG_V2Str(v:DWG_VERSION_TYPE):string;
 
-  // Stage 1 helpers: handle extraction shared by ZCAD loader and diagnostics.
-  // Each helper accepts already-decoded raw structures so callers can run unit
-  // tests against fake records without LibreDWG being available.
-  function DWGObjectHandleValue(const Obj:Dwg_Object):QWord;
-  function DWGObjectOwnerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  function DWGRefHandleValue(Ref:BITCODE_H;out Value:QWord):Boolean;
-  // Stage 3 helpers (TZ §12.3): pull layer / linetype refs off an entity-typed
-  // Dwg_Object. Returns False when Obj is not an entity, or when the ref is
-  // missing/null. Object-typed records (LAYER, LTYPE, BLOCK_HEADER) do not
-  // expose these slots, so callers reading from a non-entity object get False.
-  function DWGEntityLayerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  function DWGEntityLineTypeHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  function DWGLayerLineTypeHandleValue(const PLayer:PDwg_Object_LAYER;out Value:QWord):Boolean;
-  // Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
-  // False allows the caller to fall back to the registered text-style
-  // fallback (typically Standard).
-  function DWGTextStyleHandleValue(const PText:PDwg_Entity_TEXT;out Value:QWord):Boolean;
-  function DWGMTextStyleHandleValue(const PMText:PDwg_Entity_MTEXT;out Value:QWord):Boolean;
-  // Safe text decode helper without inspector dependency. Falls back to ANSI for
-  // <=R2004, UTF-16LE for newer DWG; nil pointer returns empty string.
-  procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
   // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
   // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
@@ -352,80 +339,10 @@ implementation
 
   procedure BITCODE_T2Text(const p:BITCODE_T;constref DWGContext:TDWGCtx;out text:string);
   begin
-    if DWGContext.dwg.header.version<=R_2004 then
-      text:=pchar(p)
-    else
-      text:=punicodechar(p)
-  end;
-
-  function DWGObjectHandleValue(const Obj:Dwg_Object):QWord;
-  begin
-    Result:=Obj.handle.value;
-  end;
-
-  function DWGRefHandleValue(Ref:BITCODE_H;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if Ref=nil then
-      Exit(False);
-    if Ref^.absolute_ref<>0 then begin
-      Value:=Ref^.absolute_ref;
-      Exit(True);
-    end;
-    if Ref^.handleref.value<>0 then begin
-      Value:=Ref^.handleref.value;
-      Exit(True);
-    end;
-    Result:=False;
-  end;
-
-  function DWGObjectOwnerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    case Obj.supertype of
-      DWG_SUPERTYPE_ENTITY:
-        if Obj.tio.entity<>nil then
-          Exit(DWGRefHandleValue(Obj.tio.entity^.ownerhandle,Value));
-      DWG_SUPERTYPE_OBJECT:
-        if Obj.tio.&object<>nil then
-          Exit(DWGRefHandleValue(Obj.tio.&object^.ownerhandle,Value));
-    end;
-    Result:=False;
-  end;
-
-  function DWGEntityLayerHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if (Obj.supertype<>DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity=nil) then
-      Exit(False);
-    Result:=DWGRefHandleValue(Obj.tio.entity^.layer,Value);
-  end;
-
-  function DWGEntityLineTypeHandleValue(const Obj:Dwg_Object;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if (Obj.supertype<>DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity=nil) then
-      Exit(False);
-    Result:=DWGRefHandleValue(Obj.tio.entity^.ltype,Value);
-  end;
-
-  function DWGLayerLineTypeHandleValue(const PLayer:PDwg_Object_LAYER;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if PLayer=nil then
-      Exit(False);
-    Result:=DWGRefHandleValue(PLayer^.ltype,Value);
-  end;
-
-  procedure DWGSafeDecodeText(const p:BITCODE_T;Version:DWG_VERSION_TYPE;out text:string);
-  begin
-    text:='';
-    if p=nil then
-      Exit;
-    if Version<=R_2004 then
-      text:=pchar(p)
-    else
-      text:=punicodechar(p);
+    // R3: defer to the version-based helper in uzedwgtext so the actual
+    // decoding rules live in one place. We pass the parser's resolved
+    // header version (the same one TDWGCtx.CreateRec already populates).
+    DWGSafeDecodeText(p,DWGContext.DWGVer,text);
   end;
 
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
@@ -436,22 +353,6 @@ implementation
     Endpoints.EndX:=Line.end_.x;
     Endpoints.EndY:=Line.end_.y;
     Endpoints.EndZ:=Line.end_.z;
-  end;
-
-  function DWGTextStyleHandleValue(const PText:PDwg_Entity_TEXT;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if PText=nil then
-      Exit(False);
-    Result:=DWGRefHandleValue(PText^.style,Value);
-  end;
-
-  function DWGMTextStyleHandleValue(const PMText:PDwg_Entity_MTEXT;out Value:QWord):Boolean;
-  begin
-    Value:=0;
-    if PMText=nil then
-      Exit(False);
-    Result:=DWGRefHandleValue(PMText^.style,Value);
   end;
 
   procedure DWGCopyCircleProps(const Circle:Dwg_Entity_CIRCLE;
