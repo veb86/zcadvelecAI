@@ -115,6 +115,42 @@ begin
   // post-processing chain (TDrawContext threaded through addfromdwg).
 end;
 
+function DWGLayerNameForLog(Layer: PGDBLayerProp): string;
+begin
+  if Layer = nil then
+    Exit('(nil layer)');
+  Result := Layer^.Name;
+  if Result = '' then
+    Result := '(unnamed layer)';
+end;
+
+function DWGLTypeNameForLog(LType: PGDBLtypeProp): string;
+begin
+  if LType = nil then
+    Exit('(nil linetype)');
+  Result := LType^.Name;
+  if Result = '' then
+    Result := '(unnamed linetype)';
+end;
+
+function DWGRefHandlesForLog(Entity: Pointer; Slot: TDWGZCADRefSlot): string;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingRef;
+begin
+  Result := '';
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingRefs.Count - 1 do begin
+    Pending := LoadCtx.PendingRefs.ItemAt(I);
+    if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then begin
+      Result := 'handle=' + IntToHex(Pending^.EntityHandle, 1) +
+        ' ref=' + IntToHex(Pending^.RefHandle, 1);
+      Exit;
+    end;
+  end;
+end;
+
 { Stage 3 (TZ §12.3): write a resolved visual-property pointer back into the
   entity's vp record. Owner attachment may not have happened yet (refs are
   resolved before owners) so this routine must NOT touch geometry — only the
@@ -125,28 +161,55 @@ procedure DWGAttachRef(Entity: Pointer; Ref: Pointer; Slot: TDWGZCADRefSlot;
   Reason: TDWGAttachReason; Data: Pointer);
 var
   pobj: PGDBObjEntity;
+  player: PGDBLayerProp;
 begin
-  pobj := PGDBObjEntity(Entity);
-  if pobj = nil then
-    Exit;
-
   case Slot of
     rsLayer:
       begin
+        pobj := PGDBObjEntity(Entity);
+        if pobj = nil then
+          Exit;
         pobj^.vp.Layer := PGDBLayerProp(Ref);
         if Reason <> arResolved then
           zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
-            ' layer fallback (', DWGAttachReasonToText(Reason), ')']);
+            ' ', DWGRefHandlesForLog(Entity, Slot),
+            ' layer fallback (', DWGAttachReasonToText(Reason), ') -> ',
+            DWGLayerNameForLog(PGDBLayerProp(Ref))]);
       end;
     rsLineType:
       begin
+        pobj := PGDBObjEntity(Entity);
+        if pobj = nil then
+          Exit;
         pobj^.vp.LineType := PGDBLtypeProp(Ref);
         if Reason <> arResolved then
           zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
-            ' linetype fallback (', DWGAttachReasonToText(Reason), ')']);
+            ' ', DWGRefHandlesForLog(Entity, Slot),
+            ' linetype fallback (', DWGAttachReasonToText(Reason),
+            ', layer=', DWGLayerNameForLog(pobj^.vp.Layer), ') -> ',
+            DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+      end;
+    rsLayerLineType:
+      begin
+        player := PGDBLayerProp(Entity);
+        if player = nil then
+          Exit;
+        player^.LT := PGDBLtypeProp(Ref);
+        if Reason <> arResolved then
+          zDebugLn(['{WHM}layer ', DWGLayerNameForLog(player),
+            ' ', DWGRefHandlesForLog(Entity, Slot),
+            ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
+            DWGLTypeNameForLog(PGDBLtypeProp(Ref))])
+        else
+          zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
+            ' ', DWGRefHandlesForLog(Entity, Slot),
+            ' linetype -> ', DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
       end;
     rsTextStyle:
       begin
+        pobj := PGDBObjEntity(Entity);
+        if pobj = nil then
+          Exit;
         // Stage 5 (TZ §12.5): TEXT/MTEXT entities carry a TXTStyle pointer on
         // GDBObjText / GDBObjMText. Branch on GetObjType so we can refuse to
         // write the slot for any other entity that may end up queued by
@@ -156,6 +219,7 @@ begin
           PGDBObjText(pobj)^.TXTStyle := PGDBTextStyle(Ref);
         if Reason <> arResolved then
           zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+            ' ', DWGRefHandlesForLog(Entity, Slot),
             ' textstyle fallback (', DWGAttachReasonToText(Reason), ')']);
       end;
     rsDimStyle:

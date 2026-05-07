@@ -24,14 +24,12 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,uzedwghandle,
+  dwg, dwgproc,
   uzedrawingsimple,
   uzeentline, uzeentity,
   uzeentsubordinated,
-  uzedwgloadcontext,
   uzedwgentityregistry,
   uzeffmanager,
-  uzedwgtypes,
   uzedwgimport;
 
 implementation
@@ -41,8 +39,6 @@ procedure AddLineEntity(var ZContext: TZDrawingContext;
 var
   pobj: PGDBObjEntity;
   Endpoints: TDWGLineEndpoints;
-  EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
-  Ctx: TDWGZCADLoadContext;
 begin
   // Stage 2 (TZ §12.2): allocate with nil owner, fill geometry, register the
   // shell + pending owner. The actual AddMi happens in DWGAttachEntity when
@@ -58,26 +54,9 @@ begin
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.y := Endpoints.EndY;
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.z := Endpoints.EndZ;
 
-  Ctx := GetLoadCtx;
-  if Ctx <> nil then begin
-    EntityHandle := DWGObjectHandleValue(DWGObject);
-    if not DWGObjectOwnerHandleValue(DWGObject, OwnerHandle) then
-      OwnerHandle := 0;
-    if EntityHandle <> 0 then
-      Ctx.RegisterShell(EntityHandle, dokEntity, pobj, -1);
-    Ctx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
-    // Stage 3 (TZ §12.3): queue layer + linetype refs so vp.Layer / vp.LineType
-    // are populated before BuildGeometry runs. Handles missing/broken refs
-    // by routing to the registered fallbacks (system layer / ByLayer).
-    if not DWGEntityLayerHandleValue(DWGObject, LayerHandle) then
-      LayerHandle := 0;
-    if not DWGEntityLineTypeHandleValue(DWGObject, LtypeHandle) then
-      LtypeHandle := 0;
-    Ctx.QueueRefResolve(pobj, EntityHandle, LayerHandle,
-      dokLayer, rsLayer, nil);
-    Ctx.QueueRefResolve(pobj, EntityHandle, LtypeHandle,
-      dokLineType, rsLineType, nil);
-  end else begin
+  if GetLoadCtx <> nil then
+    DWGRegisterEntityShell(pobj, DWGObject, False, 0)
+  else begin
     // Compatibility fallback: if BeginDWGImport was not called the loader
     // still works (legacy single-pass behaviour). New callers always go
     // through Begin/End, so this branch is exercised only by future
