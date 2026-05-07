@@ -41,9 +41,6 @@ uses
 implementation
 
 type
-  // Stage 3: dwg.pp does not export PDwg_Object_STYLE so we declare it here
-  // to keep the AddTextStyle signature symmetrical with AddLayer / AddLineType.
-  PDwg_Object_STYLE = ^Dwg_Object_STYLE;
   PDwg_Object_DIMSTYLE = ^Dwg_Object_DIMSTYLE;
 
 procedure AddLayer(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
@@ -147,26 +144,58 @@ procedure AddTextStyle(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
   var DWGObject: Dwg_Object; PDWGStyle: PDwg_Object_STYLE);
 var
   pstyle: PGDBTextStyle;
-  name: string;
+  Props: TDWGTextStyleProps;
+  TextProp: GDBTextStyleProp;
+  name, StyleName, FontFile, FontFamily: string;
   Handle: QWord;
   Ctx: TDWGZCADLoadContext;
+  UsedInLType: Boolean;
 begin
-  BITCODE_T2Text(PDWGStyle^.name, DWGContext, name);
+  if not DWGTextStylePropsValue(PDWGStyle, DWGContext.DWGVer, Props) then
+    Exit;
+  name := Props.Name;
   zDebugLn(['{WH}TextStyle: ', name]);
-  if DWGContext.DWGVer > R_2007 then
+  FontFile := Props.FontFile;
+  FontFamily := '';
+  if DWGContext.DWGVer > R_2007 then begin
     name := Tria_Utf8ToAnsi(name);
-  // Stage 3 (TZ §12.3, "начать STYLE mapper"): just create the pointer so
-  // future TEXT/MTEXT mappers have something to reference. Font file and
-  // metrics fields are decoded in Stage 4 alongside text geometry support.
-  pstyle := ZContext.PDrawing^.TextStyleTable.FindStyle(name, False);
-  if pstyle = nil then
-    pstyle := ZContext.PDrawing^.TextStyleTable.FindStyle('Standard', False);
+    FontFile := Tria_Utf8ToAnsi(FontFile);
+  end;
+  UsedInLType := Props.IsShape;
+  if UsedInLType and (FontFile <> '') then
+    StyleName := FontFile
+  else if name <> '' then
+    StyleName := name
+  else
+    StyleName := 'Standard';
+
+  TextProp.size := Props.TextSize;
+  TextProp.wfactor := Props.WidthFactor;
+  TextProp.oblique := Props.ObliqueAngle;
+
+  pstyle := ZContext.PDrawing^.TextStyleTable.FindStyle(StyleName,
+    UsedInLType);
+  if pstyle <> nil then begin
+    if ZContext.LoadMode = TLOLoad then
+      pstyle := ZContext.PDrawing^.TextStyleTable.setstyle(StyleName,
+        FontFile, FontFamily, TextProp, UsedInLType);
+  end else
+    pstyle := ZContext.PDrawing^.TextStyleTable.addstyle(StyleName,
+      FontFile, FontFamily, TextProp, UsedInLType);
+
   Ctx := GetLoadCtx;
   if Ctx <> nil then begin
     Handle := DWGObjectHandleValue(DWGObject);
     if Handle <> 0 then
       Ctx.RegisterShell(Handle, dokTextStyle, pstyle, -1);
+    if (pstyle <> nil) and (not UsedInLType) and
+       ((Ctx.FallbackTextStyle = nil) or
+        (CompareText(StyleName, 'Standard') = 0)) then
+      Ctx.SetFallbackTextStyle(pstyle);
   end;
+  if (pstyle <> nil) and (not UsedInLType) and
+     (ZContext.PDrawing^.CurrentTextStyle = nil) then
+    ZContext.PDrawing^.CurrentTextStyle := pstyle;
 end;
 
 procedure ApplyDimStyleScalars(PDimStyle: PGDBDimStyle;
