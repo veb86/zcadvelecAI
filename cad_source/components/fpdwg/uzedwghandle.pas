@@ -40,6 +40,22 @@ type
   PDwg_Entity_TEXT  = ^Dwg_Entity_TEXT;
   PDwg_Entity_MTEXT = ^Dwg_Entity_MTEXT;
 
+  TDWGEntityLineTypeKind = (
+    dltMissing,
+    dltByLayer,
+    dltByBlock,
+    dltContinuous,
+    dltHandle
+  );
+
+  TDWGEntityCommonProps = record
+    ColorIndex: Integer;
+    LineWeight: Integer;
+    LineTypeScale: Double;
+    LineTypeFlags: Integer;
+    Invisible: Boolean;
+  end;
+
 { Object handle: the stable QWord identifier the import context indexes by. }
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
@@ -82,8 +98,17 @@ function DWGEntityLayerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
 function DWGEntityLineTypeHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+function DWGEntityLineTypeRefValue(const Obj: Dwg_Object;
+  out Kind: TDWGEntityLineTypeKind; out Value: QWord): Boolean;
 function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
   out Value: QWord): Boolean;
+
+function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
+function DWGColorIsOff(const Color: Dwg_Color): Boolean;
+function DWGLineWeightToDXF(const Value: Integer): Integer;
+function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
+  out Props: TDWGEntityCommonProps): Boolean;
+function DWGEntityLineTypeKindToText(const Kind: TDWGEntityLineTypeKind): string;
 
 { Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
   False allows the caller to fall back to the registered text-style
@@ -94,6 +119,33 @@ function DWGMTextStyleHandleValue(const PMText: PDwg_Entity_MTEXT;
   out Value: QWord): Boolean;
 
 implementation
+
+const
+  DWGByBlockColorIndex = 0;
+  DWGByLayerColorIndex = 256;
+  DWGDefaultLineTypeScale = 1.0;
+  DWGLineWeightByLayer = -1;
+  DWGLineWeights: array[0..31] of Integer = (
+    0, 5, 9, 13, 15, 18, 20, 25,
+    30, 35, 40, 50, 53, 60, 70, 80,
+    90, 100, 106, 120, 140, 158, 200, 211,
+    0, 0, 0, 0, 0, -1, -2, -3
+  );
+
+function DWGObjectVersionBeforeR2000(const Obj: Dwg_Object): Boolean;
+var
+  Dwg: ^_dwg_struct;
+  Version: DWG_VERSION_TYPE;
+begin
+  Result := False;
+  Dwg := Obj.parent;
+  if Dwg = nil then
+    Exit;
+  Version := Dwg^.header.version;
+  if Version = R_INVALID then
+    Version := Dwg^.header.from_version;
+  Result := (Version >= R_13b1) and (Version < R_2000b);
+end;
 
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 begin
@@ -205,11 +257,75 @@ end;
 
 function DWGEntityLineTypeHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+var
+  Kind: TDWGEntityLineTypeKind;
 begin
+  Result := DWGEntityLineTypeRefValue(Obj, Kind, Value) and
+    (Kind = dltHandle);
+  if not Result then
+    Value := 0;
+end;
+
+function DWGEntityLineTypeRefValue(const Obj: Dwg_Object;
+  out Kind: TDWGEntityLineTypeKind; out Value: QWord): Boolean;
+var
+  Ent: ^Dwg_Object_Entity;
+begin
+  Kind := dltMissing;
   Value := 0;
   if (Obj.supertype <> DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity = nil) then
     Exit(False);
-  Result := DWGRefHandleValue(Obj.tio.entity^.ltype, Value);
+
+  Ent := Obj.tio.entity;
+
+  if DWGObjectVersionBeforeR2000(Obj) then
+  begin
+    if Ent^.isbylayerlt <> 0 then
+    begin
+      Kind := dltByLayer;
+      Exit(True);
+    end;
+    if DWGRefHandleValue(Ent^.ltype, Value) then
+    begin
+      Kind := dltHandle;
+      Exit(True);
+    end;
+    Exit(False);
+  end;
+
+  case Ent^.ltype_flags of
+    0:
+      begin
+        Kind := dltByLayer;
+        Exit(True);
+      end;
+    1:
+      begin
+        Kind := dltByBlock;
+        Exit(True);
+      end;
+    2:
+      begin
+        Kind := dltContinuous;
+        Exit(True);
+      end;
+    3:
+      begin
+        if DWGRefHandleValue(Ent^.ltype, Value) then
+        begin
+          Kind := dltHandle;
+          Exit(True);
+        end;
+        Exit(False);
+      end;
+  end;
+
+  if DWGRefHandleValue(Ent^.ltype, Value) then
+  begin
+    Kind := dltHandle;
+    Exit(True);
+  end;
+  Result := False;
 end;
 
 function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
@@ -219,6 +335,77 @@ begin
   if PLayer = nil then
     Exit(False);
   Result := DWGRefHandleValue(PLayer^.ltype, Value);
+end;
+
+function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
+begin
+  Value := Color.index;
+  case Color.method of
+    DWG_COLOR_METHOD_BYLAYER:
+      Value := DWGByLayerColorIndex;
+    DWG_COLOR_METHOD_BYBLOCK:
+      Value := DWGByBlockColorIndex;
+  end;
+
+  if Value < 0 then
+    Value := -Value;
+
+  if (Value < DWGByBlockColorIndex) or (Value > DWGByLayerColorIndex) then
+  begin
+    Value := DWGByLayerColorIndex;
+    Exit(False);
+  end;
+  Result := True;
+end;
+
+function DWGColorIsOff(const Color: Dwg_Color): Boolean;
+begin
+  Result := Color.index < 0;
+end;
+
+function DWGLineWeightToDXF(const Value: Integer): Integer;
+begin
+  Result := DWGLineWeights[Value mod 32];
+end;
+
+function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
+  out Props: TDWGEntityCommonProps): Boolean;
+var
+  Ent: ^Dwg_Object_Entity;
+begin
+  Props.ColorIndex := DWGByLayerColorIndex;
+  Props.LineWeight := DWGLineWeightByLayer;
+  Props.LineTypeScale := DWGDefaultLineTypeScale;
+  Props.LineTypeFlags := -1;
+  Props.Invisible := False;
+
+  if (Obj.supertype <> DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity = nil) then
+    Exit(False);
+
+  Ent := Obj.tio.entity;
+  DWGColorIndexToACI(Ent^.color, Props.ColorIndex);
+  Props.LineWeight := DWGLineWeightToDXF(Ent^.linewt);
+  if Ent^.ltype_scale > 0 then
+    Props.LineTypeScale := Ent^.ltype_scale;
+  Props.LineTypeFlags := Ent^.ltype_flags;
+  Props.Invisible := Ent^.invisible <> 0;
+  Result := True;
+end;
+
+function DWGEntityLineTypeKindToText(const Kind: TDWGEntityLineTypeKind): string;
+begin
+  case Kind of
+    dltByLayer:
+      Result := 'ByLayer';
+    dltByBlock:
+      Result := 'ByBlock';
+    dltContinuous:
+      Result := 'Continuous';
+    dltHandle:
+      Result := 'handle';
+    else
+      Result := 'missing';
+  end;
 end;
 
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;

@@ -57,6 +57,7 @@ type
     procedure SecondQueueForSameSlotReplacesFirst;
     procedure LayerLineTypeUsesLayerSlot;
     procedure NullLayerLineTypeFallsBackToContinuous;
+    procedure InlineLineTypeAttachesWithoutFallbackWarning;
     procedure RefAttachCallbackReceivesSlotAndReason;
     procedure NilPtrShellIsTreatedAsNotFound;
   end;
@@ -896,6 +897,44 @@ begin
     AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
     AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
     AssertEquals(PtrInt(Continuous), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.InlineLineTypeAttachesWithoutFallbackWarning;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Recorder: TFakeRefRecorder;
+  Entity, ByLayer: Pointer;
+begin
+  // Issue #1124: LibreDWG common entity ltype_flags can encode ByLayer,
+  // ByBlock or Continuous inline, with no handle to resolve. That is a valid
+  // linetype, not a broken null ref, so it must not increment fallback or
+  // warning counters.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E9);
+    ByLayer := MakePtr($BD);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetRefAttachProc(@FakeRefAttach, @Recorder);
+    Ctx.RegisterShell($109, dokEntity, Entity, 0);
+    Ctx.QueueRefResolve(Entity, $109, 0, dokLineType, rsLineType, ByLayer,
+      True);
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($109, rsLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(ByLayer), PtrInt(Pending^.AttachedRef));
+    AssertEquals(1, Ctx.RefAttachCount);
+    AssertEquals(0, Ctx.RefFallbackCount);
+    AssertEquals(0, Ctx.WarningCount);
+    AssertEquals(1, Length(Recorder.Calls));
+    AssertEquals(Ord(arResolved), Ord(Recorder.Calls[0].Reason));
+    AssertEquals(PtrInt(ByLayer), PtrInt(Recorder.Calls[0].Ref));
   finally
     Ctx.Free;
   end;

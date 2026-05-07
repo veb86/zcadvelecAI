@@ -89,7 +89,7 @@ var
   Pobj: PGDBObjEntity;
   Pending: PDWGZCADPendingOwner;
   Owner: Pointer;
-  ProcessedEntities, SkippedBlockDef, SkippedNoOwner: Integer;
+  ProcessedEntities, SkippedBlockDef, SkippedNoOwner, VisualWarnings: Integer;
 begin
   if (Ctx = nil) or (Drawing = nil) then
     Exit;
@@ -97,6 +97,7 @@ begin
   ProcessedEntities := 0;
   SkippedBlockDef := 0;
   SkippedNoOwner := 0;
+  VisualWarnings := 0;
 
   for I := 0 to Ctx.Handles.Count - 1 do begin
     Entry := Ctx.Handles.EntryAt(I);
@@ -115,6 +116,8 @@ begin
     Pending := Ctx.FindPendingOwner(Entry^.Handle);
     if Pending = nil then begin
       Inc(SkippedNoOwner);
+      zDebugLn(['{WHM}DWG finalize skip entity ', IntToHex(Entry^.Handle, 1),
+        ': no pending owner row']);
       Continue;
     end;
     Owner := Pending^.AttachedOwner;
@@ -122,6 +125,8 @@ begin
       Owner := Pending^.FallbackOwner;
     if Owner = nil then begin
       Inc(SkippedNoOwner);
+      zDebugLn(['{WHM}DWG finalize skip entity ', IntToHex(Entry^.Handle, 1),
+        ': no resolved or fallback owner']);
       Continue;
     end;
 
@@ -132,6 +137,21 @@ begin
       Continue;
     end;
 
+    if Pobj^.vp.Layer = nil then begin
+      Inc(VisualWarnings);
+      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
+        ' has nil layer after ref resolve']);
+    end else if not Pobj^.vp.Layer^._on then begin
+      Inc(VisualWarnings);
+      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
+        ' is on disabled layer ', Pobj^.vp.Layer^.Name]);
+    end;
+    if Pobj^.vp.LineType = nil then begin
+      Inc(VisualWarnings);
+      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
+        ' has nil linetype after ref resolve']);
+    end;
+
     Pobj^.BuildGeometry(Drawing^);
     Pobj^.FormatAfterDXFLoad(Drawing^, DC);
     Pobj^.FromDXFPostProcessAfterAdd;
@@ -140,7 +160,8 @@ begin
 
   zDebugLn(['{WH}DWG finalize: built=', ProcessedEntities,
     ', deferred_blockdef=', SkippedBlockDef,
-    ', no_owner=', SkippedNoOwner]);
+    ', no_owner=', SkippedNoOwner,
+    ', visual_warnings=', VisualWarnings]);
 end;
 
 end.

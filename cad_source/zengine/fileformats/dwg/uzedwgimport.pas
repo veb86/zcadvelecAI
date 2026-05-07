@@ -80,6 +80,38 @@ var
   LoadCtx: TDWGZCADLoadContext = nil;
   LoadDrawing: PTSimpleDrawing = nil;
 
+function DWGSystemLineTypeForKind(Kind: TDWGEntityLineTypeKind): PGDBLtypeProp;
+var
+  Name: string;
+  Mode: TLTMode;
+begin
+  Result := nil;
+  if LoadDrawing = nil then
+    Exit;
+
+  case Kind of
+    dltByBlock:
+      begin
+        Name := 'ByBlock';
+        Mode := TLTByBlock;
+      end;
+    dltContinuous:
+      begin
+        Name := 'Continuous';
+        Mode := TLTContinous;
+      end;
+    else
+      begin
+        Name := 'ByLayer';
+        Mode := TLTByLayer;
+      end;
+  end;
+
+  Result := PGDBLtypeProp(LoadDrawing^.LTypeStyleTable.getAddres(Name));
+  if Result = nil then
+    Result := LoadDrawing^.LTypeStyleTable.GetSystemLT(Mode);
+end;
+
 function GetLoadCtx: TDWGZCADLoadContext;
 begin
   Result := LoadCtx;
@@ -105,7 +137,7 @@ begin
 
   newowner^.AddMi(PGDBObjSubordinated(pobj));
   if Reason <> arResolved then
-    zDebugLn(['{WHM}LINE ', HexStr(PtrUInt(pobj), 16),
+    zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
       ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
 
   // R7 (TZ §3.7): BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd
@@ -306,6 +338,10 @@ procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   WantTextStyle: Boolean; TextStyleHandle: QWord);
 var
   EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
+  LtypeKind: TDWGEntityLineTypeKind;
+  LtypeFallback: PGDBLtypeProp;
+  LtypeInline: Boolean;
+  CommonProps: TDWGEntityCommonProps;
   EntMode: Integer;
 begin
   if LoadCtx = nil then
@@ -333,14 +369,50 @@ begin
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, dokEntity, pobj, -1);
   LoadCtx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
+
+  if DWGEntityCommonPropsValue(DWGObject, CommonProps) then begin
+    pobj^.vp.Color := CommonProps.ColorIndex;
+    pobj^.vp.LineWeight := CommonProps.LineWeight;
+    pobj^.vp.LineTypeScale := CommonProps.LineTypeScale;
+    if CommonProps.Invisible then
+      zDebugLn(['{WH}DWG entity ', IntToHex(EntityHandle, 1),
+        ' is marked invisible in the DWG common entity flags']);
+  end;
+
   if not DWGEntityLayerHandleValue(DWGObject, LayerHandle) then
     LayerHandle := 0;
-  if not DWGEntityLineTypeHandleValue(DWGObject, LtypeHandle) then
+  if DWGEntityLineTypeRefValue(DWGObject, LtypeKind, LtypeHandle) then begin
+    if LtypeKind <> dltHandle then begin
+      LtypeHandle := 0;
+      LtypeFallback := DWGSystemLineTypeForKind(LtypeKind);
+      LtypeInline := LtypeFallback <> nil;
+    end else
+    begin
+      LtypeFallback := nil;
+      LtypeInline := False;
+    end;
+  end else begin
     LtypeHandle := 0;
+    LtypeKind := dltMissing;
+    LtypeFallback := nil;
+    LtypeInline := False;
+  end;
+  if DWGObject.fixedtype = DWG_TYPE_LINE then
+    zDebugLn(['{WH}DWG LINE shell handle=', IntToHex(EntityHandle, 1),
+      ', entmode=', EntMode,
+      ', owner=', IntToHex(OwnerHandle, 1),
+      ', layer_ref=', IntToHex(LayerHandle, 1),
+      ', ltype_kind=', DWGEntityLineTypeKindToText(LtypeKind),
+      ', ltype_ref=', IntToHex(LtypeHandle, 1),
+      ', ltype_flags=', CommonProps.LineTypeFlags,
+      ', color=', CommonProps.ColorIndex,
+      ', lineweight=', CommonProps.LineWeight,
+      ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
+      ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
   LoadCtx.QueueRefResolve(pobj, EntityHandle, LayerHandle,
     dokLayer, rsLayer, nil);
   LoadCtx.QueueRefResolve(pobj, EntityHandle, LtypeHandle,
-    dokLineType, rsLineType, nil);
+    dokLineType, rsLineType, LtypeFallback, LtypeInline);
   if WantTextStyle then
     LoadCtx.QueueRefResolve(pobj, EntityHandle, TextStyleHandle,
       dokTextStyle, rsTextStyle, nil);

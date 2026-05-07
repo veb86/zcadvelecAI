@@ -38,6 +38,12 @@ type
     procedure ObjectOwnerHandleEntmodeMSpaceUsesBlockControlWhenHeaderVarsEmpty;
     procedure ObjectOwnerHandleEntmodePSpaceUsesBlockControlWhenHeaderVarsEmpty;
     procedure ObjectOwnerHandleEntmodeMSpaceFallsBackWhenAllPathsEmpty;
+    procedure EntityLineTypeFlagsMapInlineKinds;
+    procedure EntityLineTypeFlag0IgnoresHandleInR2000;
+    procedure EntityLineTypePreR2000ReadsHandleWhenNotByLayer;
+    procedure EntityLineTypeFlag3ReadsExplicitHandle;
+    procedure EntityCommonPropsCopiesVisualFields;
+    procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
   end;
 
   TFPDWGProcLineTest = class(TTestCase)
@@ -430,6 +436,169 @@ begin
 
   AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
   AssertEquals(Int64($E5), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.EntityLineTypeFlagsMapInlineKinds;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Kind: TDWGEntityLineTypeKind;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  Ent.ltype_flags := 0;
+  AssertTrue('flag=0 must map to inline ByLayer',
+    DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('flag=0 kind', Ord(dltByLayer), Ord(Kind));
+  AssertEquals('flag=0 handle', Int64(0), Int64(Value));
+
+  Ent.ltype_flags := 1;
+  AssertTrue('flag=1 must map to inline ByBlock',
+    DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('flag=1 kind', Ord(dltByBlock), Ord(Kind));
+  AssertEquals('flag=1 handle', Int64(0), Int64(Value));
+
+  Ent.ltype_flags := 2;
+  AssertTrue('flag=2 must map to inline Continuous',
+    DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('flag=2 kind', Ord(dltContinuous), Ord(Kind));
+  AssertEquals('flag=2 handle', Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.EntityLineTypeFlag0IgnoresHandleInR2000;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  LTypeRef: Dwg_Object_Ref;
+  Kind: TDWGEntityLineTypeKind;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(LTypeRef, SizeOf(LTypeRef), 0);
+  Dwg.header.version := R_2007;
+  LTypeRef.absolute_ref := $64;
+  Ent.ltype := @LTypeRef;
+  Ent.ltype_flags := 0;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('R2000+ flag=0 is always ByLayer',
+    Ord(dltByLayer), Ord(Kind));
+  AssertEquals('inline ByLayer has no handle', Int64(0), Int64(Value));
+  AssertFalse('legacy handle helper must ignore inline ByLayer',
+    DWGEntityLineTypeHandleValue(Obj, Value));
+  AssertEquals('legacy helper clears inline handle', Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.EntityLineTypePreR2000ReadsHandleWhenNotByLayer;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  LTypeRef: Dwg_Object_Ref;
+  Kind: TDWGEntityLineTypeKind;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(LTypeRef, SizeOf(LTypeRef), 0);
+  Dwg.header.version := R_14;
+  LTypeRef.absolute_ref := $64;
+  Ent.isbylayerlt := 0;
+  Ent.ltype := @LTypeRef;
+  Ent.ltype_flags := 0;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('R13/R14 explicit ltype handle',
+    Ord(dltHandle), Ord(Kind));
+  AssertEquals('R13/R14 explicit handle', Int64($64), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.EntityLineTypeFlag3ReadsExplicitHandle;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  LTypeRef: Dwg_Object_Ref;
+  Kind: TDWGEntityLineTypeKind;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(LTypeRef, SizeOf(LTypeRef), 0);
+  LTypeRef.absolute_ref := $64;
+  Ent.ltype := @LTypeRef;
+  Ent.ltype_flags := 3;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertTrue(DWGEntityLineTypeRefValue(Obj, Kind, Value));
+  AssertEquals('explicit kind', Ord(dltHandle), Ord(Kind));
+  AssertEquals('explicit handle', Int64($64), Int64(Value));
+  AssertTrue('legacy handle helper reads explicit handle',
+    DWGEntityLineTypeHandleValue(Obj, Value));
+  AssertEquals('legacy helper explicit handle', Int64($64), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.EntityCommonPropsCopiesVisualFields;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Props: TDWGEntityCommonProps;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Ent.color.index := 5;
+  Ent.color.method := DWG_COLOR_METHOD_ACI;
+  Ent.linewt := 5;
+  Ent.ltype_scale := 2.5;
+  Ent.ltype_flags := 2;
+  Ent.invisible := 1;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertTrue(DWGEntityCommonPropsValue(Obj, Props));
+  AssertEquals('ACI color copied', 5, Props.ColorIndex);
+  AssertEquals('lineweight enum converted to DXF 370 value', 18, Props.LineWeight);
+  AssertEquals('linetype scale copied', 2.5, Props.LineTypeScale, 0.0);
+  AssertEquals('linetype flags copied', 2, Props.LineTypeFlags);
+  AssertTrue('invisible flag copied', Props.Invisible);
+end;
+
+procedure TFPDWGProcHandleTest.EntityCommonPropsNormalizeByLayerColorAndLineWeight;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Props: TDWGEntityCommonProps;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Ent.color.index := 9;
+  Ent.color.method := DWG_COLOR_METHOD_BYLAYER;
+  Ent.linewt := 29;
+  Ent.ltype_scale := 0;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertTrue(DWGEntityCommonPropsValue(Obj, Props));
+  AssertEquals('ByLayer color normalized to DXF/ZCAD index', 256,
+    Props.ColorIndex);
+  AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
+  AssertEquals('empty linetype scale falls back to one', 1.0,
+    Props.LineTypeScale, 0.0);
+  AssertFalse('visible by default', Props.Invisible);
 end;
 
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;

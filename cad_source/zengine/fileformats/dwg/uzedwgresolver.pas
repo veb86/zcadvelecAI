@@ -283,6 +283,12 @@ begin
   if Fallback = nil then
     Fallback := FHost.FallbackForSlot(Pending^.Slot);
 
+  if Pending^.InlineRef and (Fallback <> nil) then
+  begin
+    FinishRef(Pending, Fallback, asAttached, arResolved);
+    Exit;
+  end;
+
   if Pending^.RefHandle = 0 then
   begin
     FHost.RaiseWarning(wsInfo, DWG_WARN_REF_NULL, Pending^.EntityHandle,
