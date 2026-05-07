@@ -100,6 +100,7 @@ type
     procedure CopyLWPolylineCopiesPoints;
     procedure CopyLWPolylineMismatchedBulgesAreIgnored;
     procedure CopyLWPolylineExplicitWidthsOverrideConstWidth;
+    procedure CopyLWPolylineWidthRecordCountMatchesVertices;
     procedure CopyLWPolylineEmptyPolylineProducesEmptyArrays;
   end;
 
@@ -1057,6 +1058,28 @@ begin
   AssertEquals('p0.endw',   0.20, Props.Vertices[0].EndWidth, 0.0);
   AssertEquals('p1.startw', 0.30, Props.Vertices[1].StartWidth, 0.0);
   AssertEquals('p1.endw',   0.40, Props.Vertices[1].EndWidth, 0.0);
+end;
+
+procedure TFPDWGProcLWPolylineTest.CopyLWPolylineWidthRecordCountMatchesVertices;
+var
+  LWP: Dwg_Entity_LWPOLYLINE;
+  Props: TDWGLWPolylineProps;
+  Points: array[0..2] of BITCODE_2RD;
+begin
+  FillChar(LWP, SizeOf(LWP), 0);
+  FillChar(Points, SizeOf(Points), 0);
+  LWP.num_points := 3;
+  LWP.points := @Points[0];
+
+  LWP.flag := 0;
+  DWGCopyLWPolylineProps(LWP, Props);
+  AssertFalse('open polyline', Props.Closed);
+  AssertEquals('open width records', 3, DWGLWPolylineWidthRecordCount(Props));
+
+  LWP.flag := 512;
+  DWGCopyLWPolylineProps(LWP, Props);
+  AssertTrue('closed polyline', Props.Closed);
+  AssertEquals('closed width records', 3, DWGLWPolylineWidthRecordCount(Props));
 end;
 
 procedure TFPDWGProcLWPolylineTest.CopyLWPolylineEmptyPolylineProducesEmptyArrays;
