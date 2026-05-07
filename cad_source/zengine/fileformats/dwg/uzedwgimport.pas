@@ -32,10 +32,12 @@ uses
   dwg, dwgproc,uzedwghandle,
   uzeentgenericsubentry, uzedrawingsimple,
   uzeentity,
-  uzestyleslayers, uzestyleslinetypes, uzestylestexts,
+  uzestyleslayers, uzestyleslinetypes, uzestylestexts, uzestylesdim,
   uzeentabstracttext,
   uzeentsubordinated,
-  uzeenttext, uzeentmtext,
+  uzeenttext, uzeentmtext, uzeentblockinsert,
+  uzeentdimension, uzeentdimensiongeneric,
+  uzeblockdef, UGDBObjBlockdefArray,
   uzeconsts,
   uzeTypes,
   uzeffmanager,
@@ -65,6 +67,8 @@ procedure EndDWGImport(var ZContext: TZDrawingContext);
   a valid signal that the loader is not active. }
 function GetLoadCtx: TDWGZCADLoadContext;
 function GetLoadDrawing: PTSimpleDrawing;
+function DWGEnsureDimStyle(var Drawing: TSimpleDrawing;
+  const Name: string = 'Standard'): PGDBDimStyle;
 
 { Stage 5 helper extracted from uzefflibredwg2ents.pas: register the entity
   shell + pending owner + layer/linetype/textstyle refs in one call. The
@@ -72,7 +76,8 @@ function GetLoadDrawing: PTSimpleDrawing;
   ignored by everything else. }
 procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
-  WantTextStyle: Boolean; TextStyleHandle: QWord);
+  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind = dokEntity);
 
 implementation
 
@@ -124,6 +129,76 @@ begin
   Result := LoadDrawing;
 end;
 
+function DWGEnsureTextStyle(var Drawing: TSimpleDrawing): PGDBTextStyle;
+begin
+  Result := Drawing.TextStyleTable.FindStyle('Standard', False);
+  if Result = nil then
+    Result := Drawing.GetCurrentTextStyle;
+end;
+
+function DWGEnsureDimStyle(var Drawing: TSimpleDrawing;
+  const Name: string): PGDBDimStyle;
+var
+  TextStyle: PGDBTextStyle;
+begin
+  Result := PGDBDimStyle(Drawing.DimStyleTable.getAddres(Name));
+  if Result = nil then begin
+    Result := PGDBDimStyle(Drawing.DimStyleTable.MergeItem(Name, TLOLoad));
+    if Result <> nil then begin
+      Result^.init(Name);
+      Result^.SetDefaultValues;
+    end;
+  end;
+  if Result = nil then
+    Exit;
+  TextStyle := DWGEnsureTextStyle(Drawing);
+  if Result^.Text.DIMTXSTY = nil then
+    Result^.Text.DIMTXSTY := TextStyle;
+  if Drawing.CurrentDimStyle = nil then
+    Drawing.CurrentDimStyle := Result;
+end;
+
+function DWGEnsureFallbackBlockDef: PGDBObjBlockdef;
+const
+  MissingBlockName = '*DWG_MISSING_BLOCK';
+begin
+  Result := nil;
+  if LoadDrawing = nil then
+    Exit;
+  Result := LoadDrawing^.BlockDefArray.getblockdef(MissingBlockName);
+  if Result = nil then
+    Result := LoadDrawing^.BlockDefArray.create(MissingBlockName);
+end;
+
+function DWGPointerHasKind(P: Pointer; Kind: TDWGZCADObjectKind): Boolean;
+var
+  I: Integer;
+  Entry: PDWGZCADHandleEntry;
+begin
+  Result := False;
+  if (LoadCtx = nil) or (P = nil) then
+    Exit;
+  for I := 0 to LoadCtx.Handles.Count - 1 do begin
+    Entry := LoadCtx.Handles.EntryAt(I);
+    if (Entry^.Ptr = P) and (Entry^.Kind = Kind) then
+      Exit(True);
+  end;
+end;
+
+function DWGObjTypeIsDimension(ObjType: TObjID): Boolean;
+begin
+  case ObjType of
+    GDBGenericDimensionID,
+    GDBAlignedDimensionID,
+    GDBRotatedDimensionID,
+    GDBDiametricDimensionID,
+    GDBRadialDimensionID:
+      Result := True;
+  else
+    Result := False;
+  end;
+end;
+
 procedure ApplyDWGCurrentLayer(var ZContext: TZDrawingContext);
 var
   Entry: TDWGZCADHandleEntry;
@@ -155,9 +230,22 @@ begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
   pobj := PGDBObjEntity(Entity);
-  newowner := PGDBObjGenericSubEntry(Owner);
-  if (pobj = nil) or (newowner = nil) then
+  if (pobj = nil) or (Owner = nil) then
     Exit;
+
+  // INSERT-owned ATTRIB entities are appended after the INSERT has built its
+  // block geometry. Adding them now would be undone by BuildGeometry clearing
+  // ConstObjArray from the block definition.
+  if DWGPointerHasKind(Owner, dokBlockInsert) then begin
+    pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
+    if Reason <> arResolved then
+      zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+        ' deferred under INSERT via fallback (',
+        DWGAttachReasonToText(Reason), ')']);
+    Exit;
+  end;
+
+  newowner := PGDBObjGenericSubEntry(Owner);
 
   newowner^.AddMi(PGDBObjSubordinated(pobj));
   if Reason <> arResolved then
@@ -218,6 +306,9 @@ procedure DWGAttachRef(Entity: Pointer; Ref: Pointer; Slot: TDWGZCADRefSlot;
 var
   pobj: PGDBObjEntity;
   player: PGDBLayerProp;
+  pDimStyle: PGDBDimStyle;
+  pBlockDef: PGDBObjBlockdef;
+  pInsert: PGDBObjBlockInsert;
 begin
   case Slot of
     rsLayer:
@@ -280,7 +371,53 @@ begin
       end;
     rsDimStyle:
       begin
-        // Same as above — reserved for Stage 4 dimension mappers.
+        pobj := PGDBObjEntity(Entity);
+        if pobj = nil then
+          Exit;
+        pDimStyle := PGDBDimStyle(Ref);
+        if pDimStyle = nil then begin
+          if LoadDrawing <> nil then
+            pDimStyle := DWGEnsureDimStyle(LoadDrawing^);
+        end;
+        if DWGObjTypeIsDimension(pobj^.GetObjType) then begin
+          if pobj^.GetObjType = GDBGenericDimensionID then
+            PGDBObjGenericDimension(pobj)^.PDimStyle := pDimStyle
+          else
+            PGDBObjDimension(pobj)^.PDimStyle := pDimStyle;
+        end;
+        if Reason <> arResolved then
+          zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+            ' ', DWGRefHandlesForLog(Entity, Slot),
+            ' dimstyle fallback (', DWGAttachReasonToText(Reason), ')']);
+      end;
+    rsBlockDef:
+      begin
+        pobj := PGDBObjEntity(Entity);
+        if (pobj = nil) or (pobj^.GetObjType <> GDBBlockInsertID) then
+          Exit;
+        pInsert := PGDBObjBlockInsert(pobj);
+        if (Ref <> nil) and
+          ((Reason <> arResolved) or DWGPointerHasKind(Ref, dokBlockDef)) then
+          pBlockDef := PGDBObjBlockdef(Ref)
+        else begin
+          pBlockDef := DWGEnsureFallbackBlockDef;
+          if Reason = arResolved then
+            zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+              ' ', DWGRefHandlesForLog(Entity, Slot),
+              ' block ref resolves to model/paper space; using empty block'])
+          else
+            zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+              ' ', DWGRefHandlesForLog(Entity, Slot),
+              ' block fallback (', DWGAttachReasonToText(Reason), ')']);
+        end;
+        if pBlockDef <> nil then begin
+          pInsert^.PDef := pBlockDef;
+          pInsert^.Name := pBlockDef^.Name;
+          if LoadDrawing <> nil then
+            pInsert^.index := LoadDrawing^.BlockDefArray.getindex(pInsert^.Name)
+          else
+            pInsert^.index := -1;
+        end;
       end;
   end;
 end;
@@ -290,6 +427,7 @@ var
   ByLayerLT: PGDBLtypeProp;
   SysLayer: PGDBLayerProp;
   StdStyle: PGDBTextStyle;
+  StdDimStyle: PGDBDimStyle;
 begin
   if LoadCtx <> nil then begin
     zDebugLn(['{WHM}DWG load context already active; force-resetting']);
@@ -320,6 +458,8 @@ begin
   // mappers that genuinely care will overwrite this on a per-entity basis.
   StdStyle := ZContext.PDrawing^.TextStyleTable.FindStyle('Standard', False);
   LoadCtx.SetFallbackTextStyle(StdStyle);
+  StdDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
+  LoadCtx.SetFallbackDimStyle(StdDimStyle);
 
   LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
 end;
@@ -366,7 +506,8 @@ end;
 
 procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
-  WantTextStyle: Boolean; TextStyleHandle: QWord);
+  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind);
 var
   EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
   LtypeKind: TDWGEntityLineTypeKind;
@@ -398,7 +539,7 @@ begin
       ' (mspace/pspace_block, header_vars.BLOCK_RECORD_*SPACE,',
       ' block_control.*_space and ownerhandle all empty)']);
   if EntityHandle <> 0 then
-    LoadCtx.RegisterShell(EntityHandle, dokEntity, pobj, -1);
+    LoadCtx.RegisterShell(EntityHandle, AKind, pobj, -1);
   LoadCtx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
 
   if DWGEntityCommonPropsValue(DWGObject, CommonProps) then begin

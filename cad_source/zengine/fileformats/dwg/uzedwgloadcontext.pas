@@ -114,6 +114,7 @@ type
     FFallbackLayer: Pointer;
     FFallbackLineType: Pointer;
     FFallbackTextStyle: Pointer;
+    FFallbackDimStyle: Pointer;
   public
     { TDWGResolverHost surface (R2): exposed publicly so the resolver can
       reach the registry and warning sink through the abstract base. }
@@ -142,6 +143,7 @@ type
     procedure SetFallbackLayer(ALayer: Pointer);
     procedure SetFallbackLineType(ALineType: Pointer);
     procedure SetFallbackTextStyle(ATextStyle: Pointer);
+    procedure SetFallbackDimStyle(ADimStyle: Pointer);
 
     { Phase 2: Shell registration }
     function RegisterShell(AHandle: TDWGZCADHandle;
@@ -193,6 +195,7 @@ type
     property FallbackLayer: Pointer read FFallbackLayer;
     property FallbackLineType: Pointer read FFallbackLineType;
     property FallbackTextStyle: Pointer read FFallbackTextStyle;
+    property FallbackDimStyle: Pointer read FFallbackDimStyle;
     property Handles: TDWGZCADHandleMap read FHandles;
     property PendingOwners: TDWGZCADPendingOwnerList read FPendingOwners;
     property PendingRefs: TDWGZCADPendingRefList read FPendingRefs;
@@ -514,6 +517,11 @@ begin
   FFallbackTextStyle := ATextStyle;
 end;
 
+procedure TDWGZCADLoadContext.SetFallbackDimStyle(ADimStyle: Pointer);
+begin
+  FFallbackDimStyle := ADimStyle;
+end;
+
 function TDWGZCADLoadContext.RegisterShell(AHandle: TDWGZCADHandle;
   AKind: TDWGZCADObjectKind; APtr: Pointer; ARawIndex: Integer): Boolean;
 begin
@@ -598,6 +606,7 @@ begin
     rsLayerLineType:
       Result := FFallbackLineType;
     rsTextStyle: Result := FFallbackTextStyle;
+    rsDimStyle:  Result := FFallbackDimStyle;
   else
     Result := nil;
   end;

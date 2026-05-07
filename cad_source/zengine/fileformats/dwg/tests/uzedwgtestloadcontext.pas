@@ -94,6 +94,20 @@ type
     procedure StyleKindMismatchFallsBackToStandard;
   end;
 
+  { Stage 6 (issue #1091) resolver contracts for INSERT/ATTRIB/DIMENSION.
+    Production mappers build on these queues: INSERT uses rsBlockDef, ATTRIB
+    is owned by dokBlockInsert, and dimensions use rsDimStyle plus generated
+    block refs. }
+  TDWGLoadContextStage6Test = class(TTestCase)
+  published
+    procedure BlockDefDeclaredAfterInsertResolvesAtEnd;
+    procedure BrokenBlockRefFallsBackWithWarning;
+    procedure AttribOwnerInsertResolvesToInsertContainer;
+    procedure DimStyleDeclaredAfterDimensionResolvesAtEnd;
+    procedure NullDimStyleFallsBackToDefault;
+    procedure BlockDefRefAcceptsModelSpaceForInsert;
+  end;
+
 implementation
 
 uses
@@ -1273,9 +1287,176 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextStage6Test ---------- }
+
+procedure TDWGLoadContextStage6Test.BlockDefDeclaredAfterInsertResolvesAtEnd;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  InsertEnt, BlockDef: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    InsertEnt := MakePtr($610);
+    BlockDef := MakePtr($611);
+    Ctx.RegisterShell($610, dokBlockInsert, InsertEnt, 0);
+    Ctx.QueueRefResolve(InsertEnt, $610, $620, dokBlockDef, rsBlockDef, nil);
+    Ctx.RegisterShell($620, dokBlockDef, BlockDef, 1);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($610, rsBlockDef);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(BlockDef), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.BrokenBlockRefFallsBackWithWarning;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  InsertEnt, FallbackBlock: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    InsertEnt := MakePtr($612);
+    FallbackBlock := MakePtr($6FF);
+    Ctx.RegisterShell($612, dokBlockInsert, InsertEnt, 0);
+    Ctx.QueueRefResolve(InsertEnt, $612, $DEAD6, dokBlockDef, rsBlockDef,
+      FallbackBlock);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($612, rsBlockDef);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNotFound), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(FallbackBlock), PtrInt(Pending^.AttachedRef));
+    AssertTrue('missing block ref warning recorded', Ctx.WarningCount >= 1);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.AttribOwnerInsertResolvesToInsertContainer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  InsertEnt, AttribEnt, Root: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    InsertEnt := MakePtr($613);
+    AttribEnt := MakePtr($614);
+    Root := MakePtr($6F0);
+    Ctx.SetFallbackOwner(Root);
+    Ctx.RegisterShell(0, dokModelSpace, Root, -1);
+    Ctx.RegisterShell($613, dokBlockInsert, InsertEnt, 0);
+    Ctx.RegisterShell($614, dokEntity, AttribEnt, 1);
+    Ctx.QueueOwnerResolve(AttribEnt, $614, $613);
+
+    Ctx.ResolveOwners;
+
+    Pending := Ctx.FindPending($614);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(InsertEnt), PtrInt(Pending^.AttachedOwner));
+    AssertEquals(0, Ctx.FallbackCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.DimStyleDeclaredAfterDimensionResolvesAtEnd;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  DimEnt, DimStyle, StdStyle: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DimEnt := MakePtr($615);
+    DimStyle := MakePtr($616);
+    StdStyle := MakePtr($6F1);
+    Ctx.SetFallbackDimStyle(StdStyle);
+    Ctx.RegisterShell($615, dokEntity, DimEnt, 0);
+    Ctx.QueueRefResolve(DimEnt, $615, $617, dokDimStyle, rsDimStyle, nil);
+    Ctx.RegisterShell($617, dokDimStyle, DimStyle, 1);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($615, rsDimStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(DimStyle), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.NullDimStyleFallsBackToDefault;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  DimEnt, StdStyle: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DimEnt := MakePtr($618);
+    StdStyle := MakePtr($6F2);
+    Ctx.SetFallbackDimStyle(StdStyle);
+    Ctx.RegisterShell($618, dokEntity, DimEnt, 0);
+    Ctx.QueueRefResolve(DimEnt, $618, 0, dokDimStyle, rsDimStyle, nil);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($618, rsDimStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(StdStyle), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.BlockDefRefAcceptsModelSpaceForInsert;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  InsertEnt, ModelRoot: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    InsertEnt := MakePtr($619);
+    ModelRoot := MakePtr($6F3);
+    Ctx.RegisterShell($619, dokBlockInsert, InsertEnt, 0);
+    Ctx.RegisterShell($621, dokModelSpace, ModelRoot, 1);
+    Ctx.QueueRefResolve(InsertEnt, $619, $621, dokBlockDef, rsBlockDef, nil);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($619, rsBlockDef);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(ModelRoot), PtrInt(Pending^.AttachedRef));
+    AssertEquals('model-space block refs are not hard errors', 0,
+      Ctx.RefFallbackCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
-    TDWGLoadContextTextStyleRefTest]);
+    TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test]);
 
 end.
