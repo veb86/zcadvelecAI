@@ -46,6 +46,7 @@ type
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
     procedure LayerVisualPropsPositiveColorKeepsLayerOn;
     procedure LayerVisualPropsByLayerMethodKeepsRawACI;
+    procedure LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
     procedure LayerVisualPropsNegativeColorTurnsLayerOff;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
   end;
@@ -634,15 +635,41 @@ var
 begin
   FillChar(Layer, SizeOf(Layer), 0);
   Layer.color.index := 4;
+  Layer.color.raw := 95;
   Layer.color.method := DWG_COLOR_METHOD_BYLAYER;
   Layer.linewt := 7;
 
   AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
-  AssertEquals('layer table BYLAYER method keeps raw ACI index', 4,
+  AssertEquals('layer table BYLAYER method keeps decoded ACI index', 4,
     Props.ColorIndex);
   AssertEquals('lineweight 7 converts to DXF 370 value', 25,
     Props.LineWeight);
-  AssertTrue('positive raw ACI keeps layer visible', Props.On);
+  AssertTrue('positive decoded ACI keeps layer visible', Props.On);
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := 7;
+  Layer.color.raw := 95;
+  Layer.color.rgb := $C2FFFFFF;
+  Layer.color.method := DWG_COLOR_METHOD_ACI;
+  Layer.linewt := 29;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('preserved raw CMC ACI beats decoded palette white', 95,
+    Props.ColorIndex);
+  AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
+  AssertTrue('raw ACI keeps layer visible', Props.On);
+  AssertFalse('raw ACI is enough to avoid lost-color diagnostic',
+    DWGColorLooksLikeLostACI(Layer.color));
+
+  Layer.color.raw := 0;
+  AssertTrue('ACI white without raw index is diagnostic-only suspicious',
+    DWGColorLooksLikeLostACI(Layer.color));
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorTurnsLayerOff;

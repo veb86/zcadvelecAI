@@ -112,6 +112,8 @@ function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
   out Value: QWord): Boolean;
 
 function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
+function DWGColorMethodToText(const Method: Dwg_Color_Method): string;
+function DWGColorLooksLikeLostACI(const Color: Dwg_Color): Boolean;
 function DWGColorIsOff(const Color: Dwg_Color): Boolean;
 function DWGLineWeightToDXF(const Value: Integer): Integer;
 function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
@@ -370,6 +372,51 @@ begin
   Result := True;
 end;
 
+function DWGColorRawValueToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
+begin
+  if Color.method <> DWG_COLOR_METHOD_ACI then
+  begin
+    Value := DWGByLayerColorIndex;
+    Exit(False);
+  end;
+
+  Value := Color.raw;
+  if Value < 0 then
+    Value := -Value;
+  Result := (Value > 0) and (Value <= 255);
+end;
+
+function DWGColorMethodToText(const Method: Dwg_Color_Method): string;
+begin
+  case Method of
+    DWG_COLOR_METHOD_VOID:
+      Result := 'VOID';
+    DWG_COLOR_METHOD_BYLAYER:
+      Result := 'BYLAYER';
+    DWG_COLOR_METHOD_BYBLOCK:
+      Result := 'BYBLOCK';
+    DWG_COLOR_METHOD_ACI:
+      Result := 'ACI';
+    DWG_COLOR_METHOD_TRUECOLOR:
+      Result := 'TRUECOLOR';
+    DWG_COLOR_METHOD_FGCOLOR:
+      Result := 'FGCOLOR';
+    DWG_COLOR_METHOD_NONE:
+      Result := 'NONE';
+  else
+    Result := 'UNKNOWN';
+  end;
+end;
+
+function DWGColorLooksLikeLostACI(const Color: Dwg_Color): Boolean;
+begin
+  Result :=
+    (Color.method = DWG_COLOR_METHOD_ACI) and
+    ((Color.rgb and $00FFFFFF) = $00FFFFFF) and
+    (Abs(Color.index) = 7) and
+    (Color.raw = 0);
+end;
+
 function DWGColorIsOff(const Color: Dwg_Color): Boolean;
 begin
   Result := Color.index < 0;
@@ -394,13 +441,18 @@ begin
   if PLayer = nil then
     Exit(False);
 
-  RawColorIndex := PLayer^.color.index;
-  if RawColorIndex < 0 then
-    RawColorIndex := -RawColorIndex;
-  if (RawColorIndex > 0) and (RawColorIndex <= 255) then
-    Props.ColorIndex := RawColorIndex
-  else if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
-    Props.ColorIndex := 7;
+  { R2004+ CMC colors can arrive with color.index normalized from RGB. When
+    LibreDWG keeps the original layer ACI in color.raw, prefer that value so
+    layer table colors do not collapse to palette white. }
+  if not DWGColorRawValueToACI(PLayer^.color, Props.ColorIndex) then begin
+    RawColorIndex := PLayer^.color.index;
+    if RawColorIndex < 0 then
+      RawColorIndex := -RawColorIndex;
+    if (RawColorIndex > 0) and (RawColorIndex <= 255) then
+      Props.ColorIndex := RawColorIndex
+    else if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
+      Props.ColorIndex := 7;
+  end;
   if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
     Props.ColorIndex := 7;
   Props.LineWeight := DWGLineWeightToDXF(PLayer^.linewt);
