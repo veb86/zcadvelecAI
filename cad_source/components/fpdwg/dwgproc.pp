@@ -204,6 +204,7 @@ interface
     Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+  function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
   procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
     out Props:TDWGLWPolylineProps);
 
@@ -419,6 +420,14 @@ implementation
     Props.Attachment:=MText.attachment;
     Props.LineSpaceFactor:=MText.linespace_factor;
     DWGSafeDecodeText(MText.text,Version,Props.Value);
+  end;
+
+  function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
+  begin
+    // ZCAD GDBObjLWPolyline stores one width record per vertex. Open polylines
+    // ignore the trailing generated segment later, but CalcWidthSegment still
+    // reads the final width slot while building its cached geometry.
+    Result:=Length(Props.Vertices);
   end;
 
   procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;

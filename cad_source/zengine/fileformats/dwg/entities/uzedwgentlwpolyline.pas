@@ -49,15 +49,10 @@ begin
   pobj^.Local.p_insert.z := Props.Elevation;
   n := Length(Props.Vertices);
   pobj^.Vertex2D_in_OCS_Array.SetCount(n);
-  // Width-array sizing mirrors SetLWpolylineGeomProps: closed polylines have
-  // a width per segment, open ones one fewer (count-1) so the last vertex has
-  // no outgoing segment. Empty polylines get an empty array.
-  if pobj^.Closed then
-    wcount := n
-  else if n > 0 then
-    wcount := n - 1
-  else
-    wcount := 0;
+  // GDBObjLWPolyline expects one width record per vertex. Open polylines ignore
+  // the trailing generated segment during draw, but CalcWidthSegment still
+  // reads the last width slot while building its cached geometry.
+  wcount := DWGLWPolylineWidthRecordCount(Props);
   pobj^.Width2D_in_OCS_Array.SetCount(wcount);
   for i := 0 to n - 1 do begin
     pp := pobj^.Vertex2D_in_OCS_Array.getDataMutable(i);
