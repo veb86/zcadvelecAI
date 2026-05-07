@@ -56,6 +56,14 @@ type
     Invisible: Boolean;
   end;
 
+  TDWGLayerVisualProps = record
+    ColorIndex: Integer;
+    LineWeight: Integer;
+    On: Boolean;
+    Locked: Boolean;
+    Plot: Boolean;
+  end;
+
 { Object handle: the stable QWord identifier the import context indexes by. }
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
@@ -106,9 +114,13 @@ function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
 function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
 function DWGColorIsOff(const Color: Dwg_Color): Boolean;
 function DWGLineWeightToDXF(const Value: Integer): Integer;
+function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
+  out Props: TDWGLayerVisualProps): Boolean;
 function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
   out Props: TDWGEntityCommonProps): Boolean;
 function DWGEntityLineTypeKindToText(const Kind: TDWGEntityLineTypeKind): string;
+function DWGHeaderCurrentLayerHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
 
 { Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
   False allows the caller to fall back to the registered text-style
@@ -368,6 +380,32 @@ begin
   Result := DWGLineWeights[Value mod 32];
 end;
 
+function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
+  out Props: TDWGLayerVisualProps): Boolean;
+begin
+  Props.ColorIndex := 7;
+  Props.LineWeight := -3;
+  Props.On := True;
+  Props.Locked := False;
+  Props.Plot := True;
+
+  if PLayer = nil then
+    Exit(False);
+
+  if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
+    Props.ColorIndex := 7;
+  if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
+    Props.ColorIndex := 7;
+  Props.LineWeight := DWGLineWeightToDXF(PLayer^.linewt);
+  // AutoCAD/DXF encodes layer off by negating group 62. Some R2007 DWGs
+  // arrive from LibreDWG with off=1 while the color index is positive; in
+  // that contradictory case AutoCAD shows the layer as on, so trust color.
+  Props.On := not DWGColorIsOff(PLayer^.color);
+  Props.Locked := PLayer^.locked <> 0;
+  Props.Plot := PLayer^.plotflag <> 0;
+  Result := True;
+end;
+
 function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
   out Props: TDWGEntityCommonProps): Boolean;
 var
@@ -406,6 +444,12 @@ begin
     else
       Result := 'missing';
   end;
+end;
+
+function DWGHeaderCurrentLayerHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+begin
+  Result := DWGRefHandleValue(Raw.header_vars.CLAYER, Value);
 end;
 
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;
