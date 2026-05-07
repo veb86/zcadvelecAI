@@ -50,7 +50,7 @@ procedure AddLayer(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
 var
   player: PGDBLayerProp;
   name: string;
-  LayerColor, LayerLineWeight: Integer;
+  LayerProps: TDWGLayerVisualProps;
   Handle, LtHandle: QWord;
   ContinuousLT: PGDBLtypeProp;
   Ctx: TDWGZCADLoadContext;
@@ -62,21 +62,17 @@ begin
   player := ZContext.PDrawing^.LayerTable.MergeItem(name, ZContext.LoadMode);
   if player <> nil then begin
     player^.init(name);
-    if not DWGColorIndexToACI(PDWGLayer^.color, LayerColor) then
-      LayerColor := 7;
-    if (LayerColor <= 0) or (LayerColor > 255) then
-      LayerColor := 7;
-    LayerLineWeight := DWGLineWeightToDXF(PDWGLayer^.linewt);
-    player^.color := LayerColor;
-    player^.lineweight := LayerLineWeight;
-    player^._on := (PDWGLayer^.off = 0) and
-      not DWGColorIsOff(PDWGLayer^.color);
-    player^._lock := (PDWGLayer^.locked <> 0);
-    player^._print := (PDWGLayer^.plotflag <> 0);
+    DWGLayerVisualPropsValue(PDWGLayer, LayerProps);
+    player^.color := LayerProps.ColorIndex;
+    player^.lineweight := LayerProps.LineWeight;
+    player^._on := LayerProps.On;
+    player^._lock := LayerProps.Locked;
+    player^._print := LayerProps.Plot;
     zDebugLn(['{WH}layer ', name,
       ' visual color=', player^.color,
       ', lineweight=', player^.lineweight,
       ', on=', BoolToStr(player^._on, True),
+      ', raw_off=', BoolToStr(PDWGLayer^.off <> 0, True),
       ', locked=', BoolToStr(player^._lock, True),
       ', plot=', BoolToStr(player^._print, True)]);
     //desk:AnsiString;

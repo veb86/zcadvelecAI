@@ -44,6 +44,9 @@ type
     procedure EntityLineTypeFlag3ReadsExplicitHandle;
     procedure EntityCommonPropsCopiesVisualFields;
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
+    procedure LayerVisualPropsPositiveColorKeepsLayerOn;
+    procedure LayerVisualPropsNegativeColorTurnsLayerOff;
+    procedure HeaderCurrentLayerHandleReadsCLAYER;
   end;
 
   TFPDWGProcLineTest = class(TTestCase)
@@ -599,6 +602,65 @@ begin
   AssertEquals('empty linetype scale falls back to one', 1.0,
     Props.LineTypeScale, 0.0);
   AssertFalse('visible by default', Props.Invisible);
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsPositiveColorKeepsLayerOn;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := 7;
+  Layer.color.method := DWG_COLOR_METHOD_ACI;
+  Layer.linewt := 31;
+  Layer.off := 1;
+  Layer.locked := 1;
+  Layer.plotflag := 1;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('ACI color copied', 7, Props.ColorIndex);
+  AssertEquals('lineweight 31 is ByLwDefault', -3, Props.LineWeight);
+  AssertTrue('positive color keeps layer visible despite raw off flag',
+    Props.On);
+  AssertTrue('locked copied', Props.Locked);
+  AssertTrue('plot flag copied', Props.Plot);
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorTurnsLayerOff;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := -3;
+  Layer.color.method := DWG_COLOR_METHOD_ACI;
+  Layer.linewt := 29;
+  Layer.off := 0;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('negative ACI color normalized for display', 3,
+    Props.ColorIndex);
+  AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
+  AssertFalse('negative color means layer is off', Props.On);
+end;
+
+procedure TFPDWGProcHandleTest.HeaderCurrentLayerHandleReadsCLAYER;
+var
+  Raw: Dwg_Data;
+  LayerRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(LayerRef, SizeOf(LayerRef), 0);
+  LayerRef.absolute_ref := $10;
+  Raw.header_vars.CLAYER := @LayerRef;
+
+  AssertTrue(DWGHeaderCurrentLayerHandleValue(Raw, Value));
+  AssertEquals(Int64($10), Int64(Value));
+
+  Raw.header_vars.CLAYER := nil;
+  AssertFalse(DWGHeaderCurrentLayerHandleValue(Raw, Value));
+  AssertEquals(Int64(0), Int64(Value));
 end;
 
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;

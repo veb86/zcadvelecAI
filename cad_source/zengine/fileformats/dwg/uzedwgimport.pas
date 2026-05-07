@@ -79,6 +79,8 @@ implementation
 var
   LoadCtx: TDWGZCADLoadContext = nil;
   LoadDrawing: PTSimpleDrawing = nil;
+  LoadHasCurrentLayerHandle: Boolean = False;
+  LoadCurrentLayerHandle: QWord = 0;
 
 function DWGSystemLineTypeForKind(Kind: TDWGEntityLineTypeKind): PGDBLtypeProp;
 var
@@ -120,6 +122,28 @@ end;
 function GetLoadDrawing: PTSimpleDrawing;
 begin
   Result := LoadDrawing;
+end;
+
+procedure ApplyDWGCurrentLayer(var ZContext: TZDrawingContext);
+var
+  Entry: TDWGZCADHandleEntry;
+  CurrentLayer: PGDBLayerProp;
+begin
+  CurrentLayer := nil;
+  if (LoadCtx <> nil) and LoadHasCurrentLayerHandle then begin
+    if LoadCtx.TryGetEntry(LoadCurrentLayerHandle, Entry) and
+       (Entry.Kind = dokLayer) then
+      CurrentLayer := PGDBLayerProp(Entry.Ptr);
+    if CurrentLayer = nil then
+      zDebugLn(['{WHM}DWG current layer handle ',
+        IntToHex(LoadCurrentLayerHandle, 1),
+        ' did not resolve to a layer; using system layer']);
+  end;
+  if CurrentLayer = nil then
+    CurrentLayer := ZContext.PDrawing^.LayerTable.GetSystemLayer;
+  ZContext.PDrawing^.CurrentLayer := CurrentLayer;
+  if CurrentLayer <> nil then
+    zDebugLn(['{WH}DWG current layer -> ', CurrentLayer^.Name]);
 end;
 
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
@@ -273,6 +297,8 @@ begin
   end;
   LoadCtx := TDWGZCADLoadContext.Create;
   LoadDrawing := ZContext.PDrawing;
+  LoadHasCurrentLayerHandle := False;
+  LoadCurrentLayerHandle := 0;
   // Register pObjRoot under handle 0 so any LINE with a missing owner falls
   // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
   LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
@@ -305,6 +331,8 @@ begin
   // skipped the lifecycle hooks).
   if LoadCtx = nil then
     Exit;
+  LoadHasCurrentLayerHandle :=
+    DWGHeaderCurrentLayerHandleValue(Raw, LoadCurrentLayerHandle);
   ScanRawObjects(Raw, LoadCtx);
 end;
 
@@ -317,6 +345,7 @@ begin
     // ResolveOwners but only do the AddMi step now — geometry builds in
     // Phase 4 below.
     LoadCtx.ResolveRefs;
+    ApplyDWGCurrentLayer(ZContext);
     LoadCtx.ResolveOwners;
     zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
       ', fallback=', LoadCtx.FallbackCount,
@@ -330,6 +359,8 @@ begin
   finally
     FreeAndNil(LoadCtx);
     LoadDrawing := nil;
+    LoadHasCurrentLayerHandle := False;
+    LoadCurrentLayerHandle := 0;
   end;
 end;
 
