@@ -86,6 +86,15 @@ var
   LoadDrawing: PTSimpleDrawing = nil;
   LoadHasCurrentLayerHandle: Boolean = False;
   LoadCurrentLayerHandle: QWord = 0;
+  LoadHasCurrentTextStyleHandle: Boolean = False;
+  LoadCurrentTextStyleHandle: QWord = 0;
+
+function DWGDefaultTextStyleProp: GDBTextStyleProp;
+begin
+  Result.size := 0;
+  Result.oblique := 0;
+  Result.wfactor := 1;
+end;
 
 function DWGSystemLineTypeForKind(Kind: TDWGEntityLineTypeKind): PGDBLtypeProp;
 var
@@ -130,10 +139,17 @@ begin
 end;
 
 function DWGEnsureTextStyle(var Drawing: TSimpleDrawing): PGDBTextStyle;
+var
+  TextProp: GDBTextStyleProp;
 begin
   Result := Drawing.TextStyleTable.FindStyle('Standard', False);
-  if Result = nil then
-    Result := Drawing.GetCurrentTextStyle;
+  if Result = nil then begin
+    TextProp := DWGDefaultTextStyleProp;
+    Result := Drawing.TextStyleTable.addstyle('Standard', '', '',
+      TextProp, False);
+  end;
+  if Drawing.CurrentTextStyle = nil then
+    Drawing.CurrentTextStyle := Result;
 end;
 
 function DWGEnsureDimStyle(var Drawing: TSimpleDrawing;
@@ -219,6 +235,28 @@ begin
   ZContext.PDrawing^.CurrentLayer := CurrentLayer;
   if CurrentLayer <> nil then
     zDebugLn(['{WH}DWG current layer -> ', CurrentLayer^.Name]);
+end;
+
+procedure ApplyDWGCurrentTextStyle(var ZContext: TZDrawingContext);
+var
+  Entry: TDWGZCADHandleEntry;
+  CurrentStyle: PGDBTextStyle;
+begin
+  CurrentStyle := nil;
+  if (LoadCtx <> nil) and LoadHasCurrentTextStyleHandle then begin
+    if LoadCtx.TryGetEntry(LoadCurrentTextStyleHandle, Entry) and
+       (Entry.Kind = dokTextStyle) then
+      CurrentStyle := PGDBTextStyle(Entry.Ptr);
+    if CurrentStyle = nil then
+      zDebugLn(['{WHM}DWG current textstyle handle ',
+        IntToHex(LoadCurrentTextStyleHandle, 1),
+        ' did not resolve to a text style; using Standard']);
+  end;
+  if (CurrentStyle = nil) or CurrentStyle^.UsedInLTYPE then
+    CurrentStyle := DWGEnsureTextStyle(ZContext.PDrawing^);
+  ZContext.PDrawing^.CurrentTextStyle := CurrentStyle;
+  if CurrentStyle <> nil then
+    zDebugLn(['{WH}DWG current textstyle -> ', CurrentStyle^.Name]);
 end;
 
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
@@ -437,6 +475,8 @@ begin
   LoadDrawing := ZContext.PDrawing;
   LoadHasCurrentLayerHandle := False;
   LoadCurrentLayerHandle := 0;
+  LoadHasCurrentTextStyleHandle := False;
+  LoadCurrentTextStyleHandle := 0;
   // Register pObjRoot under handle 0 so any LINE with a missing owner falls
   // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
   LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
@@ -454,9 +494,9 @@ begin
     ByLayerLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(TLTByLayer);
   LoadCtx.SetFallbackLayer(SysLayer);
   LoadCtx.SetFallbackLineType(ByLayerLT);
-  // The text-style fallback is the first style in the table when present;
-  // mappers that genuinely care will overwrite this on a per-entity basis.
-  StdStyle := ZContext.PDrawing^.TextStyleTable.FindStyle('Standard', False);
+  // Ensure the DXF-compatible Standard style exists before table and entity
+  // mappers start resolving text-style handles.
+  StdStyle := DWGEnsureTextStyle(ZContext.PDrawing^);
   LoadCtx.SetFallbackTextStyle(StdStyle);
   StdDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
   LoadCtx.SetFallbackDimStyle(StdDimStyle);
@@ -473,6 +513,8 @@ begin
     Exit;
   LoadHasCurrentLayerHandle :=
     DWGHeaderCurrentLayerHandleValue(Raw, LoadCurrentLayerHandle);
+  LoadHasCurrentTextStyleHandle :=
+    DWGHeaderCurrentTextStyleHandleValue(Raw, LoadCurrentTextStyleHandle);
   ScanRawObjects(Raw, LoadCtx);
 end;
 
@@ -486,6 +528,7 @@ begin
     // Phase 4 below.
     LoadCtx.ResolveRefs;
     ApplyDWGCurrentLayer(ZContext);
+    ApplyDWGCurrentTextStyle(ZContext);
     LoadCtx.ResolveOwners;
     zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
       ', fallback=', LoadCtx.FallbackCount,
@@ -501,6 +544,8 @@ begin
     LoadDrawing := nil;
     LoadHasCurrentLayerHandle := False;
     LoadCurrentLayerHandle := 0;
+    LoadHasCurrentTextStyleHandle := False;
+    LoadCurrentTextStyleHandle := 0;
   end;
 end;
 

@@ -50,6 +50,13 @@ type
     procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
     procedure LayerVisualPropsNegativeColorTurnsLayerOff;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
+    procedure HeaderCurrentTextStyleHandleReadsTEXTSTYLE;
+  end;
+
+  TFPDWGProcTextStyleTest = class(TTestCase)
+  published
+    procedure StylePropsCopiesNameFontAndMetrics;
+    procedure StylePropsDefaultsMissingWidthFactor;
   end;
 
   TFPDWGProcLineTest = class(TTestCase)
@@ -734,6 +741,67 @@ begin
   AssertEquals(Int64(0), Int64(Value));
 end;
 
+procedure TFPDWGProcHandleTest.HeaderCurrentTextStyleHandleReadsTEXTSTYLE;
+var
+  Raw: Dwg_Data;
+  StyleRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(StyleRef, SizeOf(StyleRef), 0);
+  StyleRef.absolute_ref := $35;
+  Raw.header_vars.TEXTSTYLE := @StyleRef;
+
+  AssertTrue(DWGHeaderCurrentTextStyleHandleValue(Raw, Value));
+  AssertEquals(Int64($35), Int64(Value));
+
+  Raw.header_vars.TEXTSTYLE := nil;
+  AssertFalse(DWGHeaderCurrentTextStyleHandleValue(Raw, Value));
+  AssertEquals(Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcTextStyleTest.StylePropsCopiesNameFontAndMetrics;
+var
+  Style: Dwg_Object_STYLE;
+  Props: TDWGTextStyleProps;
+  NameText, FontText, BigFontText: AnsiString;
+begin
+  FillChar(Style, SizeOf(Style), 0);
+  NameText := 'style2Text';
+  FontText := 'arial.ttf';
+  BigFontText := 'bigfont.shx';
+  Style.name := PChar(NameText);
+  Style.font_file := PChar(FontText);
+  Style.bigfont_file := PChar(BigFontText);
+  Style.text_size := 2.5;
+  Style.width_factor := 0.75;
+  Style.oblique_angle := 0.125;
+  Style.is_shape := 0;
+  Style.is_vertical := 1;
+
+  AssertTrue(DWGTextStylePropsValue(@Style, R_2004, Props));
+  AssertEquals(NameText, Props.Name);
+  AssertEquals(FontText, Props.FontFile);
+  AssertEquals(BigFontText, Props.BigFontFile);
+  AssertEquals(2.5, Props.TextSize, 0.0);
+  AssertEquals(0.75, Props.WidthFactor, 0.0);
+  AssertEquals(0.125, Props.ObliqueAngle, 0.0);
+  AssertFalse(Props.IsShape);
+  AssertTrue(Props.IsVertical);
+end;
+
+procedure TFPDWGProcTextStyleTest.StylePropsDefaultsMissingWidthFactor;
+var
+  Style: Dwg_Object_STYLE;
+  Props: TDWGTextStyleProps;
+begin
+  FillChar(Style, SizeOf(Style), 0);
+  Style.width_factor := 0;
+
+  AssertTrue(DWGTextStylePropsValue(@Style, R_2004, Props));
+  AssertEquals(1.0, Props.WidthFactor, 0.0);
+end;
+
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;
 var
   Line: Dwg_Entity_LINE;
@@ -1096,7 +1164,7 @@ end;
 
 begin
   RegisterTests([
-    TFPDWGProcHandleTest, TFPDWGProcLineTest,
+    TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLineTest,
     TFPDWGProcCircleTest, TFPDWGProcArcTest, TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
     TFPDWGProcLWPolylineTest

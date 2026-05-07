@@ -39,6 +39,7 @@ type
     libredwg surface. }
   PDwg_Entity_TEXT  = ^Dwg_Entity_TEXT;
   PDwg_Entity_MTEXT = ^Dwg_Entity_MTEXT;
+  PDwg_Object_STYLE = ^Dwg_Object_STYLE;
 
   TDWGEntityLineTypeKind = (
     dltMissing,
@@ -62,6 +63,17 @@ type
     On: Boolean;
     Locked: Boolean;
     Plot: Boolean;
+  end;
+
+  TDWGTextStyleProps = record
+    Name: string;
+    FontFile: string;
+    BigFontFile: string;
+    TextSize: Double;
+    WidthFactor: Double;
+    ObliqueAngle: Double;
+    IsShape: Boolean;
+    IsVertical: Boolean;
   end;
 
 { Object handle: the stable QWord identifier the import context indexes by. }
@@ -123,6 +135,10 @@ function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
 function DWGEntityLineTypeKindToText(const Kind: TDWGEntityLineTypeKind): string;
 function DWGHeaderCurrentLayerHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
+function DWGHeaderCurrentTextStyleHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
+  Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
 
 { Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
   False allows the caller to fall back to the registered text-style
@@ -133,6 +149,9 @@ function DWGMTextStyleHandleValue(const PMText: PDwg_Entity_MTEXT;
   out Value: QWord): Boolean;
 
 implementation
+
+uses
+  uzedwgtext;
 
 const
   DWGByBlockColorIndex = 0;
@@ -525,6 +544,39 @@ function DWGHeaderCurrentLayerHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
 begin
   Result := DWGRefHandleValue(Raw.header_vars.CLAYER, Value);
+end;
+
+function DWGHeaderCurrentTextStyleHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+begin
+  Result := DWGRefHandleValue(Raw.header_vars.TEXTSTYLE, Value);
+end;
+
+function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
+  Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
+begin
+  Props.Name := '';
+  Props.FontFile := '';
+  Props.BigFontFile := '';
+  Props.TextSize := 0;
+  Props.WidthFactor := 1.0;
+  Props.ObliqueAngle := 0;
+  Props.IsShape := False;
+  Props.IsVertical := False;
+  Result := PStyle <> nil;
+  if not Result then
+    Exit;
+  DWGSafeDecodeText(PStyle^.name, Version, Props.Name);
+  DWGSafeDecodeText(PStyle^.font_file, Version, Props.FontFile);
+  DWGSafeDecodeText(PStyle^.bigfont_file, Version, Props.BigFontFile);
+  Props.TextSize := PStyle^.text_size;
+  if PStyle^.width_factor <> 0 then
+    Props.WidthFactor := PStyle^.width_factor
+  else
+    Props.WidthFactor := 1.0;
+  Props.ObliqueAngle := PStyle^.oblique_angle;
+  Props.IsShape := PStyle^.is_shape <> 0;
+  Props.IsVertical := PStyle^.is_vertical <> 0;
 end;
 
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;
