@@ -191,6 +191,11 @@ type
     property CycleCount: Integer read FStats.CycleCount;
     property RefAttachCount: Integer read FStats.RefAttachCount;
     property RefFallbackCount: Integer read FStats.RefFallbackCount;
+    property UnknownEntities: Integer read FStats.UnknownEntities;
+    property UnknownObjects: Integer read FStats.UnknownObjects;
+    property ProxiesLoaded: Integer read FStats.ProxiesLoaded;
+    property ProxiesFailed: Integer read FStats.ProxiesFailed;
+    property DroppedDueToFreedRaw: Integer read FStats.DroppedDueToFreedRaw;
     property FallbackOwner: Pointer read FFallbackOwner;
     property FallbackLayer: Pointer read FFallbackLayer;
     property FallbackLineType: Pointer read FFallbackLineType;

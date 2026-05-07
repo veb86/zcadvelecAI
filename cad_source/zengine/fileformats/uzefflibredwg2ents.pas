@@ -65,7 +65,8 @@ uses
   uzedwgentmtext,
   uzedwgentinsert,
   uzedwgentattrib,
-  uzedwgentdimension;
+  uzedwgentdimension,
+  uzedwgentproxy;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext);
 begin

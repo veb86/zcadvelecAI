@@ -115,6 +115,17 @@ type
     procedure CopyLWPolylineEmptyPolylineProducesEmptyArrays;
   end;
 
+  { Stage 7 (TZ §12.7): proxy graphics must be copied before dwg_free()
+    releases LibreDWG memory. These tests stay in dwgproc so they exercise
+    the raw payload copy without pulling ZCAD proxy entity units into the
+    fpdwg unit test binary. }
+  TFPDWGProcProxyTest = class(TTestCase)
+  published
+    procedure CopyProxyPayloadCopiesGraphicBytes;
+    procedure CopyProxyPayloadNilPointerIsEmpty;
+    procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
+  end;
+
 implementation
 
 uses
@@ -1243,11 +1254,77 @@ begin
   AssertFalse('open', Props.Closed);
 end;
 
+procedure TFPDWGProcProxyTest.CopyProxyPayloadCopiesGraphicBytes;
+var
+  Proxy: Dwg_Entity_PROXY_ENTITY;
+  Bytes: array[0..3] of BITCODE_RC;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Proxy, SizeOf(Proxy), 0);
+  Bytes[0] := $CA;
+  Bytes[1] := $FE;
+  Bytes[2] := $10;
+  Bytes[3] := $92;
+  Proxy.proxy_id := 498;
+  Proxy.class_id := 77;
+  Proxy.dwg_versions := 1021;
+  Proxy.from_dxf := 0;
+  Proxy.proxy_data_size := Length(Bytes);
+  Proxy.proxy_data := @Bytes[0];
+  Proxy.data_size := 12;
+
+  DWGCopyProxyEntityPayload(@Proxy, Payload);
+
+  AssertTrue(Payload.HasGraphic);
+  AssertEquals(498, Payload.ProxyID);
+  AssertEquals(77, Payload.ClassID);
+  AssertEquals(1021, Payload.DWGVersions);
+  AssertEquals(12, Payload.EntityDataSize);
+  AssertEquals(4, Length(Payload.Graphic));
+  AssertEquals(Integer($CA), Integer(Payload.Graphic[0]));
+  AssertEquals(Integer($FE), Integer(Payload.Graphic[1]));
+  AssertEquals(Integer($10), Integer(Payload.Graphic[2]));
+  AssertEquals(Integer($92), Integer(Payload.Graphic[3]));
+
+  Bytes[0] := 0;
+  AssertEquals('payload owns a copy independent from LibreDWG memory',
+    Integer($CA), Integer(Payload.Graphic[0]));
+end;
+
+procedure TFPDWGProcProxyTest.CopyProxyPayloadNilPointerIsEmpty;
+var
+  Payload: TDWGProxyEntityPayload;
+begin
+  DWGCopyProxyEntityPayload(nil, Payload);
+
+  AssertFalse(Payload.HasGraphic);
+  AssertEquals(0, Length(Payload.Graphic));
+end;
+
+procedure TFPDWGProcProxyTest.CopyProxyPayloadWithoutGraphicsIsEmpty;
+var
+  Proxy: Dwg_Entity_PROXY_ENTITY;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Proxy, SizeOf(Proxy), 0);
+  Proxy.proxy_id := 498;
+  Proxy.class_id := 9;
+  Proxy.proxy_data_size := 3;
+  Proxy.proxy_data := nil;
+
+  DWGCopyProxyEntityPayload(@Proxy, Payload);
+
+  AssertFalse(Payload.HasGraphic);
+  AssertEquals(498, Payload.ProxyID);
+  AssertEquals(9, Payload.ClassID);
+  AssertEquals(0, Length(Payload.Graphic));
+end;
+
 begin
   RegisterTests([
     TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLineTest,
     TFPDWGProcCircleTest, TFPDWGProcArcTest, TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
-    TFPDWGProcLWPolylineTest
+    TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest
   ]);
 end.
