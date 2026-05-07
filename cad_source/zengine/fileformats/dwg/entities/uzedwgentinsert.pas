@@ -104,7 +104,7 @@ begin
   if PInsert = nil then
     Exit;
 
-  PObj := AllocAndInitBlockInsert(nil);
+  PObj := GDBObjBlockInsert.CreateInstance;
   ApplyInsertTransform(PObj, PInsert^.ins_pt, PInsert^.scale,
     PInsert^.rotation);
   DecodeInsertBlockName(DWGContext, PInsert, BlockName);
@@ -136,7 +136,7 @@ begin
   if PMInsert = nil then
     Exit;
 
-  PObj := AllocAndInitBlockInsert(nil);
+  PObj := GDBObjBlockInsert.CreateInstance;
   ApplyInsertTransform(PObj, PMInsert^.ins_pt, PMInsert^.scale,
     PMInsert^.rotation);
 
