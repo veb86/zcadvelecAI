@@ -74,7 +74,17 @@ begin
       ', on=', BoolToStr(player^._on, True),
       ', raw_off=', BoolToStr(PDWGLayer^.off <> 0, True),
       ', locked=', BoolToStr(player^._lock, True),
-      ', plot=', BoolToStr(player^._print, True)]);
+      ', plot=', BoolToStr(player^._print, True),
+      ', color.index=', PDWGLayer^.color.index,
+      ', color.raw=', PDWGLayer^.color.raw,
+      ', color.rgb=$', IntToHex(PDWGLayer^.color.rgb, 8),
+      ', color.method=', DWGColorMethodToText(PDWGLayer^.color.method),
+      '($', IntToHex(Ord(PDWGLayer^.color.method), 2), ')',
+      ', color.flag=', PDWGLayer^.color.flag]);
+    if DWGColorLooksLikeLostACI(PDWGLayer^.color) then
+      zDebugLn(['{WH}layer ', name,
+        ' color diagnostic: LibreDWG reported ACI white without raw index; ',
+        'original DWG layer ACI may be unavailable after RGB normalization']);
     //desk:AnsiString;
   end;
   Ctx := GetLoadCtx;
