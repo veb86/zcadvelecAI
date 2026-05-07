@@ -30,7 +30,7 @@ uses
   dwg, dwgproc, uzedwghandle,
   uzedrawingsimple,
   uzbstrproc,
-  uzestyleslayers, uzestyleslinetypes, uzestylestexts,
+  uzestyleslayers, uzestyleslinetypes, uzestylestexts, uzestylesdim,
   uzeTypes,
   uzedwgloadcontext,
   uzedwgentityregistry,
@@ -44,6 +44,7 @@ type
   // Stage 3: dwg.pp does not export PDwg_Object_STYLE so we declare it here
   // to keep the AddTextStyle signature symmetrical with AddLayer / AddLineType.
   PDwg_Object_STYLE = ^Dwg_Object_STYLE;
+  PDwg_Object_DIMSTYLE = ^Dwg_Object_DIMSTYLE;
 
 procedure AddLayer(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
   var DWGObject: Dwg_Object; PDWGLayer: PDwg_Object_LAYER);
@@ -168,8 +169,96 @@ begin
   end;
 end;
 
+procedure ApplyDimStyleScalars(PDimStyle: PGDBDimStyle;
+  PDWGDimStyle: PDwg_Object_DIMSTYLE);
+begin
+  if (PDimStyle = nil) or (PDWGDimStyle = nil) then
+    Exit;
+  if PDWGDimStyle^.DIMEXE <> 0 then
+    PDimStyle^.Lines.DIMEXE := PDWGDimStyle^.DIMEXE;
+  if PDWGDimStyle^.DIMEXO <> 0 then
+    PDimStyle^.Lines.DIMEXO := PDWGDimStyle^.DIMEXO;
+  if PDWGDimStyle^.DIMDLE <> 0 then
+    PDimStyle^.Lines.DIMDLE := PDWGDimStyle^.DIMDLE;
+  if PDWGDimStyle^.DIMCEN <> 0 then
+    PDimStyle^.Lines.DIMCEN := PDWGDimStyle^.DIMCEN;
+  if PDWGDimStyle^.DIMLWD <> 0 then
+    PDimStyle^.Lines.DIMLWD := PDWGDimStyle^.DIMLWD;
+  if PDWGDimStyle^.DIMLWE <> 0 then
+    PDimStyle^.Lines.DIMLWE := PDWGDimStyle^.DIMLWE;
+  if PDWGDimStyle^.DIMCLRD_N <> 0 then
+    PDimStyle^.Lines.DIMCLRD := PDWGDimStyle^.DIMCLRD_N;
+  if PDWGDimStyle^.DIMCLRE_N <> 0 then
+    PDimStyle^.Lines.DIMCLRE := PDWGDimStyle^.DIMCLRE_N;
+
+  if PDWGDimStyle^.DIMSCALE <> 0 then
+    PDimStyle^.Units.DIMSCALE := PDWGDimStyle^.DIMSCALE;
+  if PDWGDimStyle^.DIMLFAC <> 0 then
+    PDimStyle^.Units.DIMLFAC := PDWGDimStyle^.DIMLFAC;
+  if PDWGDimStyle^.DIMRND <> 0 then
+    PDimStyle^.Units.DIMRND := PDWGDimStyle^.DIMRND;
+  if PDWGDimStyle^.DIMDEC <> 0 then
+    PDimStyle^.Units.DIMDEC := PDWGDimStyle^.DIMDEC;
+  if PDWGDimStyle^.DIMZIN <> 0 then
+    PDimStyle^.Units.DIMZIN := PDWGDimStyle^.DIMZIN;
+
+  if PDWGDimStyle^.DIMASZ <> 0 then
+    PDimStyle^.Arrows.DIMASZ := PDWGDimStyle^.DIMASZ;
+
+  if PDWGDimStyle^.DIMTXT <> 0 then
+    PDimStyle^.Text.DIMTXT := PDWGDimStyle^.DIMTXT;
+  if PDWGDimStyle^.DIMGAP <> 0 then
+    PDimStyle^.Text.DIMGAP := PDWGDimStyle^.DIMGAP;
+  if PDWGDimStyle^.DIMCLRT_N <> 0 then
+    PDimStyle^.Text.DIMCLRT := PDWGDimStyle^.DIMCLRT_N;
+  PDimStyle^.Text.DIMTIH := PDWGDimStyle^.DIMTIH <> 0;
+  PDimStyle^.Text.DIMTOH := PDWGDimStyle^.DIMTOH <> 0;
+end;
+
+procedure AddDimStyle(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
+  var DWGObject: Dwg_Object; PDWGDimStyle: PDwg_Object_DIMSTYLE);
+var
+  PDimStyle: PGDBDimStyle;
+  Name: string;
+  Handle: QWord;
+  Ctx: TDWGZCADLoadContext;
+begin
+  BITCODE_T2Text(PDWGDimStyle^.name, DWGContext, Name);
+  if Name = '' then
+    Name := 'Standard';
+  zDebugLn(['{WH}DimStyle: ', Name]);
+  if DWGContext.DWGVer > R_2007 then
+    Name := Tria_Utf8ToAnsi(Name);
+
+  PDimStyle := PGDBDimStyle(ZContext.PDrawing^.DimStyleTable.getAddres(Name));
+  if PDimStyle = nil then begin
+    PDimStyle := PGDBDimStyle(ZContext.PDrawing^.DimStyleTable.MergeItem(Name,
+      ZContext.LoadMode));
+    if PDimStyle <> nil then begin
+      PDimStyle^.init(Name);
+      PDimStyle^.SetDefaultValues;
+    end;
+  end;
+  if PDimStyle = nil then
+    PDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
+  ApplyDimStyleScalars(PDimStyle, PDWGDimStyle);
+  if (PDimStyle <> nil) and (PDimStyle^.Text.DIMTXSTY = nil) then
+    PDimStyle^.Text.DIMTXSTY := ZContext.PDrawing^.TextStyleTable.FindStyle(
+      'Standard', False);
+  if (PDimStyle <> nil) and (ZContext.PDrawing^.CurrentDimStyle = nil) then
+    ZContext.PDrawing^.CurrentDimStyle := PDimStyle;
+
+  Ctx := GetLoadCtx;
+  if Ctx <> nil then begin
+    Handle := DWGObjectHandleValue(DWGObject);
+    if Handle <> 0 then
+      Ctx.RegisterShell(Handle, dokDimStyle, PDimStyle, -1);
+  end;
+end;
+
 initialization
   RegisterDWGObjectHandler(DWG_TYPE_LAYER, @AddLayer);
   RegisterDWGObjectHandler(DWG_TYPE_LTYPE, @AddLineType);
   RegisterDWGObjectHandler(DWG_TYPE_STYLE, @AddTextStyle);
+  RegisterDWGObjectHandler(DWG_TYPE_DIMSTYLE, @AddDimStyle);
 end.

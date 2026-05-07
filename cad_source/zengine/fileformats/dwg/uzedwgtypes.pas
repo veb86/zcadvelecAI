@@ -42,6 +42,7 @@ type
     dokModelSpace,
     dokPaperSpace,
     dokContainer,
+    dokBlockInsert,
     dokEntity
   );
 
@@ -111,6 +112,7 @@ type
     rsLineType,
     rsTextStyle,
     rsDimStyle,
+    rsBlockDef,
     { Issue #1122: layer.LT refs target a PGDBLayerProp, not an entity vp
       record. Keep this as a distinct slot so the callback cannot write the
       resolved LTYPE pointer into entity memory when the target is a layer. }

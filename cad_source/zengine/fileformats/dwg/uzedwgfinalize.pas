@@ -47,7 +47,9 @@ uses
   SysUtils,
   uzedrawingsimple,
   uzeentity,
+  uzeentblockinsert,
   uzeentgenericsubentry,
+  uzeconsts,
   uzgldrawcontext,
   uzedwgtypes,
   uzedwgloadcontext;
@@ -81,6 +83,65 @@ begin
   end;
 end;
 
+function FinalizeOwnerIsBlockInsert(Ctx: TDWGZCADLoadContext;
+  Owner: Pointer): Boolean;
+var
+  I: Integer;
+  Entry: PDWGZCADHandleEntry;
+begin
+  Result := False;
+  if (Ctx = nil) or (Owner = nil) then
+    Exit;
+  for I := 0 to Ctx.Handles.Count - 1 do begin
+    Entry := Ctx.Handles.EntryAt(I);
+    if (Entry^.Kind = dokBlockInsert) and (Entry^.Ptr = Owner) then
+      Exit(True);
+  end;
+end;
+
+procedure FinalizeEntityGeometry(Pobj: PGDBObjEntity;
+  Drawing: PTSimpleDrawing; var DC: TDrawContext);
+begin
+  Pobj^.BuildGeometry(Drawing^);
+  Pobj^.FormatAfterDXFLoad(Drawing^, DC);
+  Pobj^.FromDXFPostProcessAfterAdd;
+end;
+
+procedure AttachDeferredInsertChildren(Ctx: TDWGZCADLoadContext;
+  Drawing: PTSimpleDrawing; var DC: TDrawContext; var Processed: Integer);
+var
+  I: Integer;
+  Entry: PDWGZCADHandleEntry;
+  Pobj: PGDBObjEntity;
+  Pending: PDWGZCADPendingOwner;
+  Owner: Pointer;
+  Insert: PGDBObjBlockInsert;
+  InsertIndex: Integer;
+begin
+  for I := 0 to Ctx.Handles.Count - 1 do begin
+    Entry := Ctx.Handles.EntryAt(I);
+    if Entry^.Kind <> dokEntity then
+      Continue;
+    Pobj := PGDBObjEntity(Entry^.Ptr);
+    if Pobj = nil then
+      Continue;
+    Pending := Ctx.FindPendingOwner(Entry^.Handle);
+    if Pending = nil then
+      Continue;
+    Owner := Pending^.AttachedOwner;
+    if Owner = nil then
+      Owner := Pending^.FallbackOwner;
+    if not FinalizeOwnerIsBlockInsert(Ctx, Owner) then
+      Continue;
+
+    Insert := PGDBObjBlockInsert(Owner);
+    InsertIndex := Insert^.ConstObjArray.AddPEntity(Pobj^);
+    Pobj^.correctobjects(PGDBObjEntity(Insert), InsertIndex);
+    FinalizeEntityGeometry(Pobj, Drawing, DC);
+    Inc(Processed);
+  end;
+end;
+
 procedure FinalizeImport(Ctx: TDWGZCADLoadContext;
   Drawing: PTSimpleDrawing; var DC: TDrawContext);
 var
@@ -89,19 +150,21 @@ var
   Pobj: PGDBObjEntity;
   Pending: PDWGZCADPendingOwner;
   Owner: Pointer;
-  ProcessedEntities, SkippedBlockDef, SkippedNoOwner, VisualWarnings: Integer;
+  ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
+  VisualWarnings: Integer;
 begin
   if (Ctx = nil) or (Drawing = nil) then
     Exit;
 
   ProcessedEntities := 0;
   SkippedBlockDef := 0;
+  SkippedInsertChild := 0;
   SkippedNoOwner := 0;
   VisualWarnings := 0;
 
   for I := 0 to Ctx.Handles.Count - 1 do begin
     Entry := Ctx.Handles.EntryAt(I);
-    if Entry^.Kind <> dokEntity then
+    if not (Entry^.Kind in [dokEntity, dokBlockInsert]) then
       Continue;
     Pobj := PGDBObjEntity(Entry^.Ptr);
     if Pobj = nil then
@@ -136,6 +199,10 @@ begin
       Inc(SkippedBlockDef);
       Continue;
     end;
+    if FinalizeOwnerIsBlockInsert(Ctx, Owner) then begin
+      Inc(SkippedInsertChild);
+      Continue;
+    end;
 
     if Pobj^.vp.Layer = nil then begin
       Inc(VisualWarnings);
@@ -152,14 +219,15 @@ begin
         ' has nil linetype after ref resolve']);
     end;
 
-    Pobj^.BuildGeometry(Drawing^);
-    Pobj^.FormatAfterDXFLoad(Drawing^, DC);
-    Pobj^.FromDXFPostProcessAfterAdd;
+    FinalizeEntityGeometry(Pobj, Drawing, DC);
     Inc(ProcessedEntities);
   end;
 
+  AttachDeferredInsertChildren(Ctx, Drawing, DC, ProcessedEntities);
+
   zDebugLn(['{WH}DWG finalize: built=', ProcessedEntities,
     ', deferred_blockdef=', SkippedBlockDef,
+    ', deferred_insert_child=', SkippedInsertChild,
     ', no_owner=', SkippedNoOwner,
     ', visual_warnings=', VisualWarnings]);
 end;

@@ -62,7 +62,10 @@ uses
   uzedwgentpoint,
   uzedwgentlwpolyline,
   uzedwgenttext,
-  uzedwgentmtext;
+  uzedwgentmtext,
+  uzedwgentinsert,
+  uzedwgentattrib,
+  uzedwgentdimension;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext);
 begin

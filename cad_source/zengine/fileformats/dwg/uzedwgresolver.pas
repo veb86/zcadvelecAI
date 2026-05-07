@@ -192,7 +192,8 @@ begin
     end;
 
     if not (OwnerEntry.Kind in
-        [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer]) then
+        [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer,
+         dokBlockInsert]) then
     begin
       FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_CONTAINER,
         Pending^.EntityHandle,
@@ -306,6 +307,23 @@ begin
         [IntToHex(Pending^.RefHandle, 1), Ord(Pending^.Slot),
          IntToHex(Pending^.EntityHandle, 1)]));
     FinishRef(Pending, Fallback, asFallback, arRefNotFound);
+    Exit;
+  end;
+
+  if (Pending^.Slot = rsBlockDef) and
+     (Entry.Kind in [dokBlockDef, dokModelSpace, dokPaperSpace]) then
+  begin
+    if Entry.Ptr = nil then
+    begin
+      FHost.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND,
+        Pending^.EntityHandle,
+        Format('Block ref %s for entity %s registered with nil ptr; using fallback',
+          [IntToHex(Pending^.RefHandle, 1),
+           IntToHex(Pending^.EntityHandle, 1)]));
+      FinishRef(Pending, Fallback, asFallback, arRefNotFound);
+      Exit;
+    end;
+    FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
     Exit;
   end;
 
