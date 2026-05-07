@@ -55,6 +55,8 @@ type
     procedure LineTypeKindMismatchFallsBackToByLayer;
     procedure ResolveRefsIsIdempotent;
     procedure SecondQueueForSameSlotReplacesFirst;
+    procedure LayerLineTypeUsesLayerSlot;
+    procedure NullLayerLineTypeFallsBackToContinuous;
     procedure RefAttachCallbackReceivesSlotAndReason;
     procedure NilPtrShellIsTreatedAsNotFound;
   end;
@@ -836,6 +838,64 @@ begin
     Ctx.ResolveRefs;
     Pending := Ctx.FindPendingRef($106, rsLayer);
     AssertEquals(PtrInt(LayerB), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.LayerLineTypeUsesLayerSlot;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Layer, Continuous: Pointer;
+begin
+  // Issue #1122: a LAYER table entry has its own linetype ref. It targets the
+  // PGDBLayerProp.LT field and must not reuse the entity rsLineType slot, whose
+  // production callback writes through PGDBObjEntity.vp.LineType.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Layer := MakePtr($AA70);
+    Continuous := MakePtr($CC70);
+    Ctx.RegisterShell($170, dokLayer, Layer, 0);
+    Ctx.RegisterShell($270, dokLineType, Continuous, 1);
+    Ctx.QueueRefResolve(Layer, $170, $270, dokLineType, rsLayerLineType, nil);
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($170, rsLayerLineType);
+    AssertNotNull('layer linetype ref recorded under layer slot', Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(Continuous), PtrInt(Pending^.AttachedRef));
+    AssertTrue('entity linetype slot remains unused for the layer handle',
+      Ctx.FindPendingRef($170, rsLineType) = nil);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.NullLayerLineTypeFallsBackToContinuous;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Layer, Continuous: Pointer;
+begin
+  // A broken/missing layer linetype should leave the layer drawable. The DWG
+  // mapper passes Continuous explicitly for this slot because ByLayer is an
+  // entity-level fallback and is not a useful layer.LT value.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Layer := MakePtr($AA71);
+    Continuous := MakePtr($CC71);
+    Ctx.RegisterShell($171, dokLayer, Layer, 0);
+    Ctx.QueueRefResolve(Layer, $171, 0, dokLineType, rsLayerLineType,
+      Continuous);
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($171, rsLayerLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(Continuous), PtrInt(Pending^.AttachedRef));
   finally
     Ctx.Free;
   end;

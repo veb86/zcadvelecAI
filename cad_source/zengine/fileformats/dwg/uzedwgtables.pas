@@ -51,6 +51,7 @@ var
   player: PGDBLayerProp;
   name: string;
   Handle, LtHandle: QWord;
+  ContinuousLT: PGDBLtypeProp;
   Ctx: TDWGZCADLoadContext;
 begin
   BITCODE_T2Text(PDWGLayer^.name, DWGContext, name);
@@ -72,16 +73,19 @@ begin
     Handle := DWGObjectHandleValue(DWGObject);
     if Handle <> 0 then
       Ctx.RegisterShell(Handle, dokLayer, player, -1);
-    // Stage 3 (TZ §8.3): defer the layer.LT linetype assignment until all
-    // LTYPE shells have been registered. Use the layer pointer as the
-    // "entity" so DWGAttachRef writes into the layer's LT slot once the
-    // ltype handle resolves. RefHandle=0 is allowed: it falls back to
-    // ByLayer/Continuous via the registered slot fallback.
+    // Stage 3 (TZ §8.3): defer the layer.LT assignment until all LTYPE shells
+    // have been registered. Issue #1122: this uses a layer-specific ref slot
+    // because the target pointer is PGDBLayerProp, not PGDBObjEntity.
     if (player <> nil) and (Handle <> 0) then begin
       if not DWGLayerLineTypeHandleValue(PDWGLayer, LtHandle) then
         LtHandle := 0;
+      ContinuousLT := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.getAddres(
+        'Continuous'));
+      if ContinuousLT = nil then
+        ContinuousLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(
+          TLTContinous);
       Ctx.QueueRefResolve(player, Handle, LtHandle,
-        dokLineType, rsLineType, nil);
+        dokLineType, rsLayerLineType, ContinuousLT);
     end;
   end;
 end;

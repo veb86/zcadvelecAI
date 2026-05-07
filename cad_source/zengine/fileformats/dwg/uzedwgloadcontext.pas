@@ -591,7 +591,9 @@ function TDWGZCADLoadContext.FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer;
 begin
   case ASlot of
     rsLayer:     Result := FFallbackLayer;
-    rsLineType:  Result := FFallbackLineType;
+    rsLineType,
+    rsLayerLineType:
+      Result := FFallbackLineType;
     rsTextStyle: Result := FFallbackTextStyle;
   else
     Result := nil;

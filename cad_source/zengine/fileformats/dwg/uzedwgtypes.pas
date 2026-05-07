@@ -102,15 +102,19 @@ type
     layer / linetype / textstyle / dimstyle pointer does the entity get".
     Refs are resolved separately from owners because they come from
     different ZCAD tables and have a different fallback policy: a missing
-    layer falls back to the system layer, a missing linetype falls back to
-    the ByLayer entry. The Slot field tells the attach callback which vp
-    field to write so the loader does not need a separate callback per
-    reference kind. }
+    layer falls back to the system layer, a missing entity linetype falls
+    back to the ByLayer entry. The Slot field tells the attach callback
+    which target field to write so the loader does not need a separate
+    callback per reference kind. }
   TDWGZCADRefSlot = (
     rsLayer,
     rsLineType,
     rsTextStyle,
-    rsDimStyle
+    rsDimStyle,
+    { Issue #1122: layer.LT refs target a PGDBLayerProp, not an entity vp
+      record. Keep this as a distinct slot so the callback cannot write the
+      resolved LTYPE pointer into entity memory when the target is a layer. }
+    rsLayerLineType
   );
 
   TDWGZCADPendingRef = record
