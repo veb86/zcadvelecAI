@@ -386,6 +386,18 @@ begin
   Result := (Value > 0) and (Value <= 255);
 end;
 
+function DWGColorTruecolorPayloadToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
+begin
+  if Color.method <> DWG_COLOR_METHOD_TRUECOLOR then
+  begin
+    Value := DWGByLayerColorIndex;
+    Exit(False);
+  end;
+
+  Value := Integer(Color.rgb and $00FFFFFF);
+  Result := (Value > 0) and (Value <= 255);
+end;
+
 function DWGColorMethodToText(const Method: Dwg_Color_Method): string;
 begin
   case Method of
@@ -441,17 +453,21 @@ begin
   if PLayer = nil then
     Exit(False);
 
-  { R2004+ CMC colors can arrive with color.index normalized from RGB. When
-    LibreDWG keeps the original layer ACI in color.raw, prefer that value so
-    layer table colors do not collapse to palette white. }
-  if not DWGColorRawValueToACI(PLayer^.color, Props.ColorIndex) then begin
-    RawColorIndex := PLayer^.color.index;
-    if RawColorIndex < 0 then
-      RawColorIndex := -RawColorIndex;
-    if (RawColorIndex > 0) and (RawColorIndex <= 255) then
-      Props.ColorIndex := RawColorIndex
-    else if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
-      Props.ColorIndex := 7;
+  { R2004+ CMC layer colors can arrive with color.index normalized away from
+    the original layer ACI. Prefer preserved ACI side channels before falling
+    back to the decoded index so layer table colors do not collapse to white. }
+  if not DWGColorRawValueToACI(PLayer^.color, Props.ColorIndex) then
+  begin
+    if not DWGColorTruecolorPayloadToACI(PLayer^.color, Props.ColorIndex) then
+    begin
+      RawColorIndex := PLayer^.color.index;
+      if RawColorIndex < 0 then
+        RawColorIndex := -RawColorIndex;
+      if (RawColorIndex > 0) and (RawColorIndex <= 255) then
+        Props.ColorIndex := RawColorIndex
+      else if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
+        Props.ColorIndex := 7;
+    end;
   end;
   if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
     Props.ColorIndex := 7;

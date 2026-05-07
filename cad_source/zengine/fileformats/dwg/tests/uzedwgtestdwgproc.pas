@@ -47,6 +47,7 @@ type
     procedure LayerVisualPropsPositiveColorKeepsLayerOn;
     procedure LayerVisualPropsByLayerMethodKeepsRawACI;
     procedure LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
+    procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
     procedure LayerVisualPropsNegativeColorTurnsLayerOff;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
   end;
@@ -670,6 +671,29 @@ begin
   Layer.color.raw := 0;
   AssertTrue('ACI white without raw index is diagnostic-only suspicious',
     DWGColorLooksLikeLostACI(Layer.color));
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := 256;
+  Layer.color.raw := 0;
+  Layer.color.rgb := $C300005F;
+  Layer.color.method := DWG_COLOR_METHOD_TRUECOLOR;
+  Layer.linewt := 29;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('packed TRUECOLOR CMC ACI beats decoded ByLayer fallback', 95,
+    Props.ColorIndex);
+  AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
+  AssertTrue('positive packed ACI keeps layer visible', Props.On);
+
+  Layer.color.rgb := $C3000005;
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('packed TRUECOLOR CMC keeps blue ACI', 5, Props.ColorIndex);
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorTurnsLayerOff;
