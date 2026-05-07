@@ -124,6 +124,7 @@ type
     ExpectedKind: TDWGZCADObjectKind;
     Slot: TDWGZCADRefSlot;
     Fallback: Pointer;
+    InlineRef: Boolean;
     AttachState: TDWGAttachState;
     AttachReason: TDWGAttachReason;
     AttachedRef: Pointer;

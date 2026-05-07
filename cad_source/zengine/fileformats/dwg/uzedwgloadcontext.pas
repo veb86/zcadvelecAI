@@ -86,7 +86,7 @@ type
     function AppendOrReplace(AEntity: Pointer;
       AEntityHandle, ARefHandle: TDWGZCADHandle;
       AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
-      AFallback: Pointer): Integer;
+      AFallback: Pointer; AInlineRef: Boolean = False): Integer;
     function ItemAt(Index: Integer): PDWGZCADPendingRef;
     function ItemByEntityAndSlot(AHandle: TDWGZCADHandle;
       ASlot: TDWGZCADRefSlot): PDWGZCADPendingRef;
@@ -159,11 +159,13 @@ type
       attach callback which vp field to write; AExpectedKind is checked when
       the ref handle resolves so a layer cannot end up in the linetype slot.
       Passing 0 for ARefHandle means "no ref provided"; the resolver will
-      route the entity directly to the registered fallback. }
+      route the entity directly to the registered fallback. AInlineRef marks a
+      DWG enum value (for example ltype_flags=ByLayer) that has no handle by
+      design and must attach without fallback diagnostics. }
     procedure QueueRefResolve(AEntity: Pointer;
       AEntityHandle, ARefHandle: TDWGZCADHandle;
       AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
-      AFallback: Pointer = nil);
+      AFallback: Pointer = nil; AInlineRef: Boolean = False);
 
     { Phase 3: Resolve owners (cycle-safe). Idempotent: a second call leaves
       already-attached entities alone. }
@@ -397,7 +399,7 @@ end;
 function TDWGZCADPendingRefList.AppendOrReplace(AEntity: Pointer;
   AEntityHandle, ARefHandle: TDWGZCADHandle;
   AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
-  AFallback: Pointer): Integer;
+  AFallback: Pointer; AInlineRef: Boolean): Integer;
 var
   Existing: Integer;
   Item: TDWGZCADPendingRef;
@@ -409,6 +411,7 @@ begin
   Item.ExpectedKind := AExpectedKind;
   Item.Slot := ASlot;
   Item.Fallback := AFallback;
+  Item.InlineRef := AInlineRef;
   Item.AttachState := asPending;
   Item.AttachReason := arPending;
   Item.AttachedRef := nil;
@@ -617,7 +620,7 @@ end;
 procedure TDWGZCADLoadContext.QueueRefResolve(AEntity: Pointer;
   AEntityHandle, ARefHandle: TDWGZCADHandle;
   AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
-  AFallback: Pointer);
+  AFallback: Pointer; AInlineRef: Boolean);
 var
   Fallback: Pointer;
 begin
@@ -625,7 +628,7 @@ begin
   if Fallback = nil then
     Fallback := FallbackForSlot(ASlot);
   FPendingRefs.AppendOrReplace(AEntity, AEntityHandle, ARefHandle,
-    AExpectedKind, ASlot, Fallback);
+    AExpectedKind, ASlot, Fallback, AInlineRef);
 end;
 
 function TDWGZCADLoadContext.FindPendingRef(AEntityHandle: TDWGZCADHandle;

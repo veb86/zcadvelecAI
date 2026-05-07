@@ -23,6 +23,7 @@ unit uzedwgentline;
 interface
 
 uses
+  uzbLogIntf,
   SysUtils,
   dwg, dwgproc,
   uzedrawingsimple,
@@ -53,6 +54,18 @@ begin
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.x := Endpoints.EndX;
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.y := Endpoints.EndY;
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.z := Endpoints.EndZ;
+
+  zDebugLn(['{WH}DWG LINE geometry handle=', IntToHex(DWGObjectHandleValue(
+    DWGObject), 1),
+    ' start=(', FloatToStr(Endpoints.StartX), ',',
+    FloatToStr(Endpoints.StartY), ',', FloatToStr(Endpoints.StartZ), ')',
+    ' end=(', FloatToStr(Endpoints.EndX), ',',
+    FloatToStr(Endpoints.EndY), ',', FloatToStr(Endpoints.EndZ), ')']);
+  if (Endpoints.StartX = Endpoints.EndX) and
+     (Endpoints.StartY = Endpoints.EndY) and
+     (Endpoints.StartZ = Endpoints.EndZ) then
+    zDebugLn(['{WHM}DWG LINE ', IntToHex(DWGObjectHandleValue(DWGObject), 1),
+      ' has zero-length geometry']);
 
   if GetLoadCtx <> nil then
     DWGRegisterEntityShell(pobj, DWGObject, False, 0)
