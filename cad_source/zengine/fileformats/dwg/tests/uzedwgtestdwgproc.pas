@@ -45,6 +45,7 @@ type
     procedure EntityCommonPropsCopiesVisualFields;
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
     procedure LayerVisualPropsPositiveColorKeepsLayerOn;
+    procedure LayerVisualPropsByLayerMethodKeepsRawACI;
     procedure LayerVisualPropsNegativeColorTurnsLayerOff;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
   end;
@@ -624,6 +625,24 @@ begin
     Props.On);
   AssertTrue('locked copied', Props.Locked);
   AssertTrue('plot flag copied', Props.Plot);
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsByLayerMethodKeepsRawACI;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := 4;
+  Layer.color.method := DWG_COLOR_METHOD_BYLAYER;
+  Layer.linewt := 7;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('layer table BYLAYER method keeps raw ACI index', 4,
+    Props.ColorIndex);
+  AssertEquals('lineweight 7 converts to DXF 370 value', 25,
+    Props.LineWeight);
+  AssertTrue('positive raw ACI keeps layer visible', Props.On);
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorTurnsLayerOff;
