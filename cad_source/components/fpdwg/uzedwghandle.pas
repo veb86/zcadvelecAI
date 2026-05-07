@@ -382,6 +382,8 @@ end;
 
 function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
   out Props: TDWGLayerVisualProps): Boolean;
+var
+  RawColorIndex: Integer;
 begin
   Props.ColorIndex := 7;
   Props.LineWeight := -3;
@@ -392,7 +394,12 @@ begin
   if PLayer = nil then
     Exit(False);
 
-  if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
+  RawColorIndex := PLayer^.color.index;
+  if RawColorIndex < 0 then
+    RawColorIndex := -RawColorIndex;
+  if (RawColorIndex > 0) and (RawColorIndex <= 255) then
+    Props.ColorIndex := RawColorIndex
+  else if not DWGColorIndexToACI(PLayer^.color, Props.ColorIndex) then
     Props.ColorIndex := 7;
   if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
     Props.ColorIndex := 7;
