@@ -50,7 +50,11 @@ type
     procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
     procedure LayerVisualPropsNegativeColorTurnsLayerOff;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
+    procedure HeaderCurrentLineTypeHandleReadsCELTYPE;
     procedure HeaderCurrentTextStyleHandleReadsTEXTSTYLE;
+    procedure HeaderCurrentDimStyleHandleReadsDIMSTYLE;
+    procedure HeaderCurrentEntityPropsReadsDrawingDefaults;
+    procedure HeaderCurrentEntityPropsDefaultsMissingScales;
   end;
 
   TFPDWGProcTextStyleTest = class(TTestCase)
@@ -741,6 +745,25 @@ begin
   AssertEquals(Int64(0), Int64(Value));
 end;
 
+procedure TFPDWGProcHandleTest.HeaderCurrentLineTypeHandleReadsCELTYPE;
+var
+  Raw: Dwg_Data;
+  LineTypeRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(LineTypeRef, SizeOf(LineTypeRef), 0);
+  LineTypeRef.absolute_ref := $22;
+  Raw.header_vars.CELTYPE := @LineTypeRef;
+
+  AssertTrue(DWGHeaderCurrentLineTypeHandleValue(Raw, Value));
+  AssertEquals(Int64($22), Int64(Value));
+
+  Raw.header_vars.CELTYPE := nil;
+  AssertFalse(DWGHeaderCurrentLineTypeHandleValue(Raw, Value));
+  AssertEquals(Int64(0), Int64(Value));
+end;
+
 procedure TFPDWGProcHandleTest.HeaderCurrentTextStyleHandleReadsTEXTSTYLE;
 var
   Raw: Dwg_Data;
@@ -758,6 +781,64 @@ begin
   Raw.header_vars.TEXTSTYLE := nil;
   AssertFalse(DWGHeaderCurrentTextStyleHandleValue(Raw, Value));
   AssertEquals(Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.HeaderCurrentDimStyleHandleReadsDIMSTYLE;
+var
+  Raw: Dwg_Data;
+  DimStyleRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(DimStyleRef, SizeOf(DimStyleRef), 0);
+  DimStyleRef.absolute_ref := $45;
+  Raw.header_vars.DIMSTYLE := @DimStyleRef;
+
+  AssertTrue(DWGHeaderCurrentDimStyleHandleValue(Raw, Value));
+  AssertEquals(Int64($45), Int64(Value));
+
+  Raw.header_vars.DIMSTYLE := nil;
+  AssertFalse(DWGHeaderCurrentDimStyleHandleValue(Raw, Value));
+  AssertEquals(Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.HeaderCurrentEntityPropsReadsDrawingDefaults;
+var
+  Raw: Dwg_Data;
+  Props: TDWGHeaderCurrentEntityProps;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  Raw.header_vars.CECOLOR.index := 5;
+  Raw.header_vars.CECOLOR.method := DWG_COLOR_METHOD_ACI;
+  Raw.header_vars.CELWEIGHT := 7;
+  Raw.header_vars.CELTSCALE := 2.5;
+  Raw.header_vars.LTSCALE := 3.5;
+  Raw.header_vars.LWDISPLAY := 1;
+
+  AssertTrue(DWGHeaderCurrentEntityPropsValue(Raw, Props));
+  AssertEquals(5, Props.ColorIndex);
+  AssertEquals(25, Props.LineWeight);
+  AssertEquals(2.5, Props.LineTypeScale, 0.0);
+  AssertEquals(3.5, Props.GlobalLineTypeScale, 0.0);
+  AssertTrue(Props.LineWeightDisplay);
+end;
+
+procedure TFPDWGProcHandleTest.HeaderCurrentEntityPropsDefaultsMissingScales;
+var
+  Raw: Dwg_Data;
+  Props: TDWGHeaderCurrentEntityProps;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  Raw.header_vars.CECOLOR.index := 9;
+  Raw.header_vars.CECOLOR.method := DWG_COLOR_METHOD_BYLAYER;
+  Raw.header_vars.CELWEIGHT := 29;
+
+  AssertTrue(DWGHeaderCurrentEntityPropsValue(Raw, Props));
+  AssertEquals(256, Props.ColorIndex);
+  AssertEquals(-1, Props.LineWeight);
+  AssertEquals(1.0, Props.LineTypeScale, 0.0);
+  AssertEquals(1.0, Props.GlobalLineTypeScale, 0.0);
+  AssertFalse(Props.LineWeightDisplay);
 end;
 
 procedure TFPDWGProcTextStyleTest.StylePropsCopiesNameFontAndMetrics;

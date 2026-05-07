@@ -86,8 +86,14 @@ var
   LoadDrawing: PTSimpleDrawing = nil;
   LoadHasCurrentLayerHandle: Boolean = False;
   LoadCurrentLayerHandle: QWord = 0;
+  LoadHasCurrentLineTypeHandle: Boolean = False;
+  LoadCurrentLineTypeHandle: QWord = 0;
   LoadHasCurrentTextStyleHandle: Boolean = False;
   LoadCurrentTextStyleHandle: QWord = 0;
+  LoadHasCurrentDimStyleHandle: Boolean = False;
+  LoadCurrentDimStyleHandle: QWord = 0;
+  LoadHasHeaderEntityProps: Boolean = False;
+  LoadHeaderEntityProps: TDWGHeaderCurrentEntityProps;
 
 function DWGDefaultTextStyleProp: GDBTextStyleProp;
 begin
@@ -237,6 +243,28 @@ begin
     zDebugLn(['{WH}DWG current layer -> ', CurrentLayer^.Name]);
 end;
 
+procedure ApplyDWGCurrentLineType(var ZContext: TZDrawingContext);
+var
+  Entry: TDWGZCADHandleEntry;
+  CurrentLType: PGDBLtypeProp;
+begin
+  CurrentLType := nil;
+  if (LoadCtx <> nil) and LoadHasCurrentLineTypeHandle then begin
+    if LoadCtx.TryGetEntry(LoadCurrentLineTypeHandle, Entry) and
+       (Entry.Kind = dokLineType) then
+      CurrentLType := PGDBLtypeProp(Entry.Ptr);
+    if CurrentLType = nil then
+      zDebugLn(['{WHM}DWG current linetype handle ',
+        IntToHex(LoadCurrentLineTypeHandle, 1),
+        ' did not resolve to a linetype; using ByLayer']);
+  end;
+  if CurrentLType = nil then
+    CurrentLType := DWGSystemLineTypeForKind(dltByLayer);
+  ZContext.PDrawing^.CurrentLType := CurrentLType;
+  if CurrentLType <> nil then
+    zDebugLn(['{WH}DWG current linetype -> ', CurrentLType^.Name]);
+end;
+
 procedure ApplyDWGCurrentTextStyle(var ZContext: TZDrawingContext);
 var
   Entry: TDWGZCADHandleEntry;
@@ -257,6 +285,45 @@ begin
   ZContext.PDrawing^.CurrentTextStyle := CurrentStyle;
   if CurrentStyle <> nil then
     zDebugLn(['{WH}DWG current textstyle -> ', CurrentStyle^.Name]);
+end;
+
+procedure ApplyDWGCurrentDimStyle(var ZContext: TZDrawingContext);
+var
+  Entry: TDWGZCADHandleEntry;
+  CurrentDimStyle: PGDBDimStyle;
+begin
+  CurrentDimStyle := nil;
+  if (LoadCtx <> nil) and LoadHasCurrentDimStyleHandle then begin
+    if LoadCtx.TryGetEntry(LoadCurrentDimStyleHandle, Entry) and
+       (Entry.Kind = dokDimStyle) then
+      CurrentDimStyle := PGDBDimStyle(Entry.Ptr);
+    if CurrentDimStyle = nil then
+      zDebugLn(['{WHM}DWG current dimstyle handle ',
+        IntToHex(LoadCurrentDimStyleHandle, 1),
+        ' did not resolve to a dimstyle; using Standard']);
+  end;
+  if CurrentDimStyle = nil then
+    CurrentDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
+  ZContext.PDrawing^.CurrentDimStyle := CurrentDimStyle;
+  if CurrentDimStyle <> nil then
+    zDebugLn(['{WH}DWG current dimstyle -> ', CurrentDimStyle^.Name]);
+end;
+
+procedure ApplyDWGHeaderEntityProps(var ZContext: TZDrawingContext);
+begin
+  if not LoadHasHeaderEntityProps then
+    Exit;
+  ZContext.PDrawing^.CColor := LoadHeaderEntityProps.ColorIndex;
+  ZContext.PDrawing^.CurrentLineW := LoadHeaderEntityProps.LineWeight;
+  ZContext.PDrawing^.CLTScale := LoadHeaderEntityProps.LineTypeScale;
+  ZContext.PDrawing^.LTScale := LoadHeaderEntityProps.GlobalLineTypeScale;
+  ZContext.PDrawing^.LWDisplay := LoadHeaderEntityProps.LineWeightDisplay;
+  zDebugLn(['{WH}DWG current entity defaults -> color=',
+    ZContext.PDrawing^.CColor,
+    ', lineweight=', ZContext.PDrawing^.CurrentLineW,
+    ', celtscale=', FloatToStr(ZContext.PDrawing^.CLTScale),
+    ', ltscale=', FloatToStr(ZContext.PDrawing^.LTScale),
+    ', lwdisplay=', BoolToStr(ZContext.PDrawing^.LWDisplay, True)]);
 end;
 
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
@@ -475,8 +542,13 @@ begin
   LoadDrawing := ZContext.PDrawing;
   LoadHasCurrentLayerHandle := False;
   LoadCurrentLayerHandle := 0;
+  LoadHasCurrentLineTypeHandle := False;
+  LoadCurrentLineTypeHandle := 0;
   LoadHasCurrentTextStyleHandle := False;
   LoadCurrentTextStyleHandle := 0;
+  LoadHasCurrentDimStyleHandle := False;
+  LoadCurrentDimStyleHandle := 0;
+  LoadHasHeaderEntityProps := False;
   // Register pObjRoot under handle 0 so any LINE with a missing owner falls
   // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
   LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
@@ -504,6 +576,14 @@ begin
   LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
 end;
 
+function DWGHeaderHandleForLog(HasHandle: Boolean; Handle: QWord): string;
+begin
+  if HasHandle then
+    Result := IntToHex(Handle, 1)
+  else
+    Result := '(missing)';
+end;
+
 procedure ScanDWGImport(var Raw: Dwg_Data);
 begin
   // R4 (TZ §3.4): Phase 1 raw scan runs between BeginDWGImport and
@@ -513,8 +593,28 @@ begin
     Exit;
   LoadHasCurrentLayerHandle :=
     DWGHeaderCurrentLayerHandleValue(Raw, LoadCurrentLayerHandle);
+  LoadHasCurrentLineTypeHandle :=
+    DWGHeaderCurrentLineTypeHandleValue(Raw, LoadCurrentLineTypeHandle);
   LoadHasCurrentTextStyleHandle :=
     DWGHeaderCurrentTextStyleHandleValue(Raw, LoadCurrentTextStyleHandle);
+  LoadHasCurrentDimStyleHandle :=
+    DWGHeaderCurrentDimStyleHandleValue(Raw, LoadCurrentDimStyleHandle);
+  LoadHasHeaderEntityProps :=
+    DWGHeaderCurrentEntityPropsValue(Raw, LoadHeaderEntityProps);
+  if LoadHasHeaderEntityProps then
+    zDebugLn(['{WH}DWG header defaults: CLAYER=',
+      DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
+      ', CELTYPE=',
+      DWGHeaderHandleForLog(LoadHasCurrentLineTypeHandle, LoadCurrentLineTypeHandle),
+      ', TEXTSTYLE=',
+      DWGHeaderHandleForLog(LoadHasCurrentTextStyleHandle, LoadCurrentTextStyleHandle),
+      ', DIMSTYLE=',
+      DWGHeaderHandleForLog(LoadHasCurrentDimStyleHandle, LoadCurrentDimStyleHandle),
+      ', CECOLOR=', LoadHeaderEntityProps.ColorIndex,
+      ', CELWEIGHT=', LoadHeaderEntityProps.LineWeight,
+      ', CELTSCALE=', FloatToStr(LoadHeaderEntityProps.LineTypeScale),
+      ', LTSCALE=', FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
+      ', LWDISPLAY=', BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
   ScanRawObjects(Raw, LoadCtx);
 end;
 
@@ -528,7 +628,10 @@ begin
     // Phase 4 below.
     LoadCtx.ResolveRefs;
     ApplyDWGCurrentLayer(ZContext);
+    ApplyDWGCurrentLineType(ZContext);
     ApplyDWGCurrentTextStyle(ZContext);
+    ApplyDWGCurrentDimStyle(ZContext);
+    ApplyDWGHeaderEntityProps(ZContext);
     LoadCtx.ResolveOwners;
     zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
       ', fallback=', LoadCtx.FallbackCount,
@@ -544,8 +647,13 @@ begin
     LoadDrawing := nil;
     LoadHasCurrentLayerHandle := False;
     LoadCurrentLayerHandle := 0;
+    LoadHasCurrentLineTypeHandle := False;
+    LoadCurrentLineTypeHandle := 0;
     LoadHasCurrentTextStyleHandle := False;
     LoadCurrentTextStyleHandle := 0;
+    LoadHasCurrentDimStyleHandle := False;
+    LoadCurrentDimStyleHandle := 0;
+    LoadHasHeaderEntityProps := False;
   end;
 end;
 
