@@ -28,6 +28,16 @@ type
     procedure ObjectOwnerHandleEntmodePSpaceReturnsPSpaceBlockHandle;
     procedure ObjectOwnerHandleEntmodeFallsBackWhenBlockMissing;
     procedure ObjectOwnerHandleEntmodeExplicitReadsOwnerHandle;
+    // Issue #1120: testdwg2007.dwg has entmode=2 LINE entities whose
+    // mspace_block pointer is nil after decode, but header_vars.BLOCK_RECORD_
+    // MSPACE and/or block_control.model_space carry a usable handle ref.
+    // The helper must consult those fields before falling through to
+    // ownerhandle (which is null on entmode=1/2 entities).
+    procedure ObjectOwnerHandleEntmodeMSpaceUsesHeaderVarsWhenBlockMissing;
+    procedure ObjectOwnerHandleEntmodePSpaceUsesHeaderVarsWhenBlockMissing;
+    procedure ObjectOwnerHandleEntmodeMSpaceUsesBlockControlWhenHeaderVarsEmpty;
+    procedure ObjectOwnerHandleEntmodePSpaceUsesBlockControlWhenHeaderVarsEmpty;
+    procedure ObjectOwnerHandleEntmodeMSpaceFallsBackWhenAllPathsEmpty;
   end;
 
   TFPDWGProcLineTest = class(TTestCase)
@@ -285,6 +295,141 @@ begin
 
   AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
   AssertEquals(Int64($88), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeMSpaceUsesHeaderVarsWhenBlockMissing;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  HeaderRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  // Issue #1120: mspace_block stays nil on some decode paths but
+  // header_vars.BLOCK_RECORD_MSPACE carries the handle. The helper must
+  // resolve the owner from there instead of falling through to the null
+  // ownerhandle.
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(HeaderRef, SizeOf(HeaderRef), 0);
+  Dwg.mspace_block := nil;
+  HeaderRef.absolute_ref := $A1;
+  Dwg.header_vars.BLOCK_RECORD_MSPACE := @HeaderRef;
+  Ent.entmode := 2;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($A1), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodePSpaceUsesHeaderVarsWhenBlockMissing;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  HeaderRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(HeaderRef, SizeOf(HeaderRef), 0);
+  Dwg.pspace_block := nil;
+  HeaderRef.absolute_ref := $B2;
+  Dwg.header_vars.BLOCK_RECORD_PSPACE := @HeaderRef;
+  Ent.entmode := 1;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($B2), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeMSpaceUsesBlockControlWhenHeaderVarsEmpty;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  ControlRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  // Path C: both mspace_block and header_vars.BLOCK_RECORD_MSPACE are empty,
+  // but block_control.model_space holds the handle. Mirrors the libredwg
+  // dwg_model_space_object() helper's last fallback.
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(ControlRef, SizeOf(ControlRef), 0);
+  Dwg.mspace_block := nil;
+  Dwg.header_vars.BLOCK_RECORD_MSPACE := nil;
+  ControlRef.absolute_ref := $C3;
+  Dwg.block_control.model_space := @ControlRef;
+  Ent.entmode := 2;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($C3), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodePSpaceUsesBlockControlWhenHeaderVarsEmpty;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  ControlRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(ControlRef, SizeOf(ControlRef), 0);
+  Dwg.pspace_block := nil;
+  Dwg.header_vars.BLOCK_RECORD_PSPACE := nil;
+  ControlRef.absolute_ref := $D4;
+  Dwg.block_control.paper_space := @ControlRef;
+  Ent.entmode := 1;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($D4), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntmodeMSpaceFallsBackWhenAllPathsEmpty;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Dwg: Dwg_Data;
+  OwnerRef: Dwg_Object_Ref;
+  Value: QWord;
+begin
+  // All three implicit-owner paths empty: helper falls back to ownerhandle.
+  // The existing FallsBackWhenBlockMissing test only seeds ownerhandle and
+  // mspace_block; this case additionally seeds header_vars / block_control
+  // empty so the assertion holds regardless of which paths exist.
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Dwg, SizeOf(Dwg), 0);
+  FillChar(OwnerRef, SizeOf(OwnerRef), 0);
+  Dwg.mspace_block := nil;
+  Dwg.header_vars.BLOCK_RECORD_MSPACE := nil;
+  Dwg.block_control.model_space := nil;
+  OwnerRef.absolute_ref := $E5;
+  Ent.ownerhandle := @OwnerRef;
+  Ent.entmode := 2;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.parent := @Dwg;
+
+  AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
+  AssertEquals(Int64($E5), Int64(Value));
 end;
 
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;
