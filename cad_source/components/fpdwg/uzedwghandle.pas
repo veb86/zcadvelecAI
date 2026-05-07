@@ -76,6 +76,14 @@ type
     IsVertical: Boolean;
   end;
 
+  TDWGHeaderCurrentEntityProps = record
+    ColorIndex: Integer;
+    LineWeight: Integer;
+    LineTypeScale: Double;
+    GlobalLineTypeScale: Double;
+    LineWeightDisplay: Boolean;
+  end;
+
 { Object handle: the stable QWord identifier the import context indexes by. }
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
@@ -135,8 +143,14 @@ function DWGEntityCommonPropsValue(const Obj: Dwg_Object;
 function DWGEntityLineTypeKindToText(const Kind: TDWGEntityLineTypeKind): string;
 function DWGHeaderCurrentLayerHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
+function DWGHeaderCurrentLineTypeHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
 function DWGHeaderCurrentTextStyleHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
+function DWGHeaderCurrentDimStyleHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+function DWGHeaderCurrentEntityPropsValue(const Raw: Dwg_Data;
+  out Props: TDWGHeaderCurrentEntityProps): Boolean;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
   Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
 
@@ -455,7 +469,23 @@ end;
 
 function DWGLineWeightToDXF(const Value: Integer): Integer;
 begin
+  if Value < 0 then
+    Exit(Value);
   Result := DWGLineWeights[Value mod 32];
+end;
+
+function DWGHeaderColorIndexToACI(const Color: Dwg_Color;
+  out Value: Integer): Boolean;
+begin
+  Value := DWGByLayerColorIndex;
+  case Color.method of
+    DWG_COLOR_METHOD_VOID,
+    DWG_COLOR_METHOD_NONE:
+      Exit(False);
+  end;
+  Result := DWGColorIndexToACI(Color, Value);
+  if not Result then
+    Value := DWGByLayerColorIndex;
 end;
 
 function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
@@ -546,10 +576,41 @@ begin
   Result := DWGRefHandleValue(Raw.header_vars.CLAYER, Value);
 end;
 
+function DWGHeaderCurrentLineTypeHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+begin
+  Result := DWGRefHandleValue(Raw.header_vars.CELTYPE, Value);
+end;
+
 function DWGHeaderCurrentTextStyleHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
 begin
   Result := DWGRefHandleValue(Raw.header_vars.TEXTSTYLE, Value);
+end;
+
+function DWGHeaderCurrentDimStyleHandleValue(const Raw: Dwg_Data;
+  out Value: QWord): Boolean;
+begin
+  Result := DWGRefHandleValue(Raw.header_vars.DIMSTYLE, Value);
+end;
+
+function DWGHeaderCurrentEntityPropsValue(const Raw: Dwg_Data;
+  out Props: TDWGHeaderCurrentEntityProps): Boolean;
+begin
+  Props.ColorIndex := DWGByLayerColorIndex;
+  Props.LineWeight := DWGLineWeightByLayer;
+  Props.LineTypeScale := DWGDefaultLineTypeScale;
+  Props.GlobalLineTypeScale := DWGDefaultLineTypeScale;
+  Props.LineWeightDisplay := False;
+
+  DWGHeaderColorIndexToACI(Raw.header_vars.CECOLOR, Props.ColorIndex);
+  Props.LineWeight := DWGLineWeightToDXF(Raw.header_vars.CELWEIGHT);
+  if Raw.header_vars.CELTSCALE > 0 then
+    Props.LineTypeScale := Raw.header_vars.CELTSCALE;
+  if Raw.header_vars.LTSCALE > 0 then
+    Props.GlobalLineTypeScale := Raw.header_vars.LTSCALE;
+  Props.LineWeightDisplay := Raw.header_vars.LWDISPLAY <> 0;
+  Result := True;
 end;
 
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
