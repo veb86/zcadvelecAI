@@ -126,6 +126,8 @@ type
     procedure CopyProxyPayloadCopiesGraphicBytes;
     procedure CopyProxyPayloadNilPointerIsEmpty;
     procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
+    procedure CopyEntityPreviewProxyPayloadCopiesGraphicBytes;
+    procedure CopyEntityPreviewProxyPayloadRequiresProxyPreview;
   end;
 
   { Stage 8 (TZ §12.8): scalar-copy guards for the additional entity payloads
@@ -1345,6 +1347,83 @@ begin
   AssertFalse(Payload.HasGraphic);
   AssertEquals(498, Payload.ProxyID);
   AssertEquals(9, Payload.ClassID);
+  AssertEquals(0, Length(Payload.Graphic));
+end;
+
+procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadCopiesGraphicBytes;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Klass: Dwg_Class;
+  Bytes: array[0..3] of BITCODE_RC;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Klass, SizeOf(Klass), 0);
+  Bytes[0] := $31;
+  Bytes[1] := $AC;
+  Bytes[2] := $10;
+  Bytes[3] := $FE;
+  Ent.preview_exists := 1;
+  Ent.preview_is_proxy := 1;
+  Ent.preview_size := Length(Bytes);
+  Ent.preview := BITCODE_TF(@Bytes[0]);
+  Klass.number := 601;
+  Klass.dwg_version := 33;
+  Klass.maint_version := 4;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+  Obj.klass := @Klass;
+
+  AssertTrue(DWGCopyEntityPreviewProxyPayload(Obj, Payload));
+
+  AssertTrue(Payload.HasGraphic);
+  AssertEquals(498, Payload.ProxyID);
+  AssertEquals(601, Payload.ClassID);
+  AssertEquals(15, Payload.DWGVersions);
+  AssertEquals(33, Payload.DWGVersion);
+  AssertEquals(4, Payload.MaintVersion);
+  AssertEquals(0, Payload.EntityDataSize);
+  AssertEquals(4, Length(Payload.Graphic));
+  AssertEquals(Integer($31), Integer(Payload.Graphic[0]));
+  AssertEquals(Integer($AC), Integer(Payload.Graphic[1]));
+  AssertEquals(Integer($10), Integer(Payload.Graphic[2]));
+  AssertEquals(Integer($FE), Integer(Payload.Graphic[3]));
+
+  Bytes[0] := 0;
+  AssertEquals('payload owns a copy independent from LibreDWG memory',
+    Integer($31), Integer(Payload.Graphic[0]));
+end;
+
+procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadRequiresProxyPreview;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Bytes: array[0..1] of BITCODE_RC;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Bytes[0] := $01;
+  Bytes[1] := $02;
+  Ent.preview_exists := 1;
+  Ent.preview_is_proxy := 0;
+  Ent.preview_size := Length(Bytes);
+  Ent.preview := BITCODE_TF(@Bytes[0]);
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertFalse('non-proxy previews are ignored',
+    DWGCopyEntityPreviewProxyPayload(Obj, Payload));
+  AssertFalse(Payload.HasGraphic);
+  AssertEquals(0, Length(Payload.Graphic));
+
+  Ent.preview_is_proxy := 1;
+  Ent.preview_exists := 0;
+  AssertFalse('missing preview flag is ignored',
+    DWGCopyEntityPreviewProxyPayload(Obj, Payload));
+  AssertFalse(Payload.HasGraphic);
   AssertEquals(0, Length(Payload.Graphic));
 end;
 
