@@ -29,6 +29,15 @@ uses
 
 implementation
 
+const
+  DWGMTextJustifyToZCAD: array[TDWGMTextJustify] of TTextJustify =
+    (jstl, jstc, jstr, jsml, jsmc, jsmr, jsbl, jsbc, jsbr);
+
+function DWGMTextAttachmentToZCADJustify(Attachment: Integer): TTextJustify;
+begin
+  Result := DWGMTextJustifyToZCAD[DWGMTextAttachmentToJustify(Attachment)];
+end;
+
 procedure AddMTextEntity(var ZContext: TZDrawingContext;
   var DWGContext: TDWGCtx; var DWGObject: Dwg_Object;
   PMText: PDwg_Entity_MTEXT);
@@ -45,6 +54,7 @@ begin
   pobj^.Local.p_insert.y := Props.InsertY;
   pobj^.Local.p_insert.z := Props.InsertZ;
   pobj^.textprop.size := Props.TextHeight;
+  pobj^.textprop.justify := DWGMTextAttachmentToZCADJustify(Props.Attachment);
   pobj^.Width := Props.RectWidth;
   if Props.LineSpaceFactor <> 0 then
     pobj^.linespacef := Props.LineSpaceFactor

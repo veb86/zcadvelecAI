@@ -114,6 +114,10 @@ interface
       Value:string;
     end;
 
+    TDWGMTextJustify=(dwgmtjTopLeft,dwgmtjTopCenter,dwgmtjTopRight,
+      dwgmtjMiddleLeft,dwgmtjMiddleCenter,dwgmtjMiddleRight,
+      dwgmtjBottomLeft,dwgmtjBottomCenter,dwgmtjBottomRight);
+
     TDWGLWPolylineVertex=record
       X,Y:double;
       StartWidth,EndWidth,Bulge:double;
@@ -311,6 +315,8 @@ interface
     Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+  function DWGMTextAttachmentToJustify(Attachment:Integer;
+    DefaultJustify:TDWGMTextJustify=dwgmtjTopLeft):TDWGMTextJustify;
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
   procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
     out Props:TDWGLWPolylineProps);
@@ -558,6 +564,24 @@ implementation
     Props.Attachment:=MText.attachment;
     Props.LineSpaceFactor:=MText.linespace_factor;
     DWGSafeDecodeText(MText.text,Version,Props.Value);
+  end;
+
+  function DWGMTextAttachmentToJustify(Attachment:Integer;
+    DefaultJustify:TDWGMTextJustify=dwgmtjTopLeft):TDWGMTextJustify;
+  begin
+    case Attachment of
+      1: Result:=dwgmtjTopLeft;
+      2: Result:=dwgmtjTopCenter;
+      3: Result:=dwgmtjTopRight;
+      4: Result:=dwgmtjMiddleLeft;
+      5: Result:=dwgmtjMiddleCenter;
+      6: Result:=dwgmtjMiddleRight;
+      7: Result:=dwgmtjBottomLeft;
+      8: Result:=dwgmtjBottomCenter;
+      9: Result:=dwgmtjBottomRight;
+    else
+      Result:=DefaultJustify;
+    end;
   end;
 
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
