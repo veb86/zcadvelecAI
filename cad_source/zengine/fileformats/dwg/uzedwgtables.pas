@@ -43,6 +43,138 @@ implementation
 type
   PDwg_Object_DIMSTYLE = ^Dwg_Object_DIMSTYLE;
 
+function DWGResolveLinetypeTextStyle(Ctx: TDWGZCADLoadContext;
+  StyleHandle: QWord): PGDBTextStyle;
+var
+  Entry: TDWGZCADHandleEntry;
+begin
+  Result := nil;
+  if (Ctx <> nil) and (StyleHandle <> 0) and
+     Ctx.TryGetEntry(StyleHandle, Entry) and (Entry.Kind = dokTextStyle) then
+    Result := PGDBTextStyle(Entry.Ptr);
+end;
+
+procedure DWGResetLineTypePattern(PLType: PGDBLtypeProp;
+  const Props: TDWGLinetypeProps);
+begin
+  if PLType = nil then
+    Exit;
+  PLType^.LengthDXF := Props.PatternLength;
+  PLType^.desk := Props.Description;
+  PLType^.FirstStroke := TODIUnknown;
+  PLType^.LastStroke := TODIUnknown;
+  PLType^.WithoutLines := True;
+  PLType^.dasharray.Clear;
+  PLType^.strokesarray.Clear;
+  PLType^.shapearray.Clear;
+  PLType^.Textarray.Clear;
+end;
+
+procedure DWGApplyLineTypeStroke(PLType: PGDBLtypeProp; Stroke: Double);
+var
+  DashInfo: TDashInfo;
+begin
+  DashInfo := TDIDash;
+  PLType^.dasharray.PushBackData(DashInfo);
+  PLType^.strokesarray.PushBackData(Stroke);
+  PLType^.strokesarray.LengthFact :=
+    PLType^.strokesarray.LengthFact + Abs(Stroke);
+  if Stroke > 0 then begin
+    PLType^.LastStroke := TODILine;
+    PLType^.WithoutLines := False;
+  end else if Stroke < 0 then
+    PLType^.LastStroke := TODIBlank
+  else
+    PLType^.LastStroke := TODIPoint;
+  if PLType^.FirstStroke = TODIUnknown then
+    PLType^.FirstStroke := PLType^.LastStroke;
+end;
+
+procedure DWGApplyLineTypeDashParams(var Param: shxprop;
+  const Dash: TDWGLinetypeDashProps);
+begin
+  if Dash.Scale <> 0 then
+    Param.Height := Dash.Scale;
+  Param.Angle := Dash.Rotation;
+  Param.X := Dash.XOffset;
+  Param.Y := Dash.YOffset;
+  if Dash.AbsoluteRotation then
+    Param.AD := TACAbs
+  else
+    Param.AD := TACRel;
+end;
+
+procedure DWGApplyLineTypeText(PLType: PGDBLtypeProp;
+  const Dash: TDWGLinetypeDashProps; Ctx: TDWGZCADLoadContext);
+var
+  PTP: PTextProp;
+  PStyle: PGDBTextStyle;
+  DashInfo: TDashInfo;
+begin
+  PStyle := DWGResolveLinetypeTextStyle(Ctx, Dash.StyleHandle);
+  if PStyle = nil then
+    Exit;
+  Pointer(PTP) := PLType^.Textarray.CreateObject;
+  PTP^.initnul;
+  PTP^.param.PStyle := PStyle;
+  PTP^.param.PstyleIsHandle := False;
+  DWGApplyLineTypeDashParams(PTP^.param, Dash);
+  PTP^.Text := Dash.Text;
+  PTP^.Style := PStyle^.Name;
+  DashInfo := TDIText;
+  PLType^.dasharray.PushBackData(DashInfo);
+end;
+
+procedure DWGApplyLineTypeShape(PLType: PGDBLtypeProp;
+  const Dash: TDWGLinetypeDashProps; Ctx: TDWGZCADLoadContext);
+var
+  PSP: PShapeProp;
+  PStyle: PGDBTextStyle;
+  DashInfo: TDashInfo;
+begin
+  PStyle := DWGResolveLinetypeTextStyle(Ctx, Dash.StyleHandle);
+  if PStyle = nil then
+    Exit;
+  Pointer(PSP) := PLType^.shapearray.CreateObject;
+  PSP^.initnul;
+  PSP^.param.PStyle := PStyle;
+  PSP^.param.PstyleIsHandle := False;
+  DWGApplyLineTypeDashParams(PSP^.param, Dash);
+  PSP^.ShapeNum := Dash.ShapeCode;
+  PSP^.FontName := PStyle^.FontFile;
+  if Assigned(PStyle^.pfont) then begin
+    PSP^.Psymbol := PStyle^.pfont^.GetOrReplaceSymbolInfo(Dash.ShapeCode);
+    if PSP^.Psymbol <> nil then
+      PSP^.SymbolName := PSP^.Psymbol^.Name;
+  end;
+  DashInfo := TDIShape;
+  PLType^.dasharray.PushBackData(DashInfo);
+end;
+
+procedure DWGApplyLineTypePattern(PLType: PGDBLtypeProp;
+  const Props: TDWGLinetypeProps; Ctx: TDWGZCADLoadContext);
+var
+  I: Integer;
+begin
+  if PLType = nil then
+    Exit;
+  DWGResetLineTypePattern(PLType, Props);
+  for I := 0 to High(Props.Dashes) do begin
+    DWGApplyLineTypeStroke(PLType, Props.Dashes[I].Length);
+    case Props.Dashes[I].Kind of
+      dldText:
+        DWGApplyLineTypeText(PLType, Props.Dashes[I], Ctx);
+      dldShape:
+        DWGApplyLineTypeShape(PLType, Props.Dashes[I], Ctx);
+      dldDash:
+        begin
+        end;
+    end;
+  end;
+  if (PLType^.LengthDXF = 0) and (PLType^.strokesarray.LengthFact <> 0) then
+    PLType^.LengthDXF := PLType^.strokesarray.LengthFact;
+end;
+
 procedure AddLayer(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
   var DWGObject: Dwg_Object; PDWGLayer: PDwg_Object_LAYER);
 var
@@ -111,28 +243,36 @@ procedure AddLineType(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
   var DWGObject: Dwg_Object; PDWGLType: PDwg_Object_LTYPE);
 var
   pltype: PGDBLtypeProp;
+  Props: TDWGLinetypeProps;
   name: string;
+  I: Integer;
   Handle: QWord;
   Ctx: TDWGZCADLoadContext;
 begin
-  BITCODE_T2Text(PDWGLType^.name, DWGContext, name);
+  if not DWGLinetypePropsValue(PDWGLType, DWGContext.DWGVer, Props) then
+    Exit;
+  name := Props.Name;
   zDebugLn(['{WH}LineType: ', name]);
-  if DWGContext.DWGVer > R_2007 then
+  if DWGContext.DWGVer > R_2007 then begin
     name := Tria_Utf8ToAnsi(name);
+    Props.Description := Tria_Utf8ToAnsi(Props.Description);
+    for I := 0 to High(Props.Dashes) do
+      Props.Dashes[I].Text := Tria_Utf8ToAnsi(Props.Dashes[I].Text);
+  end;
   // Stage 3 (TZ §12.3): create the linetype in the table so refs can resolve
   // to a real pointer. We mirror the DXF loader semantics — a name collision
   // with a previously-loaded entry is left alone (TLOMerge respected).
   pltype := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.MergeItem(name,
     ZContext.LoadMode));
+  Ctx := GetLoadCtx;
   if pltype <> nil then begin
     if pltype^.Name = '' then
       pltype^.init(name);
-    // Length / dash arrays are not yet decoded — Stage 3 only needs the
-    // name+pointer to exist so that entity refs land in the correct slot.
-    // Stage 4 will populate dasharray + strokesarray + description from the
-    // DWG dashes.
+    DWGApplyLineTypePattern(pltype, Props, Ctx);
+    zDebugLn(['{WH}linetype ', name,
+      ' pattern_len=', FloatToStr(pltype^.LengthDXF),
+      ', dashes=', Length(Props.Dashes)]);
   end;
-  Ctx := GetLoadCtx;
   if Ctx <> nil then begin
     Handle := DWGObjectHandleValue(DWGObject);
     if Handle <> 0 then

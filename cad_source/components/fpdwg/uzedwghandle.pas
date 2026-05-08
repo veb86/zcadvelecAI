@@ -76,6 +76,32 @@ type
     IsVertical: Boolean;
   end;
 
+  TDWGLinetypeDashKind = (
+    dldDash,
+    dldText,
+    dldShape
+  );
+
+  TDWGLinetypeDashProps = record
+    Kind: TDWGLinetypeDashKind;
+    Length: Double;
+    ShapeCode: Integer;
+    StyleHandle: QWord;
+    XOffset: Double;
+    YOffset: Double;
+    Scale: Double;
+    Rotation: Double;
+    AbsoluteRotation: Boolean;
+    Text: string;
+  end;
+
+  TDWGLinetypeProps = record
+    Name: string;
+    Description: string;
+    PatternLength: Double;
+    Dashes: array of TDWGLinetypeDashProps;
+  end;
+
   TDWGHeaderCurrentEntityProps = record
     ColorIndex: Integer;
     LineWeight: Integer;
@@ -153,6 +179,8 @@ function DWGHeaderCurrentEntityPropsValue(const Raw: Dwg_Data;
   out Props: TDWGHeaderCurrentEntityProps): Boolean;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
   Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
+function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
+  Version: DWG_VERSION_TYPE; out Props: TDWGLinetypeProps): Boolean;
 
 { Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
   False allows the caller to fall back to the registered text-style
@@ -172,6 +200,9 @@ const
   DWGByLayerColorIndex = 256;
   DWGDefaultLineTypeScale = 1.0;
   DWGLineWeightByLayer = -1;
+  DWGLTypeShapeFlagAbsRotation = 1;
+  DWGLTypeShapeFlagIsText = 2;
+  DWGLTypeShapeFlagIsShape = 4;
   DWGLineWeights: array[0..31] of Integer = (
     0, 5, 9, 13, 15, 18, 20, 25,
     30, 35, 40, 50, 53, 60, 70, 80,
@@ -638,6 +669,84 @@ begin
   Props.ObliqueAngle := PStyle^.oblique_angle;
   Props.IsShape := PStyle^.is_shape <> 0;
   Props.IsVertical := PStyle^.is_vertical <> 0;
+end;
+
+function DWGLinetypeDashKindFromFlags(Flags: Integer): TDWGLinetypeDashKind;
+begin
+  if (Flags and DWGLTypeShapeFlagIsShape) <> 0 then
+    Result := dldShape
+  else if (Flags and DWGLTypeShapeFlagIsText) <> 0 then
+    Result := dldText
+  else
+    Result := dldDash;
+end;
+
+function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
+  Version: DWG_VERSION_TYPE; out Props: TDWGLinetypeProps): Boolean;
+type
+  PLTypeDash = ^Dwg_LTYPE_dash;
+var
+  I, Count: Integer;
+  PDash: PLTypeDash;
+begin
+  Props.Name := '';
+  Props.Description := '';
+  Props.PatternLength := 0;
+  SetLength(Props.Dashes, 0);
+
+  Result := PLType <> nil;
+  if not Result then
+    Exit;
+
+  DWGSafeDecodeText(PLType^.name, Version, Props.Name);
+  DWGSafeDecodeText(PLType^.description, Version, Props.Description);
+  Props.PatternLength := PLType^.pattern_len;
+
+  Count := PLType^.numdashes;
+  if Count <= 0 then
+    Exit;
+
+  if PLType^.dashes <> nil then
+  begin
+    SetLength(Props.Dashes, Count);
+    PDash := PLType^.dashes;
+    for I := 0 to Count - 1 do
+    begin
+      Props.Dashes[I].Kind :=
+        DWGLinetypeDashKindFromFlags(Integer(PDash^.shape_flag));
+      Props.Dashes[I].Length := PDash^.length;
+      Props.Dashes[I].ShapeCode := PDash^.complex_shapecode;
+      Props.Dashes[I].StyleHandle := 0;
+      DWGRefHandleValue(PDash^.style, Props.Dashes[I].StyleHandle);
+      Props.Dashes[I].XOffset := PDash^.x_offset;
+      Props.Dashes[I].YOffset := PDash^.y_offset;
+      Props.Dashes[I].Scale := PDash^.scale;
+      Props.Dashes[I].Rotation := PDash^.rotation;
+      Props.Dashes[I].AbsoluteRotation :=
+        (Integer(PDash^.shape_flag) and DWGLTypeShapeFlagAbsRotation) <> 0;
+      DWGSafeDecodeText(PDash^.text, Version, Props.Dashes[I].Text);
+      Inc(PDash);
+    end;
+  end
+  else
+  begin
+    if Count > High(PLType^.dashes_r11) + 1 then
+      Count := High(PLType^.dashes_r11) + 1;
+    SetLength(Props.Dashes, Count);
+    for I := 0 to Count - 1 do
+    begin
+      Props.Dashes[I].Kind := dldDash;
+      Props.Dashes[I].Length := PLType^.dashes_r11[I];
+      Props.Dashes[I].ShapeCode := 0;
+      Props.Dashes[I].StyleHandle := 0;
+      Props.Dashes[I].XOffset := 0;
+      Props.Dashes[I].YOffset := 0;
+      Props.Dashes[I].Scale := 0;
+      Props.Dashes[I].Rotation := 0;
+      Props.Dashes[I].AbsoluteRotation := False;
+      Props.Dashes[I].Text := '';
+    end;
+  end;
 end;
 
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;
