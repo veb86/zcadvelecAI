@@ -638,6 +638,11 @@ begin
       ', cycles=', LoadCtx.CycleCount,
       ', refs_attached=', LoadCtx.RefAttachCount,
       ', refs_fallback=', LoadCtx.RefFallbackCount,
+      ', proxy_loaded=', LoadCtx.ProxiesLoaded,
+      ', proxy_failed=', LoadCtx.ProxiesFailed,
+      ', unknown_entities=', LoadCtx.UnknownEntities,
+      ', unknown_objects=', LoadCtx.UnknownObjects,
+      ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
       ', warnings=', LoadCtx.WarningCount]);
     // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
     // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).

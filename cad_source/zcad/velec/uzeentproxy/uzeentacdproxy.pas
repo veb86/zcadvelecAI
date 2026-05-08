@@ -192,6 +192,12 @@ type
       var drawing: TDrawingDef;
       var context: TIODXFLoadContext); virtual;
 
+    { Загружает уже скопированные из DWG байты Proxy Graphic. Важно, что
+      вызывающий код передаёт собственную копию данных, не указатель LibreDWG. }
+    procedure SetProxyGraphicData(const ABytes: TBytes;
+      AProxyClassID, AAppClassID, AEntityDataSize, AObjectDataSize,
+      ADrawingFormat, AOriginalDataFormat, ADXFFileVersion: Integer);
+
     { Сохраняет данные объекта в DXF-поток }
     procedure SaveToDXF(var outStream: TZctnrVectorBytes;
       var drawing: TDrawingDef;
@@ -201,6 +207,11 @@ type
     procedure FormatEntity(var drawing: TDrawingDef;
       var DC: TDrawContext;
       Stage: TEFStages = EFAllStages); virtual;
+
+    { DWG finalize вызывает FormatAfterDXFLoad без предварительного
+      FormatEntity, поэтому здесь тоже строим подпримитивы прокси. }
+    procedure FormatAfterDXFLoad(var drawing: TDrawingDef;
+      var DC: TDrawContext); virtual;
 
     { Отрисовка через подпримитивы (наследуется от GDBObjComplex) }
     procedure DrawGeometry(lw: integer; var DC: TDrawContext;
@@ -402,6 +413,26 @@ begin
 
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
+end;
+
+procedure GDBObjAcdProxy.SetProxyGraphicData(const ABytes: TBytes;
+  AProxyClassID, AAppClassID, AEntityDataSize, AObjectDataSize,
+  ADrawingFormat, AOriginalDataFormat, ADXFFileVersion: Integer);
+begin
+  SetLength(FProxyDataBytes, Length(ABytes));
+  if Length(ABytes) > 0 then
+    Move(ABytes[0], FProxyDataBytes[0], Length(ABytes));
+  FProxyClassID := AProxyClassID;
+  FAppClassID := AAppClassID;
+  FEntityDataSize := AEntityDataSize;
+  FObjectDataSize := AObjectDataSize;
+  FDrawingFormat := ADrawingFormat;
+  FOriginalDataFormat := AOriginalDataFormat;
+  FDXFFileVersion := ADXFFileVersion;
+  FSubEntitiesBuilt := False;
+  FProxyBBoxLoaded := False;
+  FProxyGripOffset := NulVertex;
+  FConvertedBlockName := '';
 end;
 
 { Сохраняет данные объекта в DXF-поток как INSERT (BlockInsert).
@@ -628,6 +659,18 @@ begin
 
   if Assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
+end;
+
+procedure GDBObjAcdProxy.FormatAfterDXFLoad(var drawing: TDrawingDef;
+  var DC: TDrawContext);
+begin
+  if not FSubEntitiesBuilt then
+    BuildSubEntities(drawing, DC);
+
+  CalcObjMatrix(@drawing);
+  inherited FormatAfterDXFLoad(drawing, DC);
+  self.BuildGeometry(drawing);
+  CalcActualVisible(DC.DrawingContext.VActuality);
 end;
 
 { Отрисовка через подпримитивы — делегируется GDBObjComplex }

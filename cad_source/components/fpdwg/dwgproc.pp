@@ -127,6 +127,18 @@ interface
       Vertices:array of TDWGLWPolylineVertex;
     end;
 
+    TDWGProxyEntityPayload=record
+      ProxyID:Integer;
+      ClassID:Integer;
+      DWGVersions:Integer;
+      MaintVersion:Integer;
+      DWGVersion:Integer;
+      FromDXF:Integer;
+      EntityDataSize:Integer;
+      HasGraphic:Boolean;
+      Graphic:TBytes;
+    end;
+
     // Stage 5 (TZ §12.5): the LibreDWG bindings only expose
     // PDwg_Entity_LINE; declare the pointer aliases the Stage 5 helpers
     // require so callers can pass &dwg.tio.entity^.tio.TEXT directly.
@@ -137,6 +149,7 @@ interface
     PDwg_Entity_ARC=^Dwg_Entity_ARC;
     PDwg_Entity_POINT=^Dwg_Entity_POINT;
     PDwg_Entity_LWPOLYLINE=^Dwg_Entity_LWPOLYLINE;
+    PDwg_Entity_PROXY_ENTITY=^Dwg_Entity_PROXY_ENTITY;
 
     TData=PtrInt;
     TCounter=Integer;
@@ -207,6 +220,8 @@ interface
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
   procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
     out Props:TDWGLWPolylineProps);
+  procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
+    out Payload:TDWGProxyEntityPayload);
 
 implementation
 
@@ -293,10 +308,19 @@ implementation
       i:=0;
       while (i<dwg.num_objects) do begin
         if DWGObj2LPDict.GetValue(dwg.&object[i].fixedtype,dod) then begin
-          if dod.LoadEntityProc<>nil then
-            dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.entity^.tio.UNUSED)
-          else if dod.LoadObjectProc<>nil then
-            dod.LoadObjectProc(ZContext,DWGContext,dwg.&object[i],dwg.&object[i].tio.&object^.tio.DUMMY);
+          if dod.LoadEntityProc<>nil then begin
+            if dwg.&object[i].tio.entity<>nil then
+              dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],
+                dwg.&object[i].tio.entity^.tio.UNUSED)
+            else
+              dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],nil);
+          end else if dod.LoadObjectProc<>nil then begin
+            if dwg.&object[i].tio.&object<>nil then
+              dod.LoadObjectProc(ZContext,DWGContext,dwg.&object[i],
+                dwg.&object[i].tio.&object^.tio.DUMMY)
+            else
+              dod.LoadObjectProc(ZContext,DWGContext,dwg.&object[i],nil);
+          end;
         end;
         if @lpp<>nil then
           lpp(data,i);
@@ -480,6 +504,50 @@ implementation
         Inc(pWidth);
       end;
     end;
+  end;
+
+  procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
+    out Payload:TDWGProxyEntityPayload);
+    function BLToInt(Value:BITCODE_BL):Integer;
+    begin
+      if Value>BITCODE_BL(High(Integer)) then
+        Result:=High(Integer)
+      else
+        Result:=Integer(Value);
+    end;
+  var
+    ByteCount:Integer;
+  begin
+    Payload.ProxyID:=0;
+    Payload.ClassID:=0;
+    Payload.DWGVersions:=0;
+    Payload.MaintVersion:=0;
+    Payload.DWGVersion:=0;
+    Payload.FromDXF:=0;
+    Payload.EntityDataSize:=0;
+    Payload.HasGraphic:=False;
+    SetLength(Payload.Graphic,0);
+
+    if PProxy=nil then
+      Exit;
+
+    Payload.ProxyID:=BLToInt(PProxy^.proxy_id);
+    Payload.ClassID:=BLToInt(PProxy^.class_id);
+    Payload.DWGVersions:=BLToInt(PProxy^.dwg_versions);
+    Payload.MaintVersion:=BLToInt(PProxy^.maint_version);
+    Payload.DWGVersion:=BLToInt(PProxy^.dwg_version);
+    Payload.FromDXF:=PProxy^.from_dxf;
+    Payload.EntityDataSize:=BLToInt(PProxy^.data_size);
+
+    if (PProxy^.proxy_data=nil) or (PProxy^.proxy_data_size=0) then
+      Exit;
+    if PProxy^.proxy_data_size>BITCODE_BL(High(Integer)) then
+      Exit;
+
+    ByteCount:=Integer(PProxy^.proxy_data_size);
+    SetLength(Payload.Graphic,ByteCount);
+    Move(PProxy^.proxy_data^,Payload.Graphic[0],ByteCount);
+    Payload.HasGraphic:=ByteCount>0;
   end;
 
 

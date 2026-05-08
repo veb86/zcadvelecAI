@@ -177,6 +177,14 @@ const
   DWG_WARN_REF_NULL            = 1408;
   DWG_WARN_REF_NOT_FOUND       = 1409;
   DWG_WARN_REF_KIND_MISMATCH   = 1410;
+  { Stage 7 (TZ §12.7 / audit §4.2): unsupported/proxy fallback diagnostics.
+    These separate corrupt proxy data from intentionally skipped opaque objects
+    so import logs can show whether graphics were preserved or only counted. }
+  DWG_WARN_PROXY_NO_GRAPHICS    = 1411;
+  DWG_WARN_PROXY_CORRUPT        = 1412;
+  DWG_WARN_UNKNOWN_ENTITY       = 1413;
+  DWG_WARN_UNKNOWN_OBJECT       = 1414;
+  DWG_WARN_UNKNOWN_NO_COPY      = 1415;
 
 function DWGAttachReasonToText(Reason: TDWGAttachReason): String;
 

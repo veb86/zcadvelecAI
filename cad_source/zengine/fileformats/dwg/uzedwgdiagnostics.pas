@@ -49,6 +49,11 @@ type
     CycleCount: Integer;
     RefAttachCount: Integer;
     RefFallbackCount: Integer;
+    UnknownEntities: Integer;
+    UnknownObjects: Integer;
+    ProxiesLoaded: Integer;
+    ProxiesFailed: Integer;
+    DroppedDueToFreedRaw: Integer;
     procedure Clear;
   end;
   PDWGImportStats = ^TDWGImportStats;
@@ -92,6 +97,11 @@ begin
   CycleCount := 0;
   RefAttachCount := 0;
   RefFallbackCount := 0;
+  UnknownEntities := 0;
+  UnknownObjects := 0;
+  ProxiesLoaded := 0;
+  ProxiesFailed := 0;
+  DroppedDueToFreedRaw := 0;
 end;
 
 end.
