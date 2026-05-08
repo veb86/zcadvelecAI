@@ -6,7 +6,8 @@ uses
   //MemCheck,
   Classes, consoletestrunner,
   Logtest,BoundaryPathSimpletest,
-  uzctEntityArc, uzctmtextwrap, uzctacadtable, uzctentproxy;
+  uzctEntityArc, uzctmtextwrap, uzctacadtable, uzctentproxy,
+  uzctentpolyfacemesh;
 
 var
   Application: TTestRunner;
