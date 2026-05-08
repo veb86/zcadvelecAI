@@ -53,6 +53,7 @@ procedure GenerateOpenUniformKnots(pobj: PGDBObjSpline; ControlCount: Integer);
 var
   i, KnotCount, Denom: Integer;
   Value: Double;
+  Knot: Single;
 begin
   pobj^.Knots.Clear;
   if ControlCount <= 0 then
@@ -68,7 +69,8 @@ begin
       Value := 1
     else
       Value := (i - pobj^.Degree) / Denom;
-    pobj^.Knots.PushBackData(Single(Value));
+    Knot := Value;
+    pobj^.Knots.PushBackData(Knot);
   end;
 end;
 
@@ -91,6 +93,7 @@ var
   pobj: PGDBObjSpline;
   Props: TDWGSplineProps;
   i, PointCount: Integer;
+  Knot: Single;
 begin
   if PSpline = nil then
     Exit;
@@ -119,7 +122,10 @@ begin
   pobj^.Knots.Clear;
   if Length(Props.Knots) > 0 then
     for i := 0 to High(Props.Knots) do
-      pobj^.Knots.PushBackData(Single(Props.Knots[i]));
+    begin
+      Knot := Props.Knots[i];
+      pobj^.Knots.PushBackData(Knot);
+    end;
   if pobj^.Knots.Count = 0 then
     GenerateOpenUniformKnots(pobj, PointCount);
 
