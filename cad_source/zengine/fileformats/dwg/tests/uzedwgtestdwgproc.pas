@@ -127,7 +127,8 @@ type
     procedure CopyProxyPayloadNilPointerIsEmpty;
     procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
     procedure CopyEntityPreviewProxyPayloadCopiesGraphicBytes;
-    procedure CopyEntityPreviewProxyPayloadRequiresProxyPreview;
+    procedure CopyEntityPreviewProxyPayloadAcceptsUnsetProxyFlagWithProxyHeader;
+    procedure CopyEntityPreviewProxyPayloadRejectsInvalidPreview;
   end;
 
   { Stage 8 (TZ §12.8): scalar-copy guards for the additional entity payloads
@@ -1396,7 +1397,35 @@ begin
     Integer($31), Integer(Payload.Graphic[0]));
 end;
 
-procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadRequiresProxyPreview;
+procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadAcceptsUnsetProxyFlagWithProxyHeader;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Bytes: array[0..11] of BITCODE_RC;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Bytes, SizeOf(Bytes), 0);
+  Bytes[0] := Length(Bytes);
+  Bytes[4] := 1;
+  Ent.preview_exists := 1;
+  Ent.preview_is_proxy := 0;
+  Ent.preview_size := Length(Bytes);
+  Ent.preview := BITCODE_TF(@Bytes[0]);
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  AssertTrue('valid proxy graphic header is accepted even when LibreDWG leaves preview_is_proxy unset',
+    DWGCopyEntityPreviewProxyPayload(Obj, Payload));
+
+  AssertTrue(Payload.HasGraphic);
+  AssertEquals(12, Length(Payload.Graphic));
+  AssertEquals(Integer(12), Integer(Payload.Graphic[0]));
+  AssertEquals(Integer(1), Integer(Payload.Graphic[4]));
+end;
+
+procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadRejectsInvalidPreview;
 var
   Obj: Dwg_Object;
   Ent: Dwg_Object_Entity;
@@ -1414,7 +1443,7 @@ begin
   Obj.supertype := DWG_SUPERTYPE_ENTITY;
   Obj.tio.entity := @Ent;
 
-  AssertFalse('non-proxy previews are ignored',
+  AssertFalse('invalid non-proxy previews are ignored',
     DWGCopyEntityPreviewProxyPayload(Obj, Payload));
   AssertFalse(Payload.HasGraphic);
   AssertEquals(0, Length(Payload.Graphic));

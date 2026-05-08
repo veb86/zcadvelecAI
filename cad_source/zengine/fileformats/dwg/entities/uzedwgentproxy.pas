@@ -92,6 +92,8 @@ end;
 function DWGObjectProxyDiag(const DWGObject: Dwg_Object): string;
 var
   Ent: ^Dwg_Object_Entity;
+  Header: array[0..7] of Byte;
+  PreviewChunkSize, PreviewCommandCount: Cardinal;
 begin
   Result := Format(' fixedtype=%d name="%s" dxfname="%s"',
     [Ord(DWGObject.fixedtype),
@@ -116,9 +118,29 @@ begin
       [Integer(Ent^.preview_exists),
        Integer(Ent^.preview_is_proxy),
        IntToStr(Int64(Ent^.preview_size))]);
+    if (Ent^.preview <> nil) and (Ent^.preview_size >= SizeOf(Header)) then begin
+      Move(Ent^.preview^, Header[0], SizeOf(Header));
+      Move(Header[0], PreviewChunkSize, SizeOf(PreviewChunkSize));
+      Move(Header[4], PreviewCommandCount, SizeOf(PreviewCommandCount));
+      Result := Result + Format(' preview_header_size=%d preview_commands=%d',
+        [PreviewChunkSize, PreviewCommandCount]);
+    end;
   end;
   Result := Result + Format(' unknown_bits=%d unknown_rest=%d',
     [Integer(DWGObject.num_unknown_bits), Integer(DWGObject.num_unknown_rest)]);
+end;
+
+function ProxyGraphicHeaderForLog(const Graphic: TBytes): string;
+var
+  ChunkSize, CommandCount: Cardinal;
+begin
+  if Length(Graphic) < 8 then
+    Exit(' proxy_header_size=0 proxy_commands=0');
+
+  Move(Graphic[0], ChunkSize, SizeOf(ChunkSize));
+  Move(Graphic[4], CommandCount, SizeOf(CommandCount));
+  Result := Format(' proxy_header_size=%d proxy_commands=%d',
+    [ChunkSize, CommandCount]);
 end;
 
 procedure AddProxyEntityFromPayload(var ZContext: TZDrawingContext;
@@ -150,6 +172,7 @@ begin
     ' entity_data=', Payload.EntityDataSize,
     ' drawing_format=', Payload.DWGVersions,
     ' original_format=', Payload.FromDXF,
+    ProxyGraphicHeaderForLog(Payload.Graphic),
     ' dwgver=', DWG_V2Str(DWGContext.DWGVer),
     DWGObjectProxyDiag(DWGObject)]);
 

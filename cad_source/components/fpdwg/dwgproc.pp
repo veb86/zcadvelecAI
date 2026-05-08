@@ -324,6 +324,8 @@ interface
     out Payload:TDWGProxyEntityPayload);
   // LibreDWG exposes custom/zombie entity proxy graphics on the common
   // entity preview fields even when fixedtype is DWG_TYPE_UNKNOWN_ENT.
+  // Some files leave preview_is_proxy unset, so the implementation also
+  // accepts preview data whose header matches the proxy graphic stream.
   function DWGCopyEntityPreviewProxyPayload(const DWGObject:Dwg_Object;
     out Payload:TDWGProxyEntityPayload):Boolean;
   procedure DWGCopy3DFaceProps(const Face:Dwg_Entity__3DFACE;
@@ -348,6 +350,9 @@ interface
     out Props:TDWGPolylineRefProps);
 
 implementation
+
+  type
+    PDwg_Object_Entity=^Dwg_Object_Entity;
 
   var
     hlib : tlibhandle;
@@ -694,6 +699,8 @@ implementation
 
   function DWGCopyEntityPreviewProxyPayload(const DWGObject:Dwg_Object;
     out Payload:TDWGProxyEntityPayload):Boolean;
+  const
+    MAX_PROXY_PREVIEW_COMMAND_COUNT=100000;
     function BLToInt(Value:BITCODE_BL):Integer;
     begin
       if Value>BITCODE_BL(High(Integer)) then
@@ -708,8 +715,25 @@ implementation
       else
         Result:=Integer(Value);
     end;
+    function PreviewLooksLikeProxyGraphic(Ent:PDwg_Object_Entity;
+      ByteCount:Integer):Boolean;
+    var
+      Header:array[0..7] of Byte;
+      ChunkSize,CommandCount:Cardinal;
+    begin
+      Result:=False;
+      if (Ent=nil) or (Ent^.preview=nil) or (ByteCount<SizeOf(Header)) then
+        Exit;
+
+      Move(Ent^.preview^,Header[0],SizeOf(Header));
+      Move(Header[0],ChunkSize,SizeOf(ChunkSize));
+      Move(Header[4],CommandCount,SizeOf(CommandCount));
+      Result:=(ChunkSize=Cardinal(ByteCount))
+        and (CommandCount>0)
+        and (CommandCount<Cardinal(MAX_PROXY_PREVIEW_COMMAND_COUNT));
+    end;
   var
-    Ent:^Dwg_Object_Entity;
+    Ent:PDwg_Object_Entity;
     ByteCount:Integer;
   begin
     Payload.ProxyID:=498;
@@ -728,10 +752,13 @@ implementation
       Exit;
 
     Ent:=DWGObject.tio.entity;
-    if (Ent^.preview_exists=0) or (Ent^.preview_is_proxy=0)
-      or (Ent^.preview=nil) or (Ent^.preview_size=0) then
+    if (Ent^.preview_exists=0) or (Ent^.preview=nil) or (Ent^.preview_size=0) then
       Exit;
     if Ent^.preview_size>BITCODE_BLL(High(Integer)) then
+      Exit;
+    ByteCount:=BLLToInt(Ent^.preview_size);
+    if (Ent^.preview_is_proxy=0)
+      and not PreviewLooksLikeProxyGraphic(Ent,ByteCount) then
       Exit;
 
     if DWGObject.klass<>nil then begin
@@ -741,7 +768,6 @@ implementation
       Payload.MaintVersion:=BLToInt(DWGObject.klass^.maint_version);
     end;
 
-    ByteCount:=BLLToInt(Ent^.preview_size);
     Payload.EntityDataSize:=0;
     SetLength(Payload.Graphic,ByteCount);
     Move(Ent^.preview^,Payload.Graphic[0],ByteCount);
