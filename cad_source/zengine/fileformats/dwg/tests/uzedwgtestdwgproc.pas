@@ -103,6 +103,8 @@ type
   published
     procedure CopyMTextCopiesGeometry;
     procedure CopyMTextPreservesLineSpacing;
+    procedure MTextAttachmentMapsBottomLeft;
+    procedure MTextAttachmentUsesDefaultForInvalidValue;
   end;
 
   TFPDWGProcLWPolylineTest = class(TTestCase)
@@ -1137,6 +1139,18 @@ begin
   MText.linespace_factor := 1.5;
   DWGCopyMTextProps(MText, R_2004, Props);
   AssertEquals('linespace', 1.5, Props.LineSpaceFactor, 0.0);
+end;
+
+procedure TFPDWGProcMTextTest.MTextAttachmentMapsBottomLeft;
+begin
+  AssertEquals('attachment 7', Ord(dwgmtjBottomLeft),
+    Ord(DWGMTextAttachmentToJustify(7)));
+end;
+
+procedure TFPDWGProcMTextTest.MTextAttachmentUsesDefaultForInvalidValue;
+begin
+  AssertEquals('attachment 0 fallback', Ord(dwgmtjMiddleCenter),
+    Ord(DWGMTextAttachmentToJustify(0, dwgmtjMiddleCenter)));
 end;
 
 { ---------- TFPDWGProcLWPolylineTest ---------- }
