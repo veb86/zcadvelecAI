@@ -66,6 +66,12 @@ uses
   uzedwgentinsert,
   uzedwgentattrib,
   uzedwgentdimension,
+  uzedwgent3dface,
+  uzedwgentsolid,
+  uzedwgentellipse,
+  uzedwgentspline,
+  uzedwgenthatch,
+  uzedwgentpolyline,
   uzedwgentproxy;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext);

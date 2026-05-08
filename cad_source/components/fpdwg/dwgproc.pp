@@ -139,6 +139,85 @@ interface
       Graphic:TBytes;
     end;
 
+    // Stage 8 (TZ §12.8): raw-geometry mirror records for HATCH/SPLINE/
+    // ELLIPSE/SOLID/3DFACE/POLYLINE variants. They intentionally stay as
+    // plain records so unit tests can exercise the LibreDWG field mapping
+    // without allocating ZCAD entities.
+    TDWGPoint2D=record
+      X,Y:double;
+    end;
+
+    TDWGPoint3D=record
+      X,Y,Z:double;
+    end;
+
+    TDWG3DFaceProps=record
+      Corners:array[0..3] of TDWGPoint3D;
+      InvisibleFlags:Integer;
+    end;
+
+    TDWGSolidProps=record
+      Thickness:double;
+      Elevation:double;
+      Corners:array[0..3] of TDWGPoint3D;
+      Extrusion:TDWGPoint3D;
+    end;
+
+    TDWGEllipseProps=record
+      Center:TDWGPoint3D;
+      MajorAxis:TDWGPoint3D;
+      Extrusion:TDWGPoint3D;
+      AxisRatio:double;
+      StartAngle:double;
+      EndAngle:double;
+    end;
+
+    TDWGSplineControlPoint=record
+      X,Y,Z,W:double;
+    end;
+
+    TDWGSplineProps=record
+      Flag:Integer;
+      Scenario:Integer;
+      Degree:Integer;
+      Closed:Boolean;
+      Periodic:Boolean;
+      Rational:Boolean;
+      Weighted:Boolean;
+      Knots:array of double;
+      ControlPoints:array of TDWGSplineControlPoint;
+      FitPoints:array of TDWGPoint3D;
+    end;
+
+    TDWGHatchPolylinePoint=record
+      X,Y:double;
+      Bulge:double;
+    end;
+
+    TDWGHatchPathProps=record
+      IsPolyline:Boolean;
+      Closed:Boolean;
+      PolylinePoints:array of TDWGHatchPolylinePoint;
+    end;
+
+    TDWGHatchProps=record
+      PatternName:string;
+      Elevation:double;
+      Extrusion:TDWGPoint3D;
+      IsSolidFill:Boolean;
+      Style:Integer;
+      PatternType:Integer;
+      Angle:double;
+      Scale:double;
+      Paths:array of TDWGHatchPathProps;
+    end;
+
+    TDWGPolylineRefProps=record
+      Closed:Boolean;
+      Elevation:double;
+      VertexHandles:array of QWord;
+    end;
+
     // Stage 5 (TZ §12.5): the LibreDWG bindings only expose
     // PDwg_Entity_LINE; declare the pointer aliases the Stage 5 helpers
     // require so callers can pass &dwg.tio.entity^.tio.TEXT directly.
@@ -150,6 +229,21 @@ interface
     PDwg_Entity_POINT=^Dwg_Entity_POINT;
     PDwg_Entity_LWPOLYLINE=^Dwg_Entity_LWPOLYLINE;
     PDwg_Entity_PROXY_ENTITY=^Dwg_Entity_PROXY_ENTITY;
+    PDwg_Entity__3DFACE=^Dwg_Entity__3DFACE;
+    PDwg_Entity_SOLID=^Dwg_Entity_SOLID;
+    PDwg_Entity_ELLIPSE=^Dwg_Entity_ELLIPSE;
+    PDwg_Entity_SPLINE=^Dwg_Entity_SPLINE;
+    PDwg_Entity_HATCH=^Dwg_Entity_HATCH;
+    PDwg_Entity_POLYLINE_2D=^Dwg_Entity_POLYLINE_2D;
+    PDwg_Entity_POLYLINE_3D=^Dwg_Entity_POLYLINE_3D;
+    PDwg_Entity_POLYLINE_MESH=^Dwg_Entity_POLYLINE_MESH;
+    PDwg_Entity_POLYLINE_PFACE=^Dwg_Entity_POLYLINE_PFACE;
+    PDwg_Entity_VERTEX_2D=^Dwg_Entity_VERTEX_2D;
+    PDwg_Entity_VERTEX_3D=^Dwg_Entity_VERTEX_3D;
+    PDwg_Entity_VERTEX_MESH=^Dwg_Entity_VERTEX_MESH;
+    PDwg_Entity_VERTEX_PFACE=^Dwg_Entity_VERTEX_PFACE;
+    PDwg_Entity_VERTEX_PFACE_FACE=^Dwg_Entity_VERTEX_PFACE_FACE;
+    PBITCODE_H=^BITCODE_H;
 
     TData=PtrInt;
     TCounter=Integer;
@@ -222,6 +316,26 @@ interface
     out Props:TDWGLWPolylineProps);
   procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
     out Payload:TDWGProxyEntityPayload);
+  procedure DWGCopy3DFaceProps(const Face:Dwg_Entity__3DFACE;
+    out Props:TDWG3DFaceProps);
+  procedure DWGCopySolidProps(const Solid:Dwg_Entity_SOLID;
+    out Props:TDWGSolidProps);
+  procedure DWGCopyEllipseProps(const Ellipse:Dwg_Entity_ELLIPSE;
+    out Props:TDWGEllipseProps);
+  procedure DWGCopySplineProps(const Spline:Dwg_Entity_SPLINE;
+    out Props:TDWGSplineProps);
+  procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
+    Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps);
+  procedure DWGCopyPolyline2DRefProps(const Polyline:Dwg_Entity_POLYLINE_2D;
+    out Props:TDWGPolylineRefProps);
+  procedure DWGCopyPolyline3DRefProps(const Polyline:Dwg_Entity_POLYLINE_3D;
+    out Props:TDWGPolylineRefProps);
+  procedure DWGCopyPolylineMeshRefProps(
+    const Polyline:Dwg_Entity_POLYLINE_MESH;
+    out Props:TDWGPolylineRefProps);
+  procedure DWGCopyPolylinePFaceRefProps(
+    const Polyline:Dwg_Entity_POLYLINE_PFACE;
+    out Props:TDWGPolylineRefProps);
 
 implementation
 
@@ -548,6 +662,219 @@ implementation
     SetLength(Payload.Graphic,ByteCount);
     Move(PProxy^.proxy_data^,Payload.Graphic[0],ByteCount);
     Payload.HasGraphic:=ByteCount>0;
+  end;
+
+  function DWGBLToInt(Value:BITCODE_BL):Integer;
+  begin
+    if Value>BITCODE_BL(High(Integer)) then
+      Result:=High(Integer)
+    else
+      Result:=Integer(Value);
+  end;
+
+  procedure DWGPoint3DFrom3BD(const Src:BITCODE_3BD;out Dest:TDWGPoint3D);
+  begin
+    Dest.X:=Src.x;
+    Dest.Y:=Src.y;
+    Dest.Z:=Src.z;
+  end;
+
+  function DWGPoint3DFrom2RDAtElevation(const Src:BITCODE_2RD;
+    Elevation:double):TDWGPoint3D;
+  begin
+    Result.X:=Src.x;
+    Result.Y:=Src.y;
+    Result.Z:=Elevation;
+  end;
+
+  procedure DWGCopy3DFaceProps(const Face:Dwg_Entity__3DFACE;
+    out Props:TDWG3DFaceProps);
+  begin
+    DWGPoint3DFrom3BD(Face.corner1,Props.Corners[0]);
+    DWGPoint3DFrom3BD(Face.corner2,Props.Corners[1]);
+    DWGPoint3DFrom3BD(Face.corner3,Props.Corners[2]);
+    DWGPoint3DFrom3BD(Face.corner4,Props.Corners[3]);
+    Props.InvisibleFlags:=Face.invis_flags;
+  end;
+
+  procedure DWGCopySolidProps(const Solid:Dwg_Entity_SOLID;
+    out Props:TDWGSolidProps);
+  begin
+    Props.Thickness:=Solid.thickness;
+    Props.Elevation:=Solid.elevation;
+    Props.Corners[0]:=DWGPoint3DFrom2RDAtElevation(Solid.corner1,Solid.elevation);
+    Props.Corners[1]:=DWGPoint3DFrom2RDAtElevation(Solid.corner2,Solid.elevation);
+    Props.Corners[2]:=DWGPoint3DFrom2RDAtElevation(Solid.corner3,Solid.elevation);
+    Props.Corners[3]:=DWGPoint3DFrom2RDAtElevation(Solid.corner4,Solid.elevation);
+    DWGPoint3DFrom3BD(Solid.extrusion,Props.Extrusion);
+  end;
+
+  procedure DWGCopyEllipseProps(const Ellipse:Dwg_Entity_ELLIPSE;
+    out Props:TDWGEllipseProps);
+  begin
+    DWGPoint3DFrom3BD(Ellipse.center,Props.Center);
+    DWGPoint3DFrom3BD(Ellipse.sm_axis,Props.MajorAxis);
+    DWGPoint3DFrom3BD(Ellipse.extrusion,Props.Extrusion);
+    Props.AxisRatio:=Ellipse.axis_ratio;
+    Props.StartAngle:=Ellipse.start_angle;
+    Props.EndAngle:=Ellipse.end_angle;
+  end;
+
+  procedure DWGCopySplineProps(const Spline:Dwg_Entity_SPLINE;
+    out Props:TDWGSplineProps);
+  type
+    PBitcodeBD=^BITCODE_BD;
+    PBitcode3DPoint=^BITCODE_3DPOINT;
+    PSplineControlPoint=^Dwg_SPLINE_control_point;
+  var
+    i,n:Integer;
+    pKnot:PBitcodeBD;
+    pControl:PSplineControlPoint;
+    pFit:PBitcode3DPoint;
+  begin
+    Props.Flag:=Spline.flag;
+    Props.Scenario:=Spline.scenario;
+    Props.Degree:=Spline.degree;
+    Props.Closed:=((Spline.flag and 1)<>0) or (Spline.closed_b<>0)
+      or ((Spline.splineflags and 4)<>0);
+    Props.Periodic:=((Spline.flag and 2)<>0) or (Spline.periodic<>0);
+    Props.Rational:=((Spline.flag and 4)<>0) or (Spline.rational<>0);
+    Props.Weighted:=Spline.weighted<>0;
+    SetLength(Props.Knots,0);
+    SetLength(Props.ControlPoints,0);
+    SetLength(Props.FitPoints,0);
+
+    n:=DWGBLToInt(Spline.num_knots);
+    if (n>0) and (Spline.knots<>nil) then begin
+      SetLength(Props.Knots,n);
+      pKnot:=PBitcodeBD(Spline.knots);
+      for i:=0 to n-1 do begin
+        Props.Knots[i]:=pKnot^;
+        Inc(pKnot);
+      end;
+    end;
+
+    n:=DWGBLToInt(Spline.num_ctrl_pts);
+    if (n>0) and (Spline.ctrl_pts<>nil) then begin
+      SetLength(Props.ControlPoints,n);
+      pControl:=PSplineControlPoint(Spline.ctrl_pts);
+      for i:=0 to n-1 do begin
+        Props.ControlPoints[i].X:=pControl^.x;
+        Props.ControlPoints[i].Y:=pControl^.y;
+        Props.ControlPoints[i].Z:=pControl^.z;
+        Props.ControlPoints[i].W:=pControl^.w;
+        Inc(pControl);
+      end;
+    end;
+
+    n:=DWGBLToInt(Spline.num_fit_pts);
+    if (n>0) and (Spline.fit_pts<>nil) then begin
+      SetLength(Props.FitPoints,n);
+      pFit:=PBitcode3DPoint(Spline.fit_pts);
+      for i:=0 to n-1 do begin
+        DWGPoint3DFrom3BD(pFit^,Props.FitPoints[i]);
+        Inc(pFit);
+      end;
+    end;
+  end;
+
+  procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
+    Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps);
+  type
+    PHatchPath=^Dwg_HATCH_Path;
+    PHatchPolylinePath=^Dwg_HATCH_PolylinePath;
+  var
+    i,j,n,PointCount:Integer;
+    pPath:PHatchPath;
+    pPoint:PHatchPolylinePath;
+  begin
+    Props.PatternName:='';
+    Props.Elevation:=Hatch.elevation;
+    DWGPoint3DFrom3BD(Hatch.extrusion,Props.Extrusion);
+    Props.IsSolidFill:=Hatch.is_solid_fill<>0;
+    Props.Style:=Hatch.style;
+    Props.PatternType:=Hatch.pattern_type;
+    Props.Angle:=Hatch.angle;
+    Props.Scale:=Hatch.scale_spacing;
+    SetLength(Props.Paths,0);
+    DWGSafeDecodeText(Hatch.name,Version,Props.PatternName);
+
+    n:=DWGBLToInt(Hatch.num_paths);
+    if (n<=0) or (Hatch.paths=nil) then
+      Exit;
+    SetLength(Props.Paths,n);
+    pPath:=PHatchPath(Hatch.paths);
+    for i:=0 to n-1 do begin
+      Props.Paths[i].IsPolyline:=(pPath^.flag and 2)<>0;
+      Props.Paths[i].Closed:=pPath^.closed<>0;
+      SetLength(Props.Paths[i].PolylinePoints,0);
+      if Props.Paths[i].IsPolyline and (pPath^.polyline_paths<>nil) then begin
+        PointCount:=DWGBLToInt(pPath^.num_segs_or_paths);
+        SetLength(Props.Paths[i].PolylinePoints,PointCount);
+        pPoint:=PHatchPolylinePath(pPath^.polyline_paths);
+        for j:=0 to PointCount-1 do begin
+          Props.Paths[i].PolylinePoints[j].X:=pPoint^.point.x;
+          Props.Paths[i].PolylinePoints[j].Y:=pPoint^.point.y;
+          Props.Paths[i].PolylinePoints[j].Bulge:=pPoint^.bulge;
+          Inc(pPoint);
+        end;
+      end;
+      Inc(pPath);
+    end;
+  end;
+
+  procedure DWGCopyPolylineRefPropsCommon(Closed:Boolean;Elevation:double;
+    NumOwned:BITCODE_BL;VertexRefs:PBITCODE_H;out Props:TDWGPolylineRefProps);
+  var
+    i,n:Integer;
+    pRef:PBITCODE_H;
+    Handle:QWord;
+  begin
+    Props.Closed:=Closed;
+    Props.Elevation:=Elevation;
+    SetLength(Props.VertexHandles,0);
+    n:=DWGBLToInt(NumOwned);
+    if (n<=0) or (VertexRefs=nil) then
+      Exit;
+    SetLength(Props.VertexHandles,n);
+    pRef:=VertexRefs;
+    for i:=0 to n-1 do begin
+      if DWGRefHandleValue(pRef^,Handle) then
+        Props.VertexHandles[i]:=Handle
+      else
+        Props.VertexHandles[i]:=0;
+      Inc(pRef);
+    end;
+  end;
+
+  procedure DWGCopyPolyline2DRefProps(const Polyline:Dwg_Entity_POLYLINE_2D;
+    out Props:TDWGPolylineRefProps);
+  begin
+    DWGCopyPolylineRefPropsCommon((Polyline.flag and 1)<>0,
+      Polyline.elevation,Polyline.num_owned,Polyline.vertex,Props);
+  end;
+
+  procedure DWGCopyPolyline3DRefProps(const Polyline:Dwg_Entity_POLYLINE_3D;
+    out Props:TDWGPolylineRefProps);
+  begin
+    DWGCopyPolylineRefPropsCommon((Polyline.flag and 1)<>0,0,
+      Polyline.num_owned,Polyline.vertex,Props);
+  end;
+
+  procedure DWGCopyPolylineMeshRefProps(
+    const Polyline:Dwg_Entity_POLYLINE_MESH;
+    out Props:TDWGPolylineRefProps);
+  begin
+    DWGCopyPolylineRefPropsCommon((Polyline.flag and 1)<>0,0,
+      Polyline.num_owned,Polyline.vertex,Props);
+  end;
+
+  procedure DWGCopyPolylinePFaceRefProps(
+    const Polyline:Dwg_Entity_POLYLINE_PFACE;
+    out Props:TDWGPolylineRefProps);
+  begin
+    DWGCopyPolylineRefPropsCommon(False,0,Polyline.num_owned,
+      Polyline.vertex,Props);
   end;
 
 
