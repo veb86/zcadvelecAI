@@ -126,6 +126,20 @@ type
     procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
   end;
 
+  { Stage 8 (TZ §12.8): scalar-copy guards for the additional entity payloads
+    before their mapper units allocate ZCAD entities. Keeping these tests in
+    dwgproc means they run against fake LibreDWG records and do not need
+    libredwg.so or a drawing graph. }
+  TFPDWGProcStage8GeometryTest = class(TTestCase)
+  published
+    procedure Copy3DFaceCopiesCornersAndInvisibleFlags;
+    procedure CopySolidPromotes2DCornersToElevationPlane;
+    procedure CopyEllipseCopiesAxesAndAngles;
+    procedure CopySplineCopiesKnotsControlAndFitPoints;
+    procedure CopyHatchCopiesPolylineBoundary;
+    procedure CopyPolylineRefsCopiesOwnedVertexHandles;
+  end;
+
 implementation
 
 uses
@@ -1320,11 +1334,196 @@ begin
   AssertEquals(0, Length(Payload.Graphic));
 end;
 
+procedure TFPDWGProcStage8GeometryTest.Copy3DFaceCopiesCornersAndInvisibleFlags;
+var
+  Face: Dwg_Entity__3DFACE;
+  Props: TDWG3DFaceProps;
+begin
+  FillChar(Face, SizeOf(Face), 0);
+  Face.corner1.x := 1.0;  Face.corner1.y := 2.0;  Face.corner1.z := 3.0;
+  Face.corner2.x := 4.0;  Face.corner2.y := 5.0;  Face.corner2.z := 6.0;
+  Face.corner3.x := 7.0;  Face.corner3.y := 8.0;  Face.corner3.z := 9.0;
+  Face.corner4.x := 10.0; Face.corner4.y := 11.0; Face.corner4.z := 12.0;
+  Face.invis_flags := 3;
+
+  DWGCopy3DFaceProps(Face, Props);
+
+  AssertEquals('corner1.x', 1.0, Props.Corners[0].X, 0.0);
+  AssertEquals('corner2.y', 5.0, Props.Corners[1].Y, 0.0);
+  AssertEquals('corner3.z', 9.0, Props.Corners[2].Z, 0.0);
+  AssertEquals('corner4.x', 10.0, Props.Corners[3].X, 0.0);
+  AssertEquals('invisible flags', 3, Props.InvisibleFlags);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopySolidPromotes2DCornersToElevationPlane;
+var
+  Solid: Dwg_Entity_SOLID;
+  Props: TDWGSolidProps;
+begin
+  FillChar(Solid, SizeOf(Solid), 0);
+  Solid.elevation := 7.5;
+  Solid.corner1.x := 1.0; Solid.corner1.y := 2.0;
+  Solid.corner2.x := 3.0; Solid.corner2.y := 4.0;
+  Solid.corner3.x := 5.0; Solid.corner3.y := 6.0;
+  Solid.corner4.x := 7.0; Solid.corner4.y := 8.0;
+  Solid.extrusion.x := 0.0;
+  Solid.extrusion.y := 0.0;
+  Solid.extrusion.z := 1.0;
+
+  DWGCopySolidProps(Solid, Props);
+
+  AssertEquals('corner1.x', 1.0, Props.Corners[0].X, 0.0);
+  AssertEquals('corner1.z from elevation', 7.5, Props.Corners[0].Z, 0.0);
+  AssertEquals('corner4.y', 8.0, Props.Corners[3].Y, 0.0);
+  AssertEquals('corner4.z from elevation', 7.5, Props.Corners[3].Z, 0.0);
+  AssertEquals('extrusion.z', 1.0, Props.Extrusion.Z, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopyEllipseCopiesAxesAndAngles;
+var
+  Ellipse: Dwg_Entity_ELLIPSE;
+  Props: TDWGEllipseProps;
+begin
+  FillChar(Ellipse, SizeOf(Ellipse), 0);
+  Ellipse.center.x := 1.0;
+  Ellipse.center.y := 2.0;
+  Ellipse.center.z := 3.0;
+  Ellipse.sm_axis.x := 4.0;
+  Ellipse.sm_axis.y := 5.0;
+  Ellipse.sm_axis.z := 6.0;
+  Ellipse.extrusion.z := 1.0;
+  Ellipse.axis_ratio := 0.5;
+  Ellipse.start_angle := 0.25;
+  Ellipse.end_angle := 2.75;
+
+  DWGCopyEllipseProps(Ellipse, Props);
+
+  AssertEquals('center.z', 3.0, Props.Center.Z, 0.0);
+  AssertEquals('major axis y', 5.0, Props.MajorAxis.Y, 0.0);
+  AssertEquals('normal z', 1.0, Props.Extrusion.Z, 0.0);
+  AssertEquals('ratio', 0.5, Props.AxisRatio, 0.0);
+  AssertEquals('start angle', 0.25, Props.StartAngle, 0.0);
+  AssertEquals('end angle', 2.75, Props.EndAngle, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopySplineCopiesKnotsControlAndFitPoints;
+var
+  Spline: Dwg_Entity_SPLINE;
+  Props: TDWGSplineProps;
+  Knots: array[0..3] of BITCODE_BD;
+  Control: array[0..1] of Dwg_SPLINE_control_point;
+  Fits: array[0..1] of BITCODE_3DPOINT;
+begin
+  FillChar(Spline, SizeOf(Spline), 0);
+  FillChar(Control, SizeOf(Control), 0);
+  FillChar(Fits, SizeOf(Fits), 0);
+  Knots[0] := 0.0;
+  Knots[1] := 0.0;
+  Knots[2] := 1.0;
+  Knots[3] := 1.0;
+  Control[0].x := 1.0; Control[0].y := 2.0; Control[0].z := 3.0; Control[0].w := 1.0;
+  Control[1].x := 4.0; Control[1].y := 5.0; Control[1].z := 6.0; Control[1].w := 0.5;
+  Fits[0].x := 7.0; Fits[0].y := 8.0; Fits[0].z := 9.0;
+  Fits[1].x := 10.0; Fits[1].y := 11.0; Fits[1].z := 12.0;
+  Spline.flag := 1 or 4;
+  Spline.degree := 3;
+  Spline.closed_b := 1;
+  Spline.rational := 1;
+  Spline.num_knots := Length(Knots);
+  Spline.knots := @Knots[0];
+  Spline.num_ctrl_pts := Length(Control);
+  Spline.ctrl_pts := @Control[0];
+  Spline.num_fit_pts := Length(Fits);
+  Spline.fit_pts := @Fits[0];
+
+  DWGCopySplineProps(Spline, Props);
+
+  AssertTrue('closed', Props.Closed);
+  AssertTrue('rational', Props.Rational);
+  AssertEquals('degree', 3, Props.Degree);
+  AssertEquals('knots count', 4, Length(Props.Knots));
+  AssertEquals('last knot', 1.0, Props.Knots[3], 0.0);
+  AssertEquals('control count', 2, Length(Props.ControlPoints));
+  AssertEquals('control[1].w', 0.5, Props.ControlPoints[1].W, 0.0);
+  AssertEquals('fit count', 2, Length(Props.FitPoints));
+  AssertEquals('fit[1].z', 12.0, Props.FitPoints[1].Z, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopyHatchCopiesPolylineBoundary;
+var
+  Hatch: Dwg_Entity_HATCH;
+  Props: TDWGHatchProps;
+  Path: Dwg_HATCH_Path;
+  Points: array[0..2] of Dwg_HATCH_PolylinePath;
+  Name: AnsiString;
+begin
+  FillChar(Hatch, SizeOf(Hatch), 0);
+  FillChar(Path, SizeOf(Path), 0);
+  FillChar(Points, SizeOf(Points), 0);
+  Name := 'ANSI31';
+  Points[0].point.x := 1.0; Points[0].point.y := 2.0;
+  Points[1].point.x := 3.0; Points[1].point.y := 4.0; Points[1].bulge := 0.25;
+  Points[2].point.x := 5.0; Points[2].point.y := 6.0;
+  Path.flag := 2;
+  Path.closed := 1;
+  Path.num_segs_or_paths := Length(Points);
+  Path.polyline_paths := @Points[0];
+  Hatch.name := PChar(Name);
+  Hatch.elevation := 9.0;
+  Hatch.extrusion.z := 1.0;
+  Hatch.is_solid_fill := 0;
+  Hatch.num_paths := 1;
+  Hatch.paths := @Path;
+  Hatch.style := 2;
+  Hatch.angle := 0.125;
+  Hatch.scale_spacing := 2.5;
+
+  DWGCopyHatchProps(Hatch, R_2004, Props);
+
+  AssertEquals('pattern name', Name, Props.PatternName);
+  AssertEquals('elevation', 9.0, Props.Elevation, 0.0);
+  AssertEquals('normal z', 1.0, Props.Extrusion.Z, 0.0);
+  AssertEquals('path count', 1, Length(Props.Paths));
+  AssertTrue('polyline boundary', Props.Paths[0].IsPolyline);
+  AssertTrue('closed boundary', Props.Paths[0].Closed);
+  AssertEquals('point count', 3, Length(Props.Paths[0].PolylinePoints));
+  AssertEquals('point[1].bulge', 0.25,
+    Props.Paths[0].PolylinePoints[1].Bulge, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopyPolylineRefsCopiesOwnedVertexHandles;
+var
+  Poly: Dwg_Entity_POLYLINE_2D;
+  Props: TDWGPolylineRefProps;
+  Refs: array[0..1] of Dwg_Object_Ref;
+  Handles: array[0..1] of BITCODE_H;
+begin
+  FillChar(Poly, SizeOf(Poly), 0);
+  FillChar(Refs, SizeOf(Refs), 0);
+  Refs[0].absolute_ref := $101;
+  Refs[1].absolute_ref := $102;
+  Handles[0] := @Refs[0];
+  Handles[1] := @Refs[1];
+  Poly.flag := 1;
+  Poly.elevation := 4.5;
+  Poly.num_owned := Length(Handles);
+  Poly.vertex := @Handles[0];
+
+  DWGCopyPolyline2DRefProps(Poly, Props);
+
+  AssertTrue('closed flag bit copied', Props.Closed);
+  AssertEquals('elevation', 4.5, Props.Elevation, 0.0);
+  AssertEquals('handle count', 2, Length(Props.VertexHandles));
+  AssertEquals('first handle', Int64($101), Int64(Props.VertexHandles[0]));
+  AssertEquals('second handle', Int64($102), Int64(Props.VertexHandles[1]));
+end;
+
 begin
   RegisterTests([
     TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLineTest,
     TFPDWGProcCircleTest, TFPDWGProcArcTest, TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
-    TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest
+    TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest,
+    TFPDWGProcStage8GeometryTest
   ]);
 end.
