@@ -25,7 +25,7 @@ interface
 uses
   uzbLogIntf,
   SysUtils,
-  dwg, dwgproc,
+  dwg, dwgproc, uzedwghandle,
   uzedrawingsimple,
   uzeentline, uzeentity,
   uzeentsubordinated,

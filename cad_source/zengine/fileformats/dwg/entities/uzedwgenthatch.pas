@@ -290,7 +290,7 @@ begin
     Exit;
 
   DWGCopyHatchProps(PHatch^, DWGContext.DWGVer, Props);
-  pobj := AllocAndInitHatch(nil);
+  pobj := GDBObjHatch.CreateInstance;
   pobj^.Local.p_insert := CreateVertex(0, 0, Props.Elevation);
   pobj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion);
   pobj^.PatternName := Props.PatternName;
