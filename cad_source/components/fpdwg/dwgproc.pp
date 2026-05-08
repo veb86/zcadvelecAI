@@ -322,6 +322,10 @@ interface
     out Props:TDWGLWPolylineProps);
   procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
     out Payload:TDWGProxyEntityPayload);
+  // LibreDWG exposes custom/zombie entity proxy graphics on the common
+  // entity preview fields even when fixedtype is DWG_TYPE_UNKNOWN_ENT.
+  function DWGCopyEntityPreviewProxyPayload(const DWGObject:Dwg_Object;
+    out Payload:TDWGProxyEntityPayload):Boolean;
   procedure DWGCopy3DFaceProps(const Face:Dwg_Entity__3DFACE;
     out Props:TDWG3DFaceProps);
   procedure DWGCopySolidProps(const Solid:Dwg_Entity_SOLID;
@@ -686,6 +690,63 @@ implementation
     SetLength(Payload.Graphic,ByteCount);
     Move(PProxy^.proxy_data^,Payload.Graphic[0],ByteCount);
     Payload.HasGraphic:=ByteCount>0;
+  end;
+
+  function DWGCopyEntityPreviewProxyPayload(const DWGObject:Dwg_Object;
+    out Payload:TDWGProxyEntityPayload):Boolean;
+    function BLToInt(Value:BITCODE_BL):Integer;
+    begin
+      if Value>BITCODE_BL(High(Integer)) then
+        Result:=High(Integer)
+      else
+        Result:=Integer(Value);
+    end;
+    function BLLToInt(Value:BITCODE_BLL):Integer;
+    begin
+      if Value>BITCODE_BLL(High(Integer)) then
+        Result:=High(Integer)
+      else
+        Result:=Integer(Value);
+    end;
+  var
+    Ent:^Dwg_Object_Entity;
+    ByteCount:Integer;
+  begin
+    Payload.ProxyID:=498;
+    Payload.ClassID:=499;
+    Payload.DWGVersions:=15;
+    Payload.MaintVersion:=0;
+    Payload.DWGVersion:=0;
+    Payload.FromDXF:=0;
+    Payload.EntityDataSize:=0;
+    Payload.HasGraphic:=False;
+    SetLength(Payload.Graphic,0);
+    Result:=False;
+
+    if (DWGObject.supertype<>DWG_SUPERTYPE_ENTITY)
+      or (DWGObject.tio.entity=nil) then
+      Exit;
+
+    Ent:=DWGObject.tio.entity;
+    if (Ent^.preview_exists=0) or (Ent^.preview_is_proxy=0)
+      or (Ent^.preview=nil) or (Ent^.preview_size=0) then
+      Exit;
+    if Ent^.preview_size>BITCODE_BLL(High(Integer)) then
+      Exit;
+
+    if DWGObject.klass<>nil then begin
+      if DWGObject.klass^.number<>0 then
+        Payload.ClassID:=Integer(DWGObject.klass^.number);
+      Payload.DWGVersion:=BLToInt(DWGObject.klass^.dwg_version);
+      Payload.MaintVersion:=BLToInt(DWGObject.klass^.maint_version);
+    end;
+
+    ByteCount:=BLLToInt(Ent^.preview_size);
+    Payload.EntityDataSize:=0;
+    SetLength(Payload.Graphic,ByteCount);
+    Move(Ent^.preview^,Payload.Graphic[0],ByteCount);
+    Payload.HasGraphic:=ByteCount>0;
+    Result:=Payload.HasGraphic;
   end;
 
   function DWGBLToInt(Value:BITCODE_BL):Integer;

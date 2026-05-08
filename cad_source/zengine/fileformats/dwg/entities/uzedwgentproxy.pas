@@ -81,41 +81,57 @@ begin
   Pobj^.vp.LineTypeScale := Props.LineTypeScale;
 end;
 
-procedure AddProxyEntity(var ZContext: TZDrawingContext;
+function AnsiPtrText(P: PAnsiChar): string;
+begin
+  if P = nil then
+    Result := ''
+  else
+    Result := string(P);
+end;
+
+function DWGObjectProxyDiag(const DWGObject: Dwg_Object): string;
+var
+  Ent: ^Dwg_Object_Entity;
+begin
+  Result := Format(' fixedtype=%d name="%s" dxfname="%s"',
+    [Ord(DWGObject.fixedtype),
+     AnsiPtrText(PAnsiChar(DWGObject.name)),
+     AnsiPtrText(PAnsiChar(DWGObject.dxfname))]);
+  if DWGObject.klass <> nil then
+    Result := Result + Format(
+      ' class=%d class_dxf="%s" app="%s" cpp="%s" zombie=%d item_class_id=%d class_dwgver=%d class_maint=%d',
+      [Integer(DWGObject.klass^.number),
+       AnsiPtrText(PAnsiChar(DWGObject.klass^.dxfname)),
+       AnsiPtrText(PAnsiChar(DWGObject.klass^.appname)),
+       AnsiPtrText(PAnsiChar(DWGObject.klass^.cppname)),
+       Integer(DWGObject.klass^.is_zombie),
+       Integer(DWGObject.klass^.item_class_id),
+       Integer(DWGObject.klass^.dwg_version),
+       Integer(DWGObject.klass^.maint_version)]);
+  if (DWGObject.supertype = DWG_SUPERTYPE_ENTITY)
+    and (DWGObject.tio.entity <> nil) then begin
+    Ent := DWGObject.tio.entity;
+    Result := Result + Format(
+      ' preview_exists=%d preview_is_proxy=%d preview_size=%s',
+      [Integer(Ent^.preview_exists),
+       Integer(Ent^.preview_is_proxy),
+       IntToStr(Int64(Ent^.preview_size))]);
+  end;
+  Result := Result + Format(' unknown_bits=%d unknown_rest=%d',
+    [Integer(DWGObject.num_unknown_bits), Integer(DWGObject.num_unknown_rest)]);
+end;
+
+procedure AddProxyEntityFromPayload(var ZContext: TZDrawingContext;
   var DWGContext: TDWGCtx; var DWGObject: Dwg_Object;
-  PProxy: PDwg_Entity_PROXY_ENTITY);
+  const Payload: TDWGProxyEntityPayload; const SourceLabel: string);
 var
   Handle: TDWGZCADHandle;
-  Payload: TDWGProxyEntityPayload;
   Proxy: PGDBObjAcdProxy;
   Pobj: PGDBObjEntity;
   Stats: PDWGImportStats;
 begin
   Handle := DWGObjectHandleValue(DWGObject);
   Stats := Stage7Stats;
-
-  if PProxy = nil then begin
-    if Stats <> nil then begin
-      Inc(Stats^.ProxiesFailed);
-      Inc(Stats^.DroppedDueToFreedRaw);
-    end;
-    Warn(wsError, DWG_WARN_PROXY_CORRUPT, Handle,
-      Format('ACAD_PROXY_ENTITY %s has no LibreDWG proxy payload; skipped',
-        [IntToHex(Handle, 1)]));
-    MarkSkipped(Handle);
-    Exit;
-  end;
-
-  DWGCopyProxyEntityPayload(PProxy, Payload);
-  if not Payload.HasGraphic then begin
-    if Stats <> nil then
-      Inc(Stats^.ProxiesFailed);
-    Warn(wsWarning, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
-      Format('ACAD_PROXY_ENTITY %s has no proxy graphic bytes; skipped',
-        [IntToHex(Handle, 1)]));
-    MarkSkipped(Handle);
-    Exit;
-  end;
 
   Proxy := AllocAndInitAcdProxy(nil);
   Proxy^.SetProxyGraphicData(Payload.Graphic,
@@ -127,15 +143,78 @@ begin
 
   if Stats <> nil then
     Inc(Stats^.ProxiesLoaded);
-  zDebugLn(['{WH}DWG PROXY_ENTITY handle=', IntToHex(Handle, 1),
+  zDebugLn(['{WH}', SourceLabel, ' handle=', IntToHex(Handle, 1),
     ' graphic_bytes=', Length(Payload.Graphic),
-    ' class=', Payload.ClassID,
-    ' dwgver=', DWG_V2Str(DWGContext.DWGVer)]);
+    ' proxy_class=', Payload.ProxyID,
+    ' app_class=', Payload.ClassID,
+    ' entity_data=', Payload.EntityDataSize,
+    ' drawing_format=', Payload.DWGVersions,
+    ' original_format=', Payload.FromDXF,
+    ' dwgver=', DWG_V2Str(DWGContext.DWGVer),
+    DWGObjectProxyDiag(DWGObject)]);
 
   if GetLoadCtx <> nil then
     DWGRegisterEntityShell(Pobj, DWGObject, False, 0)
   else
     ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(Pobj));
+end;
+
+function TryAddPreviewProxyEntity(var ZContext: TZDrawingContext;
+  var DWGContext: TDWGCtx; var DWGObject: Dwg_Object;
+  const SourceLabel: string): Boolean;
+var
+  Payload: TDWGProxyEntityPayload;
+begin
+  Result := DWGCopyEntityPreviewProxyPayload(DWGObject, Payload);
+  if Result then
+    AddProxyEntityFromPayload(ZContext, DWGContext, DWGObject, Payload,
+      SourceLabel);
+end;
+
+procedure AddProxyEntity(var ZContext: TZDrawingContext;
+  var DWGContext: TDWGCtx; var DWGObject: Dwg_Object;
+  PProxy: PDwg_Entity_PROXY_ENTITY);
+var
+  Handle: TDWGZCADHandle;
+  Payload: TDWGProxyEntityPayload;
+  Stats: PDWGImportStats;
+begin
+  Handle := DWGObjectHandleValue(DWGObject);
+  Stats := Stage7Stats;
+
+  if PProxy = nil then begin
+    if Stats <> nil then begin
+      Inc(Stats^.ProxiesFailed);
+      Inc(Stats^.DroppedDueToFreedRaw);
+    end;
+    zDebugLn(['{WH}DWG PROXY_ENTITY missing LibreDWG payload handle=',
+      IntToHex(Handle, 1), DWGObjectProxyDiag(DWGObject)]);
+    Warn(wsError, DWG_WARN_PROXY_CORRUPT, Handle,
+      Format('ACAD_PROXY_ENTITY %s has no LibreDWG proxy payload; skipped',
+        [IntToHex(Handle, 1)]));
+    MarkSkipped(Handle);
+    Exit;
+  end;
+
+  DWGCopyProxyEntityPayload(PProxy, Payload);
+  if not Payload.HasGraphic then begin
+    if Stats <> nil then
+      Inc(Stats^.ProxiesFailed);
+    zDebugLn(['{WH}DWG PROXY_ENTITY no graphics handle=',
+      IntToHex(Handle, 1),
+      ' proxy_class=', Payload.ProxyID,
+      ' app_class=', Payload.ClassID,
+      ' declared_bytes=', PProxy^.proxy_data_size,
+      DWGObjectProxyDiag(DWGObject)]);
+    Warn(wsWarning, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
+      Format('ACAD_PROXY_ENTITY %s has no proxy graphic bytes; skipped',
+        [IntToHex(Handle, 1)]));
+    MarkSkipped(Handle);
+    Exit;
+  end;
+
+  AddProxyEntityFromPayload(ZContext, DWGContext, DWGObject, Payload,
+    'DWG PROXY_ENTITY');
 end;
 
 procedure AddProxyObject(var ZContext: TZDrawingContext;
@@ -150,6 +229,8 @@ begin
     Inc(Stats^.UnknownObjects);
     Inc(Stats^.ProxiesFailed);
   end;
+  zDebugLn(['{WH}DWG PROXY_OBJECT skipped handle=', IntToHex(Handle, 1),
+    DWGObjectProxyDiag(DWGObject)]);
   Warn(wsInfo, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
     Format('ACAD_PROXY_OBJECT %s is non-graphical; skipped',
       [IntToHex(Handle, 1)]));
@@ -164,10 +245,15 @@ var
 begin
   Handle := DWGObjectHandleValue(DWGObject);
   Stats := Stage7Stats;
+  if TryAddPreviewProxyEntity(ZContext, DWGContext, DWGObject,
+    'DWG UNKNOWN_ENT proxy-preview') then
+    Exit;
   if Stats <> nil then begin
     Inc(Stats^.UnknownEntities);
     Inc(Stats^.DroppedDueToFreedRaw);
   end;
+  zDebugLn(['{WH}DWG UNKNOWN_ENT skipped handle=', IntToHex(Handle, 1),
+    DWGObjectProxyDiag(DWGObject)]);
   Warn(wsWarning, DWG_WARN_UNKNOWN_ENTITY, Handle,
     Format('Unknown DWG entity type %d at handle %s has no stable copied fallback; skipped',
       [Ord(DWGObject.fixedtype), IntToHex(Handle, 1)]));
@@ -182,10 +268,15 @@ var
 begin
   Handle := DWGObjectHandleValue(DWGObject);
   Stats := Stage7Stats;
+  if TryAddPreviewProxyEntity(ZContext, DWGContext, DWGObject,
+    'DWG OPAQUE_ENTITY proxy-preview') then
+    Exit;
   if Stats <> nil then begin
     Inc(Stats^.UnknownEntities);
     Inc(Stats^.DroppedDueToFreedRaw);
   end;
+  zDebugLn(['{WH}DWG OPAQUE_ENTITY skipped handle=', IntToHex(Handle, 1),
+    DWGObjectProxyDiag(DWGObject)]);
   Warn(wsWarning, DWG_WARN_UNKNOWN_NO_COPY, Handle,
     Format('Unsupported opaque DWG entity type %d at handle %s has no proxy graphic fallback; skipped',
       [Ord(DWGObject.fixedtype), IntToHex(Handle, 1)]));
@@ -204,6 +295,8 @@ begin
     Inc(Stats^.UnknownObjects);
     Inc(Stats^.DroppedDueToFreedRaw);
   end;
+  zDebugLn(['{WH}DWG UNKNOWN_OBJ skipped handle=', IntToHex(Handle, 1),
+    DWGObjectProxyDiag(DWGObject)]);
   Warn(wsWarning, DWG_WARN_UNKNOWN_OBJECT, Handle,
     Format('Unknown DWG object type %d at handle %s has no ZCAD object fallback; skipped',
       [Ord(DWGObject.fixedtype), IntToHex(Handle, 1)]));
