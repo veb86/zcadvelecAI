@@ -40,6 +40,7 @@ type
   PDwg_Entity_TEXT  = ^Dwg_Entity_TEXT;
   PDwg_Entity_MTEXT = ^Dwg_Entity_MTEXT;
   PDwg_Object_STYLE = ^Dwg_Object_STYLE;
+  PDwg_Object_VPORT = ^Dwg_Object_VPORT;
 
   TDWGEntityLineTypeKind = (
     dltMissing,
@@ -110,6 +111,21 @@ type
     LineWeightDisplay: Boolean;
   end;
 
+  TDWGViewSpace = (
+    dvsUnknown,
+    dvsModelSpace,
+    dvsPaperSpace
+  );
+
+  TDWGViewProps = record
+    CenterX: Double;
+    CenterY: Double;
+    Height: Double;
+    Width: Double;
+    HasWidth: Boolean;
+    Space: TDWGViewSpace;
+  end;
+
 { Object handle: the stable QWord identifier the import context indexes by. }
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
@@ -177,6 +193,11 @@ function DWGHeaderCurrentDimStyleHandleValue(const Raw: Dwg_Data;
   out Value: QWord): Boolean;
 function DWGHeaderCurrentEntityPropsValue(const Raw: Dwg_Data;
   out Props: TDWGHeaderCurrentEntityProps): Boolean;
+function DWGHeaderViewPropsValue(const Raw: Dwg_Data;
+  out Props: TDWGViewProps): Boolean;
+function DWGVPortViewPropsValue(const PVPort: PDwg_Object_VPORT;
+  out Props: TDWGViewProps): Boolean;
+function DWGViewSpaceToText(const Space: TDWGViewSpace): string;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
   Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean; overload;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
@@ -648,6 +669,69 @@ begin
     Props.GlobalLineTypeScale := Raw.header_vars.LTSCALE;
   Props.LineWeightDisplay := Raw.header_vars.LWDISPLAY <> 0;
   Result := True;
+end;
+
+function DWGDefaultViewProps: TDWGViewProps;
+begin
+  Result.CenterX := 0;
+  Result.CenterY := 0;
+  Result.Height := 0;
+  Result.Width := 0;
+  Result.HasWidth := False;
+  Result.Space := dvsUnknown;
+end;
+
+function DWGHeaderViewPropsValue(const Raw: Dwg_Data;
+  out Props: TDWGViewProps): Boolean;
+begin
+  Props := DWGDefaultViewProps;
+  if Raw.header_vars.VIEWSIZE <= 0 then
+    Exit(False);
+
+  Props.CenterX := Raw.header_vars.VIEWCTR.x;
+  Props.CenterY := Raw.header_vars.VIEWCTR.y;
+  Props.Height := Raw.header_vars.VIEWSIZE;
+  if Raw.header_vars.TILEMODE = 0 then
+    Props.Space := dvsPaperSpace
+  else
+    Props.Space := dvsModelSpace;
+  Result := True;
+end;
+
+function DWGVPortViewPropsValue(const PVPort: PDwg_Object_VPORT;
+  out Props: TDWGViewProps): Boolean;
+begin
+  Props := DWGDefaultViewProps;
+  if (PVPort = nil) or (PVPort^.VIEWSIZE <= 0) then
+    Exit(False);
+
+  Props.CenterX := PVPort^.VIEWCTR.x;
+  Props.CenterY := PVPort^.VIEWCTR.y;
+  Props.Height := PVPort^.VIEWSIZE;
+  if PVPort^.view_width > 0 then
+  begin
+    Props.Width := PVPort^.view_width;
+    Props.HasWidth := True;
+  end
+  else if PVPort^.aspect_ratio > 0 then
+  begin
+    Props.Width := Props.Height * PVPort^.aspect_ratio;
+    Props.HasWidth := True;
+  end;
+  Props.Space := dvsModelSpace;
+  Result := True;
+end;
+
+function DWGViewSpaceToText(const Space: TDWGViewSpace): string;
+begin
+  case Space of
+    dvsModelSpace:
+      Result := 'model';
+    dvsPaperSpace:
+      Result := 'paper';
+  else
+    Result := 'unknown';
+  end;
 end;
 
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;

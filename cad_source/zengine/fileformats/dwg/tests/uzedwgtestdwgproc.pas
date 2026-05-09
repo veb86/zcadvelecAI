@@ -55,6 +55,11 @@ type
     procedure HeaderCurrentDimStyleHandleReadsDIMSTYLE;
     procedure HeaderCurrentEntityPropsReadsDrawingDefaults;
     procedure HeaderCurrentEntityPropsDefaultsMissingScales;
+    procedure HeaderViewPropsReadsModelSpaceView;
+    procedure HeaderViewPropsMarksPaperSpaceWhenTilemodeOff;
+    procedure HeaderViewPropsRejectsZeroViewSize;
+    procedure VPortViewPropsCopiesCenterHeightAndWidth;
+    procedure VPortViewPropsDerivesWidthFromAspectRatio;
   end;
 
   TFPDWGProcTextStyleTest = class(TTestCase)
@@ -885,6 +890,96 @@ begin
   AssertEquals(1.0, Props.LineTypeScale, 0.0);
   AssertEquals(1.0, Props.GlobalLineTypeScale, 0.0);
   AssertFalse(Props.LineWeightDisplay);
+end;
+
+procedure TFPDWGProcHandleTest.HeaderViewPropsReadsModelSpaceView;
+var
+  Raw: Dwg_Data;
+  Props: TDWGViewProps;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  Raw.header_vars.TILEMODE := 1;
+  Raw.header_vars.VIEWCTR.x := 120.5;
+  Raw.header_vars.VIEWCTR.y := -42.25;
+  Raw.header_vars.VIEWSIZE := 640;
+
+  AssertTrue(DWGHeaderViewPropsValue(Raw, Props));
+  AssertEquals(120.5, Props.CenterX, 0.0);
+  AssertEquals(-42.25, Props.CenterY, 0.0);
+  AssertEquals(640.0, Props.Height, 0.0);
+  AssertFalse(Props.HasWidth);
+  AssertEquals(Ord(dvsModelSpace), Ord(Props.Space));
+end;
+
+procedure TFPDWGProcHandleTest.HeaderViewPropsMarksPaperSpaceWhenTilemodeOff;
+var
+  Raw: Dwg_Data;
+  Props: TDWGViewProps;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  Raw.header_vars.TILEMODE := 0;
+  Raw.header_vars.VIEWCTR.x := 11;
+  Raw.header_vars.VIEWCTR.y := 22;
+  Raw.header_vars.VIEWSIZE := 33;
+
+  AssertTrue(DWGHeaderViewPropsValue(Raw, Props));
+  AssertEquals(Ord(dvsPaperSpace), Ord(Props.Space));
+end;
+
+procedure TFPDWGProcHandleTest.HeaderViewPropsRejectsZeroViewSize;
+var
+  Raw: Dwg_Data;
+  Props: TDWGViewProps;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  Raw.header_vars.TILEMODE := 1;
+  Raw.header_vars.VIEWSIZE := 0;
+
+  AssertFalse(DWGHeaderViewPropsValue(Raw, Props));
+  AssertEquals(0.0, Props.Height, 0.0);
+  AssertEquals(Ord(dvsUnknown), Ord(Props.Space));
+end;
+
+procedure TFPDWGProcHandleTest.VPortViewPropsCopiesCenterHeightAndWidth;
+var
+  VPort: Dwg_Object_VPORT;
+  Props: TDWGViewProps;
+begin
+  FillChar(VPort, SizeOf(VPort), 0);
+  VPort.VIEWCTR.x := 12;
+  VPort.VIEWCTR.y := 34;
+  VPort.VIEWSIZE := 200;
+  VPort.view_width := 500;
+  VPort.aspect_ratio := 2.5;
+
+  AssertTrue(DWGVPortViewPropsValue(@VPort, Props));
+  AssertEquals(12.0, Props.CenterX, 0.0);
+  AssertEquals(34.0, Props.CenterY, 0.0);
+  AssertEquals(200.0, Props.Height, 0.0);
+  AssertEquals(500.0, Props.Width, 0.0);
+  AssertTrue(Props.HasWidth);
+  AssertEquals(Ord(dvsModelSpace), Ord(Props.Space));
+end;
+
+procedure TFPDWGProcHandleTest.VPortViewPropsDerivesWidthFromAspectRatio;
+var
+  VPort: Dwg_Object_VPORT;
+  Props: TDWGViewProps;
+begin
+  FillChar(VPort, SizeOf(VPort), 0);
+  VPort.VIEWCTR.x := -5;
+  VPort.VIEWCTR.y := 7;
+  VPort.VIEWSIZE := 100;
+  VPort.view_width := 0;
+  VPort.aspect_ratio := 1.6;
+
+  AssertTrue(DWGVPortViewPropsValue(@VPort, Props));
+  AssertEquals(-5.0, Props.CenterX, 0.0);
+  AssertEquals(7.0, Props.CenterY, 0.0);
+  AssertEquals(100.0, Props.Height, 0.0);
+  AssertEquals(160.0, Props.Width, 0.0);
+  AssertTrue(Props.HasWidth);
+  AssertEquals(Ord(dvsModelSpace), Ord(Props.Space));
 end;
 
 procedure TFPDWGProcTextStyleTest.StylePropsCopiesNameFontAndMetrics;

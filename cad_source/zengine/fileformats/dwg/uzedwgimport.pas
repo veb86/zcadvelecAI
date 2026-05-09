@@ -69,6 +69,7 @@ function GetLoadCtx: TDWGZCADLoadContext;
 function GetLoadDrawing: PTSimpleDrawing;
 function DWGEnsureDimStyle(var Drawing: TSimpleDrawing;
   const Name: string = 'Standard'): PGDBDimStyle;
+procedure DWGCaptureActiveVPortView(const Props: TDWGViewProps);
 
 { Stage 5 helper extracted from uzefflibredwg2ents.pas: register the entity
   shell + pending owner + layer/linetype/textstyle refs in one call. The
@@ -94,6 +95,10 @@ var
   LoadCurrentDimStyleHandle: QWord = 0;
   LoadHasHeaderEntityProps: Boolean = False;
   LoadHeaderEntityProps: TDWGHeaderCurrentEntityProps;
+  LoadHasHeaderViewProps: Boolean = False;
+  LoadHeaderViewProps: TDWGViewProps;
+  LoadHasActiveVPortViewProps: Boolean = False;
+  LoadActiveVPortViewProps: TDWGViewProps;
 
 function DWGDefaultTextStyleProp: GDBTextStyleProp;
 begin
@@ -142,6 +147,20 @@ end;
 function GetLoadDrawing: PTSimpleDrawing;
 begin
   Result := LoadDrawing;
+end;
+
+procedure DWGCaptureActiveVPortView(const Props: TDWGViewProps);
+begin
+  if (LoadCtx = nil) or (Props.Height <= 0) then
+    Exit;
+  LoadActiveVPortViewProps := Props;
+  LoadHasActiveVPortViewProps := True;
+  zDebugLn(['{WH}DWG active VPORT view: center=(',
+    FloatToStr(Props.CenterX), ', ', FloatToStr(Props.CenterY),
+    '), height=', FloatToStr(Props.Height),
+    ', width=', FloatToStr(Props.Width),
+    ', has_width=', BoolToStr(Props.HasWidth, True),
+    ', space=', DWGViewSpaceToText(Props.Space)]);
 end;
 
 function DWGEnsureTextStyle(var Drawing: TSimpleDrawing): PGDBTextStyle;
@@ -324,6 +343,65 @@ begin
     ', celtscale=', FloatToStr(ZContext.PDrawing^.CLTScale),
     ', ltscale=', FloatToStr(ZContext.PDrawing^.LTScale),
     ', lwdisplay=', BoolToStr(ZContext.PDrawing^.LWDisplay, True)]);
+end;
+
+function DWGSelectViewProps(out Props: TDWGViewProps; out Source: string): Boolean;
+begin
+  if LoadHasActiveVPortViewProps then begin
+    Props := LoadActiveVPortViewProps;
+    Source := 'active VPORT';
+    Exit(True);
+  end;
+  if LoadHasHeaderViewProps and (LoadHeaderViewProps.Space = dvsModelSpace) then
+  begin
+    Props := LoadHeaderViewProps;
+    Source := 'header';
+    Exit(True);
+  end;
+  if LoadHasHeaderViewProps and (LoadHeaderViewProps.Space = dvsPaperSpace) then
+    zDebugLn(['{WH}DWG header view is paper-space; ignoring it because ZCAD ',
+      'opens DWG drawings in model space']);
+  Result := False;
+end;
+
+procedure ApplyDWGViewState(var ZContext: TZDrawingContext);
+var
+  Props: TDWGViewProps;
+  Source: string;
+  ViewHeightZoom, ViewWidthZoom: Double;
+begin
+  if ZContext.LoadMode <> TLOLoad then
+    Exit;
+  if (ZContext.PDrawing = nil) or (ZContext.PDrawing^.pcamera = nil) then
+    Exit;
+  if not DWGSelectViewProps(Props, Source) then
+    Exit;
+
+  ZContext.PDrawing^.pcamera^.prop.point.x := -Props.CenterX;
+  ZContext.PDrawing^.pcamera^.prop.point.y := -Props.CenterY;
+
+  if (ZContext.PDrawing^.wa <> nil) and
+     (ZContext.PDrawing^.wa.getviewcontrol <> nil) and
+     (ZContext.PDrawing^.wa.getviewcontrol.ClientHeight > 0) then
+  begin
+    ViewHeightZoom := Props.Height /
+      ZContext.PDrawing^.wa.getviewcontrol.ClientHeight;
+    if ViewHeightZoom > 0 then
+      ZContext.PDrawing^.pcamera^.prop.zoom := ViewHeightZoom;
+    if Props.HasWidth and
+       (ZContext.PDrawing^.wa.getviewcontrol.ClientWidth > 0) then
+    begin
+      ViewWidthZoom := Props.Width /
+        ZContext.PDrawing^.wa.getviewcontrol.ClientWidth;
+      if ViewWidthZoom > ZContext.PDrawing^.pcamera^.prop.zoom then
+        ZContext.PDrawing^.pcamera^.prop.zoom := ViewWidthZoom;
+    end;
+  end;
+
+  zDebugLn(['{WH}DWG view from ', Source, ' applied: camera=(',
+    FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.x), ', ',
+    FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.y),
+    '), zoom=', FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
 end;
 
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
@@ -549,6 +627,8 @@ begin
   LoadHasCurrentDimStyleHandle := False;
   LoadCurrentDimStyleHandle := 0;
   LoadHasHeaderEntityProps := False;
+  LoadHasHeaderViewProps := False;
+  LoadHasActiveVPortViewProps := False;
   // Register pObjRoot under handle 0 so any LINE with a missing owner falls
   // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
   LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
@@ -601,6 +681,8 @@ begin
     DWGHeaderCurrentDimStyleHandleValue(Raw, LoadCurrentDimStyleHandle);
   LoadHasHeaderEntityProps :=
     DWGHeaderCurrentEntityPropsValue(Raw, LoadHeaderEntityProps);
+  LoadHasHeaderViewProps :=
+    DWGHeaderViewPropsValue(Raw, LoadHeaderViewProps);
   if LoadHasHeaderEntityProps then
     zDebugLn(['{WH}DWG header defaults: CLAYER=',
       DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
@@ -615,6 +697,12 @@ begin
       ', CELTSCALE=', FloatToStr(LoadHeaderEntityProps.LineTypeScale),
       ', LTSCALE=', FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
       ', LWDISPLAY=', BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
+  if LoadHasHeaderViewProps then
+    zDebugLn(['{WH}DWG header view: center=(',
+      FloatToStr(LoadHeaderViewProps.CenterX), ', ',
+      FloatToStr(LoadHeaderViewProps.CenterY), '), height=',
+      FloatToStr(LoadHeaderViewProps.Height), ', space=',
+      DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
   ScanRawObjects(Raw, LoadCtx);
 end;
 
@@ -632,6 +720,7 @@ begin
     ApplyDWGCurrentTextStyle(ZContext);
     ApplyDWGCurrentDimStyle(ZContext);
     ApplyDWGHeaderEntityProps(ZContext);
+    ApplyDWGViewState(ZContext);
     LoadCtx.ResolveOwners;
     zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
       ', fallback=', LoadCtx.FallbackCount,
@@ -659,6 +748,8 @@ begin
     LoadHasCurrentDimStyleHandle := False;
     LoadCurrentDimStyleHandle := 0;
     LoadHasHeaderEntityProps := False;
+    LoadHasHeaderViewProps := False;
+    LoadHasActiveVPortViewProps := False;
   end;
 end;
 
