@@ -63,6 +63,12 @@ type
     procedure StylePropsDefaultsMissingWidthFactor;
   end;
 
+  TFPDWGProcLinetypeTest = class(TTestCase)
+  published
+    procedure LinetypePropsCopiesDashPattern;
+    procedure LinetypePropsCopiesR11DashPattern;
+  end;
+
   TFPDWGProcLineTest = class(TTestCase)
   published
     procedure CopyLineEndpointsCopiesAllAxes;
@@ -913,6 +919,56 @@ begin
   AssertEquals(1.0, Props.WidthFactor, 0.0);
 end;
 
+procedure TFPDWGProcLinetypeTest.LinetypePropsCopiesDashPattern;
+var
+  LType: Dwg_Object_LTYPE;
+  Dashes: array[0..2] of Dwg_LTYPE_dash;
+  NameText, DescriptionText: AnsiString;
+  Props: TDWGLinetypeProps;
+begin
+  FillChar(LType, SizeOf(LType), 0);
+  FillChar(Dashes, SizeOf(Dashes), 0);
+  NameText := 'Dashed';
+  DescriptionText := 'Dashed line';
+  LType.name := PAnsiChar(NameText);
+  LType.description := PAnsiChar(DescriptionText);
+  LType.pattern_len := 0.75;
+  LType.numdashes := 3;
+  LType.dashes := @Dashes[0];
+  Dashes[0].length := 0.5;
+  Dashes[1].length := -0.25;
+  Dashes[2].length := 0.0;
+
+  AssertTrue(DWGLinetypePropsValue(@LType, R_2004, Props));
+  AssertEquals('name', 'Dashed', Props.Name);
+  AssertEquals('description', 'Dashed line', Props.Description);
+  AssertEquals('pattern length', 0.75, Props.PatternLength, 0.0);
+  AssertEquals('dash count', 3, Length(Props.Dashes));
+  AssertEquals('first dash length', 0.5, Props.Dashes[0].Length, 0.0);
+  AssertEquals('second dash length', -0.25, Props.Dashes[1].Length, 0.0);
+  AssertEquals('point dash length', 0.0, Props.Dashes[2].Length, 0.0);
+  AssertEquals('simple dash kind', Ord(dldDash), Ord(Props.Dashes[0].Kind));
+end;
+
+procedure TFPDWGProcLinetypeTest.LinetypePropsCopiesR11DashPattern;
+var
+  LType: Dwg_Object_LTYPE;
+  Props: TDWGLinetypeProps;
+begin
+  FillChar(LType, SizeOf(LType), 0);
+  LType.pattern_len := 1.25;
+  LType.numdashes := 2;
+  LType.dashes := nil;
+  LType.dashes_r11[0] := 0.75;
+  LType.dashes_r11[1] := -0.5;
+
+  AssertTrue(DWGLinetypePropsValue(@LType, R_11, Props));
+  AssertEquals('pattern length', 1.25, Props.PatternLength, 0.0);
+  AssertEquals('r11 dash count', 2, Length(Props.Dashes));
+  AssertEquals('first r11 dash length', 0.75, Props.Dashes[0].Length, 0.0);
+  AssertEquals('second r11 dash length', -0.5, Props.Dashes[1].Length, 0.0);
+end;
+
 procedure TFPDWGProcLineTest.CopyLineEndpointsCopiesAllAxes;
 var
   Line: Dwg_Entity_LINE;
@@ -1642,8 +1698,9 @@ end;
 
 begin
   RegisterTests([
-    TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLineTest,
-    TFPDWGProcCircleTest, TFPDWGProcArcTest, TFPDWGProcPointTest,
+    TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLinetypeTest,
+    TFPDWGProcLineTest, TFPDWGProcCircleTest, TFPDWGProcArcTest,
+    TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
     TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest,
     TFPDWGProcStage8GeometryTest
