@@ -58,20 +58,16 @@ begin
   zDebugLn(['{WH}header.dwg_version: ',dwg^.header.dwg_version]);
   zDebugLn(['{WH}header.maint_version: ',dwg^.header.maint_version]);
   zDebugLn(['{WH}header.codepage: ',dwg^.header.codepage]);
+  zDebugLn(['{WH}dwg.counts: classes=',dwg^.num_classes,
+    ', objects=',dwg^.num_objects,
+    ', alloced_objects=',dwg^.num_alloced_objects,
+    ', entities=',dwg^.num_entities,
+    ', object_refs=',dwg^.num_object_refs]);
 end;
 
 procedure PLP(const Data:TData;const Counter:TCounter);
 begin
  lps.ProgressLongProcess(TLPSHandle(Data),Counter);
-end;
-
-function IsCriticalDWGReadError(Code:integer):Boolean;
-begin
-  // LibreDWG dwg_read_file/dxf_read_file return non-zero on critical failure.
-  // The high bit (>=$80) signals an unrecoverable error per LibreDWG conventions;
-  // lower bits are informational (incomplete, partially loaded), so we only abort
-  // on the critical band.
-  Result:=(Code and $80)<>0;
 end;
 
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
@@ -103,12 +99,14 @@ begin
     {$ENDIF}
     Loaded:=True;
     lps.EndLongProcess(lph);
-    zDebugLn(['{WH}Success: ',Success]);
-    if IsCriticalDWGReadError(Success) then begin
-      zDebugLn(['{EHM}LibreDWG: critical read error code ',Success,', aborting parse']);
+    zDebugLn(['{WH}LibreDWG read code: ',Success,' (',
+      DWGReadCodeToText(Success),')']);
+    DebugDWG(@dwg);
+    if DWGReadCodeIsCritical(Success) then begin
+      zDebugLn(['{EHM}LibreDWG: critical read error code ',Success,' (',
+        DWGReadCodeToText(Success),'), aborting parse']);
       exit;
     end;
-    DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
       // Stage 2 (TZ §12.2): wrap parseDwg_Data with the load context so the
@@ -157,12 +155,14 @@ begin
     Success:=dxf_read_file(pchar(ansistring(filename)),@dwg);
     Loaded:=True;
     lps.EndLongProcess(lph);
-    zDebugLn(['{WH}Success: ',Success]);
-    if IsCriticalDWGReadError(Success) then begin
-      zDebugLn(['{EHM}LibreDWG: critical dxf read error code ',Success,', aborting parse']);
+    zDebugLn(['{WH}LibreDWG read code: ',Success,' (',
+      DWGReadCodeToText(Success),')']);
+    DebugDWG(@dwg);
+    if DWGReadCodeIsCritical(Success) then begin
+      zDebugLn(['{EHM}LibreDWG: critical dxf read error code ',Success,' (',
+        DWGReadCodeToText(Success),'), aborting parse']);
       exit;
     end;
-    DebugDWG(@dwg);
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
       BeginDWGImport(ZCDCtx);

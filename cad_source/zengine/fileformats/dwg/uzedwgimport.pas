@@ -665,6 +665,8 @@ begin
 end;
 
 procedure ScanDWGImport(var Raw: Dwg_Data);
+var
+  HandlesBefore: Integer;
 begin
   // R4 (TZ §3.4): Phase 1 raw scan runs between BeginDWGImport and
   // parseDwg_Data. No-op when the loader is inactive (legacy callers that
@@ -703,7 +705,15 @@ begin
       FloatToStr(LoadHeaderViewProps.CenterY), '), height=',
       FloatToStr(LoadHeaderViewProps.Height), ', space=',
       DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
+  HandlesBefore := LoadCtx.Handles.Count;
   ScanRawObjects(Raw, LoadCtx);
+  zDebugLn(['{WH}DWG raw objects: classes=', Raw.num_classes,
+    ', objects=', Raw.num_objects,
+    ', alloced_objects=', Raw.num_alloced_objects,
+    ', entities=', Raw.num_entities,
+    ', object_refs=', Raw.num_object_refs,
+    ', handles_registered=', LoadCtx.Handles.Count - HandlesBefore,
+    ', handles_total=', LoadCtx.Handles.Count]);
 end;
 
 procedure EndDWGImport(var ZContext: TZDrawingContext);
@@ -722,7 +732,10 @@ begin
     ApplyDWGHeaderEntityProps(ZContext);
     ApplyDWGViewState(ZContext);
     LoadCtx.ResolveOwners;
-    zDebugLn(['{WH}DWG owner resolve: attached=', LoadCtx.AttachCount,
+    zDebugLn(['{WH}DWG owner resolve: handles=', LoadCtx.Handles.Count,
+      ', pending_owners=', LoadCtx.PendingOwners.Count,
+      ', pending_refs=', LoadCtx.PendingRefs.Count,
+      ', attached=', LoadCtx.AttachCount,
       ', fallback=', LoadCtx.FallbackCount,
       ', cycles=', LoadCtx.CycleCount,
       ', refs_attached=', LoadCtx.RefAttachCount,

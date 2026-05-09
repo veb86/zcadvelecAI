@@ -62,6 +62,12 @@ type
     procedure VPortViewPropsDerivesWidthFromAspectRatio;
   end;
 
+  TFPDWGProcReadCodeTest = class(TTestCase)
+  published
+    procedure Issue1163ReadCode2368IsCritical;
+    procedure NonCriticalReadCodeStaysLoadable;
+  end;
+
   TFPDWGProcTextStyleTest = class(TTestCase)
   published
     procedure StylePropsCopiesNameFontAndMetrics;
@@ -178,6 +184,37 @@ var
 begin
   AssertFalse(DWGRefHandleValue(nil, Value));
   AssertEquals(Int64(0), Int64(Value));
+end;
+
+procedure TFPDWGProcReadCodeTest.Issue1163ReadCode2368IsCritical;
+var
+  Code: Integer;
+  Text: string;
+begin
+  Code := Ord(DWG_ERR_VALUEOUTOFBOUNDS) or
+    Ord(DWG_ERR_SECTIONNOTFOUND) or
+    Ord(DWG_ERR_INVALIDDWG);
+
+  AssertEquals('issue log read code', 2368, Code);
+  AssertTrue('critical bits must abort parsing',
+    DWGReadCodeIsCritical(Code));
+  Text := DWGReadCodeToText(Code);
+  AssertTrue('diagnostic includes VALUEOUTOFBOUNDS',
+    Pos('DWG_ERR_VALUEOUTOFBOUNDS', Text) > 0);
+  AssertTrue('diagnostic includes SECTIONNOTFOUND',
+    Pos('DWG_ERR_SECTIONNOTFOUND', Text) > 0);
+  AssertTrue('diagnostic includes INVALIDDWG',
+    Pos('DWG_ERR_INVALIDDWG', Text) > 0);
+end;
+
+procedure TFPDWGProcReadCodeTest.NonCriticalReadCodeStaysLoadable;
+var
+  Code: Integer;
+begin
+  Code := Ord(DWG_ERR_INVALIDHANDLE) or Ord(DWG_ERR_VALUEOUTOFBOUNDS);
+
+  AssertFalse('warnings below DWG_ERR_CLASSESNOTFOUND are recoverable',
+    DWGReadCodeIsCritical(Code));
 end;
 
 procedure TFPDWGProcHandleTest.EmptyRefReturnsFalse;
@@ -1992,7 +2029,8 @@ end;
 
 begin
   RegisterTests([
-    TFPDWGProcHandleTest, TFPDWGProcTextStyleTest, TFPDWGProcLinetypeTest,
+    TFPDWGProcHandleTest, TFPDWGProcReadCodeTest,
+    TFPDWGProcTextStyleTest, TFPDWGProcLinetypeTest,
     TFPDWGProcLineTest, TFPDWGProcCircleTest, TFPDWGProcArcTest,
     TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,

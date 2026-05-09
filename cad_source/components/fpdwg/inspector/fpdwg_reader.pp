@@ -217,20 +217,6 @@ begin
   end;
 end;
 
-function IsCriticalReadCode(Code: Integer): Boolean;
-const
-  CriticalMask =
-    Ord(DWG_ERR_CLASSESNOTFOUND) or
-    Ord(DWG_ERR_SECTIONNOTFOUND) or
-    Ord(DWG_ERR_PAGENOTFOUND) or
-    Ord(DWG_ERR_INTERNALERROR) or
-    Ord(DWG_ERR_INVALIDDWG) or
-    Ord(DWG_ERR_IOERROR) or
-    Ord(DWG_ERR_OUTOFMEM);
-begin
-  Result := (Code and CriticalMask) <> 0;
-end;
-
 function TDWGReader.ReadFile(const FileName: string; out Raw: Dwg_Data;
   const Options: TDWGReaderOptions): TDWGReadResult;
 var
@@ -264,25 +250,26 @@ begin
     end;
   end;
 
-  if IsCriticalReadCode(ReadCode) then
+  if DWGReadCodeIsCritical(ReadCode) then
   begin
     FreeDataSilently(Raw);
     LogError(DWG_READER_ERROR_READ,
-      Format('dwg_read_file returned critical error %d for "%s"',
-        [ReadCode, FileName]));
+      Format('dwg_read_file returned critical error %d (%s) for "%s"',
+        [ReadCode, DWGReadCodeToText(ReadCode), FileName]));
     Exit(TDWGReadResult.Failure(drsReadFailed, ReadCode,
-      Format('dwg_read_file returned critical error %d', [ReadCode])));
+      Format('dwg_read_file returned critical error %d (%s)',
+        [ReadCode, DWGReadCodeToText(ReadCode)])));
   end;
 
   Result := TDWGReadResult.Ok;
   Result.Code := ReadCode;
   if ReadCode <> 0 then
   begin
-    Result.Message := Format('dwg_read_file returned non-critical code %d',
-      [ReadCode]);
+    Result.Message := Format('dwg_read_file returned non-critical code %d (%s)',
+      [ReadCode, DWGReadCodeToText(ReadCode)]);
     LogWarning(DWG_READER_WARNING_READ,
-      Format('dwg_read_file returned non-critical code %d for "%s"',
-        [ReadCode, FileName]));
+      Format('dwg_read_file returned non-critical code %d (%s) for "%s"',
+        [ReadCode, DWGReadCodeToText(ReadCode), FileName]));
   end;
 end;
 
