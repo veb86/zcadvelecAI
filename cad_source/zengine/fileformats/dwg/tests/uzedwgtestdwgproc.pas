@@ -61,12 +61,14 @@ type
   published
     procedure StylePropsCopiesNameFontAndMetrics;
     procedure StylePropsDecodesCP1251Name;
+    procedure StylePropsKeepsR2010UnicodeName;
     procedure StylePropsDefaultsMissingWidthFactor;
   end;
 
   TFPDWGProcLinetypeTest = class(TTestCase)
   published
     procedure LinetypePropsCopiesDashPattern;
+    procedure LinetypePropsKeepsR2010UnicodeText;
     procedure LinetypePropsCopiesR11DashPattern;
   end;
 
@@ -103,6 +105,7 @@ type
   TFPDWGProcTextTest = class(TTestCase)
   published
     procedure BITCODET2TextUsesHeaderCodepage;
+    procedure BITCODET2TextKeepsR2010UnicodeTableName;
     procedure CopyTextCopiesGeometry;
     procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
@@ -159,8 +162,10 @@ type
 implementation
 
 uses
+  SysUtils,
   dwg,
-  dwgproc;
+  dwgproc,
+  uzedwgtext;
 
 procedure TFPDWGProcHandleTest.NilRefReturnsFalse;
 var
@@ -927,6 +932,30 @@ begin
   AssertEquals(Expected, Props.Name);
 end;
 
+procedure TFPDWGProcTextStyleTest.StylePropsKeepsR2010UnicodeName;
+var
+  Style: Dwg_Object_STYLE;
+  Props: TDWGTextStyleProps;
+  NameText, FontText: UnicodeString;
+  ExpectedName, ExpectedFont, StoredName: AnsiString;
+begin
+  FillChar(Style, SizeOf(Style), 0);
+  ExpectedName := #$D1#$81#$D1#$82#$D0#$B8#$D0#$BB#$D1#$8C'1';
+  ExpectedFont := #$D1#$88#$D1#$80#$D0#$B8#$D1#$84#$D1#$82'.shx';
+  NameText := UTF8Decode(ExpectedName);
+  FontText := UTF8Decode(ExpectedFont);
+  Style.name := PAnsiChar(PUnicodeChar(NameText));
+  Style.font_file := PAnsiChar(PUnicodeChar(FontText));
+
+  AssertTrue(DWGTextStylePropsValue(@Style, R_2010, 29, Props));
+  StoredName := DWGDecodedTextForZCAD(Props.Name);
+
+  AssertEquals(ExpectedName, StoredName);
+  AssertEquals(ExpectedFont, DWGDecodedTextForZCAD(Props.FontFile));
+  AssertEquals('style name must not be folded to question marks',
+    0, Pos('?', StoredName));
+end;
+
 procedure TFPDWGProcTextStyleTest.StylePropsDefaultsMissingWidthFactor;
 var
   Style: Dwg_Object_STYLE;
@@ -968,6 +997,40 @@ begin
   AssertEquals('second dash length', -0.25, Props.Dashes[1].Length, 0.0);
   AssertEquals('point dash length', 0.0, Props.Dashes[2].Length, 0.0);
   AssertEquals('simple dash kind', Ord(dldDash), Ord(Props.Dashes[0].Kind));
+end;
+
+procedure TFPDWGProcLinetypeTest.LinetypePropsKeepsR2010UnicodeText;
+var
+  LType: Dwg_Object_LTYPE;
+  Dashes: array[0..0] of Dwg_LTYPE_dash;
+  NameText, DescriptionText, DashText: UnicodeString;
+  ExpectedName, ExpectedDescription, ExpectedDashText: AnsiString;
+  Props: TDWGLinetypeProps;
+begin
+  FillChar(LType, SizeOf(LType), 0);
+  FillChar(Dashes, SizeOf(Dashes), 0);
+  ExpectedName := #$D0#$9B#$D0#$B8#$D0#$BD#$D0#$B8#$D1#$8F'1';
+  ExpectedDescription :=
+    #$D0#$9E#$D0#$BF#$D0#$B8#$D1#$81#$D0#$B0#$D0#$BD#$D0#$B8#$D0#$B5;
+  ExpectedDashText := #$D1#$82#$D0#$B5#$D0#$BA#$D1#$81#$D1#$82;
+  NameText := UTF8Decode(ExpectedName);
+  DescriptionText := UTF8Decode(ExpectedDescription);
+  DashText := UTF8Decode(ExpectedDashText);
+  LType.name := PAnsiChar(PUnicodeChar(NameText));
+  LType.description := PAnsiChar(PUnicodeChar(DescriptionText));
+  LType.numdashes := 1;
+  LType.dashes := @Dashes[0];
+  Dashes[0].shape_flag := 2;
+  Dashes[0].text := PAnsiChar(PUnicodeChar(DashText));
+
+  AssertTrue(DWGLinetypePropsValue(@LType, R_2010, 29, Props));
+
+  AssertEquals(ExpectedName, DWGDecodedTextForZCAD(Props.Name));
+  AssertEquals(ExpectedDescription, DWGDecodedTextForZCAD(Props.Description));
+  AssertEquals('dash count', 1, Length(Props.Dashes));
+  AssertEquals(ExpectedDashText, DWGDecodedTextForZCAD(Props.Dashes[0].Text));
+  AssertEquals('linetype text must not be folded to question marks',
+    0, Pos('?', DWGDecodedTextForZCAD(Props.Dashes[0].Text)));
 end;
 
 procedure TFPDWGProcLinetypeTest.LinetypePropsCopiesR11DashPattern;
@@ -1151,6 +1214,29 @@ begin
   BITCODE_T2Text(PChar(RawText), DWGContext, Decoded);
 
   AssertEquals(Expected, Decoded);
+end;
+
+procedure TFPDWGProcTextTest.BITCODET2TextKeepsR2010UnicodeTableName;
+var
+  RawDWG: Dwg_Data;
+  DWGContext: TDWGCtx;
+  RawText: UnicodeString;
+  Expected, Decoded, Stored: AnsiString;
+begin
+  FillChar(RawDWG, SizeOf(RawDWG), 0);
+  RawDWG.header.version := R_2010;
+  RawDWG.header.codepage := 29;
+  DWGContext.CreateRec(RawDWG);
+  Expected := #$D0#$A1#$D0#$BB#$D0#$BE#$D0#$B9'1';
+  RawText := UTF8Decode(Expected);
+
+  // Issue #1164: R2010+ table mappers must store decoded UTF-16 text as-is.
+  BITCODE_T2Text(PAnsiChar(PUnicodeChar(RawText)), DWGContext, Decoded);
+  Stored := DWGDecodedTextForZCAD(Decoded);
+
+  AssertEquals(Expected, Stored);
+  AssertEquals('table name must not be folded to question marks',
+    0, Pos('?', Stored));
 end;
 
 procedure TFPDWGProcTextTest.CopyTextCopiesGeometry;
