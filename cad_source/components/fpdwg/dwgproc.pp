@@ -204,6 +204,12 @@ interface
       PolylinePoints:array of TDWGHatchPolylinePoint;
     end;
 
+    TDWGHatchPatternLineProps=record
+      Angle:double;
+      Base,Offset:TDWGPoint2D;
+      Dashes:array of double;
+    end;
+
     TDWGHatchProps=record
       PatternName:string;
       Elevation:double;
@@ -213,6 +219,7 @@ interface
       PatternType:Integer;
       Angle:double;
       Scale:double;
+      PatternLines:array of TDWGHatchPatternLineProps;
       Paths:array of TDWGHatchPathProps;
     end;
 
@@ -894,10 +901,14 @@ implementation
   type
     PHatchPath=^Dwg_HATCH_Path;
     PHatchPolylinePath=^Dwg_HATCH_PolylinePath;
+    PHatchDefLine=^Dwg_HATCH_DefLine;
+    PBitcodeBD=^BITCODE_BD;
   var
-    i,j,n,PointCount:Integer;
+    i,j,n,PointCount,DashCount:Integer;
     pPath:PHatchPath;
     pPoint:PHatchPolylinePath;
+    pDefLine:PHatchDefLine;
+    pDash:PBitcodeBD;
   begin
     Props.PatternName:='';
     Props.Elevation:=Hatch.elevation;
@@ -907,8 +918,33 @@ implementation
     Props.PatternType:=Hatch.pattern_type;
     Props.Angle:=Hatch.angle;
     Props.Scale:=Hatch.scale_spacing;
+    SetLength(Props.PatternLines,0);
     SetLength(Props.Paths,0);
     DWGSafeDecodeText(Hatch.name,Version,Props.PatternName);
+
+    n:=Integer(Hatch.num_deflines);
+    if (n>0) and (Hatch.deflines<>nil) then begin
+      SetLength(Props.PatternLines,n);
+      pDefLine:=PHatchDefLine(Hatch.deflines);
+      for i:=0 to n-1 do begin
+        Props.PatternLines[i].Angle:=pDefLine^.angle;
+        Props.PatternLines[i].Base.X:=pDefLine^.pt0.x;
+        Props.PatternLines[i].Base.Y:=pDefLine^.pt0.y;
+        Props.PatternLines[i].Offset.X:=pDefLine^.offset.x;
+        Props.PatternLines[i].Offset.Y:=pDefLine^.offset.y;
+        SetLength(Props.PatternLines[i].Dashes,0);
+        DashCount:=Integer(pDefLine^.num_dashes);
+        if (DashCount>0) and (pDefLine^.dashes<>nil) then begin
+          SetLength(Props.PatternLines[i].Dashes,DashCount);
+          pDash:=PBitcodeBD(pDefLine^.dashes);
+          for j:=0 to DashCount-1 do begin
+            Props.PatternLines[i].Dashes[j]:=pDash^;
+            Inc(pDash);
+          end;
+        end;
+        Inc(pDefLine);
+      end;
+    end;
 
     n:=DWGBLToInt(Hatch.num_paths);
     if (n<=0) or (Hatch.paths=nil) then
