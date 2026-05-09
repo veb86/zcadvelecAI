@@ -1,40 +1,22 @@
 ## Summary
-Fixes AcadTable cell text styles loaded from DXF table styles.
-Fixes `veb86/zcadvelecAI#898` by adding Proxy Graphic support for `OpCode=32` (`PolylineWithNormals`), which restores the shelf/divider line inside the proxy-rendered multileader block from `cad_source/test/mleaderblock.dxf`.
 
-Also includes the current `master` changes for `veb86/zcadvelecAI#895`, which restrict generic `MTEXT` wrapping to word boundaries and keep character-by-character wrapping only for AcadTable cell text.
+Fixes veb86/zcadvelecAI#1163.
 
-Also fixes `veb86/zcadvelecAI#902`, where AcadTable DXF cell text styles (`title`, `header`, `data`) were resolved correctly but ignored during visual entity creation, so every cell rendered with the same text style.
+- Treat LibreDWG read codes that contain critical bits as fatal in the ZCAD DWG/DXF loader.
+- Share the same critical-code mask with the fpdwg inspector instead of keeping separate implementations.
+- Decode LibreDWG read-code bit flags in diagnostics, including the issue log code `2368` as `DWG_ERR_VALUEOUTOFBOUNDS,DWG_ERR_SECTIONNOTFOUND,DWG_ERR_INVALIDDWG`.
+- Add extra loader diagnostics for raw DWG counts, registered handles, pending owners, and pending refs so partial/failed loads are easier to investigate.
 
 ## Reproduction
 
-1. Open `cad_source/test/mleaderblock.dxf`.
-2. Inspect the proxy-rendered multileader block.
-3. Before this change, the horizontal shelf/divider line inside the block is missing.
-4. Open `cad_source/test/testtable.dxf`.
-5. Inspect the table cell wrapping behavior.
-6. Before the `master` fix, long unspaced text was character-wrapped in generic MTEXT, not just in table cells.
-7. Open `cad_source/test/tablerazdel.dxf`.
-8. Inspect the table text styles.
-9. Before this fix, all cells render with `Standard` instead of respecting the DXF table style assignments such as `newtext`.
-
-## Changes
-
-- registered a new proxy parser module for `OpCode=32` in `uzeentacdproxy`
-- added `uzeentproxyparserpolylinewithnormals.pas` to read the vertex list and trailing normal vector from Proxy Graphic data
-- added a regression test in `uzctentproxy` that parses the proxy graphic from `mleaderblock.dxf` and asserts the expected shelf segment exists
-- kept the parser behavior aligned with `ezdxf`: vertices are rendered as a polyline and the shared normal is currently ignored
-- merged the `master` MTEXT wrap-mode changes so generic MTEXT stays word-wrapped while table cells explicitly use word-then-character wrapping
-- kept the `TMTextWrapTest` coverage from `master`
-- resolved `MText.TXTStyle` for each AcadTable cell from the style name calculated by `ResolveCellStyle`
-- added a fallback chain for AcadTable text styles: requested style -> `Standard` -> first available text style
-- added a regression test in `cad_source/zengine/tests/uzctacadtable.pas` that loads `tablerazdel.dxf` and verifies multiple styles are used, including `newtext`
+1. Load the DWG 2018 file from the issue log, where LibreDWG returns read code `2368`.
+2. Before this change, the loader printed `Success: 2368`, treated the result as recoverable, and continued into parsing an unusable partial DWG structure that built zero entities.
+3. After this change, the loader logs the decoded critical flags and aborts parsing before owner/entity resolution, preserving DWG counts for diagnosis.
 
 ## Testing
 
-- Added automated regression coverage in `cad_source/zengine/tests/uzctentproxy.pas`
-- Added `TMTextWrapTest` in `cad_source/zengine/tests/uzctmtextwrap.pas`
-- Added automated regression coverage in `cad_source/zengine/tests/uzctacadtable.pas`
-- Local compile/test execution could not be completed in this environment because `fpc`/`lazbuild` are not installed
-
-Fixes veb86/zcadvelecAI#902
+- Added `TFPDWGProcReadCodeTest.Issue1163ReadCode2368IsCritical`.
+- Added `TFPDWGProcReadCodeTest.NonCriticalReadCodeStaysLoadable`.
+- `git diff --check`
+- `make checkvars`
+- Pascal test execution was not run locally because this workspace does not have `fpc` or `lazbuild` installed.

@@ -303,6 +303,8 @@ interface
   // uzedwghandle and uzedwgtext (both re-exported by this unit).
   procedure BITCODE_T2Text(const p:BITCODE_T;constref DWGContext:TDWGCtx;out text:string);
   function DWG_V2Str(v:DWG_VERSION_TYPE):string;
+  function DWGReadCodeIsCritical(Code:integer):Boolean;
+  function DWGReadCodeToText(Code:integer):string;
 
   // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
   // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
@@ -471,6 +473,54 @@ implementation
         inc(i);
       end;
     end;
+  end;
+
+  function DWGReadCodeIsCritical(Code:integer):Boolean;
+  const
+    CriticalMask =
+      Ord(DWG_ERR_CLASSESNOTFOUND) or
+      Ord(DWG_ERR_SECTIONNOTFOUND) or
+      Ord(DWG_ERR_PAGENOTFOUND) or
+      Ord(DWG_ERR_INTERNALERROR) or
+      Ord(DWG_ERR_INVALIDDWG) or
+      Ord(DWG_ERR_IOERROR) or
+      Ord(DWG_ERR_OUTOFMEM);
+  begin
+    Result := (Code and CriticalMask) <> 0;
+  end;
+
+  function DWGReadCodeToText(Code:integer):string;
+
+    procedure AddFlag(Mask:DWG_ERROR;const Name:string);
+    begin
+      if (Code and Ord(Mask)) = 0 then
+        Exit;
+      if Result <> '' then
+        Result := Result + ',';
+      Result := Result + Name;
+    end;
+
+  begin
+    Result := '';
+    if Code = Ord(DWG_NOERR) then
+      Exit('DWG_NOERR');
+
+    AddFlag(DWG_ERR_WRONGCRC, 'DWG_ERR_WRONGCRC');
+    AddFlag(DWG_ERR_NOTYETSUPPORTED, 'DWG_ERR_NOTYETSUPPORTED');
+    AddFlag(DWG_ERR_UNHANDLEDCLASS, 'DWG_ERR_UNHANDLEDCLASS');
+    AddFlag(DWG_ERR_INVALIDTYPE, 'DWG_ERR_INVALIDTYPE');
+    AddFlag(DWG_ERR_INVALIDHANDLE, 'DWG_ERR_INVALIDHANDLE');
+    AddFlag(DWG_ERR_INVALIDEED, 'DWG_ERR_INVALIDEED');
+    AddFlag(DWG_ERR_VALUEOUTOFBOUNDS, 'DWG_ERR_VALUEOUTOFBOUNDS');
+    AddFlag(DWG_ERR_CLASSESNOTFOUND, 'DWG_ERR_CLASSESNOTFOUND');
+    AddFlag(DWG_ERR_SECTIONNOTFOUND, 'DWG_ERR_SECTIONNOTFOUND');
+    AddFlag(DWG_ERR_PAGENOTFOUND, 'DWG_ERR_PAGENOTFOUND');
+    AddFlag(DWG_ERR_INTERNALERROR, 'DWG_ERR_INTERNALERROR');
+    AddFlag(DWG_ERR_INVALIDDWG, 'DWG_ERR_INVALIDDWG');
+    AddFlag(DWG_ERR_IOERROR, 'DWG_ERR_IOERROR');
+    AddFlag(DWG_ERR_OUTOFMEM, 'DWG_ERR_OUTOFMEM');
+    if Result = '' then
+      Result := 'DWG_ERR_UNKNOWN';
   end;
 
   //work in fpc3.2.2
