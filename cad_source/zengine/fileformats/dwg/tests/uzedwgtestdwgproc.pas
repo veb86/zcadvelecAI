@@ -148,6 +148,7 @@ type
     procedure CopyEllipseCopiesAxesAndAngles;
     procedure CopySplineCopiesKnotsControlAndFitPoints;
     procedure CopyHatchCopiesPolylineBoundary;
+    procedure CopyHatchCopiesPatternDefLines;
     procedure CopyPolylineRefsCopiesOwnedVertexHandles;
   end;
 
@@ -1667,6 +1668,49 @@ begin
   AssertEquals('point count', 3, Length(Props.Paths[0].PolylinePoints));
   AssertEquals('point[1].bulge', 0.25,
     Props.Paths[0].PolylinePoints[1].Bulge, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.CopyHatchCopiesPatternDefLines;
+var
+  Hatch: Dwg_Entity_HATCH;
+  Props: TDWGHatchProps;
+  DefLines: array[0..1] of Dwg_HATCH_DefLine;
+  Dashes: array[0..2] of BITCODE_BD;
+begin
+  FillChar(Hatch, SizeOf(Hatch), 0);
+  FillChar(DefLines, SizeOf(DefLines), 0);
+  Dashes[0] := 0.5;
+  Dashes[1] := -0.25;
+  Dashes[2] := 0.125;
+  DefLines[0].angle := 0.7853981633974483;
+  DefLines[0].pt0.x := 1.0; DefLines[0].pt0.y := 2.0;
+  DefLines[0].offset.x := 3.0; DefLines[0].offset.y := 4.0;
+  DefLines[0].num_dashes := Length(Dashes);
+  DefLines[0].dashes := @Dashes[0];
+  DefLines[1].angle := 1.5707963267948966;
+  DefLines[1].pt0.x := 5.0; DefLines[1].pt0.y := 6.0;
+  DefLines[1].offset.x := 0.0; DefLines[1].offset.y := 7.0;
+  Hatch.is_solid_fill := 0;
+  Hatch.num_deflines := Length(DefLines);
+  Hatch.deflines := @DefLines[0];
+
+  DWGCopyHatchProps(Hatch, R_2004, Props);
+
+  AssertEquals('pattern line count', 2, Length(Props.PatternLines));
+  AssertEquals('line[0] angle', 0.7853981633974483,
+    Props.PatternLines[0].Angle, 0.0);
+  AssertEquals('line[0] base x', 1.0, Props.PatternLines[0].Base.X, 0.0);
+  AssertEquals('line[0] base y', 2.0, Props.PatternLines[0].Base.Y, 0.0);
+  AssertEquals('line[0] offset x', 3.0, Props.PatternLines[0].Offset.X, 0.0);
+  AssertEquals('line[0] offset y', 4.0, Props.PatternLines[0].Offset.Y, 0.0);
+  AssertEquals('line[0] dash count', 3, Length(Props.PatternLines[0].Dashes));
+  AssertEquals('line[0] dash[1]', -0.25,
+    Props.PatternLines[0].Dashes[1], 0.0);
+  AssertEquals('line[1] angle', 1.5707963267948966,
+    Props.PatternLines[1].Angle, 0.0);
+  AssertEquals('line[1] base x', 5.0, Props.PatternLines[1].Base.X, 0.0);
+  AssertEquals('line[1] offset y', 7.0, Props.PatternLines[1].Offset.Y, 0.0);
+  AssertEquals('line[1] dash count', 0, Length(Props.PatternLines[1].Dashes));
 end;
 
 procedure TFPDWGProcStage8GeometryTest.CopyPolylineRefsCopiesOwnedVertexHandles;

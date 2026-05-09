@@ -24,6 +24,7 @@ uses
   uzeentsubordinated,
   uzegeometrytypes, uzegeometry,
   UGDBPolyLine2DArray,
+  uzeStylesHatchPatterns,
   uzedwgloadcontext,
   uzedwgentityregistry,
   uzeffmanager,
@@ -279,6 +280,36 @@ begin
   end;
 end;
 
+procedure CopyHatchPattern(pobj: PGDBObjHatch; const Props: TDWGHatchProps);
+var
+  i, j: Integer;
+  MainAngleRad, SinA, CosA: Double;
+  PatLine: PTPatStrokesArray;
+begin
+  if Props.IsSolidFill or (Length(Props.PatternLines) = 0) then
+    Exit;
+
+  pobj^.PPattern := GetMem(SizeOf(THatchPattern));
+  pobj^.PPattern^.init(Length(Props.PatternLines));
+
+  MainAngleRad := DegToRad(pobj^.Angle);
+  SinCos(-MainAngleRad, SinA, CosA);
+  for i := 0 to High(Props.PatternLines) do begin
+    PatLine := pobj^.PPattern^.CreateObject;
+    PatLine^.init(Length(Props.PatternLines[i].Dashes));
+    PatLine^.Angle := RadToDeg(Props.PatternLines[i].Angle) - pobj^.Angle;
+    PatLine^.Base.x := Props.PatternLines[i].Base.X / pobj^.Scale;
+    PatLine^.Base.y := Props.PatternLines[i].Base.Y / pobj^.Scale;
+    PatLine^.Offset.x := (Props.PatternLines[i].Offset.X * CosA -
+      Props.PatternLines[i].Offset.Y * SinA) / pobj^.Scale;
+    PatLine^.Offset.y := (Props.PatternLines[i].Offset.Y * CosA +
+      Props.PatternLines[i].Offset.X * SinA) / pobj^.Scale;
+    for j := 0 to High(Props.PatternLines[i].Dashes) do
+      PatLine^.PushBackData(Props.PatternLines[i].Dashes[j] / pobj^.Scale);
+    PatLine^.format;
+  end;
+end;
+
 procedure AddHatchEntity(var ZContext: TZDrawingContext;
   var DWGContext: TDWGCtx; var DWGObject: Dwg_Object;
   PHatch: PDwg_Entity_HATCH);
@@ -296,7 +327,7 @@ begin
   pobj^.PatternName := Props.PatternName;
   if (pobj^.PatternName = '') and Props.IsSolidFill then
     pobj^.PatternName := 'SOLID';
-  pobj^.Angle := Props.Angle;
+  pobj^.Angle := RadToDeg(Props.Angle);
   pobj^.Scale := Props.Scale;
   if pobj^.Scale = 0 then
     pobj^.Scale := 1;
@@ -306,6 +337,7 @@ begin
   else
     pobj^.IslandDetection := HID_Normal;
   end;
+  CopyHatchPattern(pobj, Props);
   CopyHatchBoundaries(pobj, Props, PHatch);
 
   if GetLoadCtx <> nil then
