@@ -420,9 +420,30 @@ begin
   end;
 end;
 
+procedure AddVPort(var ZContext: TZDrawingContext; var DWGContext: TDWGCtx;
+  var DWGObject: Dwg_Object; PDWGVPort: PDwg_Object_VPORT);
+var
+  Name: string;
+  Props: TDWGViewProps;
+begin
+  if PDWGVPort = nil then
+    Exit;
+  BITCODE_T2Text(PDWGVPort^.name, DWGContext, Name);
+  Name := DWGDecodedTextForZCAD(Name);
+  zDebugLn(['{WH}VPort: ', Name]);
+  if CompareText(Name, '*ACTIVE') <> 0 then
+    Exit;
+
+  if DWGVPortViewPropsValue(PDWGVPort, Props) then
+    DWGCaptureActiveVPortView(Props)
+  else
+    zDebugLn(['{WHM}DWG active VPORT has no usable view size']);
+end;
+
 initialization
   RegisterDWGObjectHandler(DWG_TYPE_LAYER, @AddLayer);
   RegisterDWGObjectHandler(DWG_TYPE_LTYPE, @AddLineType);
   RegisterDWGObjectHandler(DWG_TYPE_STYLE, @AddTextStyle);
   RegisterDWGObjectHandler(DWG_TYPE_DIMSTYLE, @AddDimStyle);
+  RegisterDWGObjectHandler(DWG_TYPE_VPORT, @AddVPort);
 end.
