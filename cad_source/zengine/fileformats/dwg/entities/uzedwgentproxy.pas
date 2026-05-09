@@ -92,8 +92,6 @@ end;
 function DWGObjectProxyDiag(const DWGObject: Dwg_Object): string;
 var
   Ent: ^Dwg_Object_Entity;
-  Header: array[0..7] of Byte;
-  PreviewChunkSize, PreviewCommandCount: Cardinal;
 begin
   Result := Format(' fixedtype=%d name="%s" dxfname="%s"',
     [Ord(DWGObject.fixedtype),
@@ -118,13 +116,6 @@ begin
       [Integer(Ent^.preview_exists),
        Integer(Ent^.preview_is_proxy),
        IntToStr(Int64(Ent^.preview_size))]);
-    if (Ent^.preview <> nil) and (Ent^.preview_size >= SizeOf(Header)) then begin
-      Move(Ent^.preview^, Header[0], SizeOf(Header));
-      Move(Header[0], PreviewChunkSize, SizeOf(PreviewChunkSize));
-      Move(Header[4], PreviewCommandCount, SizeOf(PreviewCommandCount));
-      Result := Result + Format(' preview_header_size=%d preview_commands=%d',
-        [PreviewChunkSize, PreviewCommandCount]);
-    end;
   end;
   Result := Result + Format(' unknown_bits=%d unknown_rest=%d',
     [Integer(DWGObject.num_unknown_bits), Integer(DWGObject.num_unknown_rest)]);
@@ -223,15 +214,28 @@ begin
   if not Payload.HasGraphic then begin
     if Stats <> nil then
       Inc(Stats^.ProxiesFailed);
-    zDebugLn(['{WH}DWG PROXY_ENTITY no graphics handle=',
-      IntToHex(Handle, 1),
-      ' proxy_class=', Payload.ProxyID,
-      ' app_class=', Payload.ClassID,
-      ' declared_bytes=', PProxy^.proxy_data_size,
-      DWGObjectProxyDiag(DWGObject)]);
-    Warn(wsWarning, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
-      Format('ACAD_PROXY_ENTITY %s has no proxy graphic bytes; skipped',
-        [IntToHex(Handle, 1)]));
+    if not DWGProxyEntityPayloadLooksSane(PProxy) then begin
+      zDebugLn(['{WH}DWG PROXY_ENTITY corrupt payload handle=',
+        IntToHex(Handle, 1),
+        ' proxy_class=', Payload.ProxyID,
+        ' app_class=', Payload.ClassID,
+        ' from_dxf=', Payload.FromDXF,
+        ' declared_bytes=', PProxy^.proxy_data_size,
+        DWGObjectProxyDiag(DWGObject)]);
+      Warn(wsWarning, DWG_WARN_PROXY_CORRUPT, Handle,
+        Format('ACAD_PROXY_ENTITY %s has corrupt proxy graphic metadata; skipped',
+          [IntToHex(Handle, 1)]));
+    end else begin
+      zDebugLn(['{WH}DWG PROXY_ENTITY no graphics handle=',
+        IntToHex(Handle, 1),
+        ' proxy_class=', Payload.ProxyID,
+        ' app_class=', Payload.ClassID,
+        ' declared_bytes=', PProxy^.proxy_data_size,
+        DWGObjectProxyDiag(DWGObject)]);
+      Warn(wsWarning, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
+        Format('ACAD_PROXY_ENTITY %s has no proxy graphic bytes; skipped',
+          [IntToHex(Handle, 1)]));
+    end;
     MarkSkipped(Handle);
     Exit;
   end;
