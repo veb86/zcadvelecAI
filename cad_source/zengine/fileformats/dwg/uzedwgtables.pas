@@ -27,9 +27,8 @@ interface
 uses
   uzbLogIntf,
   SysUtils,
-  dwg, dwgproc, uzedwghandle,
+  dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
-  uzbstrproc,
   uzestyleslayers, uzestyleslinetypes, uzestylestexts, uzestylesdim,
   uzeTypes,
   uzedwgloadcontext,
@@ -187,8 +186,7 @@ var
 begin
   BITCODE_T2Text(PDWGLayer^.name, DWGContext, name);
   zDebugLn(['{WH}Layer: ', name]);
-  if DWGContext.DWGVer > R_2007 then
-    name := Tria_Utf8ToAnsi(name);
+  name := DWGDecodedTextForZCAD(name);
   player := ZContext.PDrawing^.LayerTable.MergeItem(name, ZContext.LoadMode);
   if player <> nil then begin
     player^.init(name);
@@ -254,12 +252,10 @@ begin
     Exit;
   name := Props.Name;
   zDebugLn(['{WH}LineType: ', name]);
-  if DWGContext.DWGVer > R_2007 then begin
-    name := Tria_Utf8ToAnsi(name);
-    Props.Description := Tria_Utf8ToAnsi(Props.Description);
-    for I := 0 to High(Props.Dashes) do
-      Props.Dashes[I].Text := Tria_Utf8ToAnsi(Props.Dashes[I].Text);
-  end;
+  name := DWGDecodedTextForZCAD(name);
+  Props.Description := DWGDecodedTextForZCAD(Props.Description);
+  for I := 0 to High(Props.Dashes) do
+    Props.Dashes[I].Text := DWGDecodedTextForZCAD(Props.Dashes[I].Text);
   // Stage 3 (TZ §12.3): create the linetype in the table so refs can resolve
   // to a real pointer. We mirror the DXF loader semantics — a name collision
   // with a previously-loaded entry is left alone (TLOMerge respected).
@@ -299,10 +295,8 @@ begin
   zDebugLn(['{WH}TextStyle: ', name]);
   FontFile := Props.FontFile;
   FontFamily := '';
-  if DWGContext.DWGVer > R_2007 then begin
-    name := Tria_Utf8ToAnsi(name);
-    FontFile := Tria_Utf8ToAnsi(FontFile);
-  end;
+  name := DWGDecodedTextForZCAD(name);
+  FontFile := DWGDecodedTextForZCAD(FontFile);
   UsedInLType := Props.IsShape;
   if UsedInLType and (FontFile <> '') then
     StyleName := FontFile
@@ -395,11 +389,10 @@ var
   Ctx: TDWGZCADLoadContext;
 begin
   BITCODE_T2Text(PDWGDimStyle^.name, DWGContext, Name);
+  Name := DWGDecodedTextForZCAD(Name);
   if Name = '' then
     Name := 'Standard';
   zDebugLn(['{WH}DimStyle: ', Name]);
-  if DWGContext.DWGVer > R_2007 then
-    Name := Tria_Utf8ToAnsi(Name);
 
   PDimStyle := PGDBDimStyle(ZContext.PDrawing^.DimStyleTable.getAddres(Name));
   if PDimStyle = nil then begin

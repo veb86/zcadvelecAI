@@ -25,9 +25,8 @@ interface
 uses
   uzbLogIntf,
   SysUtils,
-  dwg, dwgproc,uzedwghandle,
+  dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
-  uzbstrproc,
   uzeblockdef, UGDBObjBlockdefArray,
   uzeTypes,
   uzedwgloadcontext,
@@ -87,8 +86,7 @@ var
   Ctx: TDWGZCADLoadContext;
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name, DWGContext, name);
-  if DWGContext.DWGVer > R_2007 then
-    name := Tria_Utf8ToAnsi(name);
+  name := DWGDecodedTextForZCAD(name);
   zDebugLn(['{WH}BlockHeader: ', name]);
 
   Ctx := GetLoadCtx;

@@ -36,6 +36,7 @@ procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   out text: string); overload;
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   Codepage: Integer; out text: string); overload;
+function DWGDecodedTextForZCAD(const Text: string): string;
 
 implementation
 
@@ -228,6 +229,14 @@ begin
   end
   else
     text := punicodechar(p);
+end;
+
+function DWGDecodedTextForZCAD(const Text: string): string;
+begin
+  { DWGSafeDecodeText already returns the byte string ZCAD stores for both
+    codepage-based and UTF-16 DWGs. Keep this post-decode step explicit so
+    table/block mappers do not apply another locale conversion. }
+  Result := Text;
 end;
 
 end.
