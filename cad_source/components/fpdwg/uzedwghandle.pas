@@ -178,9 +178,15 @@ function DWGHeaderCurrentDimStyleHandleValue(const Raw: Dwg_Data;
 function DWGHeaderCurrentEntityPropsValue(const Raw: Dwg_Data;
   out Props: TDWGHeaderCurrentEntityProps): Boolean;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
-  Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
+  Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean; overload;
+function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
+  Version: DWG_VERSION_TYPE; Codepage: Integer;
+  out Props: TDWGTextStyleProps): Boolean; overload;
 function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
-  Version: DWG_VERSION_TYPE; out Props: TDWGLinetypeProps): Boolean;
+  Version: DWG_VERSION_TYPE; out Props: TDWGLinetypeProps): Boolean; overload;
+function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
+  Version: DWG_VERSION_TYPE; Codepage: Integer;
+  out Props: TDWGLinetypeProps): Boolean; overload;
 
 { Stage 5 (TZ §12.5): TEXT/MTEXT mappers need the style ref. Returning
   False allows the caller to fall back to the registered text-style
@@ -647,6 +653,13 @@ end;
 function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
   Version: DWG_VERSION_TYPE; out Props: TDWGTextStyleProps): Boolean;
 begin
+  Result := DWGTextStylePropsValue(PStyle, Version, -1, Props);
+end;
+
+function DWGTextStylePropsValue(const PStyle: PDwg_Object_STYLE;
+  Version: DWG_VERSION_TYPE; Codepage: Integer;
+  out Props: TDWGTextStyleProps): Boolean;
+begin
   Props.Name := '';
   Props.FontFile := '';
   Props.BigFontFile := '';
@@ -658,9 +671,10 @@ begin
   Result := PStyle <> nil;
   if not Result then
     Exit;
-  DWGSafeDecodeText(PStyle^.name, Version, Props.Name);
-  DWGSafeDecodeText(PStyle^.font_file, Version, Props.FontFile);
-  DWGSafeDecodeText(PStyle^.bigfont_file, Version, Props.BigFontFile);
+  DWGSafeDecodeText(PStyle^.name, Version, Codepage, Props.Name);
+  DWGSafeDecodeText(PStyle^.font_file, Version, Codepage, Props.FontFile);
+  DWGSafeDecodeText(PStyle^.bigfont_file, Version, Codepage,
+    Props.BigFontFile);
   Props.TextSize := PStyle^.text_size;
   if PStyle^.width_factor <> 0 then
     Props.WidthFactor := PStyle^.width_factor
@@ -683,6 +697,13 @@ end;
 
 function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
   Version: DWG_VERSION_TYPE; out Props: TDWGLinetypeProps): Boolean;
+begin
+  Result := DWGLinetypePropsValue(PLType, Version, -1, Props);
+end;
+
+function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
+  Version: DWG_VERSION_TYPE; Codepage: Integer;
+  out Props: TDWGLinetypeProps): Boolean;
 type
   PLTypeDash = ^Dwg_LTYPE_dash;
 var
@@ -698,8 +719,9 @@ begin
   if not Result then
     Exit;
 
-  DWGSafeDecodeText(PLType^.name, Version, Props.Name);
-  DWGSafeDecodeText(PLType^.description, Version, Props.Description);
+  DWGSafeDecodeText(PLType^.name, Version, Codepage, Props.Name);
+  DWGSafeDecodeText(PLType^.description, Version, Codepage,
+    Props.Description);
   Props.PatternLength := PLType^.pattern_len;
 
   Count := PLType^.numdashes;
@@ -724,7 +746,8 @@ begin
       Props.Dashes[I].Rotation := PDash^.rotation;
       Props.Dashes[I].AbsoluteRotation :=
         (Integer(PDash^.shape_flag) and DWGLTypeShapeFlagAbsRotation) <> 0;
-      DWGSafeDecodeText(PDash^.text, Version, Props.Dashes[I].Text);
+      DWGSafeDecodeText(PDash^.text, Version, Codepage,
+        Props.Dashes[I].Text);
       Inc(PDash);
     end;
   end

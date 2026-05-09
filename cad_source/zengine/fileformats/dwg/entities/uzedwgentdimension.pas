@@ -117,7 +117,8 @@ begin
   else
     Exit;
   end;
-  DWGSafeDecodeText(PCommon^.user_text, DWGContext.DWGVer, Value);
+  DWGSafeDecodeText(PCommon^.user_text, DWGContext.DWGVer,
+    DWGContext.DWGCodePage, Value);
   if Value <> '' then
     PGDBObjDimension(PObj)^.dimtext := UnicodeString(Value);
 end;

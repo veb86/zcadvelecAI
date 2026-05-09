@@ -72,7 +72,8 @@ begin
   PObj^.textprop.justify := DWGTextJustify(HorizAlignment, VertAlignment);
   PObj^.textprop.backward := (Generation and 2) <> 0;
   PObj^.textprop.upsidedown := (Generation and 4) <> 0;
-  DWGSafeDecodeText(TextValue, DWGContext.DWGVer, Value);
+  DWGSafeDecodeText(TextValue, DWGContext.DWGVer, DWGContext.DWGCodePage,
+    Value);
   PObj^.Content := UnicodeString(Value);
   ApplyTextRotation(PObj, Rotation);
 end;
@@ -107,7 +108,8 @@ begin
     PAttrib^.width_factor, PAttrib^.oblique_angle, PAttrib^.rotation,
     PAttrib^.generation, PAttrib^.horiz_alignment,
     PAttrib^.vert_alignment, PAttrib^.text_value);
-  DWGSafeDecodeText(PAttrib^.tag, DWGContext.DWGVer, TagText);
+  DWGSafeDecodeText(PAttrib^.tag, DWGContext.DWGVer, DWGContext.DWGCodePage,
+    TagText);
   zDebugLn(['{WH}DWG ATTRIB handle=', IntToHex(DWGObjectHandleValue(
     DWGObject), 1), ' tag=', TagText, ' flags=', PAttrib^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttrib^.style);
@@ -129,8 +131,10 @@ begin
     PAttDef^.width_factor, PAttDef^.oblique_angle, PAttDef^.rotation,
     PAttDef^.generation, PAttDef^.horiz_alignment,
     PAttDef^.vert_alignment, PAttDef^.default_value);
-  DWGSafeDecodeText(PAttDef^.tag, DWGContext.DWGVer, TagText);
-  DWGSafeDecodeText(PAttDef^.prompt, DWGContext.DWGVer, PromptText);
+  DWGSafeDecodeText(PAttDef^.tag, DWGContext.DWGVer,
+    DWGContext.DWGCodePage, TagText);
+  DWGSafeDecodeText(PAttDef^.prompt, DWGContext.DWGVer,
+    DWGContext.DWGCodePage, PromptText);
   zDebugLn(['{WH}DWG ATTDEF handle=', IntToHex(DWGObjectHandleValue(
     DWGObject), 1), ' tag=', TagText, ' prompt=', PromptText,
     ' flags=', PAttDef^.flags]);

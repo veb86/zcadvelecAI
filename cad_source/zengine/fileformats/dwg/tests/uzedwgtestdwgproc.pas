@@ -60,6 +60,7 @@ type
   TFPDWGProcTextStyleTest = class(TTestCase)
   published
     procedure StylePropsCopiesNameFontAndMetrics;
+    procedure StylePropsDecodesCP1251Name;
     procedure StylePropsDefaultsMissingWidthFactor;
   end;
 
@@ -101,13 +102,16 @@ type
 
   TFPDWGProcTextTest = class(TTestCase)
   published
+    procedure BITCODET2TextUsesHeaderCodepage;
     procedure CopyTextCopiesGeometry;
+    procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
   end;
 
   TFPDWGProcMTextTest = class(TTestCase)
   published
     procedure CopyMTextCopiesGeometry;
+    procedure CopyMTextDecodesCP1251Value;
     procedure CopyMTextPreservesLineSpacing;
     procedure MTextAttachmentMapsBottomLeft;
     procedure MTextAttachmentUsesDefaultForInvalidValue;
@@ -908,6 +912,21 @@ begin
   AssertTrue(Props.IsVertical);
 end;
 
+procedure TFPDWGProcTextStyleTest.StylePropsDecodesCP1251Name;
+var
+  Style: Dwg_Object_STYLE;
+  Props: TDWGTextStyleProps;
+  NameText, Expected: AnsiString;
+begin
+  FillChar(Style, SizeOf(Style), 0);
+  NameText := #$D1#$F2#$E8#$EB#$FC;
+  Expected := #$D0#$A1#$D1#$82#$D0#$B8#$D0#$BB#$D1#$8C;
+  Style.name := PChar(NameText);
+
+  AssertTrue(DWGTextStylePropsValue(@Style, R_2004, 29, Props));
+  AssertEquals(Expected, Props.Name);
+end;
+
 procedure TFPDWGProcTextStyleTest.StylePropsDefaultsMissingWidthFactor;
 var
   Style: Dwg_Object_STYLE;
@@ -1116,6 +1135,24 @@ end;
 
 { ---------- TFPDWGProcTextTest ---------- }
 
+procedure TFPDWGProcTextTest.BITCODET2TextUsesHeaderCodepage;
+var
+  RawDWG: Dwg_Data;
+  DWGContext: TDWGCtx;
+  RawText, Expected, Decoded: AnsiString;
+begin
+  FillChar(RawDWG, SizeOf(RawDWG), 0);
+  RawDWG.header.version := R_2000;
+  RawDWG.header.codepage := 29;
+  DWGContext.CreateRec(RawDWG);
+  RawText := #$CF#$F0#$E8#$E2#$E5#$F2;
+  Expected := #$D0#$9F#$D1#$80#$D0#$B8#$D0#$B2#$D0#$B5#$D1#$82;
+
+  BITCODE_T2Text(PChar(RawText), DWGContext, Decoded);
+
+  AssertEquals(Expected, Decoded);
+end;
+
 procedure TFPDWGProcTextTest.CopyTextCopiesGeometry;
 var
   Text: Dwg_Entity_TEXT;
@@ -1139,6 +1176,22 @@ begin
   AssertEquals('oblique', 0.1, Props.Oblique, 0.0);
   AssertEquals('wfactor', 1.25,Props.WidthFactor,0.0);
   AssertEquals('value empty for nil text_value', '', Props.Value);
+end;
+
+procedure TFPDWGProcTextTest.CopyTextDecodesCP1251Value;
+var
+  Text: Dwg_Entity_TEXT;
+  Props: TDWGTextProps;
+  RawText, Expected: AnsiString;
+begin
+  FillChar(Text, SizeOf(Text), 0);
+  RawText := #$D2#$E5#$EA#$F1#$F2;
+  Expected := #$D0#$A2#$D0#$B5#$D0#$BA#$D1#$81#$D1#$82;
+  Text.text_value := PChar(RawText);
+
+  DWGCopyTextProps(Text, R_2004, 29, Props);
+
+  AssertEquals(Expected, Props.Value);
 end;
 
 procedure TFPDWGProcTextTest.CopyTextPreservesAlignmentFlags;
@@ -1188,6 +1241,22 @@ begin
   AssertEquals('rectH',   50.0, Props.RectHeight, 0.0);
   AssertEquals('textH',   2.5, Props.TextHeight, 0.0);
   AssertEquals('attach',  1, Props.Attachment);
+end;
+
+procedure TFPDWGProcMTextTest.CopyMTextDecodesCP1251Value;
+var
+  MText: Dwg_Entity_MTEXT;
+  Props: TDWGMTextProps;
+  RawText, Expected: AnsiString;
+begin
+  FillChar(MText, SizeOf(MText), 0);
+  RawText := #$CC#$F2#$E5#$EA#$F1#$F2;
+  Expected := #$D0#$9C#$D1#$82#$D0#$B5#$D0#$BA#$D1#$81#$D1#$82;
+  MText.text := PChar(RawText);
+
+  DWGCopyMTextProps(MText, R_2004, 29, Props);
+
+  AssertEquals(Expected, Props.Value);
 end;
 
 procedure TFPDWGProcMTextTest.CopyMTextPreservesLineSpacing;

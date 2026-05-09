@@ -49,7 +49,8 @@ var
   uniValue: UnicodeString;
 begin
   pobj := AllocAndInitMText(nil);
-  DWGCopyMTextProps(PMText^, DWGContext.DWGVer, Props);
+  DWGCopyMTextProps(PMText^, DWGContext.DWGVer, DWGContext.DWGCodePage,
+    Props);
   pobj^.Local.p_insert.x := Props.InsertX;
   pobj^.Local.p_insert.y := Props.InsertY;
   pobj^.Local.p_insert.z := Props.InsertZ;
