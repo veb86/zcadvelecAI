@@ -249,7 +249,8 @@ var
   Handle: QWord;
   Ctx: TDWGZCADLoadContext;
 begin
-  if not DWGLinetypePropsValue(PDWGLType, DWGContext.DWGVer, Props) then
+  if not DWGLinetypePropsValue(PDWGLType, DWGContext.DWGVer,
+    DWGContext.DWGCodePage, Props) then
     Exit;
   name := Props.Name;
   zDebugLn(['{WH}LineType: ', name]);
@@ -291,7 +292,8 @@ var
   Ctx: TDWGZCADLoadContext;
   UsedInLType: Boolean;
 begin
-  if not DWGTextStylePropsValue(PDWGStyle, DWGContext.DWGVer, Props) then
+  if not DWGTextStylePropsValue(PDWGStyle, DWGContext.DWGVer,
+    DWGContext.DWGCodePage, Props) then
     Exit;
   name := Props.Name;
   zDebugLn(['{WH}TextStyle: ', name]);

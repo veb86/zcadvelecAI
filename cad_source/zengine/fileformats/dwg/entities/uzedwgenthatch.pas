@@ -320,7 +320,8 @@ begin
   if PHatch = nil then
     Exit;
 
-  DWGCopyHatchProps(PHatch^, DWGContext.DWGVer, Props);
+  DWGCopyHatchProps(PHatch^, DWGContext.DWGVer, DWGContext.DWGCodePage,
+    Props);
   pobj := GDBObjHatch.CreateInstance;
   pobj^.Local.p_insert := CreateVertex(0, 0, Props.Elevation);
   pobj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion);

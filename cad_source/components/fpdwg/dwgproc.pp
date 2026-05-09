@@ -55,6 +55,7 @@ interface
     TDWGCtx=record
       DWG:Dwg_Data;
       DWGVer:DWG_VERSION_TYPE;
+      DWGCodePage:Integer;
       procedure CreateRec(var ADWG:Dwg_Data);
     end;
 
@@ -319,9 +320,13 @@ interface
   procedure DWGCopyPointProps(const Point:Dwg_Entity_POINT;
     out Props:TDWGPointProps);
   procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
-    Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
+    Version:DWG_VERSION_TYPE;out Props:TDWGTextProps); overload;
+  procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGTextProps); overload;
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
-    Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+    Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps); overload;
+  procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGMTextProps); overload;
   function DWGMTextAttachmentToJustify(Attachment:Integer;
     DefaultJustify:TDWGMTextJustify=dwgmtjTopLeft):TDWGMTextJustify;
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
@@ -344,7 +349,9 @@ interface
   procedure DWGCopySplineProps(const Spline:Dwg_Entity_SPLINE;
     out Props:TDWGSplineProps);
   procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
-    Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps);
+    Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps); overload;
+  procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGHatchProps); overload;
   procedure DWGCopyPolyline2DRefProps(const Polyline:Dwg_Entity_POLYLINE_2D;
     out Props:TDWGPolylineRefProps);
   procedure DWGCopyPolyline3DRefProps(const Polyline:Dwg_Entity_POLYLINE_3D;
@@ -375,6 +382,7 @@ implementation
     DWGVer:=ADWG.HEADER.version;
     if DWGVer=R_INVALID then
       DWGVer:=ADWG.HEADER.from_version;
+    DWGCodePage:=ADWG.HEADER.codepage;
   end;
 
   procedure GDWGParser.TDWGObjectData.Create;
@@ -502,8 +510,8 @@ implementation
   begin
     // R3: defer to the version-based helper in uzedwgtext so the actual
     // decoding rules live in one place. We pass the parser's resolved
-    // header version (the same one TDWGCtx.CreateRec already populates).
-    DWGSafeDecodeText(p,DWGContext.DWGVer,text);
+    // header version/codepage (the same ones TDWGCtx.CreateRec populates).
+    DWGSafeDecodeText(p,DWGContext.DWGVer,DWGContext.DWGCodePage,text);
   end;
 
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
@@ -550,6 +558,12 @@ implementation
   procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGTextProps);
   begin
+    DWGCopyTextProps(Text,Version,-1,Props);
+  end;
+
+  procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGTextProps);
+  begin
     Props.InsertX:=Text.ins_pt.x;
     Props.InsertY:=Text.ins_pt.y;
     Props.InsertZ:=Text.elevation;
@@ -562,11 +576,17 @@ implementation
     Props.Generation:=Text.generation;
     Props.HorizAlignment:=Text.horiz_alignment;
     Props.VertAlignment:=Text.vert_alignment;
-    DWGSafeDecodeText(Text.text_value,Version,Props.Value);
+    DWGSafeDecodeText(Text.text_value,Version,Codepage,Props.Value);
   end;
 
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps);
+  begin
+    DWGCopyMTextProps(MText,Version,-1,Props);
+  end;
+
+  procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGMTextProps);
   begin
     Props.InsertX:=MText.ins_pt.x;
     Props.InsertY:=MText.ins_pt.y;
@@ -579,7 +599,7 @@ implementation
     Props.TextHeight:=MText.text_height;
     Props.Attachment:=MText.attachment;
     Props.LineSpaceFactor:=MText.linespace_factor;
-    DWGSafeDecodeText(MText.text,Version,Props.Value);
+    DWGSafeDecodeText(MText.text,Version,Codepage,Props.Value);
   end;
 
   function DWGMTextAttachmentToJustify(Attachment:Integer;
@@ -898,6 +918,12 @@ implementation
 
   procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
     Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps);
+  begin
+    DWGCopyHatchProps(Hatch,Version,-1,Props);
+  end;
+
+  procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
+    Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGHatchProps);
   type
     PHatchPath=^Dwg_HATCH_Path;
     PHatchPolylinePath=^Dwg_HATCH_PolylinePath;
@@ -920,7 +946,7 @@ implementation
     Props.Scale:=Hatch.scale_spacing;
     SetLength(Props.PatternLines,0);
     SetLength(Props.Paths,0);
-    DWGSafeDecodeText(Hatch.name,Version,Props.PatternName);
+    DWGSafeDecodeText(Hatch.name,Version,Codepage,Props.PatternName);
 
     n:=Integer(Hatch.num_deflines);
     if (n>0) and (Hatch.deflines<>nil) then begin

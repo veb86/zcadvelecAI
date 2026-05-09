@@ -90,7 +90,8 @@ procedure DecodeInsertBlockName(var DWGContext: TDWGCtx;
 begin
   BlockName := '';
   if PInsert <> nil then
-    DWGSafeDecodeText(PInsert^.block_name, DWGContext.DWGVer, BlockName);
+    DWGSafeDecodeText(PInsert^.block_name, DWGContext.DWGVer,
+      DWGContext.DWGCodePage, BlockName);
 end;
 
 procedure AddInsertEntity(var ZContext: TZDrawingContext;
