@@ -334,6 +334,7 @@ interface
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
   procedure DWGCopyLWPolylineProps(const LWP:Dwg_Entity_LWPOLYLINE;
     out Props:TDWGLWPolylineProps);
+  function DWGProxyEntityPayloadLooksSane(PProxy:PDwg_Entity_PROXY_ENTITY):Boolean;
   procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
     out Payload:TDWGProxyEntityPayload);
   // LibreDWG exposes custom/zombie entity proxy graphics on the common
@@ -730,6 +731,24 @@ implementation
     end;
   end;
 
+  function DWGProxyEntityPayloadLooksSane(PProxy:PDwg_Entity_PROXY_ENTITY):Boolean;
+  const
+    MAX_PROXY_GRAPHIC_BYTES=128*1024*1024;
+  begin
+    Result:=False;
+    if PProxy=nil then
+      Exit;
+    if PProxy^.proxy_id<>BITCODE_BL(Ord(DWG_TYPE_PROXY_ENTITY)) then
+      Exit;
+    if PProxy^.from_dxf>1 then
+      Exit;
+    if PProxy^.proxy_data_size>BITCODE_BL(MAX_PROXY_GRAPHIC_BYTES) then
+      Exit;
+    if (PProxy^.proxy_data_size>0) and (PProxy^.proxy_data=nil) then
+      Exit;
+    Result:=True;
+  end;
+
   procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
     out Payload:TDWGProxyEntityPayload);
     function BLToInt(Value:BITCODE_BL):Integer;
@@ -763,6 +782,8 @@ implementation
     Payload.FromDXF:=PProxy^.from_dxf;
     Payload.EntityDataSize:=BLToInt(PProxy^.data_size);
 
+    if not DWGProxyEntityPayloadLooksSane(PProxy) then
+      Exit;
     if (PProxy^.proxy_data=nil) or (PProxy^.proxy_data_size=0) then
       Exit;
     if PProxy^.proxy_data_size>BITCODE_BL(High(Integer)) then

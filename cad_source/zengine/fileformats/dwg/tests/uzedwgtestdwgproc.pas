@@ -150,6 +150,7 @@ type
     procedure CopyProxyPayloadCopiesGraphicBytes;
     procedure CopyProxyPayloadNilPointerIsEmpty;
     procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
+    procedure CopyProxyPayloadRejectsCorruptMetadataBeforeDereferencingData;
     procedure CopyEntityPreviewProxyPayloadCopiesGraphicBytes;
     procedure CopyEntityPreviewProxyPayloadAcceptsUnsetProxyFlagWithProxyHeader;
     procedure CopyEntityPreviewProxyPayloadRejectsInvalidPreview;
@@ -1692,6 +1693,33 @@ begin
   AssertFalse(Payload.HasGraphic);
   AssertEquals(498, Payload.ProxyID);
   AssertEquals(9, Payload.ClassID);
+  AssertEquals(0, Length(Payload.Graphic));
+end;
+
+procedure TFPDWGProcProxyTest.CopyProxyPayloadRejectsCorruptMetadataBeforeDereferencingData;
+type
+  PBITCODE_RC = ^BITCODE_RC;
+var
+  Proxy: Dwg_Entity_PROXY_ENTITY;
+  Payload: TDWGProxyEntityPayload;
+begin
+  FillChar(Proxy, SizeOf(Proxy), 0);
+  Proxy.proxy_id := 515;
+  Proxy.class_id := 11468833;
+  Proxy.dwg_version := 6199;
+  Proxy.from_dxf := 8;
+  Proxy.proxy_data_size := 16;
+  Proxy.proxy_data := PBITCODE_RC(PtrUInt(1));
+
+  DWGCopyProxyEntityPayload(@Proxy, Payload);
+
+  AssertFalse('corrupt metadata is not copyable',
+    DWGProxyEntityPayloadLooksSane(@Proxy));
+  AssertFalse('invalid source pointer must not be dereferenced',
+    Payload.HasGraphic);
+  AssertEquals(515, Payload.ProxyID);
+  AssertEquals(11468833, Payload.ClassID);
+  AssertEquals(8, Payload.FromDXF);
   AssertEquals(0, Length(Payload.Graphic));
 end;
 
