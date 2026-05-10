@@ -6,7 +6,7 @@ uses
   //MemCheck,
   Classes, consoletestrunner,
   Logtest,BoundaryPathSimpletest,
-  uzctEntityArc, uzctmtextwrap, uzctacadtable, uzctentproxy,
+  uzctEntityArc, uzctmtextwrap, uzctenttextjustify, uzctacadtable, uzctentproxy,
   uzctentpolyfacemesh;
 
 var

@@ -120,6 +120,8 @@ type
     procedure CopyTextCopiesGeometry;
     procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
+    procedure TextEffectiveInsertUsesAlignmentPointForAlignedText;
+    procedure TextEffectiveInsertKeepsInsertPointForDefaultText;
   end;
 
   TFPDWGProcMTextTest = class(TTestCase)
@@ -1420,17 +1422,58 @@ var
   Props: TDWGTextProps;
 begin
   FillChar(Text, SizeOf(Text), 0);
+  Text.dataflags := 2;
   Text.alignment_pt.x := 9.0;
   Text.alignment_pt.y := 8.0;
   Text.generation := 2;
   Text.horiz_alignment := 3;
   Text.vert_alignment := 4;
   DWGCopyTextProps(Text, R_2004, Props);
+  AssertEquals('dataflags', 2, Props.DataFlags);
   AssertEquals('alignX', 9.0, Props.AlignX, 0.0);
   AssertEquals('alignY', 8.0, Props.AlignY, 0.0);
   AssertEquals('generation', 2, Props.Generation);
   AssertEquals('horiz', 3, Props.HorizAlignment);
   AssertEquals('vert',  4, Props.VertAlignment);
+end;
+
+procedure TFPDWGProcTextTest.TextEffectiveInsertUsesAlignmentPointForAlignedText;
+var
+  Props: TDWGTextProps;
+  X, Y, Z: Double;
+begin
+  FillChar(Props, SizeOf(Props), 0);
+  Props.InsertX := 1.0;
+  Props.InsertY := 2.0;
+  Props.InsertZ := 3.0;
+  Props.AlignX := 9.0;
+  Props.AlignY := 8.0;
+  Props.HorizAlignment := 1;
+
+  DWGTextEffectiveInsertPoint(Props, X, Y, Z);
+
+  AssertEquals('effective insert X', 9.0, X, 0.0);
+  AssertEquals('effective insert Y', 8.0, Y, 0.0);
+  AssertEquals('effective insert Z', 3.0, Z, 0.0);
+end;
+
+procedure TFPDWGProcTextTest.TextEffectiveInsertKeepsInsertPointForDefaultText;
+var
+  Props: TDWGTextProps;
+  X, Y, Z: Double;
+begin
+  FillChar(Props, SizeOf(Props), 0);
+  Props.InsertX := 1.0;
+  Props.InsertY := 2.0;
+  Props.InsertZ := 3.0;
+  Props.AlignX := 9.0;
+  Props.AlignY := 8.0;
+
+  DWGTextEffectiveInsertPoint(Props, X, Y, Z);
+
+  AssertEquals('effective insert X', 1.0, X, 0.0);
+  AssertEquals('effective insert Y', 2.0, Y, 0.0);
+  AssertEquals('effective insert Z', 3.0, Z, 0.0);
 end;
 
 { ---------- TFPDWGProcMTextTest ---------- }

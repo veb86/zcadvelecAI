@@ -93,6 +93,7 @@ interface
     end;
 
     TDWGTextProps=record
+      DataFlags:integer;
       InsertX,InsertY,InsertZ:double;
       AlignX,AlignY:double;
       Height:double;
@@ -325,6 +326,10 @@ interface
     Version:DWG_VERSION_TYPE;out Props:TDWGTextProps); overload;
   procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
     Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGTextProps); overload;
+  function DWGTextUsesAlignmentPoint(DataFlags,HorizAlignment,
+    VertAlignment:Integer):Boolean;
+  procedure DWGTextEffectiveInsertPoint(const Props:TDWGTextProps;
+    out X,Y,Z:Double);
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps); overload;
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
@@ -618,6 +623,7 @@ implementation
   procedure DWGCopyTextProps(const Text:Dwg_Entity_TEXT;
     Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGTextProps);
   begin
+    Props.DataFlags:=Text.dataflags;
     Props.InsertX:=Text.ins_pt.x;
     Props.InsertY:=Text.ins_pt.y;
     Props.InsertZ:=Text.elevation;
@@ -631,6 +637,28 @@ implementation
     Props.HorizAlignment:=Text.horiz_alignment;
     Props.VertAlignment:=Text.vert_alignment;
     DWGSafeDecodeText(Text.text_value,Version,Codepage,Props.Value);
+  end;
+
+  function DWGTextUsesAlignmentPoint(DataFlags,HorizAlignment,
+    VertAlignment:Integer):Boolean;
+  begin
+    Result:=((DataFlags and 2)<>0)
+      or (HorizAlignment<>0)
+      or (VertAlignment<>0);
+  end;
+
+  procedure DWGTextEffectiveInsertPoint(const Props:TDWGTextProps;
+    out X,Y,Z:Double);
+  begin
+    if DWGTextUsesAlignmentPoint(Props.DataFlags,Props.HorizAlignment,
+      Props.VertAlignment) then begin
+      X:=Props.AlignX;
+      Y:=Props.AlignY;
+    end else begin
+      X:=Props.InsertX;
+      Y:=Props.InsertY;
+    end;
+    Z:=Props.InsertZ;
   end;
 
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
