@@ -122,6 +122,9 @@ type
     procedure CopyTextPreservesAlignmentFlags;
     procedure TextEffectiveInsertUsesAlignmentPointForAlignedText;
     procedure TextEffectiveInsertKeepsInsertPointForDefaultText;
+    procedure TextEffectiveInsertIgnoresDataFlagForDefaultLeftText;
+    procedure TextJustifyMapsBaselineAndBottomRows;
+    procedure TextJustifyKeepsCenterAndMiddleCenterDistinct;
   end;
 
   TFPDWGProcMTextTest = class(TTestCase)
@@ -1480,6 +1483,51 @@ begin
   AssertEquals('effective insert X', 1.0, X, 0.0);
   AssertEquals('effective insert Y', 2.0, Y, 0.0);
   AssertEquals('effective insert Z', 3.0, Z, 0.0);
+end;
+
+procedure TFPDWGProcTextTest.TextEffectiveInsertIgnoresDataFlagForDefaultLeftText;
+var
+  Props: TDWGTextProps;
+  X, Y, Z: Double;
+begin
+  FillChar(Props, SizeOf(Props), 0);
+  Props.DataFlags := 2;
+  Props.InsertX := 11.0;
+  Props.InsertY := 12.0;
+  Props.InsertZ := 13.0;
+  Props.AlignX := 0.0;
+  Props.AlignY := 0.0;
+
+  DWGTextEffectiveInsertPoint(Props, X, Y, Z);
+
+  AssertEquals('left text must use geometry X', 11.0, X, 0.0);
+  AssertEquals('left text must use geometry Y', 12.0, Y, 0.0);
+  AssertEquals('left text keeps elevation', 13.0, Z, 0.0);
+end;
+
+procedure TFPDWGProcTextTest.TextJustifyMapsBaselineAndBottomRows;
+begin
+  AssertEquals('baseline left', Ord(dwtjLeft),
+    Ord(DWGTextAlignmentToJustifyKind(0, 0)));
+  AssertEquals('baseline right', Ord(dwtjRight),
+    Ord(DWGTextAlignmentToJustifyKind(2, 0)));
+  AssertEquals('bottom left', Ord(dwtjBottomLeft),
+    Ord(DWGTextAlignmentToJustifyKind(0, 1)));
+  AssertEquals('bottom right', Ord(dwtjBottomRight),
+    Ord(DWGTextAlignmentToJustifyKind(2, 1)));
+end;
+
+procedure TFPDWGProcTextTest.TextJustifyKeepsCenterAndMiddleCenterDistinct;
+begin
+  AssertEquals('baseline center', Ord(dwtjCenter),
+    Ord(DWGTextAlignmentToJustifyKind(1, 0)));
+  AssertEquals('vertical middle center', Ord(dwtjMiddleCenter),
+    Ord(DWGTextAlignmentToJustifyKind(1, 2)));
+  AssertEquals('horizontal middle mode', Ord(dwtjMiddleCenter),
+    Ord(DWGTextAlignmentToJustifyKind(4, 0)));
+  AssertTrue('Center and MiddleCenter must be distinct',
+    DWGTextAlignmentToJustifyKind(1, 0) <>
+    DWGTextAlignmentToJustifyKind(1, 2));
 end;
 
 { ---------- TFPDWGProcMTextTest ---------- }

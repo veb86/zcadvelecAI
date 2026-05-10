@@ -31,10 +31,12 @@ uses
 implementation
 
 function DWGTextJustify(Horiz, Vert: Integer): TTextJustify;
+const
+  DWGTextJustifyToZCAD: array[TDWGTextJustifyKind] of TTextJustify =
+    (jstl, jstc, jstr, jsml, jsmc, jsmr, jsbl, jsbc, jsbr, jsbtl, jsbtc,
+      jsbtr);
 begin
-  if (Vert < 0) or (Vert > 3) or (Horiz < 0) or (Horiz > 4) then
-    Exit(jstl);
-  Result := jt[Vert, Horiz];
+  Result := DWGTextJustifyToZCAD[DWGTextAlignmentToJustifyKind(Horiz, Vert)];
 end;
 
 procedure ApplyTextRotation(PObj: PGDBObjText; Rotation: Double);
