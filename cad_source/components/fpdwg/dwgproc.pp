@@ -26,7 +26,7 @@ unit dwgproc;
 
 interface
   uses
-    SysUtils, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
+    SysUtils, Math, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
     // R3: handle / text helpers moved into their own units. Re-exported so
     // existing callers (uzefflibredwg2ents.pas, uzedwgtestdwgproc.pas) keep
     // seeing the same names through `uses dwgproc`.
@@ -114,6 +114,7 @@ interface
     TDWGMTextProps=record
       InsertX,InsertY,InsertZ:double;
       XAxisX,XAxisY,XAxisZ:double;
+      Rotation:double;
       RectWidth,RectHeight:double;
       TextHeight:double;
       Attachment:integer;
@@ -322,6 +323,7 @@ interface
   // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
   // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
+  function DWGLineEndpointsAreZeroLength(const Endpoints:TDWGLineEndpoints):Boolean;
 
   // Stage 5 (TZ §12.5): pure scalar copies into the mirror records above.
   // Each routine is pointer-aware (nil source produces a zeroed record) so
@@ -602,6 +604,13 @@ implementation
     Endpoints.EndZ:=Line.end_.z;
   end;
 
+  function DWGLineEndpointsAreZeroLength(const Endpoints:TDWGLineEndpoints):Boolean;
+  begin
+    Result:=(Endpoints.StartX=Endpoints.EndX) and
+            (Endpoints.StartY=Endpoints.EndY) and
+            (Endpoints.StartZ=Endpoints.EndZ);
+  end;
+
   procedure DWGCopyCircleProps(const Circle:Dwg_Entity_CIRCLE;
     out Props:TDWGCircleProps);
   begin
@@ -719,6 +728,7 @@ implementation
     Props.XAxisX:=MText.x_axis_dir.x;
     Props.XAxisY:=MText.x_axis_dir.y;
     Props.XAxisZ:=MText.x_axis_dir.z;
+    Props.Rotation:=ArcTan2(Props.XAxisY,Props.XAxisX);
     Props.RectWidth:=MText.rect_width;
     Props.RectHeight:=MText.rect_height;
     Props.TextHeight:=MText.text_height;

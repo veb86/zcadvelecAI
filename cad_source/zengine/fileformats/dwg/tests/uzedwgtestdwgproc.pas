@@ -87,6 +87,8 @@ type
   published
     procedure CopyLineEndpointsCopiesAllAxes;
     procedure CopyLineEndpointsKeepsStartZSeparateFromStartX;
+    procedure ZeroLengthLineEndpointsAreDetected;
+    procedure LineEndpointsDifferingOnlyByZAreNotZeroLength;
   end;
 
   { Stage 5 (TZ §12.5) scalar-copy regression tests. They use FillChar fakes for
@@ -131,6 +133,7 @@ type
   TFPDWGProcMTextTest = class(TTestCase)
   published
     procedure CopyMTextCopiesGeometry;
+    procedure CopyMTextDerivesRotationFromXAxisDirection;
     procedure CopyMTextDecodesCP1251Value;
     procedure CopyMTextPreservesLineSpacing;
     procedure MTextAttachmentMapsBottomLeft;
@@ -1244,6 +1247,44 @@ begin
   AssertEquals('end.z must come from raw .z, not .x', 77.0, Endpoints.EndZ, 0.0);
 end;
 
+procedure TFPDWGProcLineTest.ZeroLengthLineEndpointsAreDetected;
+var
+  Line: Dwg_Entity_LINE;
+  Endpoints: TDWGLineEndpoints;
+begin
+  FillChar(Line, SizeOf(Line), 0);
+  Line.start.x := 42.0;
+  Line.start.y := -7.5;
+  Line.start.z := 3.25;
+  Line.end_.x := Line.start.x;
+  Line.end_.y := Line.start.y;
+  Line.end_.z := Line.start.z;
+
+  DWGCopyLineEndpoints(Line, Endpoints);
+
+  AssertTrue('identical LINE endpoints must be skipped by the ZCAD mapper',
+    DWGLineEndpointsAreZeroLength(Endpoints));
+end;
+
+procedure TFPDWGProcLineTest.LineEndpointsDifferingOnlyByZAreNotZeroLength;
+var
+  Line: Dwg_Entity_LINE;
+  Endpoints: TDWGLineEndpoints;
+begin
+  FillChar(Line, SizeOf(Line), 0);
+  Line.start.x := 10.0;
+  Line.start.y := 20.0;
+  Line.start.z := 30.0;
+  Line.end_.x := Line.start.x;
+  Line.end_.y := Line.start.y;
+  Line.end_.z := 31.0;
+
+  DWGCopyLineEndpoints(Line, Endpoints);
+
+  AssertFalse('3D LINE length must consider the Z axis',
+    DWGLineEndpointsAreZeroLength(Endpoints));
+end;
+
 { ---------- TFPDWGProcCircleTest ---------- }
 
 procedure TFPDWGProcCircleTest.CopyCircleCopiesCenterAndRadius;
@@ -1573,10 +1614,25 @@ begin
   AssertEquals('insertY', 2.0, Props.InsertY, 0.0);
   AssertEquals('insertZ', 3.0, Props.InsertZ, 0.0);
   AssertEquals('xaxisX',  0.5, Props.XAxisX, 0.0);
+  AssertEquals('xaxisY',  0.5, Props.XAxisY, 0.0);
+  AssertEquals('xaxisZ',  0.0, Props.XAxisZ, 0.0);
   AssertEquals('rectW',   100.0, Props.RectWidth, 0.0);
   AssertEquals('rectH',   50.0, Props.RectHeight, 0.0);
   AssertEquals('textH',   2.5, Props.TextHeight, 0.0);
   AssertEquals('attach',  1, Props.Attachment);
+end;
+
+procedure TFPDWGProcMTextTest.CopyMTextDerivesRotationFromXAxisDirection;
+var
+  MText: Dwg_Entity_MTEXT;
+  Props: TDWGMTextProps;
+begin
+  FillChar(MText, SizeOf(MText), 0);
+  MText.x_axis_dir.x := 0.0;
+  MText.x_axis_dir.y := 1.0;
+  MText.x_axis_dir.z := 0.0;
+  DWGCopyMTextProps(MText, R_2004, Props);
+  AssertEquals('rotation', Pi / 2, Props.Rotation, 1e-12);
 end;
 
 procedure TFPDWGProcMTextTest.CopyMTextDecodesCP1251Value;
