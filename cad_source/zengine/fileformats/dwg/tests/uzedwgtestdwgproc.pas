@@ -131,6 +131,7 @@ type
   TFPDWGProcMTextTest = class(TTestCase)
   published
     procedure CopyMTextCopiesGeometry;
+    procedure CopyMTextDerivesRotationFromXAxisDirection;
     procedure CopyMTextDecodesCP1251Value;
     procedure CopyMTextPreservesLineSpacing;
     procedure MTextAttachmentMapsBottomLeft;
@@ -1573,10 +1574,25 @@ begin
   AssertEquals('insertY', 2.0, Props.InsertY, 0.0);
   AssertEquals('insertZ', 3.0, Props.InsertZ, 0.0);
   AssertEquals('xaxisX',  0.5, Props.XAxisX, 0.0);
+  AssertEquals('xaxisY',  0.5, Props.XAxisY, 0.0);
+  AssertEquals('xaxisZ',  0.0, Props.XAxisZ, 0.0);
   AssertEquals('rectW',   100.0, Props.RectWidth, 0.0);
   AssertEquals('rectH',   50.0, Props.RectHeight, 0.0);
   AssertEquals('textH',   2.5, Props.TextHeight, 0.0);
   AssertEquals('attach',  1, Props.Attachment);
+end;
+
+procedure TFPDWGProcMTextTest.CopyMTextDerivesRotationFromXAxisDirection;
+var
+  MText: Dwg_Entity_MTEXT;
+  Props: TDWGMTextProps;
+begin
+  FillChar(MText, SizeOf(MText), 0);
+  MText.x_axis_dir.x := 0.0;
+  MText.x_axis_dir.y := 1.0;
+  MText.x_axis_dir.z := 0.0;
+  DWGCopyMTextProps(MText, R_2004, Props);
+  AssertEquals('rotation', Pi / 2, Props.Rotation, 1e-12);
 end;
 
 procedure TFPDWGProcMTextTest.CopyMTextDecodesCP1251Value;

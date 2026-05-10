@@ -26,7 +26,7 @@ unit dwgproc;
 
 interface
   uses
-    SysUtils, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
+    SysUtils, Math, {ctypes,} dynlibs, dwg, ghashmap, TypInfo,
     // R3: handle / text helpers moved into their own units. Re-exported so
     // existing callers (uzefflibredwg2ents.pas, uzedwgtestdwgproc.pas) keep
     // seeing the same names through `uses dwgproc`.
@@ -114,6 +114,7 @@ interface
     TDWGMTextProps=record
       InsertX,InsertY,InsertZ:double;
       XAxisX,XAxisY,XAxisZ:double;
+      Rotation:double;
       RectWidth,RectHeight:double;
       TextHeight:double;
       Attachment:integer;
@@ -719,6 +720,7 @@ implementation
     Props.XAxisX:=MText.x_axis_dir.x;
     Props.XAxisY:=MText.x_axis_dir.y;
     Props.XAxisZ:=MText.x_axis_dir.z;
+    Props.Rotation:=ArcTan2(Props.XAxisY,Props.XAxisX);
     Props.RectWidth:=MText.rect_width;
     Props.RectHeight:=MText.rect_height;
     Props.TextHeight:=MText.text_height;
