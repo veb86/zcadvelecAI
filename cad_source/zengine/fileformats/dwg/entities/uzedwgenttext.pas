@@ -52,17 +52,17 @@ var
   pobj: PGDBObjText;
   Props: TDWGTextProps;
   StyleHandle: QWord;
+  TextX, TextY, TextZ: Double;
   WantStyle: Boolean;
   uniValue: UnicodeString;
 begin
   pobj := AllocAndInitText(nil);
   DWGCopyTextProps(PText^, DWGContext.DWGVer, DWGContext.DWGCodePage, Props);
-  pobj^.Local.p_insert.x := Props.InsertX;
-  pobj^.Local.p_insert.y := Props.InsertY;
-  pobj^.Local.p_insert.z := Props.InsertZ;
-  pobj^.P_drawInOCS.x := Props.AlignX;
-  pobj^.P_drawInOCS.y := Props.AlignY;
-  pobj^.P_drawInOCS.z := Props.InsertZ;
+  DWGTextEffectiveInsertPoint(Props, TextX, TextY, TextZ);
+  pobj^.Local.p_insert.x := TextX;
+  pobj^.Local.p_insert.y := TextY;
+  pobj^.Local.p_insert.z := TextZ;
+  pobj^.P_drawInOCS := NulVertex;
   pobj^.textprop.size := Props.Height;
   if Props.WidthFactor <> 0 then
     pobj^.textprop.wfactor := Props.WidthFactor

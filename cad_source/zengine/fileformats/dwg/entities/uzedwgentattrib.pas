@@ -57,12 +57,15 @@ procedure ApplyAttribText(PObj: PGDBObjText; var DWGContext: TDWGCtx;
 var
   Value: string;
 begin
-  PObj^.Local.p_insert.x := InsertPoint.x;
-  PObj^.Local.p_insert.y := InsertPoint.y;
+  if DWGTextUsesAlignmentPoint(0, HorizAlignment, VertAlignment) then begin
+    PObj^.Local.p_insert.x := AlignPoint.x;
+    PObj^.Local.p_insert.y := AlignPoint.y;
+  end else begin
+    PObj^.Local.p_insert.x := InsertPoint.x;
+    PObj^.Local.p_insert.y := InsertPoint.y;
+  end;
   PObj^.Local.p_insert.z := Elevation;
-  PObj^.P_drawInOCS.x := AlignPoint.x;
-  PObj^.P_drawInOCS.y := AlignPoint.y;
-  PObj^.P_drawInOCS.z := Elevation;
+  PObj^.P_drawInOCS := NulVertex;
   PObj^.textprop.size := Height;
   if WidthFactor <> 0 then
     PObj^.textprop.wfactor := WidthFactor

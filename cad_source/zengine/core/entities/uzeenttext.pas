@@ -74,7 +74,7 @@ type
 
 const
   jt:array[0..3,0..4] of TTextJustify=
-    ((jsbl,jsbc,jsbr,jsbl,jsmc),(jsbtl,jsbtc,jsbtr,jsbl,jsbl),
+    ((jsbl,jsbtc,jsbr,jsbl,jsmc),(jsbtl,jsbtc,jsbtr,jsbl,jsbl),
     (jsml,jsmc,jsmr,jsbl,jsbl),(jstl,jstc,jstr,jsbl,jsbl));
   j2b:array[TTextJustify] of byte=(1,2,3,4,5,6,7,8,9,10,11,12);
   b2j:array[1..12] of TTextJustify=
