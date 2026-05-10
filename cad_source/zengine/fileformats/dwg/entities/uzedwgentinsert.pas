@@ -23,6 +23,7 @@ uses
   uzedrawingsimple,
   uzeentblockinsert, uzeentity,
   uzeentsubordinated,
+  uzegeometrytypes, uzegeometry,
   uzeblockdef,
   uzedwgloadcontext,
   uzedwgentityregistry,
@@ -36,16 +37,27 @@ type
   PDwg_Entity_INSERT = ^Dwg_Entity_INSERT;
   PDwg_Entity_MINSERT = ^Dwg_Entity_MINSERT;
 
-procedure ApplyInsertTransform(PObj: PGDBObjBlockInsert;
-  const InsertPoint, Scale: BITCODE_3DPOINT; Rotation: Double);
+function DWGPointToVertex(const P: TDWGPoint3D): TzePoint3d;
 begin
-  PObj^.Local.p_insert.x := InsertPoint.x;
-  PObj^.Local.p_insert.y := InsertPoint.y;
-  PObj^.Local.p_insert.z := InsertPoint.z;
+  Result.x := P.X;
+  Result.y := P.Y;
+  Result.z := P.Z;
+end;
 
-  PObj^.scale.x := Scale.x;
-  PObj^.scale.y := Scale.y;
-  PObj^.scale.z := Scale.z;
+function DWGNormalOrDefault(const P: TDWGPoint3D): TzePoint3d;
+begin
+  Result := DWGPointToVertex(P);
+  if IsVectorNul(Result) then
+    Result := ZWCS;
+end;
+
+procedure ApplyInsertTransform(PObj: PGDBObjBlockInsert;
+  const Props: TDWGInsertProps);
+begin
+  PObj^.Local.p_insert := DWGPointToVertex(Props.InsertPoint);
+  PObj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion);
+
+  PObj^.scale := DWGPointToVertex(Props.Scale);
   if PObj^.scale.x = 0 then
     PObj^.scale.x := 1;
   if PObj^.scale.y = 0 then
@@ -53,7 +65,7 @@ begin
   if PObj^.scale.z = 0 then
     PObj^.scale.z := 1;
 
-  PObj^.rotate := Rotation;
+  PObj^.rotate := Props.Rotation;
 end;
 
 function FindBlockDefByName(var ZContext: TZDrawingContext;
@@ -101,13 +113,14 @@ var
   PObj: PGDBObjBlockInsert;
   BlockHandle: QWord;
   BlockName: string;
+  Props: TDWGInsertProps;
 begin
   if PInsert = nil then
     Exit;
 
   PObj := GDBObjBlockInsert.CreateInstance;
-  ApplyInsertTransform(PObj, PInsert^.ins_pt, PInsert^.scale,
-    PInsert^.rotation);
+  DWGCopyInsertProps(PInsert^, Props);
+  ApplyInsertTransform(PObj, Props);
   DecodeInsertBlockName(DWGContext, PInsert, BlockName);
   PObj^.Name := BlockName;
   if not DWGRefHandleValue(PInsert^.block_header, BlockHandle) then
@@ -133,13 +146,14 @@ procedure AddMInsertEntity(var ZContext: TZDrawingContext;
   PMInsert: PDwg_Entity_MINSERT);
 var
   PObj: PGDBObjBlockInsert;
+  Props: TDWGInsertProps;
 begin
   if PMInsert = nil then
     Exit;
 
   PObj := GDBObjBlockInsert.CreateInstance;
-  ApplyInsertTransform(PObj, PMInsert^.ins_pt, PMInsert^.scale,
-    PMInsert^.rotation);
+  DWGCopyInsertProps(PMInsert^, Props);
+  ApplyInsertTransform(PObj, Props);
 
   if (PMInsert^.num_cols > 1) or (PMInsert^.num_rows > 1) then
     zDebugLn(['{WHM}DWG MINSERT handle=', IntToHex(DWGObjectHandleValue(

@@ -133,6 +133,12 @@ type
     procedure MTextAttachmentUsesDefaultForInvalidValue;
   end;
 
+  TFPDWGProcInsertTest = class(TTestCase)
+  published
+    procedure CopyInsertPreservesNegativeExtrusion;
+    procedure CopyMInsertPreservesNegativeExtrusion;
+  end;
+
   TFPDWGProcLWPolylineTest = class(TTestCase)
   published
     procedure CopyLWPolylineClosedFlagFromBit512;
@@ -1545,6 +1551,70 @@ begin
     Ord(DWGMTextAttachmentToJustify(0, dwgmtjMiddleCenter)));
 end;
 
+{ ---------- TFPDWGProcInsertTest ---------- }
+
+procedure TFPDWGProcInsertTest.CopyInsertPreservesNegativeExtrusion;
+var
+  Insert: Dwg_Entity_INSERT;
+  Props: TDWGInsertProps;
+begin
+  FillChar(Insert, SizeOf(Insert), 0);
+  Insert.ins_pt.x := 1.0;
+  Insert.ins_pt.y := 2.0;
+  Insert.ins_pt.z := 3.0;
+  Insert.scale.x := 4.0;
+  Insert.scale.y := 5.0;
+  Insert.scale.z := 6.0;
+  Insert.rotation := 0.25;
+  Insert.extrusion.x := 0.0;
+  Insert.extrusion.y := 0.0;
+  Insert.extrusion.z := -1.0;
+
+  DWGCopyInsertProps(Insert, Props);
+
+  AssertEquals('insert x', 1.0, Props.InsertPoint.X, 0.0);
+  AssertEquals('insert y', 2.0, Props.InsertPoint.Y, 0.0);
+  AssertEquals('insert z', 3.0, Props.InsertPoint.Z, 0.0);
+  AssertEquals('scale x', 4.0, Props.Scale.X, 0.0);
+  AssertEquals('scale y', 5.0, Props.Scale.Y, 0.0);
+  AssertEquals('scale z', 6.0, Props.Scale.Z, 0.0);
+  AssertEquals('rotation', 0.25, Props.Rotation, 0.0);
+  AssertEquals('normal x', 0.0, Props.Extrusion.X, 0.0);
+  AssertEquals('normal y', 0.0, Props.Extrusion.Y, 0.0);
+  AssertEquals('normal z', -1.0, Props.Extrusion.Z, 0.0);
+end;
+
+procedure TFPDWGProcInsertTest.CopyMInsertPreservesNegativeExtrusion;
+var
+  Insert: Dwg_Entity_MINSERT;
+  Props: TDWGInsertProps;
+begin
+  FillChar(Insert, SizeOf(Insert), 0);
+  Insert.ins_pt.x := -7.0;
+  Insert.ins_pt.y := 8.0;
+  Insert.ins_pt.z := 9.0;
+  Insert.scale.x := 0.5;
+  Insert.scale.y := 1.5;
+  Insert.scale.z := 2.5;
+  Insert.rotation := 1.25;
+  Insert.extrusion.x := 0.0;
+  Insert.extrusion.y := 0.0;
+  Insert.extrusion.z := -1.0;
+
+  DWGCopyInsertProps(Insert, Props);
+
+  AssertEquals('insert x', -7.0, Props.InsertPoint.X, 0.0);
+  AssertEquals('insert y', 8.0, Props.InsertPoint.Y, 0.0);
+  AssertEquals('insert z', 9.0, Props.InsertPoint.Z, 0.0);
+  AssertEquals('scale x', 0.5, Props.Scale.X, 0.0);
+  AssertEquals('scale y', 1.5, Props.Scale.Y, 0.0);
+  AssertEquals('scale z', 2.5, Props.Scale.Z, 0.0);
+  AssertEquals('rotation', 1.25, Props.Rotation, 0.0);
+  AssertEquals('normal x', 0.0, Props.Extrusion.X, 0.0);
+  AssertEquals('normal y', 0.0, Props.Extrusion.Y, 0.0);
+  AssertEquals('normal z', -1.0, Props.Extrusion.Z, 0.0);
+end;
+
 { ---------- TFPDWGProcLWPolylineTest ---------- }
 
 procedure TFPDWGProcLWPolylineTest.CopyLWPolylineClosedFlagFromBit512;
@@ -2149,6 +2219,7 @@ begin
     TFPDWGProcLineTest, TFPDWGProcCircleTest, TFPDWGProcArcTest,
     TFPDWGProcPointTest,
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
+    TFPDWGProcInsertTest,
     TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest,
     TFPDWGProcStage8GeometryTest
   ]);

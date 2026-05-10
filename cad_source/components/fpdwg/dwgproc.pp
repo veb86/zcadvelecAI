@@ -157,6 +157,13 @@ interface
       X,Y,Z:double;
     end;
 
+    TDWGInsertProps=record
+      InsertPoint:TDWGPoint3D;
+      Scale:TDWGPoint3D;
+      Rotation:double;
+      Extrusion:TDWGPoint3D;
+    end;
+
     TDWG3DFaceProps=record
       Corners:array[0..3] of TDWGPoint3D;
       InvisibleFlags:Integer;
@@ -334,6 +341,10 @@ interface
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps); overload;
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGMTextProps); overload;
+  procedure DWGCopyInsertProps(const Insert:Dwg_Entity_INSERT;
+    out Props:TDWGInsertProps); overload;
+  procedure DWGCopyInsertProps(const Insert:Dwg_Entity_MINSERT;
+    out Props:TDWGInsertProps); overload;
   function DWGMTextAttachmentToJustify(Attachment:Integer;
     DefaultJustify:TDWGMTextJustify=dwgmtjTopLeft):TDWGMTextJustify;
   function DWGLWPolylineWidthRecordCount(const Props:TDWGLWPolylineProps):Integer;
@@ -949,6 +960,24 @@ implementation
     Result.X:=Src.x;
     Result.Y:=Src.y;
     Result.Z:=Elevation;
+  end;
+
+  procedure DWGCopyInsertProps(const Insert:Dwg_Entity_INSERT;
+    out Props:TDWGInsertProps);
+  begin
+    DWGPoint3DFrom3BD(Insert.ins_pt,Props.InsertPoint);
+    DWGPoint3DFrom3BD(Insert.scale,Props.Scale);
+    Props.Rotation:=Insert.rotation;
+    DWGPoint3DFrom3BD(Insert.extrusion,Props.Extrusion);
+  end;
+
+  procedure DWGCopyInsertProps(const Insert:Dwg_Entity_MINSERT;
+    out Props:TDWGInsertProps);
+  begin
+    DWGPoint3DFrom3BD(Insert.ins_pt,Props.InsertPoint);
+    DWGPoint3DFrom3BD(Insert.scale,Props.Scale);
+    Props.Rotation:=Insert.rotation;
+    DWGPoint3DFrom3BD(Insert.extrusion,Props.Extrusion);
   end;
 
   procedure DWGCopy3DFaceProps(const Face:Dwg_Entity__3DFACE;
