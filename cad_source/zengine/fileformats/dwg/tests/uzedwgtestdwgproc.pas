@@ -117,6 +117,7 @@ type
   published
     procedure BITCODET2TextUsesHeaderCodepage;
     procedure BITCODET2TextKeepsR2010UnicodeTableName;
+    procedure BITCODET2TextDecodesR2013SingleByteCP1251;
     procedure CopyTextCopiesGeometry;
     procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
@@ -1382,6 +1383,24 @@ begin
   AssertEquals(Expected, Stored);
   AssertEquals('table name must not be folded to question marks',
     0, Pos('?', Stored));
+end;
+
+procedure TFPDWGProcTextTest.BITCODET2TextDecodesR2013SingleByteCP1251;
+var
+  RawDWG: Dwg_Data;
+  DWGContext: TDWGCtx;
+  RawText, Expected, Decoded: AnsiString;
+begin
+  FillChar(RawDWG, SizeOf(RawDWG), 0);
+  RawDWG.header.version := R_2013;
+  RawDWG.header.codepage := 29;
+  DWGContext.CreateRec(RawDWG);
+  RawText := #$CF#$F0#$EE#$EC#$EF#$F2;
+  Expected := #$D0#$9F#$D1#$80#$D0#$BE#$D0#$BC#$D0#$BF#$D1#$82;
+
+  BITCODE_T2Text(PChar(RawText), DWGContext, Decoded);
+
+  AssertEquals(Expected, Decoded);
 end;
 
 procedure TFPDWGProcTextTest.CopyTextCopiesGeometry;
