@@ -75,7 +75,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);.."/>
-      <OtherUnitFiles Value="..;../containers;../fileformats;../misc;../core/entities;../core;../zgl/common;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
+      <OtherUnitFiles Value="..;../containers;../fileformats;../fileformats/dwg;../../components/fpdwg;../misc;../core/entities;../core;../zgl/common;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>
