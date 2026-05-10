@@ -337,6 +337,9 @@ interface
   function DWGProxyEntityPayloadLooksSane(PProxy:PDwg_Entity_PROXY_ENTITY):Boolean;
   procedure DWGCopyProxyEntityPayload(PProxy:PDwg_Entity_PROXY_ENTITY;
     out Payload:TDWGProxyEntityPayload);
+  function DWGCopyProxyEntityPayloadOrPreview(PProxy:PDwg_Entity_PROXY_ENTITY;
+    const DWGObject:Dwg_Object;out Payload:TDWGProxyEntityPayload;
+    out UsedPreview:Boolean):Boolean;
   // LibreDWG exposes custom/zombie entity proxy graphics on the common
   // entity preview fields even when fixedtype is DWG_TYPE_UNKNOWN_ENT.
   // Some files leave preview_is_proxy unset, so the implementation also
@@ -793,6 +796,30 @@ implementation
     SetLength(Payload.Graphic,ByteCount);
     Move(PProxy^.proxy_data^,Payload.Graphic[0],ByteCount);
     Payload.HasGraphic:=ByteCount>0;
+  end;
+
+  function DWGCopyProxyEntityPayloadOrPreview(PProxy:PDwg_Entity_PROXY_ENTITY;
+    const DWGObject:Dwg_Object;out Payload:TDWGProxyEntityPayload;
+    out UsedPreview:Boolean):Boolean;
+  var
+    ExplicitPayload,PreviewPayload:TDWGProxyEntityPayload;
+  begin
+    UsedPreview:=False;
+    DWGCopyProxyEntityPayload(PProxy,ExplicitPayload);
+    Payload:=ExplicitPayload;
+    if ExplicitPayload.HasGraphic then begin
+      Result:=True;
+      Exit;
+    end;
+
+    if DWGCopyEntityPreviewProxyPayload(DWGObject,PreviewPayload) then begin
+      Payload:=PreviewPayload;
+      UsedPreview:=True;
+      Result:=True;
+      Exit;
+    end;
+
+    Result:=False;
   end;
 
   function DWGCopyEntityPreviewProxyPayload(const DWGObject:Dwg_Object;

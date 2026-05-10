@@ -151,6 +151,7 @@ type
     procedure CopyProxyPayloadNilPointerIsEmpty;
     procedure CopyProxyPayloadWithoutGraphicsIsEmpty;
     procedure CopyProxyPayloadRejectsCorruptMetadataBeforeDereferencingData;
+    procedure CopyProxyPayloadFallsBackToPreviewWhenMetadataIsCorrupt;
     procedure CopyEntityPreviewProxyPayloadCopiesGraphicBytes;
     procedure CopyEntityPreviewProxyPayloadAcceptsUnsetProxyFlagWithProxyHeader;
     procedure CopyEntityPreviewProxyPayloadRejectsInvalidPreview;
@@ -1721,6 +1722,49 @@ begin
   AssertEquals(11468833, Payload.ClassID);
   AssertEquals(8, Payload.FromDXF);
   AssertEquals(0, Length(Payload.Graphic));
+end;
+
+procedure TFPDWGProcProxyTest.CopyProxyPayloadFallsBackToPreviewWhenMetadataIsCorrupt;
+var
+  Obj: Dwg_Object;
+  Ent: Dwg_Object_Entity;
+  Proxy: Dwg_Entity_PROXY_ENTITY;
+  Bytes: array[0..11] of BITCODE_RC;
+  Payload: TDWGProxyEntityPayload;
+  UsedPreview: Boolean;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  FillChar(Proxy, SizeOf(Proxy), 0);
+  FillChar(Bytes, SizeOf(Bytes), 0);
+
+  Bytes[0] := Length(Bytes);
+  Bytes[4] := 1;
+  Ent.preview_exists := 1;
+  Ent.preview_is_proxy := 0;
+  Ent.preview_size := Length(Bytes);
+  Ent.preview := BITCODE_TF(@Bytes[0]);
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.tio.entity := @Ent;
+
+  Proxy.proxy_id := 515;
+  Proxy.class_id := 11468833;
+  Proxy.dwg_version := 6199;
+  Proxy.from_dxf := 8;
+  Proxy.proxy_data_size := 655021840;
+  Proxy.proxy_data := nil;
+
+  AssertFalse('fixture models the corrupt LibreDWG metadata from issue #1170',
+    DWGProxyEntityPayloadLooksSane(@Proxy));
+  AssertTrue('valid entity preview is used as fallback',
+    DWGCopyProxyEntityPayloadOrPreview(@Proxy, Obj, Payload, UsedPreview));
+
+  AssertTrue('fallback source is reported', UsedPreview);
+  AssertTrue(Payload.HasGraphic);
+  AssertEquals(498, Payload.ProxyID);
+  AssertEquals(12, Length(Payload.Graphic));
+  AssertEquals(Integer(12), Integer(Payload.Graphic[0]));
+  AssertEquals(Integer(1), Integer(Payload.Graphic[4]));
 end;
 
 procedure TFPDWGProcProxyTest.CopyEntityPreviewProxyPayloadCopiesGraphicBytes;

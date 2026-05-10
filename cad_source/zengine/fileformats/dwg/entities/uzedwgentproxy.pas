@@ -192,6 +192,8 @@ var
   Handle: TDWGZCADHandle;
   Payload: TDWGProxyEntityPayload;
   Stats: PDWGImportStats;
+  UsedPreview: Boolean;
+  SourceLabel: string;
 begin
   Handle := DWGObjectHandleValue(DWGObject);
   Stats := Stage7Stats;
@@ -210,7 +212,7 @@ begin
     Exit;
   end;
 
-  DWGCopyProxyEntityPayload(PProxy, Payload);
+  DWGCopyProxyEntityPayloadOrPreview(PProxy, DWGObject, Payload, UsedPreview);
   if not Payload.HasGraphic then begin
     if Stats <> nil then
       Inc(Stats^.ProxiesFailed);
@@ -240,8 +242,12 @@ begin
     Exit;
   end;
 
+  if UsedPreview then
+    SourceLabel := 'DWG PROXY_ENTITY proxy-preview'
+  else
+    SourceLabel := 'DWG PROXY_ENTITY';
   AddProxyEntityFromPayload(ZContext, DWGContext, DWGObject, Payload,
-    'DWG PROXY_ENTITY');
+    SourceLabel);
 end;
 
 procedure AddProxyObject(var ZContext: TZDrawingContext;
