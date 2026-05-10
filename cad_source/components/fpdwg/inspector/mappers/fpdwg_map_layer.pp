@@ -26,6 +26,12 @@ implementation
 uses
   fpdwg_libredwg_utils;
 
+const
+  DWG_LAYER_FLAG_FROZEN = 1;
+  DWG_LAYER_FLAG_OFF = 2;
+  DWG_LAYER_FLAG_LOCKED = 8;
+  DWG_LAYER_FLAG_PLOT = 16;
+
 function TDWGLayerMapper.CreateObject(const Raw: Dwg_Object;
   const Ctx: TDWGBuilderContext): TDWGObject;
 begin
@@ -57,9 +63,14 @@ begin
   Layer.LayerName := SafeDecodeText(RawLayer^.name, Ctx.Codepage, Ctx.Logger);
   Layer.ColorIndex := RawLayer^.color.index;
   Layer.LineWeight := RawLayer^.linewt;
-  Layer.Off := RawLayer^.off <> 0;
-  Layer.Locked := RawLayer^.locked <> 0;
-  Layer.Plot := RawLayer^.plotflag <> 0;
+  Layer.Off := (RawLayer^.off <> 0) or
+    ((RawLayer^.flag0 and DWG_LAYER_FLAG_OFF) <> 0);
+  Layer.Frozen := (RawLayer^.frozen <> 0) or
+    ((RawLayer^.flag0 and DWG_LAYER_FLAG_FROZEN) <> 0);
+  Layer.Locked := (RawLayer^.locked <> 0) or
+    ((RawLayer^.flag0 and DWG_LAYER_FLAG_LOCKED) <> 0);
+  Layer.Plot := (RawLayer^.plotflag <> 0) or
+    ((RawLayer^.flag0 and DWG_LAYER_FLAG_PLOT) <> 0);
   Layer.LinetypeHandle := HandleRefFromBitCode(RawLayer^.ltype);
 end;
 

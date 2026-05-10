@@ -44,7 +44,8 @@ type
     procedure EntityLineTypeFlag3ReadsExplicitHandle;
     procedure EntityCommonPropsCopiesVisualFields;
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
-    procedure LayerVisualPropsPositiveColorKeepsLayerOn;
+    procedure LayerVisualPropsOffFlagTurnsLayerOff;
+    procedure LayerVisualPropsFlag0CopiesDWGLayerStates;
     procedure LayerVisualPropsByLayerMethodKeepsRawACI;
     procedure LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
     procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
@@ -724,7 +725,7 @@ begin
   AssertFalse('visible by default', Props.Invisible);
 end;
 
-procedure TFPDWGProcHandleTest.LayerVisualPropsPositiveColorKeepsLayerOn;
+procedure TFPDWGProcHandleTest.LayerVisualPropsOffFlagTurnsLayerOff;
 var
   Layer: Dwg_Object_LAYER;
   Props: TDWGLayerVisualProps;
@@ -740,10 +741,30 @@ begin
   AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
   AssertEquals('ACI color copied', 7, Props.ColorIndex);
   AssertEquals('lineweight 31 is ByLwDefault', -3, Props.LineWeight);
-  AssertTrue('positive color keeps layer visible despite raw off flag',
+  AssertFalse('raw off flag disables layer even with positive color',
     Props.On);
   AssertTrue('locked copied', Props.Locked);
   AssertTrue('plot flag copied', Props.Plot);
+end;
+
+procedure TFPDWGProcHandleTest.LayerVisualPropsFlag0CopiesDWGLayerStates;
+var
+  Layer: Dwg_Object_LAYER;
+  Props: TDWGLayerVisualProps;
+begin
+  FillChar(Layer, SizeOf(Layer), 0);
+  Layer.color.index := 7;
+  Layer.color.method := DWG_COLOR_METHOD_ACI;
+  Layer.linewt := 29;
+  Layer.flag0 := 1 or 2 or 8 or 16;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertEquals('positive ACI color copied', 7, Props.ColorIndex);
+  AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
+  AssertTrue('flag0 frozen bit copied', Props.Frozen);
+  AssertFalse('flag0 off bit disables layer', Props.On);
+  AssertTrue('flag0 locked bit copied', Props.Locked);
+  AssertTrue('flag0 plot bit copied', Props.Plot);
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsByLayerMethodKeepsRawACI;

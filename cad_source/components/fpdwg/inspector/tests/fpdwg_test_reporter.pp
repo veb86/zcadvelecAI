@@ -172,7 +172,7 @@ begin
         '  "codepage": 65001,' + LineEnding +
         '  "summary": {"objects": 5, "uniqueHandles": 5, "duplicateHandles": 0, "rawObjects": 5, "rawClasses": 2, "layers": 1, "linetypes": 1, "lines": 1, "arcs": 1, "unknown": 1, "warnings": 0},' + LineEnding +
         '  "layers": [' + LineEnding +
-        '    {"handle": "10", "name": "Walls", "color": 1, "lineweight": 25, "off": false, "locked": true, "plot": true, "linetype": "20", "linetypeName": "Continuous", "status": "resolved"}' + LineEnding +
+        '    {"handle": "10", "name": "Walls", "color": 1, "lineweight": 25, "off": false, "frozen": false, "locked": true, "plot": true, "linetype": "20", "linetypeName": "Continuous", "status": "resolved"}' + LineEnding +
         '  ],' + LineEnding +
         '  "linetypes": [' + LineEnding +
         '    {"handle": "20", "name": "Continuous", "description": "Solid line", "patternLength": 0, "status": "resolved"}' + LineEnding +
@@ -187,7 +187,7 @@ begin
         '    {"handle": "60", "rawType": "DWG_TYPE_CIRCLE", "dxfname": "ACAD_PROXY_ENTITY", "supertype": "DWG_SUPERTYPE_ENTITY", "reason": "mapper not registered for DWG_TYPE_CIRCLE", "size": 42, "bitsize": 104, "unknownBits": 16, "unknownRest": 3, "rawBytes": 0, "status": "resolved"}' + LineEnding +
         '  ],' + LineEnding +
         '  "objects": [' + LineEnding +
-        '    {"handle": "10", "rawType": "DWG_TYPE_LAYER", "domainType": "layer", "status": "resolved", "owner": null, "layer": {"handle": "10", "name": "Walls", "color": 1, "lineweight": 25, "off": false, "locked": true, "plot": true, "linetype": "20", "linetypeName": "Continuous", "status": "resolved"}},' + LineEnding +
+        '    {"handle": "10", "rawType": "DWG_TYPE_LAYER", "domainType": "layer", "status": "resolved", "owner": null, "layer": {"handle": "10", "name": "Walls", "color": 1, "lineweight": 25, "off": false, "frozen": false, "locked": true, "plot": true, "linetype": "20", "linetypeName": "Continuous", "status": "resolved"}},' + LineEnding +
         '    {"handle": "20", "rawType": "DWG_TYPE_LTYPE", "domainType": "linetype", "status": "resolved", "owner": null, "linetype": {"handle": "20", "name": "Continuous", "description": "Solid line", "patternLength": 0, "status": "resolved"}},' + LineEnding +
         '    {"handle": "40", "rawType": "DWG_TYPE_LINE", "domainType": "line", "status": "resolved", "owner": "30", "line": {"handle": "40", "owner": "30", "layer": "10", "layerName": "Walls", "linetype": "20", "linetypeName": "Continuous", "color": 256, "lineweight": 18, "visible": true, "status": "resolved", "geometry": {"start": [0, 0, 1], "end": [3, 4, 13], "length_3d": 13, "length_xy": 5}}},' + LineEnding +
         '    {"handle": "50", "rawType": "DWG_TYPE_ARC", "domainType": "arc", "status": "resolved", "owner": "30", "arc": {"handle": "50", "owner": "30", "layer": "10", "layerName": "Walls", "linetype": "20", "linetypeName": "Continuous", "color": 2, "lineweight": 18, "visible": true, "status": "resolved", "geometry": {"center": [10, 20, 0], "radius": 5, "thickness": 0.25, "extrusion": [0, 0, 1], "startAngle": 0.5, "endAngle": 1.5}}},' + LineEnding +

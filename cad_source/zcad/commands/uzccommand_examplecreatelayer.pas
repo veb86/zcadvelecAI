@@ -52,7 +52,7 @@ begin
     if pnevlayer=nil then
       //предидущие попытки обламались. в чертеже и в библиотеке слоя нет, тогда создаем новый
       pnevlayer:=drawings.GetCurrentDWG.LayerTable.addlayer(
-        createdlayername{имя},ClWhite{цвет},-1{вес},True{on},False{lock},
+        createdlayername{имя},ClWhite{цвет},-1{вес},True{on},False{freeze},False{lock},
         True{print},'???'{описание},
         TLOLoad{режим создания - в данном случае неважен});
     pe^.vp.Layer:=pnevlayer;

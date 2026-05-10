@@ -208,10 +208,10 @@ begin
       Inc(VisualWarnings);
       zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
         ' has nil layer after ref resolve']);
-    end else if not Pobj^.vp.Layer^._on then begin
+    end else if (not Pobj^.vp.Layer^._on) or Pobj^.vp.Layer^._freeze then begin
       Inc(VisualWarnings);
       zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
-        ' is on disabled layer ', Pobj^.vp.Layer^.Name]);
+        ' is on hidden layer ', Pobj^.vp.Layer^.Name]);
     end;
     if Pobj^.vp.LineType = nil then begin
       Inc(VisualWarnings);

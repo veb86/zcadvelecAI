@@ -373,7 +373,7 @@ var
   oldValue:TActuality;
 begin
   oldValue:=Visible;
-  if (self.vp.Layer._on) then
+  if self.vp.Layer._on and (not self.vp.Layer._freeze) then
     Visible:=Actuality.visibleactualy
   else
     Visible:=0;
@@ -813,7 +813,7 @@ begin
     Result:=False;
   end;
   if self.vp.Layer<>nil then
-    if not(self.vp.Layer._on) then begin
+    if (not self.vp.Layer._on) or self.vp.Layer._freeze then begin
       Visible:=0;
       Result:=False;
     end;
@@ -881,7 +881,7 @@ end;
 
 function GDBObjEntity.IsActualy:boolean;
 begin
-  if vp.Layer^._on then
+  if vp.Layer^._on and (not vp.Layer^._freeze) then
     Result:=True
   else
     Result:=False;
@@ -952,7 +952,7 @@ end;
 
 function GDBObjEntity.SelectQuik;
 begin
-  if (vp.Layer._lock)or(not vp.Layer._on) then begin
+  if (vp.Layer._lock) or (not vp.Layer._on) or vp.Layer._freeze then begin
     Result:=False;
   end else begin
     Result:=True;

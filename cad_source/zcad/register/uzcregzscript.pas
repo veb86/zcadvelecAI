@@ -923,7 +923,7 @@ begin
   otd:=ptsu^.RegisterObjectType(TypeInfo(GDBLayerProp),TypeOf(GDBLayerProp),
                                         'GDBLayerProp',true);
   if otd<>nil then begin
-    ptsu^.SetTypeDesk2(otd,['color','lineweight','LT','_on','_lock','_print',
+    ptsu^.SetTypeDesk2(otd,['color','lineweight','LT','_on','_freeze','_lock','_print',
                             'desk'],[FNProgram,FNUser]);
   end;
   utd:=ptsu^.RegisterType(TypeInfo(PGDBLayerProp),'PGDBLayerProp');

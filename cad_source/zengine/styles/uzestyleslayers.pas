@@ -34,11 +34,12 @@ type
     lineweight:smallint;(*'Line weight'*)
     LT:Pointer;(*'Line type'*)
     _on:boolean;(*'On'*)
+    _freeze:boolean;(*'Freeze'*)
     _lock:boolean;(*'Lock'*)
     _print:boolean;(*'Print'*)
     desk:ansistring;(*'Description'*)
     constructor InitWithParam(const N:string;C:integer;
-      LW:integer;oo,ll,pp:boolean;const d:string);
+      LW:integer;oo,ff,ll,pp:boolean;const d:string);
     function GetFullName:string;virtual;
     procedure SetValueFromDxf(group:integer;const Value:string);virtual;
     procedure SetDefaultValues;virtual;
@@ -59,7 +60,7 @@ GDBLayerPropArray=packed array [0..0] of PGDBLayerProp;
       constructor init(m:Integer;psyslt:Pointer);
       constructor initnul;
 
-      function addlayer(const name:String;color:Integer;lw:Integer;oo,ll,pp:Boolean;const d:String;lm:TLoadOpt):PGDBLayerProp;virtual;
+      function addlayer(const name:String;color:Integer;lw:Integer;oo,ff,ll,pp:Boolean;const d:String;lm:TLoadOpt):PGDBLayerProp;virtual;
       function GetSystemLayer:PGDBLayerProp;
       function createlayerifneed(_source:PGDBLayerProp):PGDBLayerProp;
       function createlayerifneedbyname(const lname:String;_source:PGDBLayerProp):PGDBLayerProp;
@@ -98,6 +99,7 @@ begin
                                         _source.color,
                                         _source.lineweight,
                                         _source._on,
+                                        _source._freeze,
                                         _source._lock,
                                         _source._print,
                                         _source.desk,
@@ -124,8 +126,8 @@ end;
 constructor GDBLayerArray.init;
 begin
   inherited init(m);
-  addlayer(LNSysLayerName,CGDBWhile,lwgdbdefault,true,false,true,'',TLOLoad).LT:=psyslt;
-  addlayer(LNMetricLayerName,CGDBWhile,lwgdbdefault,false,false,false,'',TLOLoad).LT:=psyslt;
+  addlayer(LNSysLayerName,CGDBWhile,lwgdbdefault,true,false,false,true,'',TLOLoad).LT:=psyslt;
+  addlayer(LNMetricLayerName,CGDBWhile,lwgdbdefault,false,false,false,false,'',TLOLoad).LT:=psyslt;
   NewState;
 end;
 constructor GDBLayerArray.initnul;
@@ -145,6 +147,7 @@ begin
      lineweight:=-1;
      LT:=nil;
      _on:=true;
+     _freeze:=false;
      _lock:=false;
      if uppercase(name)=LNSysDefpoints then
                                            _print:=false
@@ -171,6 +174,10 @@ begin
             end;
           70:
             begin
+                 if (strtoint(value)and 1)<>0 then
+                                                   begin
+                                                        self._freeze:=true;
+                                                   end;
                  if (strtoint(value)and 4)<>0 then
                                                    begin
                                                         self._lock:=true;
@@ -186,7 +193,7 @@ begin
         end;
 end;
 
-constructor GDBLayerProp.InitWithParam(const N:String; C: Integer; LW: Integer;oo,ll,pp:Boolean;const d:String);
+constructor GDBLayerProp.InitWithParam(const N:String; C: Integer; LW: Integer;oo,ff,ll,pp:Boolean;const d:String);
 begin
     initnul;
     LT:=nil;
@@ -194,6 +201,7 @@ begin
     color := c;
     lineweight := lw;
     _on:=oo;
+    _freeze:=ff;
     _lock:=ll;
     _print:=pp;
     desk:=d;
@@ -219,6 +227,7 @@ begin
                                  p^.color:=color;
                                  p^.lineweight:=lw;
                                  p^._on:=oo;
+                                 p^._freeze:=ff;
                                  p^._lock:=ll;
                                  p^._print:=pp;
                                  p^.desk:=d;
@@ -227,9 +236,9 @@ begin
              IsCreated:
                        begin
                             if uppercase(name)=LNSysDefpoints then
-                                                               p^.initwithparam(Name,Color,LW,oo,ll,false,d)
+                                                               p^.initwithparam(Name,Color,LW,oo,ff,ll,false,d)
                             else
-                            p^.initwithparam(Name,Color,LW,oo,ll,pp,d);
+                            p^.initwithparam(Name,Color,LW,oo,ff,ll,pp,d);
                        end;
              IsError:
                        begin
@@ -238,6 +247,6 @@ begin
      result:=p;
 end;
 begin
-  DefaultErrorLayer.Initwithparam('DefaultErrorLayer',200,0,true,false,true,'');
+  DefaultErrorLayer.Initwithparam('DefaultErrorLayer',200,0,true,false,false,true,'');
   //LayerHandle:=RegisterStyle(TLayerPropClass,TLayersClasss);
 end.

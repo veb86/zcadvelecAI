@@ -448,6 +448,7 @@ begin
           colorIndex,            // color / цвет
           -1,                 // line weight / толщина линии
           True,               // on / включен
+          False,              // freeze / заморожен
           False,              // lock / заблокирован
           True,               // print / печатать
           'Space highlight layer',  // description / описание

@@ -194,6 +194,7 @@ begin
     player^.color := LayerProps.ColorIndex;
     player^.lineweight := LayerProps.LineWeight;
     player^._on := LayerProps.On;
+    player^._freeze := LayerProps.Frozen;
     player^._lock := LayerProps.Locked;
     player^._print := LayerProps.Plot;
     zDebugLn(['{WH}layer ', name,
@@ -201,8 +202,11 @@ begin
       ', lineweight=', player^.lineweight,
       ', on=', BoolToStr(player^._on, True),
       ', raw_off=', BoolToStr(PDWGLayer^.off <> 0, True),
+      ', frozen=', BoolToStr(player^._freeze, True),
+      ', raw_frozen=', BoolToStr(PDWGLayer^.frozen <> 0, True),
       ', locked=', BoolToStr(player^._lock, True),
       ', plot=', BoolToStr(player^._print, True),
+      ', flag0=', PDWGLayer^.flag0,
       ', color.index=', PDWGLayer^.color.index,
       ', color.raw=', PDWGLayer^.color.raw,
       ', color.rgb=$', IntToHex(PDWGLayer^.color.rgb, 8),

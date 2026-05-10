@@ -576,7 +576,7 @@ begin
           end;{case}
         until GroupCode=0;
         zDebugLn('{D}[DXF_CONTENTS]Found layer '+LayerName);
-        ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,true,'',TLOLoad);
+        ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,false,true,'',TLOLoad);
       until sname=dxfName_ENDTAB;
       zDebugLn('{D-}[DXF_CONTENTS]end; {layer table}');
     end else if s = 'BLOCKS' then begin

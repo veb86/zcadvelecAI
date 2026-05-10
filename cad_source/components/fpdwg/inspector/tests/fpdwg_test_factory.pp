@@ -169,8 +169,9 @@ begin
     RawLayer.color.index := 7;
     RawLayer.linewt := 25;
     RawLayer.off := 0;
-    RawLayer.locked := 1;
-    RawLayer.plotflag := 1;
+    RawLayer.locked := 0;
+    RawLayer.plotflag := 0;
+    RawLayer.flag0 := 1 or 2 or 8 or 16;
     RawLayer.ltype := @LTypeRef;
 
     Obj := Factory.CreateObject(Raw, TestContext);
@@ -182,7 +183,8 @@ begin
       AssertEquals('Walls', Layer.LayerName);
       AssertEquals(7, Layer.ColorIndex);
       AssertEquals(25, Layer.LineWeight);
-      AssertFalse(Layer.Off);
+      AssertTrue(Layer.Off);
+      AssertTrue(Layer.Frozen);
       AssertTrue(Layer.Locked);
       AssertTrue(Layer.Plot);
       AssertEquals(Int64($20), Int64(Layer.LinetypeHandle.Value));

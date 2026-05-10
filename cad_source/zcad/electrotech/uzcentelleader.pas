@@ -110,7 +110,7 @@ begin
                                 visible:=0;
                                 result:=false;
                            end;
-      if not(self.vp.Layer._on) then
+      if (not self.vp.Layer._on) or self.vp.Layer._freeze then
                            begin
                                 visible:=0;
                                 result:=false;

@@ -408,10 +408,10 @@ begin
     else
       LTypeName := 'null';
     Lines.Add(Format(
-      '  [%s] %s color=%d lineweight=%d off=%s locked=%s plot=%s linetype=%s status=%s',
+      '  [%s] %s color=%d lineweight=%d off=%s frozen=%s locked=%s plot=%s linetype=%s status=%s',
       [HandleText(Layer.Handle), QuoteText(Layer.LayerName), Layer.ColorIndex,
-       Layer.LineWeight, BooleanText(Layer.Off), BooleanText(Layer.Locked),
-       BooleanText(Layer.Plot), LTypeName,
+       Layer.LineWeight, BooleanText(Layer.Off), BooleanText(Layer.Frozen),
+       BooleanText(Layer.Locked), BooleanText(Layer.Plot), LTypeName,
        DWGObjectStatusToString(Layer.Status)]));
   end;
 end;
@@ -744,6 +744,7 @@ begin
     '"color": ' + IntToStr(Layer.ColorIndex) + ', ' +
     '"lineweight": ' + IntToStr(Layer.LineWeight) + ', ' +
     '"off": ' + BooleanText(Layer.Off) + ', ' +
+    '"frozen": ' + BooleanText(Layer.Frozen) + ', ' +
     '"locked": ' + BooleanText(Layer.Locked) + ', ' +
     '"plot": ' + BooleanText(Layer.Plot) + ', ' +
     '"linetype": ' + HandleRefJSON(Layer.LinetypeHandle) + ', ' +

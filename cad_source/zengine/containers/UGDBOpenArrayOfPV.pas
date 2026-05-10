@@ -202,7 +202,7 @@ begin
                        //pobj:=iterate(ir);
                        if pobj<>nil then
                        repeat
-                         if (pobj.vp.Layer<>nil)and(pobj.vp.Layer^._on) then begin
+                         if (pobj.vp.Layer<>nil)and pobj.vp.Layer^._on and (not pobj.vp.Layer^._freeze) then begin
                            bb:=pobj^.getonlyvisibleoutbound(dc);
                            if bb.RTF.x>=bb.LBN.x then begin
                              if result.RTF.x>=result.LBN.x then
@@ -364,7 +364,7 @@ begin
   begin
   repeat
         //if p^.Visible=visibleactualy then
-    if p^.vp.Layer^._on then
+    if p^.vp.Layer^._on and (not p^.vp.Layer^._freeze) then
         begin
              inc(objcount);
              q:=p^.CalcTrueInFrustum(frustum);

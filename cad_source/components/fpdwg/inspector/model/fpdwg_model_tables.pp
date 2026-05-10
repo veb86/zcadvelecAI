@@ -31,6 +31,7 @@ type
     ColorIndex: Integer;
     LineWeight: Integer;
     Off: Boolean;
+    Frozen: Boolean;
     Locked: Boolean;
     Plot: Boolean;
     LinetypeHandle: TDWGHandleRef;
@@ -65,6 +66,7 @@ begin
   ColorIndex := 0;
   LineWeight := 0;
   Off := False;
+  Frozen := False;
   Locked := False;
   Plot := True;
   LinetypeHandle := TDWGHandleRef.Null;

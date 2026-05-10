@@ -94,6 +94,7 @@ type
     function LayerOnClick(Item: TListItem;r: TRect):boolean;
     {layer freze handle procedures}
     function IsLayerFreze(Item: TListItem):boolean;
+    function LayerFrezeClick(Item: TListItem;r: TRect):boolean;
     {layer plot handle procedures}
     function IsLayerPlot(Item: TListItem):boolean;
     function LayerPlotClick(Item: TListItem;r: TRect):boolean;
@@ -210,7 +211,24 @@ end;
 {layer freze handle procedures}
 function TLayersForm.IsLayerFreze(Item: TListItem):boolean;
 begin
-     result:=false;
+     result:=PGDBLayerProp(Item.Data)^._freeze;
+end;
+function TLayersForm.LayerFrezeClick(Item: TListItem;r: TRect):boolean;
+var
+  pdwg:PTSimpleDrawing;
+begin
+  result:=true;
+  CreateUndoStartMarkerNeeded;
+  with TBooleanChangeCommand.CreateAndPushIfNeed(PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
+                                                 TChangedBoolean.CreateRec(PGDBLayerProp(Item.Data)^._freeze),
+                                                 TSharedEmpty(Default(TEmpty)),
+                                                 TAfterChangeEmpty(Default(TEmpty))) do
+  begin
+    PGDBLayerProp(Item.Data)^._freeze:=not PGDBLayerProp(Item.Data)^._freeze;
+    pdwg:=drawings.GetCurrentDWG;
+    IncreaseChangeStamp;
+    pdwg^.GetLayerTable^.NewState;
+  end;
 end;
 {layer plot handle procedures}
 function TLayersForm.IsLayerPlot(Item: TListItem):boolean;
@@ -460,6 +478,7 @@ with ListView1.SubItems[FrezeColumn] do
 begin
      OnImageIndex:=ImagesManager.GetImageIndex('freze');;
      OffImageIndex:=ImagesManager.GetImageIndex('unfreze');
+     OnClick:=@LayerFrezeClick;
      IsOn:=@IsLayerFreze;
 end;
 with ListView1.SubItems[OnColumn] do

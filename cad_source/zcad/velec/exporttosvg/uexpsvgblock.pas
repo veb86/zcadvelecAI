@@ -63,7 +63,7 @@ end;
 function TBlockSVGExporter.IsEntityVisible(const Entity: PGDBObjEntity): Boolean;
 begin
   // Проверка видимости слоя
-  if Entity^.vp.Layer^._on = False then
+  if (Entity^.vp.Layer^._on = False) or Entity^.vp.Layer^._freeze then
     Result := False
   else
     Result := True;

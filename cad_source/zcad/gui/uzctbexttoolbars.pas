@@ -110,7 +110,7 @@ end;
 procedure setlayerstate(PLayer:PGDBLayerProp;out lp:TLayerPropRecord);
 begin
   lp._On:=player^._on;
-  lp.Freze:=false;
+  lp.Freze:=player^._freeze;
   lp.Lock:=player^._lock;
   lp.Name:={Tria_AnsiToUtf8}(player.Name);
   lp.PLayer:=player;
@@ -147,7 +147,14 @@ begin
           if not PGDBLayerProp(PLayer)^._on then
             zcUI.TextMessage(rsCurrentLayerOff,TMWOHistoryOut);
         end;
-      {1:;}
+      1:begin
+        with TBooleanChangeCommand.CreateAndPushIfNeed(PTZCADDrawing(CDWG)^.UndoStack,
+                                                       TChangedBoolean.CreateRec(PGDBLayerProp(PLayer)^._freeze),
+                                                       TSharedEmpty(Default(TEmpty)),
+                                                       TAfterChangeEmpty(Default(TEmpty)))do begin
+          PGDBLayerProp(PLayer)^._freeze:=not(PGDBLayerProp(PLayer)^._freeze);
+        end;
+        end;
       2:begin
         with TBooleanChangeCommand.CreateAndPushIfNeed(PTZCADDrawing(CDWG)^.UndoStack,
                                                        TChangedBoolean.CreateRec(PGDBLayerProp(PLayer)^._lock),

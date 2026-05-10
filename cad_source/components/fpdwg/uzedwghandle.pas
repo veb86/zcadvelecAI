@@ -62,6 +62,7 @@ type
     ColorIndex: Integer;
     LineWeight: Integer;
     On: Boolean;
+    Frozen: Boolean;
     Locked: Boolean;
     Plot: Boolean;
   end;
@@ -227,6 +228,10 @@ const
   DWGByLayerColorIndex = 256;
   DWGDefaultLineTypeScale = 1.0;
   DWGLineWeightByLayer = -1;
+  DWGLayerFlagFrozen = 1;
+  DWGLayerFlagOff = 2;
+  DWGLayerFlagLocked = 8;
+  DWGLayerFlagPlot = 16;
   DWGLTypeShapeFlagAbsRotation = 1;
   DWGLTypeShapeFlagIsText = 2;
   DWGLTypeShapeFlagIsShape = 4;
@@ -550,10 +555,12 @@ function DWGLayerVisualPropsValue(const PLayer: PDwg_Object_LAYER;
   out Props: TDWGLayerVisualProps): Boolean;
 var
   RawColorIndex: Integer;
+  LayerOff: Boolean;
 begin
   Props.ColorIndex := 7;
   Props.LineWeight := -3;
   Props.On := True;
+  Props.Frozen := False;
   Props.Locked := False;
   Props.Plot := True;
 
@@ -579,12 +586,18 @@ begin
   if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
     Props.ColorIndex := 7;
   Props.LineWeight := DWGLineWeightToDXF(PLayer^.linewt);
-  // AutoCAD/DXF encodes layer off by negating group 62. Some R2007 DWGs
-  // arrive from LibreDWG with off=1 while the color index is positive; in
-  // that contradictory case AutoCAD shows the layer as on, so trust color.
-  Props.On := not DWGColorIsOff(PLayer^.color);
-  Props.Locked := PLayer^.locked <> 0;
-  Props.Plot := PLayer^.plotflag <> 0;
+  // R2000+ DWG stores layer state flags in flag0; keep the decoded scalar
+  // fields as compatibility fallbacks for files/libredwg versions that set
+  // only those values.
+  LayerOff := DWGColorIsOff(PLayer^.color) or (PLayer^.off <> 0) or
+    ((PLayer^.flag0 and DWGLayerFlagOff) <> 0);
+  Props.On := not LayerOff;
+  Props.Frozen := (PLayer^.frozen <> 0) or
+    ((PLayer^.flag0 and DWGLayerFlagFrozen) <> 0);
+  Props.Locked := (PLayer^.locked <> 0) or
+    ((PLayer^.flag0 and DWGLayerFlagLocked) <> 0);
+  Props.Plot := (PLayer^.plotflag <> 0) or
+    ((PLayer^.flag0 and DWGLayerFlagPlot) <> 0);
   Result := True;
 end;
 

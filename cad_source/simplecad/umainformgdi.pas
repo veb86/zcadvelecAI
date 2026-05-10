@@ -162,6 +162,7 @@ begin
                                          random(255),{color index}
                                          0,          {lineweight}
                                          true,       {layer on}
+                                         false,      {layer frozen}
                                          false,      {layer locked}
                                          true,       {layer printable}
                                          '',         {layer description}
@@ -189,7 +190,7 @@ begin
      //Add 10 random layers
      for i:=1 to 10 do
      begin
-          pdrawing2^.LayerTable.addlayer(inttostr(i),random(255),0,true,false,true,'',TLOMerge);
+          pdrawing2^.LayerTable.addlayer(inttostr(i),random(255),0,true,false,false,true,'',TLOMerge);
      end;
 
 
@@ -696,4 +697,3 @@ end;
 
 
 end.
-

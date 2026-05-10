@@ -333,6 +333,7 @@ begin
       colorIndex,          // color / цвет
       LnWt000,                  // line weight / толщина линии
       True,                // on / включен
+      False,               // freeze / заморожен
       False,               // lock / заблокирован
       True,                // print / печатать
       'Layer created by command',   // description / описание

@@ -139,7 +139,7 @@ implementation
                                                                                                           //не нашла, если pproglayer не nil - создает такойде слой в чертеже
                                                                                                           //и только если слой в чертеже не найден pproglayer=nil то возвращает nil
         if result=nil then //предидущие попытки обламались. в чертеже и в библиотеке слоя нет, тогда создаем новый
-          result:=drawings.GetCurrentDWG^.LayerTable.addlayer(createdlayername{имя},ClWhite{цвет},-1{вес},true{on},false{lock},true{print},'???'{описание},TLOLoad{режим создания - в данном случае неважен});
+          result:=drawings.GetCurrentDWG^.LayerTable.addlayer(createdlayername{имя},ClWhite{цвет},-1{вес},true{on},false{freeze},false{lock},true{print},'???'{описание},TLOLoad{режим создания - в данном случае неважен});
         //pe^.vp.Layer:=pnevlayer;
       //end;
   end;

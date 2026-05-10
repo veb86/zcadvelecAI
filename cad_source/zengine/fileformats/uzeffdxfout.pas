@@ -712,6 +712,8 @@ begin
               outstream.TXTAddStringEOL(dxfGroupCode(2));
               outstream.TXTAddStringEOL(dxfEnCodeString(plp^.Name,IODXFContext.Header));
               attr:=0;
+              if plp^._freeze then
+                attr:=attr+1;
               if plp^._lock then
                 attr:=attr+4;
               outstream.TXTAddStringEOL(dxfGroupCode(70));
