@@ -21,6 +21,7 @@ uses
   dwg, dwgproc,uzedwghandle,
   uzedrawingsimple,
   uzeentmtext, uzeentabstracttext, uzeentity,
+  uzegeometry,
   uzeentsubordinated,
   uzedwgloadcontext,
   uzedwgentityregistry,
@@ -36,6 +37,15 @@ const
 function DWGMTextAttachmentToZCADJustify(Attachment: Integer): TTextJustify;
 begin
   Result := DWGMTextJustifyToZCAD[DWGMTextAttachmentToJustify(Attachment)];
+end;
+
+procedure ApplyMTextRotation(PObj: PGDBObjMText; Rotation: Double);
+begin
+  if Rotation = 0 then
+    Exit;
+  PObj^.Local.basis.ox := GetXfFromZ(PObj^.Local.basis.oz);
+  PObj^.Local.basis.ox := VectorTransform3D(PObj^.Local.basis.ox,
+    CreateAffineRotationMatrix(PObj^.Local.basis.oz, -Rotation));
 end;
 
 procedure AddMTextEntity(var ZContext: TZDrawingContext;
@@ -65,6 +75,7 @@ begin
   // returned the payload as RTL string; the FPC compiler promotes it.
   uniValue := UnicodeString(Props.Value);
   pobj^.Content := uniValue;
+  ApplyMTextRotation(pobj, Props.Rotation);
   WantStyle := DWGMTextStyleHandleValue(PMText, StyleHandle);
   if not WantStyle then
     StyleHandle := 0;
