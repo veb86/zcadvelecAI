@@ -87,6 +87,8 @@ type
   published
     procedure CopyLineEndpointsCopiesAllAxes;
     procedure CopyLineEndpointsKeepsStartZSeparateFromStartX;
+    procedure ZeroLengthLineEndpointsAreDetected;
+    procedure LineEndpointsDifferingOnlyByZAreNotZeroLength;
   end;
 
   { Stage 5 (TZ §12.5) scalar-copy regression tests. They use FillChar fakes for
@@ -1243,6 +1245,44 @@ begin
   AssertEquals('start.z must come from raw .z, not .x', 99.0, Endpoints.StartZ, 0.0);
   AssertEquals('end.x preserved', 20.0, Endpoints.EndX, 0.0);
   AssertEquals('end.z must come from raw .z, not .x', 77.0, Endpoints.EndZ, 0.0);
+end;
+
+procedure TFPDWGProcLineTest.ZeroLengthLineEndpointsAreDetected;
+var
+  Line: Dwg_Entity_LINE;
+  Endpoints: TDWGLineEndpoints;
+begin
+  FillChar(Line, SizeOf(Line), 0);
+  Line.start.x := 42.0;
+  Line.start.y := -7.5;
+  Line.start.z := 3.25;
+  Line.end_.x := Line.start.x;
+  Line.end_.y := Line.start.y;
+  Line.end_.z := Line.start.z;
+
+  DWGCopyLineEndpoints(Line, Endpoints);
+
+  AssertTrue('identical LINE endpoints must be skipped by the ZCAD mapper',
+    DWGLineEndpointsAreZeroLength(Endpoints));
+end;
+
+procedure TFPDWGProcLineTest.LineEndpointsDifferingOnlyByZAreNotZeroLength;
+var
+  Line: Dwg_Entity_LINE;
+  Endpoints: TDWGLineEndpoints;
+begin
+  FillChar(Line, SizeOf(Line), 0);
+  Line.start.x := 10.0;
+  Line.start.y := 20.0;
+  Line.start.z := 30.0;
+  Line.end_.x := Line.start.x;
+  Line.end_.y := Line.start.y;
+  Line.end_.z := 31.0;
+
+  DWGCopyLineEndpoints(Line, Endpoints);
+
+  AssertFalse('3D LINE length must consider the Z axis',
+    DWGLineEndpointsAreZeroLength(Endpoints));
 end;
 
 { ---------- TFPDWGProcCircleTest ---------- }

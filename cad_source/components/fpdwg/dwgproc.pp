@@ -323,6 +323,7 @@ interface
   // Pure copy of a LIBREDWG line geometry into a ZCAD-shaped record.
   // Lives in dwgproc so tests can verify the Z-coord fix without ZCAD deps.
   procedure DWGCopyLineEndpoints(const Line:Dwg_Entity_LINE;out Endpoints:TDWGLineEndpoints);
+  function DWGLineEndpointsAreZeroLength(const Endpoints:TDWGLineEndpoints):Boolean;
 
   // Stage 5 (TZ §12.5): pure scalar copies into the mirror records above.
   // Each routine is pointer-aware (nil source produces a zeroed record) so
@@ -601,6 +602,13 @@ implementation
     Endpoints.EndX:=Line.end_.x;
     Endpoints.EndY:=Line.end_.y;
     Endpoints.EndZ:=Line.end_.z;
+  end;
+
+  function DWGLineEndpointsAreZeroLength(const Endpoints:TDWGLineEndpoints):Boolean;
+  begin
+    Result:=(Endpoints.StartX=Endpoints.EndX) and
+            (Endpoints.StartY=Endpoints.EndY) and
+            (Endpoints.StartZ=Endpoints.EndZ);
   end;
 
   procedure DWGCopyCircleProps(const Circle:Dwg_Entity_CIRCLE;
