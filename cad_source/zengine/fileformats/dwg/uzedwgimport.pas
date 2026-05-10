@@ -44,6 +44,7 @@ uses
   uzedwgtypes,
   uzedwgloadcontext,
   uzedwgrawscan,
+  uzedwgblockreserve,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -705,6 +706,8 @@ begin
       FloatToStr(LoadHeaderViewProps.CenterY), '), height=',
       FloatToStr(LoadHeaderViewProps.Height), ', space=',
       DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
+  if LoadDrawing <> nil then
+    DWGReserveBlockDefCapacity(Raw, LoadDrawing^.BlockDefArray);
   HandlesBefore := LoadCtx.Handles.Count;
   ScanRawObjects(Raw, LoadCtx);
   zDebugLn(['{WH}DWG raw objects: classes=', Raw.num_classes,
