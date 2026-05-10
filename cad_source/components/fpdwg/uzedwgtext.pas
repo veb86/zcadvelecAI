@@ -246,7 +246,7 @@ begin
   if p = nil then
     Exit;
   if (Version > R_2004) and DWGTextLooksLikeUTF16LE(p) then
-    text := punicodechar(p);
+    text := punicodechar(p)
   else
     text := pchar(p);
 end;
@@ -263,7 +263,7 @@ begin
   begin
     text := punicodechar(p);
     Exit;
-  end
+  end;
 
   if DWGDecodeAnsiText(p, Codepage, text) then
     Exit;

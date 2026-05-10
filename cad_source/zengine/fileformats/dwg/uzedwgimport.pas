@@ -831,18 +831,18 @@ begin
     LtypeFallback := nil;
     LtypeInline := False;
   end;
-  if DWGObject.fixedtype = DWG_TYPE_LINE then
-    zDebugLn(['{WH}DWG LINE shell handle=', IntToHex(EntityHandle, 1),
-      ', entmode=', EntMode,
-      ', owner=', IntToHex(OwnerHandle, 1),
-      ', layer_ref=', IntToHex(LayerHandle, 1),
-      ', ltype_kind=', DWGEntityLineTypeKindToText(LtypeKind),
-      ', ltype_ref=', IntToHex(LtypeHandle, 1),
-      ', ltype_flags=', CommonProps.LineTypeFlags,
-      ', color=', CommonProps.ColorIndex,
-      ', lineweight=', CommonProps.LineWeight,
-      ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
-      ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
+  //if DWGObject.fixedtype = DWG_TYPE_LINE then
+  //  zDebugLn(['{WH}DWG LINE shell handle=', IntToHex(EntityHandle, 1),
+  //    ', entmode=', EntMode,
+  //    ', owner=', IntToHex(OwnerHandle, 1),
+  //    ', layer_ref=', IntToHex(LayerHandle, 1),
+  //    ', ltype_kind=', DWGEntityLineTypeKindToText(LtypeKind),
+  //    ', ltype_ref=', IntToHex(LtypeHandle, 1),
+  //    ', ltype_flags=', CommonProps.LineTypeFlags,
+  //    ', color=', CommonProps.ColorIndex,
+  //    ', lineweight=', CommonProps.LineWeight,
+  //    ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
+  //    ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
   LoadCtx.QueueRefResolve(pobj, EntityHandle, LayerHandle,
     dokLayer, rsLayer, nil);
   LoadCtx.QueueRefResolve(pobj, EntityHandle, LtypeHandle,

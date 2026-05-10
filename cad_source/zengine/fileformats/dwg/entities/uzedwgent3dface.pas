@@ -48,7 +48,7 @@ begin
   if PFace = nil then
     Exit;
 
-  pobj := AllocAndInit3DFace(nil);
+  pobj := GDBObj3DFace.CreateInstance;
   DWGCopy3DFaceProps(PFace^, Props);
   for i := 0 to 3 do
     pobj^.PInOCS[i] := DWGPointToVertex(Props.Corners[i]);

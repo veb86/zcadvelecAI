@@ -54,7 +54,7 @@ begin
   if PEllipse = nil then
     Exit;
 
-  pobj := AllocAndInitEllipse(nil);
+  pobj := GDBObjEllipse.CreateInstance;
   DWGCopyEllipseProps(PEllipse^, Props);
   pobj^.Local.p_insert := DWGPointToVertex(Props.Center);
   pobj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion);

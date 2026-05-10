@@ -55,7 +55,7 @@ begin
   if PSolid = nil then
     Exit;
 
-  pobj := AllocAndInitSolid(nil);
+  pobj := GDBObjSolid.CreateInstance;
   DWGCopySolidProps(PSolid^, Props);
   for i := 0 to 3 do
     pobj^.PInOCS[i] := DWGPointToVertex(Props.Corners[i]);
