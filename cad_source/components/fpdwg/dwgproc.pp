@@ -106,6 +106,11 @@ interface
       Value:string;
     end;
 
+    TDWGTextJustifyKind=(dwtjTopLeft,dwtjTopCenter,dwtjTopRight,
+      dwtjMiddleLeft,dwtjMiddleCenter,dwtjMiddleRight,
+      dwtjBottomLeft,dwtjBottomCenter,dwtjBottomRight,
+      dwtjLeft,dwtjCenter,dwtjRight);
+
     TDWGMTextProps=record
       InsertX,InsertY,InsertZ:double;
       XAxisX,XAxisY,XAxisZ:double;
@@ -337,6 +342,9 @@ interface
     VertAlignment:Integer):Boolean;
   procedure DWGTextEffectiveInsertPoint(const Props:TDWGTextProps;
     out X,Y,Z:Double);
+  function DWGTextAlignmentToJustifyKind(HorizAlignment,
+    VertAlignment:Integer;
+    DefaultJustify:TDWGTextJustifyKind=dwtjTopLeft):TDWGTextJustifyKind;
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
     Version:DWG_VERSION_TYPE;out Props:TDWGMTextProps); overload;
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
@@ -653,9 +661,10 @@ implementation
   function DWGTextUsesAlignmentPoint(DataFlags,HorizAlignment,
     VertAlignment:Integer):Boolean;
   begin
-    Result:=((DataFlags and 2)<>0)
-      or (HorizAlignment<>0)
-      or (VertAlignment<>0);
+    // Some DWG files carry dataflags bit 2 on default Left text while
+    // alignment_pt remains 0,0. The actual 72/73 alignment codes decide
+    // whether the second point is meaningful.
+    Result:=(HorizAlignment<>0) or (VertAlignment<>0);
   end;
 
   procedure DWGTextEffectiveInsertPoint(const Props:TDWGTextProps;
@@ -670,6 +679,29 @@ implementation
       Y:=Props.InsertY;
     end;
     Z:=Props.InsertZ;
+  end;
+
+  function DWGTextAlignmentToJustifyKind(HorizAlignment,
+    VertAlignment:Integer;
+    DefaultJustify:TDWGTextJustifyKind=dwtjTopLeft):TDWGTextJustifyKind;
+  const
+    DWGTextMaxVertAlignment=3;
+    DWGTextMaxHorizAlignment=5;
+    DWGTextJustifyMap:array[0..3,0..5] of TDWGTextJustifyKind=(
+      (dwtjLeft,dwtjCenter,dwtjRight,dwtjLeft,dwtjMiddleCenter,dwtjLeft),
+      (dwtjBottomLeft,dwtjBottomCenter,dwtjBottomRight,dwtjBottomLeft,
+        dwtjMiddleCenter,dwtjBottomLeft),
+      (dwtjMiddleLeft,dwtjMiddleCenter,dwtjMiddleRight,dwtjMiddleLeft,
+        dwtjMiddleCenter,dwtjMiddleLeft),
+      (dwtjTopLeft,dwtjTopCenter,dwtjTopRight,dwtjTopLeft,
+        dwtjMiddleCenter,dwtjTopLeft)
+    );
+  begin
+    if (VertAlignment<0) or (VertAlignment>DWGTextMaxVertAlignment) then
+      Exit(DefaultJustify);
+    if (HorizAlignment<0) or (HorizAlignment>DWGTextMaxHorizAlignment) then
+      Exit(DefaultJustify);
+    Result:=DWGTextJustifyMap[VertAlignment,HorizAlignment];
   end;
 
   procedure DWGCopyMTextProps(const MText:Dwg_Entity_MTEXT;
