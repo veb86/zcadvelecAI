@@ -16,6 +16,7 @@ type
     procedure EmptyBitCodeRefReturnsNull;
     procedure AbsoluteRefWinsOverHandleref;
     procedure HandlerefIsFallbackWhenAbsoluteRefIsZero;
+    procedure ResolvedObjectHandleWinsOverScalarRefs;
     procedure DwgHandleValueReturnsRawHandleValue;
   end;
 
@@ -81,6 +82,26 @@ begin
   AssertEquals(Int64($33), Int64(Ref.Value));
   AssertEquals(Ord(hsHandleref), Ord(Ref.Source));
   AssertEquals('33', Ref.ToString);
+end;
+
+procedure TFPDWGHandleRefTest.ResolvedObjectHandleWinsOverScalarRefs;
+var
+  RawRef: Dwg_Object_Ref;
+  Target: Dwg_Object;
+  Ref: TDWGHandleRef;
+begin
+  FillChar(RawRef, SizeOf(RawRef), 0);
+  FillChar(Target, SizeOf(Target), 0);
+  Target.handle.value := $100A;
+  RawRef.obj := @Target;
+  RawRef.absolute_ref := $100B;
+  RawRef.handleref.value := $100B;
+
+  Ref := HandleRefFromBitCode(@RawRef);
+
+  AssertEquals(Int64($100A), Int64(Ref.Value));
+  AssertEquals(Ord(hsObjectPtr), Ord(Ref.Source));
+  AssertEquals('100A', Ref.ToString);
 end;
 
 procedure TFPDWGHandleRefTest.DwgHandleValueReturnsRawHandleValue;

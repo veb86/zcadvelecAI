@@ -16,6 +16,7 @@ type
     procedure EmptyRefReturnsFalse;
     procedure AbsoluteRefWinsOverHandleref;
     procedure HandlerefIsFallbackWhenAbsoluteRefIsZero;
+    procedure ResolvedObjectHandleWinsOverScalarRefs;
     procedure ObjectHandleValueReadsRawHandle;
     procedure ObjectOwnerHandleEntityReadsOwnerRef;
     procedure ObjectOwnerHandleObjectReadsOwnerRef;
@@ -269,6 +270,23 @@ begin
 
   AssertTrue(DWGRefHandleValue(@RawRef, Value));
   AssertEquals(Int64($33), Int64(Value));
+end;
+
+procedure TFPDWGProcHandleTest.ResolvedObjectHandleWinsOverScalarRefs;
+var
+  RawRef: Dwg_Object_Ref;
+  Target: Dwg_Object;
+  Value: QWord;
+begin
+  FillChar(RawRef, SizeOf(RawRef), 0);
+  FillChar(Target, SizeOf(Target), 0);
+  Target.handle.value := $100A;
+  RawRef.obj := @Target;
+  RawRef.absolute_ref := $100B;
+  RawRef.handleref.value := $100B;
+
+  AssertTrue(DWGRefHandleValue(@RawRef, Value));
+  AssertEquals(Int64($100A), Int64(Value));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectHandleValueReadsRawHandle;
