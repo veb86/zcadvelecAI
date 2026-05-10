@@ -29,8 +29,9 @@ interface
 uses
   SysUtils, dwg;
 
-{ Decode a LibreDWG-allocated BITCODE_T payload into a Pascal string. ANSI
-  for DWG <= R2004, UTF-16LE for newer versions. Tolerates a nil pointer:
+{ Decode a LibreDWG-allocated BITCODE_T payload into a Pascal string. The
+  binding exposes BITCODE_T as a C string pointer, so callers get codepage
+  text unless the payload itself looks like UTF-16LE. Tolerates a nil pointer:
   the caller gets an empty string instead of an AV. }
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   out text: string); overload;
@@ -203,16 +204,51 @@ begin
   Result := True;
 end;
 
+function DWGTextLooksLikeUTF16LE(const p: BITCODE_T): Boolean;
+const
+  MaxProbeChars = 8;
+var
+  I, Pairs, Score: Integer;
+  Lo, Hi: Byte;
+begin
+  Result := False;
+  if (p = nil) or (PAnsiChar(p)[0] = #0) then
+    Exit;
+
+  Pairs := 0;
+  Score := 0;
+  for I := 0 to MaxProbeChars - 1 do
+  begin
+    Lo := Ord(PAnsiChar(p)[I * 2]);
+    Hi := Ord(PAnsiChar(p)[I * 2 + 1]);
+    if (Lo = 0) and (Hi = 0) then
+      Break;
+
+    Inc(Pairs);
+    if Hi = 0 then
+      Inc(Score, 2)
+    else if Hi in [$01..$06] then
+      Inc(Score, 2)
+    else
+      Dec(Score, 2);
+
+    if (Lo = 0) and (Hi <> 0) then
+      Dec(Score, 2);
+  end;
+
+  Result := (Pairs > 0) and (Score >= 2);
+end;
+
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   out text: string);
 begin
   text := '';
   if p = nil then
     Exit;
-  if Version <= R_2004 then
-    text := pchar(p)
-  else
+  if (Version > R_2004) and DWGTextLooksLikeUTF16LE(p) then
     text := punicodechar(p);
+  else
+    text := pchar(p);
 end;
 
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
@@ -221,14 +257,17 @@ begin
   text := '';
   if p = nil then
     Exit;
-  if (Version <= R_2004) and (Codepage <> DWG_CP_UTF16) then
+
+  if (Codepage = DWG_CP_UTF16) or
+    ((Version > R_2004) and DWGTextLooksLikeUTF16LE(p)) then
   begin
-    if DWGDecodeAnsiText(p, Codepage, text) then
-      Exit;
-    text := pchar(p);
-  end
-  else
     text := punicodechar(p);
+    Exit;
+  end
+
+  if DWGDecodeAnsiText(p, Codepage, text) then
+    Exit;
+  text := pchar(p);
 end;
 
 function DWGDecodedTextForZCAD(const Text: string): string;

@@ -125,7 +125,7 @@ procedure AddAttDefEntity(var ZContext: TZDrawingContext;
   PAttDef: PDwg_Entity_ATTDEF);
 var
   PObj: PGDBObjText;
-  TagText, PromptText: string;
+  TagText: string;
 begin
   if PAttDef = nil then
     Exit;
@@ -138,11 +138,11 @@ begin
     PAttDef^.vert_alignment, PAttDef^.default_value);
   DWGSafeDecodeText(PAttDef^.tag, DWGContext.DWGVer,
     DWGContext.DWGCodePage, TagText);
-  DWGSafeDecodeText(PAttDef^.prompt, DWGContext.DWGVer,
-    DWGContext.DWGCodePage, PromptText);
+  { ATTDEF.prompt is optional UI text and is not needed for the imported
+    entity. Some R2007+ files expose an unstable prompt pointer through
+    LibreDWG, so avoid dereferencing it only for diagnostics. }
   zDebugLn(['{WH}DWG ATTDEF handle=', IntToHex(DWGObjectHandleValue(
-    DWGObject), 1), ' tag=', TagText, ' prompt=', PromptText,
-    ' flags=', PAttDef^.flags]);
+    DWGObject), 1), ' tag=', TagText, ' flags=', PAttDef^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttDef^.style);
 end;
 
