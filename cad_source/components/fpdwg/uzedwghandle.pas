@@ -579,10 +579,7 @@ begin
   if (Props.ColorIndex <= 0) or (Props.ColorIndex > 255) then
     Props.ColorIndex := 7;
   Props.LineWeight := DWGLineWeightToDXF(PLayer^.linewt);
-  // AutoCAD/DXF encodes layer off by negating group 62. Some R2007 DWGs
-  // arrive from LibreDWG with off=1 while the color index is positive; in
-  // that contradictory case AutoCAD shows the layer as on, so trust color.
-  Props.On := not DWGColorIsOff(PLayer^.color);
+  Props.On := PLayer^.off = 0;
   Props.Locked := PLayer^.locked <> 0;
   Props.Plot := PLayer^.plotflag <> 0;
   Result := True;

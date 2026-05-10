@@ -44,7 +44,7 @@ type
     procedure EntityLineTypeFlag3ReadsExplicitHandle;
     procedure EntityCommonPropsCopiesVisualFields;
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
-    procedure LayerVisualPropsPositiveColorKeepsLayerOn;
+    procedure LayerVisualPropsExplicitFlagsDriveLayerStates;
     procedure LayerVisualPropsByLayerMethodKeepsRawACI;
     procedure LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
     procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
@@ -724,7 +724,7 @@ begin
   AssertFalse('visible by default', Props.Invisible);
 end;
 
-procedure TFPDWGProcHandleTest.LayerVisualPropsPositiveColorKeepsLayerOn;
+procedure TFPDWGProcHandleTest.LayerVisualPropsExplicitFlagsDriveLayerStates;
 var
   Layer: Dwg_Object_LAYER;
   Props: TDWGLayerVisualProps;
@@ -740,10 +740,17 @@ begin
   AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
   AssertEquals('ACI color copied', 7, Props.ColorIndex);
   AssertEquals('lineweight 31 is ByLwDefault', -3, Props.LineWeight);
-  AssertTrue('positive color keeps layer visible despite raw off flag',
-    Props.On);
+  AssertFalse('explicit off flag turns layer off', Props.On);
   AssertTrue('locked copied', Props.Locked);
   AssertTrue('plot flag copied', Props.Plot);
+
+  Layer.off := 0;
+  Layer.locked := 0;
+  Layer.plotflag := 0;
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertTrue('cleared off flag turns layer on', Props.On);
+  AssertFalse('cleared lock flag unlocks layer', Props.Locked);
+  AssertFalse('cleared plot flag disables plotting', Props.Plot);
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsByLayerMethodKeepsRawACI;
