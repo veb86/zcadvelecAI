@@ -31,6 +31,7 @@ uses
   uzeentsubordinated,
   uzedwgentityregistry,
   uzeffmanager,
+  uzedwgtypes,
   uzedwgimport;
 
 implementation
@@ -40,14 +41,25 @@ procedure AddLineEntity(var ZContext: TZDrawingContext;
 var
   pobj: PGDBObjEntity;
   Endpoints: TDWGLineEndpoints;
+  LineHandle: QWord;
 begin
-  // Stage 2 (TZ §12.2): allocate with nil owner, fill geometry, register the
-  // shell + pending owner. The actual AddMi happens in DWGAttachEntity when
-  // ResolveOwners runs after parseDwg_Data. The line is *never* added to
-  // pObjRoot here — that was the original bug that caused entities to attach
-  // to the model-space root before their block-def owner was visible.
-  pobj := AllocAndInitLine(nil);
+  // Stage 2 (TZ §12.2): validate geometry before allocating a ZCAD line, then
+  // register the shell + pending owner. The actual AddMi happens in
+  // DWGAttachEntity when ResolveOwners runs after parseDwg_Data. The line is
+  // *never* added to pObjRoot here — that was the original bug that caused
+  // entities to attach to the model-space root before their block-def owner
+  // was visible.
+  LineHandle := DWGObjectHandleValue(DWGObject);
   DWGCopyLineEndpoints(PLine^, Endpoints);
+  if DWGLineEndpointsAreZeroLength(Endpoints) then begin
+    zDebugLn(['{WH}DWG LINE ', IntToHex(LineHandle, 1),
+      ' skipped: zero-length geometry']);
+    if GetLoadCtx <> nil then
+      GetLoadCtx.MarkShellState(LineHandle, msSkipped);
+    Exit;
+  end;
+
+  pobj := AllocAndInitLine(nil);
   PGDBObjLine(pobj)^.CoordInOCS.lBegin.x := Endpoints.StartX;
   PGDBObjLine(pobj)^.CoordInOCS.lBegin.y := Endpoints.StartY;
   PGDBObjLine(pobj)^.CoordInOCS.lBegin.z := Endpoints.StartZ;
@@ -55,17 +67,11 @@ begin
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.y := Endpoints.EndY;
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.z := Endpoints.EndZ;
 
-  zDebugLn(['{WH}DWG LINE geometry handle=', IntToHex(DWGObjectHandleValue(
-    DWGObject), 1),
+  zDebugLn(['{WH}DWG LINE geometry handle=', IntToHex(LineHandle, 1),
     ' start=(', FloatToStr(Endpoints.StartX), ',',
     FloatToStr(Endpoints.StartY), ',', FloatToStr(Endpoints.StartZ), ')',
     ' end=(', FloatToStr(Endpoints.EndX), ',',
     FloatToStr(Endpoints.EndY), ',', FloatToStr(Endpoints.EndZ), ')']);
-  if (Endpoints.StartX = Endpoints.EndX) and
-     (Endpoints.StartY = Endpoints.EndY) and
-     (Endpoints.StartZ = Endpoints.EndZ) then
-    zDebugLn(['{WHM}DWG LINE ', IntToHex(DWGObjectHandleValue(DWGObject), 1),
-      ' has zero-length geometry']);
 
   if GetLoadCtx <> nil then
     DWGRegisterEntityShell(pobj, DWGObject, False, 0)
