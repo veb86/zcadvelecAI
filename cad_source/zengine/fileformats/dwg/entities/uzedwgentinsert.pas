@@ -81,8 +81,7 @@ procedure QueueBlockDefRef(PObj: PGDBObjBlockInsert;
   BlockHeader: BITCODE_H; const InitialName: string);
 var
   Ctx: TDWGZCADLoadContext;
-  EntityHandle: QWord;
-  BlockCandidates: TDWGRefHandleCandidates;
+  EntityHandle, BlockHandle: QWord;
   FallbackBlock: PGDBObjBlockdef;
 begin
   Ctx := GetLoadCtx;
@@ -90,12 +89,11 @@ begin
     Exit;
 
   EntityHandle := DWGObjectHandleValue(DWGObject);
-  if not DWGRefHandleCandidatesValue(BlockHeader, BlockCandidates) then
-    FillChar(BlockCandidates, SizeOf(BlockCandidates), 0);
+  if not DWGRefHandleValue(BlockHeader, BlockHandle) then
+    BlockHandle := 0;
 
   FallbackBlock := FindBlockDefByName(ZContext, InitialName);
-  Ctx.QueueRefResolveCandidates(PGDBObjEntity(PObj), EntityHandle,
-    BlockCandidates.Values, BlockCandidates.Count,
+  Ctx.QueueRefResolve(PGDBObjEntity(PObj), EntityHandle, BlockHandle,
     dokBlockDef, rsBlockDef, FallbackBlock);
 end;
 

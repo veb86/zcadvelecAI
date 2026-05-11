@@ -53,7 +53,9 @@ procedure AddTextEntity(var ZContext: TZDrawingContext;
 var
   pobj: PGDBObjText;
   Props: TDWGTextProps;
+  StyleHandle: QWord;
   TextX, TextY, TextZ: Double;
+  WantStyle: Boolean;
   uniValue: UnicodeString;
 begin
   pobj := AllocAndInitText(nil);
@@ -80,9 +82,11 @@ begin
   uniValue := UnicodeString(Props.Value);
   pobj^.Content := uniValue;
   ApplyTextRotation(pobj, Props.Rotation);
+  WantStyle := DWGTextStyleHandleValue(PText, StyleHandle);
+  if not WantStyle then
+    StyleHandle := 0;
   if GetLoadCtx <> nil then
-    DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(pobj), DWGObject,
-      PText^.style)
+    DWGRegisterEntityShell(PGDBObjEntity(pobj), DWGObject, True, StyleHandle)
   else
     ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(pobj));
 end;

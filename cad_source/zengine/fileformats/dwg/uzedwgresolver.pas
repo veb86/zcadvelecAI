@@ -132,43 +132,6 @@ var
   OwnerEntry: TDWGZCADHandleEntry;
   OwnerPending: PDWGZCADPendingOwner;
   Fallback: Pointer;
-  Candidates: TDWGZCADRefHandleCandidates;
-  I: Integer;
-  FailureCode: Integer;
-  FailureSeverity: TDWGImportSeverity;
-  FailureReason: TDWGAttachReason;
-  FailureHandle: TDWGZCADHandle;
-  FailureText: String;
-  HaveFailure: Boolean;
-
-  procedure AddLocalCandidate(AHandle: TDWGZCADHandle);
-  var
-    J: Integer;
-  begin
-    if AHandle = 0 then
-      Exit;
-    for J := 0 to Candidates.Count - 1 do
-      if Candidates.Values[J] = AHandle then
-        Exit;
-    if Candidates.Count > High(Candidates.Values) then
-      Exit;
-    Candidates.Values[Candidates.Count] := AHandle;
-    Inc(Candidates.Count);
-  end;
-
-  procedure RememberFailure(ACode: Integer; ASeverity: TDWGImportSeverity;
-    AReason: TDWGAttachReason; AHandle: TDWGZCADHandle;
-    const AText: String);
-  begin
-    if HaveFailure then
-      Exit;
-    HaveFailure := True;
-    FailureCode := ACode;
-    FailureSeverity := ASeverity;
-    FailureReason := AReason;
-    FailureHandle := AHandle;
-    FailureText := AText;
-  end;
 begin
   if Pending = nil then
     Exit;
@@ -198,13 +161,7 @@ begin
     if Fallback = nil then
       Fallback := FHost.GetFallbackOwner;
 
-    Candidates := Pending^.OwnerCandidates;
-    if Candidates.Count > High(Candidates.Values) + 1 then
-      Candidates.Count := High(Candidates.Values) + 1;
-    if (Candidates.Count = 0) and (Pending^.OwnerHandle <> 0) then
-      AddLocalCandidate(Pending^.OwnerHandle);
-
-    if Candidates.Count = 0 then
+    if Pending^.OwnerHandle = 0 then
     begin
       FHost.RaiseWarning(wsInfo, DWG_WARN_OWNER_NULL, Pending^.EntityHandle,
         Format('Entity %s has null owner; using fallback root',
@@ -213,97 +170,81 @@ begin
       Exit;
     end;
 
-    HaveFailure := False;
-    for I := 0 to Candidates.Count - 1 do
+    if Pending^.OwnerHandle = Pending^.EntityHandle then
     begin
-      Pending^.OwnerHandle := Candidates.Values[I];
-
-      if Pending^.OwnerHandle = Pending^.EntityHandle then
-      begin
-        RememberFailure(DWG_WARN_OWNER_SELF_CYCLE, wsWarning,
-          arSelfOwnerCycle, Pending^.OwnerHandle,
-          Format('Self-owner cycle on entity %s; using fallback root',
-            [IntToHex(Pending^.EntityHandle, 1)]));
-        Continue;
-      end;
-
-      if not FHost.TryGetEntry(Pending^.OwnerHandle, OwnerEntry) then
-      begin
-        RememberFailure(DWG_WARN_OWNER_NOT_FOUND, wsWarning,
-          arOwnerNotFound, Pending^.OwnerHandle,
-          Format('Owner %s not found for entity %s; using fallback root',
-            [IntToHex(Pending^.OwnerHandle, 1),
-             IntToHex(Pending^.EntityHandle, 1)]));
-        Continue;
-      end;
-
-      if not (OwnerEntry.Kind in
-          [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer,
-           dokBlockInsert]) then
-      begin
-        RememberFailure(DWG_WARN_OWNER_NOT_CONTAINER, wsWarning,
-          arOwnerNotContainer, Pending^.OwnerHandle,
-          Format('Owner %s for entity %s is not a container (kind=%d); '+
-                 'using fallback root',
-            [IntToHex(Pending^.OwnerHandle, 1),
-             IntToHex(Pending^.EntityHandle, 1),
-             Ord(OwnerEntry.Kind)]));
-        Continue;
-      end;
-
-      // Section 5.3: ensure owner itself is resolved before attaching child.
-      OwnerPending := FHost.FindPendingOwner(Pending^.OwnerHandle);
-      if OwnerPending <> nil then
-      begin
-        if OwnerPending^.AttachState = asResolving then
-        begin
-          RememberFailure(DWG_WARN_OWNER_CHAIN_CYCLE, wsWarning,
-            arOwnerChainCycle, Pending^.OwnerHandle,
-            Format('Owner chain cycle %s -> %s detected; using fallback root',
-              [IntToHex(Pending^.EntityHandle, 1),
-               IntToHex(Pending^.OwnerHandle, 1)]));
-          Continue;
-        end;
-        ResolvePending(OwnerPending);
-        if OwnerPending^.AttachState = asSkipped then
-        begin
-          RememberFailure(DWG_WARN_OWNER_SKIPPED, wsWarning, arOwnerSkipped,
-            Pending^.OwnerHandle,
-            Format('Owner %s for entity %s was skipped; using fallback root',
-              [IntToHex(Pending^.OwnerHandle, 1),
-               IntToHex(Pending^.EntityHandle, 1)]));
-          Continue;
-        end;
-      end;
-
-      if StackContains(Pending^.OwnerHandle) then
-      begin
-        RememberFailure(DWG_WARN_OWNER_CHAIN_CYCLE, wsWarning,
-          arOwnerChainCycle, Pending^.OwnerHandle,
-          Format('Owner chain cycle reaches %s through %s; using fallback root',
-            [IntToHex(Pending^.OwnerHandle, 1),
-             IntToHex(Pending^.EntityHandle, 1)]));
-        Continue;
-      end;
-
-      FinishOwner(Pending, OwnerEntry.Ptr, asAttached, arResolved);
+      FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_SELF_CYCLE,
+        Pending^.EntityHandle,
+        Format('Self-owner cycle on entity %s; using fallback root',
+          [IntToHex(Pending^.EntityHandle, 1)]));
+      FinishOwner(Pending, Fallback, asFallback, arSelfOwnerCycle);
       Exit;
     end;
 
-    if not HaveFailure then
+    if not FHost.TryGetEntry(Pending^.OwnerHandle, OwnerEntry) then
     begin
-      FailureCode := DWG_WARN_OWNER_NULL;
-      FailureSeverity := wsInfo;
-      FailureReason := arNullOwner;
-      FailureHandle := 0;
-      FailureText := Format('Entity %s has null owner; using fallback root',
-        [IntToHex(Pending^.EntityHandle, 1)]);
+      FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND,
+        Pending^.EntityHandle,
+        Format('Owner %s not found for entity %s; using fallback root',
+          [IntToHex(Pending^.OwnerHandle, 1),
+           IntToHex(Pending^.EntityHandle, 1)]));
+      FinishOwner(Pending, Fallback, asFallback, arOwnerNotFound);
+      Exit;
     end;
 
-    Pending^.OwnerHandle := FailureHandle;
-    FHost.RaiseWarning(FailureSeverity, FailureCode, Pending^.EntityHandle,
-      FailureText);
-    FinishOwner(Pending, Fallback, asFallback, FailureReason);
+    if not (OwnerEntry.Kind in
+        [dokBlockDef, dokModelSpace, dokPaperSpace, dokContainer,
+         dokBlockInsert]) then
+    begin
+      FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_CONTAINER,
+        Pending^.EntityHandle,
+        Format('Owner %s for entity %s is not a container (kind=%d); '+
+               'using fallback root',
+          [IntToHex(Pending^.OwnerHandle, 1),
+           IntToHex(Pending^.EntityHandle, 1),
+           Ord(OwnerEntry.Kind)]));
+      FinishOwner(Pending, Fallback, asFallback, arOwnerNotContainer);
+      Exit;
+    end;
+
+    // Section 5.3: ensure owner itself is resolved before attaching child.
+    OwnerPending := FHost.FindPendingOwner(Pending^.OwnerHandle);
+    if OwnerPending <> nil then
+    begin
+      if OwnerPending^.AttachState = asResolving then
+      begin
+        FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_CHAIN_CYCLE,
+          Pending^.EntityHandle,
+          Format('Owner chain cycle %s -> %s detected; using fallback root',
+            [IntToHex(Pending^.EntityHandle, 1),
+             IntToHex(Pending^.OwnerHandle, 1)]));
+        FinishOwner(Pending, Fallback, asFallback, arOwnerChainCycle);
+        Exit;
+      end;
+      ResolvePending(OwnerPending);
+      if OwnerPending^.AttachState = asSkipped then
+      begin
+        FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_SKIPPED,
+          Pending^.EntityHandle,
+          Format('Owner %s for entity %s was skipped; using fallback root',
+            [IntToHex(Pending^.OwnerHandle, 1),
+             IntToHex(Pending^.EntityHandle, 1)]));
+        FinishOwner(Pending, Fallback, asFallback, arOwnerSkipped);
+        Exit;
+      end;
+    end;
+
+    if StackContains(Pending^.OwnerHandle) then
+    begin
+      FHost.RaiseWarning(wsWarning, DWG_WARN_OWNER_CHAIN_CYCLE,
+        Pending^.EntityHandle,
+        Format('Owner chain cycle reaches %s through %s; using fallback root',
+          [IntToHex(Pending^.OwnerHandle, 1),
+           IntToHex(Pending^.EntityHandle, 1)]));
+      FinishOwner(Pending, Fallback, asFallback, arOwnerChainCycle);
+      Exit;
+    end;
+
+    FinishOwner(Pending, OwnerEntry.Ptr, asAttached, arResolved);
   finally
     PopStack;
     if Pending^.AttachState = asResolving then
@@ -331,43 +272,6 @@ procedure TDWGZCADResolver.ResolveRef(Pending: PDWGZCADPendingRef);
 var
   Entry: TDWGZCADHandleEntry;
   Fallback: Pointer;
-  Candidates: TDWGZCADRefHandleCandidates;
-  I: Integer;
-  FailureCode: Integer;
-  FailureSeverity: TDWGImportSeverity;
-  FailureReason: TDWGAttachReason;
-  FailureHandle: TDWGZCADHandle;
-  FailureText: String;
-  HaveFailure: Boolean;
-
-  procedure AddLocalCandidate(AHandle: TDWGZCADHandle);
-  var
-    J: Integer;
-  begin
-    if AHandle = 0 then
-      Exit;
-    for J := 0 to Candidates.Count - 1 do
-      if Candidates.Values[J] = AHandle then
-        Exit;
-    if Candidates.Count > High(Candidates.Values) then
-      Exit;
-    Candidates.Values[Candidates.Count] := AHandle;
-    Inc(Candidates.Count);
-  end;
-
-  procedure RememberFailure(ACode: Integer; ASeverity: TDWGImportSeverity;
-    AReason: TDWGAttachReason; AHandle: TDWGZCADHandle;
-    const AText: String);
-  begin
-    if HaveFailure then
-      Exit;
-    HaveFailure := True;
-    FailureCode := ACode;
-    FailureSeverity := ASeverity;
-    FailureReason := AReason;
-    FailureHandle := AHandle;
-    FailureText := AText;
-  end;
 begin
   if Pending = nil then
     Exit;
@@ -386,13 +290,7 @@ begin
     Exit;
   end;
 
-  Candidates := Pending^.RefCandidates;
-  if Candidates.Count > High(Candidates.Values) + 1 then
-    Candidates.Count := High(Candidates.Values) + 1;
-  if (Candidates.Count = 0) and (Pending^.RefHandle <> 0) then
-    AddLocalCandidate(Pending^.RefHandle);
-
-  if Candidates.Count = 0 then
+  if Pending^.RefHandle = 0 then
   begin
     FHost.RaiseWarning(wsInfo, DWG_WARN_REF_NULL, Pending^.EntityHandle,
       Format('Entity %s has null ref in slot %d; using fallback',
@@ -401,78 +299,60 @@ begin
     Exit;
   end;
 
-  HaveFailure := False;
-  for I := 0 to Candidates.Count - 1 do
+  if not FHost.TryGetEntry(Pending^.RefHandle, Entry) then
   begin
-    Pending^.RefHandle := Candidates.Values[I];
+    FHost.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND,
+      Pending^.EntityHandle,
+      Format('Ref %s (slot %d) not found for entity %s; using fallback',
+        [IntToHex(Pending^.RefHandle, 1), Ord(Pending^.Slot),
+         IntToHex(Pending^.EntityHandle, 1)]));
+    FinishRef(Pending, Fallback, asFallback, arRefNotFound);
+    Exit;
+  end;
 
-    if not FHost.TryGetEntry(Pending^.RefHandle, Entry) then
-    begin
-      RememberFailure(DWG_WARN_REF_NOT_FOUND, wsWarning, arRefNotFound,
-        Pending^.RefHandle,
-        Format('Ref %s (slot %d) not found for entity %s; using fallback',
-          [IntToHex(Pending^.RefHandle, 1), Ord(Pending^.Slot),
-           IntToHex(Pending^.EntityHandle, 1)]));
-      Continue;
-    end;
-
-    if (Pending^.Slot = rsBlockDef) and
-       (Entry.Kind in [dokBlockDef, dokModelSpace, dokPaperSpace]) then
-    begin
-      if Entry.Ptr = nil then
-      begin
-        RememberFailure(DWG_WARN_REF_NOT_FOUND, wsWarning, arRefNotFound,
-          Pending^.RefHandle,
-          Format('Block ref %s for entity %s registered with nil ptr; using fallback',
-            [IntToHex(Pending^.RefHandle, 1),
-             IntToHex(Pending^.EntityHandle, 1)]));
-        Continue;
-      end;
-      FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
-      Exit;
-    end;
-
-    if Entry.Kind <> Pending^.ExpectedKind then
-    begin
-      RememberFailure(DWG_WARN_REF_KIND_MISMATCH, wsWarning, arRefKindMismatch,
-        Pending^.RefHandle,
-        Format('Ref %s for entity %s has kind %d, expected %d; using fallback',
-          [IntToHex(Pending^.RefHandle, 1),
-           IntToHex(Pending^.EntityHandle, 1),
-           Ord(Entry.Kind), Ord(Pending^.ExpectedKind)]));
-      Continue;
-    end;
-
+  if (Pending^.Slot = rsBlockDef) and
+     (Entry.Kind in [dokBlockDef, dokModelSpace, dokPaperSpace]) then
+  begin
     if Entry.Ptr = nil then
     begin
-      // Shell registered without a backing object: treat as not found so the
-      // entity still ends up with a usable reference rather than nil.
-      RememberFailure(DWG_WARN_REF_NOT_FOUND, wsWarning, arRefNotFound,
-        Pending^.RefHandle,
-        Format('Ref %s for entity %s registered with nil ptr; using fallback',
+      FHost.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND,
+        Pending^.EntityHandle,
+        Format('Block ref %s for entity %s registered with nil ptr; using fallback',
           [IntToHex(Pending^.RefHandle, 1),
            IntToHex(Pending^.EntityHandle, 1)]));
-      Continue;
+      FinishRef(Pending, Fallback, asFallback, arRefNotFound);
+      Exit;
     end;
-
     FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
     Exit;
   end;
 
-  if not HaveFailure then
+  if Entry.Kind <> Pending^.ExpectedKind then
   begin
-    FailureCode := DWG_WARN_REF_NULL;
-    FailureSeverity := wsInfo;
-    FailureReason := arRefNull;
-    FailureHandle := 0;
-    FailureText := Format('Entity %s has null ref in slot %d; using fallback',
-      [IntToHex(Pending^.EntityHandle, 1), Ord(Pending^.Slot)]);
+    FHost.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH,
+      Pending^.EntityHandle,
+      Format('Ref %s for entity %s has kind %d, expected %d; using fallback',
+        [IntToHex(Pending^.RefHandle, 1),
+         IntToHex(Pending^.EntityHandle, 1),
+         Ord(Entry.Kind), Ord(Pending^.ExpectedKind)]));
+    FinishRef(Pending, Fallback, asFallback, arRefKindMismatch);
+    Exit;
   end;
 
-  Pending^.RefHandle := FailureHandle;
-  FHost.RaiseWarning(FailureSeverity, FailureCode, Pending^.EntityHandle,
-    FailureText);
-  FinishRef(Pending, Fallback, asFallback, FailureReason);
+  if Entry.Ptr = nil then
+  begin
+    // Shell registered without a backing object: treat as not found so the
+    // entity still ends up with a usable reference rather than nil.
+    FHost.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND,
+      Pending^.EntityHandle,
+      Format('Ref %s for entity %s registered with nil ptr; using fallback',
+        [IntToHex(Pending^.RefHandle, 1),
+         IntToHex(Pending^.EntityHandle, 1)]));
+    FinishRef(Pending, Fallback, asFallback, arRefNotFound);
+    Exit;
+  end;
+
+  FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
 end;
 
 end.

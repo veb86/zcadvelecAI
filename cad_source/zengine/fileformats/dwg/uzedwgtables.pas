@@ -180,8 +180,7 @@ var
   player: PGDBLayerProp;
   name: string;
   LayerProps: TDWGLayerVisualProps;
-  Handle: QWord;
-  LtCandidates: TDWGRefHandleCandidates;
+  Handle, LtHandle: QWord;
   ContinuousLT: PGDBLtypeProp;
   Ctx: TDWGZCADLoadContext;
 begin
@@ -225,16 +224,15 @@ begin
     // have been registered. Issue #1122: this uses a layer-specific ref slot
     // because the target pointer is PGDBLayerProp, not PGDBObjEntity.
     if (player <> nil) and (Handle <> 0) then begin
-      if not DWGLayerLineTypeHandleCandidatesValue(PDWGLayer,
-        LtCandidates) then
-        FillChar(LtCandidates, SizeOf(LtCandidates), 0);
+      if not DWGLayerLineTypeHandleValue(PDWGLayer, LtHandle) then
+        LtHandle := 0;
       ContinuousLT := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.getAddres(
         'Continuous'));
       if ContinuousLT = nil then
         ContinuousLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(
           TLTContinous);
-      Ctx.QueueRefResolveCandidates(player, Handle, LtCandidates.Values,
-        LtCandidates.Count, dokLineType, rsLayerLineType, ContinuousLT);
+      Ctx.QueueRefResolve(player, Handle, LtHandle,
+        dokLineType, rsLayerLineType, ContinuousLT);
     end;
   end;
 end;
