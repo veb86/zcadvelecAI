@@ -110,10 +110,26 @@ type
     procedure BlockDefRefAcceptsModelSpaceForInsert;
   end;
 
+  { Issue #1189 regression: per-entity fallback log lines emitted by
+    DWGAttachEntity / DWGAttachRef must use the silent "{WH}" marker (history
+    only), not "{WHM}" (history + modal message box). The user explicitly asked
+    for fallback diagnostics to remain as silent log entries because the loader
+    recovers correctly and a per-entity modal dialog interrupts file loading
+    on drawings with many unresolved owner/ref handles. }
+  TDWGLoadContextSilentFallbackTest = class(TTestCase)
+  private
+    function LocateImportSource: string;
+  published
+    procedure DWGAttachFallbackLogsUseSilentMarker;
+    procedure DWGAttachReasonTextCoversAllReasons;
+  end;
+
 implementation
 
 uses
+  Classes,
   SysUtils,
+  uzedwgtypes,
   uzedwgloadcontext;
 
 type
@@ -1534,9 +1550,83 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextSilentFallbackTest ---------- }
+
+function TDWGLoadContextSilentFallbackTest.LocateImportSource: string;
+const
+  Candidates: array[0..3] of string = (
+    'cad_source/zengine/fileformats/dwg/uzedwgimport.pas',
+    '../uzedwgimport.pas',
+    '../../uzedwgimport.pas',
+    '../../../uzedwgimport.pas'
+  );
+var
+  I: Integer;
+  Base, Candidate: string;
+begin
+  Base := ExtractFilePath(ParamStr(0));
+  if Base = '' then
+    Base := IncludeTrailingPathDelimiter(GetCurrentDir);
+  for I := Low(Candidates) to High(Candidates) do begin
+    Candidate := Base + Candidates[I];
+    if FileExists(Candidate) then
+      Exit(Candidate);
+    Candidate := Candidates[I];
+    if FileExists(Candidate) then
+      Exit(Candidate);
+  end;
+  Result := '';
+end;
+
+procedure TDWGLoadContextSilentFallbackTest.DWGAttachFallbackLogsUseSilentMarker;
+var
+  Source: TStringList;
+  SourcePath, Line: string;
+  I: Integer;
+  Offenders: TStringList;
+begin
+  SourcePath := LocateImportSource;
+  if SourcePath = '' then begin
+    { Out-of-tree test run: source file is not reachable from CWD. The check
+      is enforced wherever the project tree is available, so skip silently
+      instead of failing a packaged test. }
+    Exit;
+  end;
+  Source := TStringList.Create;
+  Offenders := TStringList.Create;
+  try
+    Source.LoadFromFile(SourcePath);
+    for I := 0 to Source.Count - 1 do begin
+      Line := Source[I];
+      if (Pos('{WHM}', Line) > 0) and (Pos('fallback', Line) > 0) then
+        Offenders.Add(Format('%s:%d: %s',
+          [ExtractFileName(SourcePath), I + 1, Trim(Line)]));
+    end;
+    AssertEquals(
+      'Issue #1189: per-entity fallback log lines must use {WH}, not {WHM}.' +
+      ' Offending lines: ' + Offenders.Text,
+      0, Offenders.Count);
+  finally
+    Offenders.Free;
+    Source.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSilentFallbackTest.DWGAttachReasonTextCoversAllReasons;
+var
+  Reason: TDWGAttachReason;
+begin
+  { Defensive: every TDWGAttachReason value must produce a non-empty label so
+    silent log entries stay parseable when post-processed. }
+  for Reason := Low(TDWGAttachReason) to High(TDWGAttachReason) do
+    AssertTrue('reason ' + IntToStr(Ord(Reason)) + ' has empty text',
+      DWGAttachReasonToText(Reason) <> '');
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
-    TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test]);
+    TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test,
+    TDWGLoadContextSilentFallbackTest]);
 
 end.

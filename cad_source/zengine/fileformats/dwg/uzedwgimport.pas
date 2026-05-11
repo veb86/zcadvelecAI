@@ -255,7 +255,7 @@ begin
        (Entry.Kind = dokLayer) then
       CurrentLayer := PGDBLayerProp(Entry.Ptr);
     if CurrentLayer = nil then
-      zDebugLn(['{WHM}DWG current layer handle ',
+      zDebugLn(['{WH}DWG current layer handle ',
         IntToHex(LoadCurrentLayerHandle, 1),
         ' did not resolve to a layer; using system layer']);
   end;
@@ -277,7 +277,7 @@ begin
        (Entry.Kind = dokLineType) then
       CurrentLType := PGDBLtypeProp(Entry.Ptr);
     if CurrentLType = nil then
-      zDebugLn(['{WHM}DWG current linetype handle ',
+      zDebugLn(['{WH}DWG current linetype handle ',
         IntToHex(LoadCurrentLineTypeHandle, 1),
         ' did not resolve to a linetype; using ByLayer']);
   end;
@@ -299,7 +299,7 @@ begin
        (Entry.Kind = dokTextStyle) then
       CurrentStyle := PGDBTextStyle(Entry.Ptr);
     if CurrentStyle = nil then
-      zDebugLn(['{WHM}DWG current textstyle handle ',
+      zDebugLn(['{WH}DWG current textstyle handle ',
         IntToHex(LoadCurrentTextStyleHandle, 1),
         ' did not resolve to a text style; using Standard']);
   end;
@@ -321,7 +321,7 @@ begin
        (Entry.Kind = dokDimStyle) then
       CurrentDimStyle := PGDBDimStyle(Entry.Ptr);
     if CurrentDimStyle = nil then
-      zDebugLn(['{WHM}DWG current dimstyle handle ',
+      zDebugLn(['{WH}DWG current dimstyle handle ',
         IntToHex(LoadCurrentDimStyleHandle, 1),
         ' did not resolve to a dimstyle; using Standard']);
   end;
@@ -426,7 +426,7 @@ begin
   if DWGPointerHasKind(Owner, dokBlockInsert) then begin
     pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
     if Reason <> arResolved then
-      zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+      zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
         ' deferred under INSERT via fallback (',
         DWGAttachReasonToText(Reason), ')']);
     Exit;
@@ -436,7 +436,7 @@ begin
 
   newowner^.AddMi(PGDBObjSubordinated(pobj));
   if Reason <> arResolved then
-    zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+    zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
       ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
 
   // R7 (TZ §3.7): BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd
@@ -505,7 +505,7 @@ begin
           Exit;
         pobj^.vp.Layer := PGDBLayerProp(Ref);
         if Reason <> arResolved then
-          zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' layer fallback (', DWGAttachReasonToText(Reason), ') -> ',
             DWGLayerNameForLog(PGDBLayerProp(Ref))]);
@@ -517,7 +517,7 @@ begin
           Exit;
         pobj^.vp.LineType := PGDBLtypeProp(Ref);
         if Reason <> arResolved then
-          zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' linetype fallback (', DWGAttachReasonToText(Reason),
             ', layer=', DWGLayerNameForLog(pobj^.vp.Layer), ') -> ',
@@ -530,7 +530,7 @@ begin
           Exit;
         player^.LT := PGDBLtypeProp(Ref);
         if Reason <> arResolved then
-          zDebugLn(['{WHM}layer ', DWGLayerNameForLog(player),
+          zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
             DWGLTypeNameForLog(PGDBLtypeProp(Ref))])
@@ -552,7 +552,7 @@ begin
         if (pobj^.GetObjType = GDBtextID) or (pobj^.GetObjType = GDBMTextID) then
           PGDBObjText(pobj)^.TXTStyle := PGDBTextStyle(Ref);
         if Reason <> arResolved then
-          zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' textstyle fallback (', DWGAttachReasonToText(Reason), ')']);
       end;
@@ -573,7 +573,7 @@ begin
             PGDBObjDimension(pobj)^.PDimStyle := pDimStyle;
         end;
         if Reason <> arResolved then
-          zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' dimstyle fallback (', DWGAttachReasonToText(Reason), ')']);
       end;
@@ -589,11 +589,11 @@ begin
         else begin
           pBlockDef := DWGEnsureFallbackBlockDef;
           if Reason = arResolved then
-            zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+            zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block ref resolves to model/paper space; using empty block'])
           else
-            zDebugLn(['{WHM}entity ', HexStr(PtrUInt(pobj), 16),
+            zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block fallback (', DWGAttachReasonToText(Reason), ')']);
         end;
@@ -800,7 +800,7 @@ begin
   // all three paths fail OwnerHandle stays 0, the resolver attaches via
   // arNullOwner and the segments only render under the fallback root. Log a
   // hint so future regressions surface in the build log instead of looking
-  // like a generic "{WHM} ... attached via fallback (null owner)".
+  // like a generic "{WH} ... attached via fallback (null owner)".
   EntMode := -1;
   if (DWGObject.supertype = DWG_SUPERTYPE_ENTITY) and
      (DWGObject.tio.entity <> nil) then
