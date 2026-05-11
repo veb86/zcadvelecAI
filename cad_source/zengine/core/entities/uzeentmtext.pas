@@ -538,6 +538,15 @@ begin
   end;
   CalcActualVisible(dc.DrawingContext.VActuality);
   if EFDraw in stage then begin
+    // Issue #1194: MTEXT entities loaded from DWG can reach FormatEntity with
+    // TXTStyle=nil if their style ref failed to resolve. Fall back to the
+    // drawing's Standard style — same pattern as the DXF loader uses.
+    if TXTStyle=nil then
+      TXTStyle:=drawing.GetTextStyleTable^.FindStyle('Standard',False);
+    if (TXTStyle<>nil) and (TXTStyle^.pfont=nil) then
+      TXTStyle^.pfont:=pbasefont;
+    if (TXTStyle=nil) or (TXTStyle^.pfont=nil) or (TXTStyle^.pfont^.font=nil) then
+      Exit;
 
     formatcontent(drawing);
     calcobjmatrix;
