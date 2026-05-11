@@ -28,6 +28,15 @@ uses
 type
   TDWGZCADHandle = QWord;
 
+const
+  DWG_ZCAD_MAX_REF_HANDLE_CANDIDATES = 3;
+
+type
+  TDWGZCADRefHandleCandidates = record
+    Count: Integer;
+    Values: array[0..DWG_ZCAD_MAX_REF_HANDLE_CANDIDATES - 1] of TDWGZCADHandle;
+  end;
+
   { Section 7 of TZ: object kinds the import context recognizes. The kind is
     used by the resolver to decide whether a handle is a valid container
     target. The set is intentionally small; new kinds get added as new entity
@@ -90,6 +99,7 @@ type
     Entity: Pointer;
     EntityHandle: TDWGZCADHandle;
     OwnerHandle: TDWGZCADHandle;
+    OwnerCandidates: TDWGZCADRefHandleCandidates;
     FallbackOwner: Pointer;
     RawIndex: Integer;
     AttachState: TDWGAttachState;
@@ -123,6 +133,7 @@ type
     Entity: Pointer;
     EntityHandle: TDWGZCADHandle;
     RefHandle: TDWGZCADHandle;
+    RefCandidates: TDWGZCADRefHandleCandidates;
     ExpectedKind: TDWGZCADObjectKind;
     Slot: TDWGZCADRefSlot;
     Fallback: Pointer;

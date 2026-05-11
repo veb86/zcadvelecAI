@@ -85,14 +85,10 @@ end;
 
 procedure RegisterAttribShell(PObj: PGDBObjText; var ZContext: TZDrawingContext;
   var DWGObject: Dwg_Object; StyleRef: BITCODE_H);
-var
-  StyleHandle: QWord;
 begin
-  if not DWGRefHandleValue(StyleRef, StyleHandle) then
-    StyleHandle := 0;
   if GetLoadCtx <> nil then
-    DWGRegisterEntityShell(PGDBObjEntity(PObj), DWGObject, True,
-      StyleHandle)
+    DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(PObj), DWGObject,
+      StyleRef)
   else
     ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(PObj));
 end;
