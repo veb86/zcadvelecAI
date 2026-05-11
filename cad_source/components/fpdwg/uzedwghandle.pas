@@ -153,11 +153,11 @@ function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 function DWGObjectOwnerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
 
-{ Generic BITCODE_H decoder: returns False when the ref is nil or both
-  absolute_ref and handleref.value are zero. The two fields are checked in
-  order because LibreDWG fills absolute_ref for resolved cross-references
-  but leaves it at 0 for soft pointers, which then carry the value in
-  handleref.value. }
+{ Generic BITCODE_H decoder: returns False when the ref is nil and no usable
+  handle can be recovered. LibreDWG may already have resolved the reference
+  to an object pointer; when it has, the pointed object's own handle is the
+  most reliable identifier. Fall back to absolute_ref, then handleref.value
+  for unresolved or soft-pointer refs. }
 function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
 
 { Stage 3 (TZ §12.3): pull layer / linetype refs off an entity-typed
@@ -262,6 +262,11 @@ begin
   Value := 0;
   if Ref = nil then
     Exit(False);
+  if (Ref^.obj <> nil) and (Ref^.obj^.handle.value <> 0) then
+  begin
+    Value := Ref^.obj^.handle.value;
+    Exit(True);
+  end;
   if Ref^.absolute_ref <> 0 then
   begin
     Value := Ref^.absolute_ref;
