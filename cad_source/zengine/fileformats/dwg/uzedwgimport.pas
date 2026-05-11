@@ -74,11 +74,14 @@ procedure DWGCaptureActiveVPortView(const Props: TDWGViewProps);
 
 { Stage 5 helper extracted from uzefflibredwg2ents.pas: register the entity
   shell + pending owner + layer/linetype/textstyle refs in one call. The
-  WantTextStyle / TextStyleHandle pair is set by TEXT/MTEXT mappers and
-  ignored by everything else. }
+  scalar TextStyleHandle overload is preserved for old callers; TEXT/MTEXT
+  mappers pass the raw BITCODE_H so alternate decoded handles survive. }
 procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
   WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind = dokEntity);
+procedure DWGRegisterEntityShellWithTextStyleRef(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object; TextStyleRef: BITCODE_H;
   AKind: TDWGZCADObjectKind = dokEntity);
 
 implementation
@@ -769,12 +772,13 @@ begin
   end;
 end;
 
-procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
+procedure DWGRegisterEntityShellWithTextStyleCandidates(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
-  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  WantTextStyle: Boolean; const TextStyleCandidates: TDWGRefHandleCandidates;
   AKind: TDWGZCADObjectKind);
 var
-  EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
+  EntityHandle, OwnerHandle: QWord;
+  OwnerCandidates, LayerCandidates, LtypeCandidates: TDWGRefHandleCandidates;
   LtypeKind: TDWGEntityLineTypeKind;
   LtypeFallback: PGDBLtypeProp;
   LtypeInline: Boolean;
@@ -784,8 +788,12 @@ begin
   if LoadCtx = nil then
     Exit;
   EntityHandle := DWGObjectHandleValue(DWGObject);
-  if not DWGObjectOwnerHandleValue(DWGObject, OwnerHandle) then
+  if DWGObjectOwnerHandleCandidatesValue(DWGObject, OwnerCandidates) then
+    OwnerHandle := OwnerCandidates.Values[0]
+  else begin
+    FillChar(OwnerCandidates, SizeOf(OwnerCandidates), 0);
     OwnerHandle := 0;
+  end;
   // Issue #1120: when entmode is 1 (paper) or 2 (model) the owner is implicit
   // and DWGObjectOwnerHandleValue tries Dwg^.mspace_block / pspace_block,
   // header_vars.BLOCK_RECORD_*SPACE and block_control.*_space in turn. When
@@ -805,7 +813,8 @@ begin
       ' block_control.*_space and ownerhandle all empty)']);
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, AKind, pobj, -1);
-  LoadCtx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
+  LoadCtx.QueueOwnerResolveCandidates(pobj, EntityHandle,
+    OwnerCandidates.Values, OwnerCandidates.Count);
 
   if DWGEntityCommonPropsValue(DWGObject, CommonProps) then begin
     pobj^.vp.Color := CommonProps.ColorIndex;
@@ -816,11 +825,12 @@ begin
         ' is marked invisible in the DWG common entity flags']);
   end;
 
-  if not DWGEntityLayerHandleValue(DWGObject, LayerHandle) then
-    LayerHandle := 0;
-  if DWGEntityLineTypeRefValue(DWGObject, LtypeKind, LtypeHandle) then begin
+  if not DWGEntityLayerHandleCandidatesValue(DWGObject, LayerCandidates) then
+    FillChar(LayerCandidates, SizeOf(LayerCandidates), 0);
+  if DWGEntityLineTypeRefCandidatesValue(DWGObject, LtypeKind,
+    LtypeCandidates) then begin
     if LtypeKind <> dltHandle then begin
-      LtypeHandle := 0;
+      FillChar(LtypeCandidates, SizeOf(LtypeCandidates), 0);
       LtypeFallback := DWGSystemLineTypeForKind(LtypeKind);
       LtypeInline := LtypeFallback <> nil;
     end else
@@ -829,7 +839,7 @@ begin
       LtypeInline := False;
     end;
   end else begin
-    LtypeHandle := 0;
+    FillChar(LtypeCandidates, SizeOf(LtypeCandidates), 0);
     LtypeKind := dltMissing;
     LtypeFallback := nil;
     LtypeInline := False;
@@ -846,13 +856,43 @@ begin
   //    ', lineweight=', CommonProps.LineWeight,
   //    ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
   //    ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
-  LoadCtx.QueueRefResolve(pobj, EntityHandle, LayerHandle,
-    dokLayer, rsLayer, nil);
-  LoadCtx.QueueRefResolve(pobj, EntityHandle, LtypeHandle,
-    dokLineType, rsLineType, LtypeFallback, LtypeInline);
+  LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LayerCandidates.Values,
+    LayerCandidates.Count, dokLayer, rsLayer, nil);
+  LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LtypeCandidates.Values,
+    LtypeCandidates.Count, dokLineType, rsLineType, LtypeFallback,
+    LtypeInline);
   if WantTextStyle then
-    LoadCtx.QueueRefResolve(pobj, EntityHandle, TextStyleHandle,
+    LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle,
+      TextStyleCandidates.Values, TextStyleCandidates.Count,
       dokTextStyle, rsTextStyle, nil);
+end;
+
+procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object;
+  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind);
+var
+  TextStyleCandidates: TDWGRefHandleCandidates;
+begin
+  FillChar(TextStyleCandidates, SizeOf(TextStyleCandidates), 0);
+  if TextStyleHandle <> 0 then begin
+    TextStyleCandidates.Count := 1;
+    TextStyleCandidates.Values[0] := TextStyleHandle;
+  end;
+  DWGRegisterEntityShellWithTextStyleCandidates(pobj, DWGObject,
+    WantTextStyle, TextStyleCandidates, AKind);
+end;
+
+procedure DWGRegisterEntityShellWithTextStyleRef(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object; TextStyleRef: BITCODE_H;
+  AKind: TDWGZCADObjectKind);
+var
+  TextStyleCandidates: TDWGRefHandleCandidates;
+begin
+  if not DWGRefHandleCandidatesValue(TextStyleRef, TextStyleCandidates) then
+    FillChar(TextStyleCandidates, SizeOf(TextStyleCandidates), 0);
+  DWGRegisterEntityShellWithTextStyleCandidates(pobj, DWGObject, True,
+    TextStyleCandidates, AKind);
 end;
 
 initialization

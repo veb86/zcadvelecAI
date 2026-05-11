@@ -39,6 +39,7 @@ type
     procedure AttachIsIdempotentAcrossResolveCalls;
     procedure AttachCallbackReceivesOwnerAndReason;
     procedure ChildOfBlockHeaderIsNotAttachedToRoot;
+    procedure AlternateOwnerHandleResolvesAfterPrimaryNonContainer;
   end;
 
   { Stage 3 (TZ §12.3) regression tests for the visual-property reference
@@ -53,6 +54,7 @@ type
     procedure NullLayerHandleFallsBackToSystemLayer;
     procedure MissingLayerHandleFallsBackToSystemLayer;
     procedure LineTypeKindMismatchFallsBackToByLayer;
+    procedure AlternateLayerHandleResolvesAfterPrimaryKindMismatch;
     procedure ResolveRefsIsIdempotent;
     procedure SecondQueueForSameSlotReplacesFirst;
     procedure LayerLineTypeUsesLayerSlot;
@@ -427,6 +429,44 @@ begin
   end;
 end;
 
+procedure TDWGLoadContextResolveTest.AlternateOwnerHandleResolvesAfterPrimaryNonContainer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  Line, Layer, Block, Root: Pointer;
+  Handles: array[0..1] of TDWGZCADHandle;
+begin
+  // Issue #1189: the first decoded owner handle can point at a non-container
+  // shell while a scalar fallback handle names the real block/container.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Line := MakePtr($E401);
+    Layer := MakePtr($D401);
+    Block := MakePtr($B401);
+    Root := MakePtr($F401);
+    Handles[0] := $61;
+    Handles[1] := $62;
+    Ctx.SetFallbackOwner(Root);
+    Ctx.RegisterShell($51, dokEntity, Line, 0);
+    Ctx.RegisterShell($61, dokLayer, Layer, 1);
+    Ctx.RegisterShell($62, dokBlockDef, Block, 2);
+    Ctx.QueueOwnerResolveCandidates(Line, $51, Handles, 2);
+    Ctx.ResolveOwners;
+
+    Pending := Ctx.FindPending($51);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(Int64($62), Int64(Pending^.OwnerHandle));
+    AssertEquals(PtrInt(Block), PtrInt(Pending^.AttachedOwner));
+    AssertEquals(1, Ctx.AttachCount);
+    AssertEquals(0, Ctx.FallbackCount);
+    AssertEquals(0, Ctx.WarningCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
 procedure TDWGLoadContextResolveTest.SelfOwnerCycleDoesNotRecurse;
 var
   Ctx: TDWGZCADLoadContext;
@@ -794,6 +834,46 @@ begin
     AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
     AssertEquals(Ord(arRefKindMismatch), Ord(Pending^.AttachReason));
     AssertEquals(PtrInt(ByLayer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.AlternateLayerHandleResolvesAfterPrimaryKindMismatch;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, WrongLineType, Layer, SysLayer: Pointer;
+  Handles: array[0..1] of TDWGZCADHandle;
+begin
+  // Issue #1189: recovered DWGs can expose both a resolved object handle and
+  // scalar handles for one BITCODE_H. The first decoded handle may point at a
+  // shell of the wrong ZCAD kind; the resolver must try the scalar fallback
+  // before warning and assigning the system fallback.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E40);
+    WrongLineType := MakePtr($A40);
+    Layer := MakePtr($A41);
+    SysLayer := MakePtr($5A);
+    Handles[0] := $100B;
+    Handles[1] := $9D67;
+    Ctx.SetFallbackLayer(SysLayer);
+    Ctx.RegisterShell($1040, dokEntity, Entity, 0);
+    Ctx.RegisterShell($100B, dokLineType, WrongLineType, 1);
+    Ctx.RegisterShell($9D67, dokLayer, Layer, 2);
+    Ctx.QueueRefResolveCandidates(Entity, $1040, Handles, 2,
+      dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($1040, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(Int64($9D67), Int64(Pending^.RefHandle));
+    AssertEquals(PtrInt(Layer), PtrInt(Pending^.AttachedRef));
+    AssertEquals(1, Ctx.RefAttachCount);
+    AssertEquals(0, Ctx.RefFallbackCount);
+    AssertEquals(0, Ctx.WarningCount);
   finally
     Ctx.Free;
   end;

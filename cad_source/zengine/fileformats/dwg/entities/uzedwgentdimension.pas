@@ -128,7 +128,8 @@ procedure RegisterDimensionShell(PObj: PGDBObjEntity;
   PCommon: PDwg_DIMENSION_common);
 var
   Ctx: TDWGZCADLoadContext;
-  EntityHandle, DimStyleHandle, BlockHandle: QWord;
+  EntityHandle: QWord;
+  DimStyleCandidates, BlockCandidates: TDWGRefHandleCandidates;
 begin
   if (PObj = nil) or (PCommon = nil) then
     Exit;
@@ -136,14 +137,17 @@ begin
     DWGRegisterEntityShell(PObj, DWGObject, False, 0);
     Ctx := GetLoadCtx;
     EntityHandle := DWGObjectHandleValue(DWGObject);
-    if not DWGRefHandleValue(PCommon^.dimstyle, DimStyleHandle) then
-      DimStyleHandle := 0;
-    if not DWGRefHandleValue(PCommon^.block, BlockHandle) then
-      BlockHandle := 0;
-    Ctx.QueueRefResolve(PObj, EntityHandle, DimStyleHandle, dokDimStyle,
-      rsDimStyle, nil);
-    Ctx.QueueRefResolve(PObj, EntityHandle, BlockHandle, dokBlockDef,
-      rsBlockDef, nil);
+    if not DWGRefHandleCandidatesValue(PCommon^.dimstyle,
+      DimStyleCandidates) then
+      FillChar(DimStyleCandidates, SizeOf(DimStyleCandidates), 0);
+    if not DWGRefHandleCandidatesValue(PCommon^.block, BlockCandidates) then
+      FillChar(BlockCandidates, SizeOf(BlockCandidates), 0);
+    Ctx.QueueRefResolveCandidates(PObj, EntityHandle,
+      DimStyleCandidates.Values, DimStyleCandidates.Count,
+      dokDimStyle, rsDimStyle, nil);
+    Ctx.QueueRefResolveCandidates(PObj, EntityHandle,
+      BlockCandidates.Values, BlockCandidates.Count,
+      dokBlockDef, rsBlockDef, nil);
   end else
     ZContext.PDrawing^.pObjRoot^.AddMi(PGDBObjSubordinated(PObj));
 end;
