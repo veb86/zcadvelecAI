@@ -115,8 +115,8 @@ begin
     PAttrib^.vert_alignment, PAttrib^.text_value);
   DWGSafeDecodeText(PAttrib^.tag, DWGContext.DWGVer, DWGContext.DWGCodePage,
     TagText);
-  zDebugLn(['{WH}DWG ATTRIB handle=', IntToHex(DWGObjectHandleValue(
-    DWGObject), 1), ' tag=', TagText, ' flags=', PAttrib^.flags]);
+  //zDebugLn(['{WH}DWG ATTRIB handle=', IntToHex(DWGObjectHandleValue(
+  //  DWGObject), 1), ' tag=', TagText, ' flags=', PAttrib^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttrib^.style);
 end;
 
@@ -141,8 +141,8 @@ begin
   { ATTDEF.prompt is optional UI text and is not needed for the imported
     entity. Some R2007+ files expose an unstable prompt pointer through
     LibreDWG, so avoid dereferencing it only for diagnostics. }
-  zDebugLn(['{WH}DWG ATTDEF handle=', IntToHex(DWGObjectHandleValue(
-    DWGObject), 1), ' tag=', TagText, ' flags=', PAttDef^.flags]);
+  //zDebugLn(['{WH}DWG ATTDEF handle=', IntToHex(DWGObjectHandleValue(
+  //  DWGObject), 1), ' tag=', TagText, ' flags=', PAttDef^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttDef^.style);
 end;
 

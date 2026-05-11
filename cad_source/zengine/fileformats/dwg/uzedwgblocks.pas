@@ -87,7 +87,7 @@ var
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name, DWGContext, name);
   name := DWGDecodedTextForZCAD(name);
-  zDebugLn(['{WH}BlockHeader: ', name]);
+  //zDebugLn(['{WH}BlockHeader: ', name]);
 
   Ctx := GetLoadCtx;
   if Ctx = nil then
@@ -153,7 +153,7 @@ var
   name: string;
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name, DWGContext, name);
-  zDebugLn(['{WH}Block: ', name]);
+  //zDebugLn(['{WH}Block: ', name]);
 end;
 
 initialization

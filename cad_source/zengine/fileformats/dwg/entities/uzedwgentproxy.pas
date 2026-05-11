@@ -262,8 +262,8 @@ begin
     Inc(Stats^.UnknownObjects);
     Inc(Stats^.ProxiesFailed);
   end;
-  zDebugLn(['{WH}DWG PROXY_OBJECT skipped handle=', IntToHex(Handle, 1),
-    DWGObjectProxyDiag(DWGObject)]);
+  //zDebugLn(['{WH}DWG PROXY_OBJECT skipped handle=', IntToHex(Handle, 1),
+  //  DWGObjectProxyDiag(DWGObject)]);
   Warn(wsInfo, DWG_WARN_PROXY_NO_GRAPHICS, Handle,
     Format('ACAD_PROXY_OBJECT %s is non-graphical; skipped',
       [IntToHex(Handle, 1)]));
@@ -328,8 +328,8 @@ begin
     Inc(Stats^.UnknownObjects);
     Inc(Stats^.DroppedDueToFreedRaw);
   end;
-  zDebugLn(['{WH}DWG UNKNOWN_OBJ skipped handle=', IntToHex(Handle, 1),
-    DWGObjectProxyDiag(DWGObject)]);
+  //zDebugLn(['{WH}DWG UNKNOWN_OBJ skipped handle=', IntToHex(Handle, 1),
+  //  DWGObjectProxyDiag(DWGObject)]);
   Warn(wsWarning, DWG_WARN_UNKNOWN_OBJECT, Handle,
     Format('Unknown DWG object type %d at handle %s has no ZCAD object fallback; skipped',
       [Ord(DWGObject.fixedtype), IntToHex(Handle, 1)]));
