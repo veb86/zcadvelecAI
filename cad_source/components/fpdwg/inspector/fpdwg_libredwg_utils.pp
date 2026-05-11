@@ -45,7 +45,12 @@ begin
   if Ref = nil then
     Exit(TDWGHandleRef.Null);
 
-  if Ref^.absolute_ref <> 0 then
+  if (Ref^.obj <> nil) and (Ref^.obj^.handle.value <> 0) then
+  begin
+    Result.Value := Ref^.obj^.handle.value;
+    Result.Source := hsObjectPtr;
+  end
+  else if Ref^.absolute_ref <> 0 then
   begin
     Result.Value := Ref^.absolute_ref;
     Result.Source := hsAbsoluteRef;

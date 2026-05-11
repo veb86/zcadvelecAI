@@ -15,7 +15,8 @@ type
   TDWGHandleSource = (
     hsNull,
     hsAbsoluteRef,
-    hsHandleref
+    hsHandleref,
+    hsObjectPtr
   );
 
   TDWGHandleRef = record
