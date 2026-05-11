@@ -374,10 +374,10 @@ function TDWGZCADPendingOwnerList.Append(AEntity: Pointer;
   AEntityHandle, AOwnerHandle: TDWGZCADHandle; AFallbackOwner: Pointer;
   ARawIndex: Integer): Integer;
 var
-  Handles: array[0..0] of TDWGZCADHandle;
+  nowHandles: array[0..0] of TDWGZCADHandle;
 begin
-  Handles[0] := AOwnerHandle;
-  Result := AppendCandidates(AEntity, AEntityHandle, Handles, 1,
+  nowHandles[0] := AOwnerHandle;
+  Result := AppendCandidates(AEntity, AEntityHandle, nowHandles, 1,
     AFallbackOwner, ARawIndex);
 end;
 
@@ -628,10 +628,10 @@ procedure TDWGZCADLoadContext.QueueOwnerResolve(AEntity: Pointer;
   AEntityHandle, AOwnerHandle: TDWGZCADHandle; AFallbackOwner: Pointer;
   ARawIndex: Integer);
 var
-  Handles: array[0..0] of TDWGZCADHandle;
+  nowHandles: array[0..0] of TDWGZCADHandle;
 begin
-  Handles[0] := AOwnerHandle;
-  QueueOwnerResolveCandidates(AEntity, AEntityHandle, Handles, 1,
+  nowHandles[0] := AOwnerHandle;
+  QueueOwnerResolveCandidates(AEntity, AEntityHandle, nowHandles, 1,
     AFallbackOwner, ARawIndex);
 end;
 
@@ -725,10 +725,10 @@ procedure TDWGZCADLoadContext.QueueRefResolve(AEntity: Pointer;
   AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
   AFallback: Pointer; AInlineRef: Boolean);
 var
-  Handles: array[0..0] of TDWGZCADHandle;
+  nowHandles: array[0..0] of TDWGZCADHandle;
 begin
-  Handles[0] := ARefHandle;
-  QueueRefResolveCandidates(AEntity, AEntityHandle, Handles, 1,
+  nowHandles[0] := ARefHandle;
+  QueueRefResolveCandidates(AEntity, AEntityHandle, nowHandles, 1,
     AExpectedKind, ASlot, AFallback, AInlineRef);
 end;
 
