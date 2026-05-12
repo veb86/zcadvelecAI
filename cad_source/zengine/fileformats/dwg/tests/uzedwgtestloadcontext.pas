@@ -209,6 +209,30 @@ type
     procedure QueueRefResolveIntegrationKeepsItemReachable;
   end;
 
+  { Issue #1198 P6 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.4/§P6) regression:
+    AddTextStyle must not collapse distinct DWG handles onto a single ZCAD
+    pstyle by renaming everything to 'Standard'. The pure helpers
+    DWGTextStyleBaseName / DWGTextStyleUniquifyName / DWGTextStylePtrOwned-
+    ByAnotherHandle encode the new rules; these tests pin them so future
+    refactors cannot silently regress to the old aliasing behaviour. The
+    tests use opaque pointers and a real TDWGZCADLoadContext (no ZCAD
+    drawing dependency) so they run in the same isolated harness as the
+    other Stage-5 regressions. }
+  TDWGLoadContextTextStyleNameTest = class(TTestCase)
+  published
+    procedure BaseNameUsesFontFileForShapeStyles;
+    procedure BaseNameUsesDecodedNameWhenPresent;
+    procedure BaseNameFallsBackToHandleHexWhenNameEmpty;
+    procedure BaseNameFallsBackToStandardWhenHandleZero;
+    procedure UniquifyAppendsHandleHexSuffix;
+    procedure UniquifyHandlesZeroHandleDefensively;
+    procedure PtrOwnedReturnsFalseForUnregisteredPointer;
+    procedure PtrOwnedReturnsFalseForSameHandleReregistration;
+    procedure PtrOwnedReturnsTrueWhenAnotherHandleClaimsPointer;
+    procedure PtrOwnedIgnoresEntriesOfOtherKinds;
+    procedure PtrOwnedReturnsFalseForNilContextOrPtr;
+  end;
+
 implementation
 
 uses
@@ -220,7 +244,8 @@ uses
   uzedwgloadcontext,
   uzedwgsidefiles,
   uzedwgentityregistry,
-  uzedwgcontrolobjects;
+  uzedwgcontrolobjects,
+  uzedwgstylename;
 
 type
   // Sentinel pointers used as opaque ZCAD entity stand-ins. The resolver only
@@ -2774,6 +2799,161 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextTextStyleNameTest (Issue #1198 P6) ---------- }
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameUsesFontFileForShapeStyles;
+begin
+  // Shape styles (used inside LTYPE patterns) carry their font file as the
+  // identity; the rule is preserved from the legacy code so existing linetype
+  // shapes keep resolving to the same pstyle after the refactor.
+  AssertEquals('shape with fontfile uses fontfile as base name',
+    'ltshp.shx',
+    DWGTextStyleBaseName('Custom', 'ltshp.shx', True, $42));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameUsesDecodedNameWhenPresent;
+begin
+  // Real text styles (IsShape=False) prefer their decoded name. Handle is
+  // available but irrelevant on this path — we only fall back to it when the
+  // name decoded to an empty string.
+  AssertEquals('non-empty name wins over handle fallback',
+    'MyStyle',
+    DWGTextStyleBaseName('MyStyle', 'arial.ttf', False, $99));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameFallsBackToHandleHexWhenNameEmpty;
+begin
+  // Empty decoded name + non-zero handle: the legacy code lost the original
+  // identity by renaming to 'Standard'. The new rule keeps the handle hex
+  // so distinct DWG entries with empty names stay distinct in ZCAD.
+  AssertEquals('empty name falls back to handle-derived placeholder',
+    'dwg_2A',
+    DWGTextStyleBaseName('', '', False, $2A));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameFallsBackToStandardWhenHandleZero;
+begin
+  // Defensive guard: when there is no handle either, behaviour reverts to
+  // the legacy 'Standard' fallback so synthetic test fixtures or future
+  // handle-less callers stay deterministic.
+  AssertEquals('zero handle still uses Standard',
+    'Standard',
+    DWGTextStyleBaseName('', '', False, 0));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.UniquifyAppendsHandleHexSuffix;
+begin
+  // Collision rename uses the handle hex as a suffix so re-importing the
+  // same DWG produces the same name (stable across runs).
+  AssertEquals('uniquify appends handle hex suffix',
+    'Roman_dwg10',
+    DWGTextStyleUniquifyName('Roman', $10));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.UniquifyHandlesZeroHandleDefensively;
+begin
+  // Handle=0 should still uniquify (callers must never get the same name
+  // back as the base) — we emit '_dwg0'.
+  AssertEquals('zero handle uniquify emits _dwg0 suffix',
+    'A_dwg0',
+    DWGTextStyleUniquifyName('A', 0));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForUnregisteredPointer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // No other handle has registered this pointer yet, so the collision
+  // detector must return False (caller proceeds with original name).
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($AA);
+    AssertFalse('empty registry reports no collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $100));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForSameHandleReregistration;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // A handle re-registering itself (e.g. mapper invoked twice for the same
+  // STYLE record) must NOT be reported as a collision — that would force a
+  // spurious rename. The check filters on Entry.Handle <> ANewHandle.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($BB);
+    AssertTrue('seed registration succeeds',
+      Ctx.RegisterShell($100, dokTextStyle, Ptr, 0));
+    AssertFalse('same handle does not count as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $100));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsTrueWhenAnotherHandleClaimsPointer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // Two distinct handles cannot share the same pstyle — this is the trigger
+  // for the uniquify path in AddTextStyle. The detector must spot it.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($CC);
+    AssertTrue('seed registration for first handle',
+      Ctx.RegisterShell($200, dokTextStyle, Ptr, 0));
+    AssertTrue('second handle on same pstyle reported as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $201));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedIgnoresEntriesOfOtherKinds;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // The detector must filter on Entry.Kind = dokTextStyle. A different kind
+  // pointing at the same address (theoretically rare but possible in tests)
+  // must NOT trip the uniquify path, otherwise unrelated tables would force
+  // textstyle renames.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($DD);
+    AssertTrue('seed dokLayer registration on shared ptr',
+      Ctx.RegisterShell($300, dokLayer, Ptr, 0));
+    AssertFalse('non-textstyle entry does not count as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $301));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForNilContextOrPtr;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  // Defensive guards: AddTextStyle calls the detector unconditionally when
+  // the load context is wired in. Both a nil context and a nil candidate
+  // pointer must short-circuit to False so the caller proceeds normally.
+  AssertFalse('nil context short-circuits to false',
+    DWGTextStylePtrOwnedByAnotherHandle(nil, MakePtr($EE), $400));
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    AssertFalse('nil candidate pointer short-circuits to false',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, nil, $400));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
@@ -2782,6 +2962,7 @@ initialization
     TDWGLoadContextWarningAggregateTest,
     TDWGLoadContextSideFilesTest,
     TDWGLoadContextFixedTypeTest,
-    TDWGLoadContextPendingIndexTest]);
+    TDWGLoadContextPendingIndexTest,
+    TDWGLoadContextTextStyleNameTest]);
 
 end.

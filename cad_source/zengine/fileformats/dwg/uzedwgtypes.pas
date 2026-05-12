@@ -213,6 +213,13 @@ const
   DWG_WARN_UNKNOWN_ENTITY       = 1413;
   DWG_WARN_UNKNOWN_OBJECT       = 1414;
   DWG_WARN_UNKNOWN_NO_COPY      = 1415;
+  { Issue #1198 P6 (АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.4/§P6): AddTextStyle emits this
+    when an empty-named or colliding STYLE record is re-registered under a
+    handle-derived synthetic name ('dwg_<hex>' or '<orig>_dwg<hex>'). Distinct
+    from DWG_WARN_DUPLICATE_HANDLE (1407): the duplicate-handle warning fires
+    after the aliasing happened, this one is logged at the moment we *prevent*
+    the alias by choosing a different name. }
+  DWG_WARN_TEXTSTYLE_RENAMED    = 1416;
 
 function DWGAttachReasonToText(Reason: TDWGAttachReason): String;
 
