@@ -207,6 +207,8 @@ type
     procedure RefLookupHandlesOutOfOrderInsertion;
     procedure QueueOwnerResolveIntegrationKeepsItemReachable;
     procedure QueueRefResolveIntegrationKeepsItemReachable;
+    procedure QueueOwnerResolveIgnoresDuplicatePointerForRegisteredHandle;
+    procedure QueueRefResolveIgnoresDuplicatePointerForRegisteredHandle;
   end;
 
   { Issue #1198 P6 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.4/§P6) regression:
@@ -2794,6 +2796,68 @@ begin
     AssertNotNull('row reachable via host-level lookup', Pending);
     AssertEquals('ref attached by resolver',
       PtrInt(Layer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueOwnerResolveIgnoresDuplicatePointerForRegisteredHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  EntityA, EntityB: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    EntityA := MakePtr($E1);
+    EntityB := MakePtr($E2);
+    AssertTrue(Ctx.RegisterShell($10, dokEntity, EntityA, 0));
+    AssertFalse(Ctx.RegisterShell($10, dokEntity, EntityB, 1));
+
+    Ctx.QueueOwnerResolve(EntityA, $10, $100);
+    Ctx.QueueOwnerResolve(EntityB, $10, $200);
+
+    AssertEquals('duplicate pointer did not append owner row',
+      1, Ctx.PendingOwners.Count);
+    Pending := Ctx.PendingOwners.ItemAt(0);
+    AssertNotNull(Pending);
+    AssertEquals('first entity retained',
+      PtrInt(EntityA), PtrInt(Pending^.Entity));
+    AssertEquals('first owner retained',
+      Int64($100), Int64(Pending^.OwnerHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueRefResolveIgnoresDuplicatePointerForRegisteredHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  EntityA, EntityB, LayerA, LayerB: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    EntityA := MakePtr($E1);
+    EntityB := MakePtr($E2);
+    LayerA := MakePtr($A1);
+    LayerB := MakePtr($A2);
+    AssertTrue(Ctx.RegisterShell($10, dokEntity, EntityA, 0));
+    AssertFalse(Ctx.RegisterShell($10, dokEntity, EntityB, 1));
+    AssertTrue(Ctx.RegisterShell($20, dokLayer, LayerA, 2));
+    AssertTrue(Ctx.RegisterShell($21, dokLayer, LayerB, 3));
+
+    Ctx.QueueRefResolve(EntityA, $10, $20, dokLayer, rsLayer, nil);
+    Ctx.QueueRefResolve(EntityB, $10, $21, dokLayer, rsLayer, nil);
+
+    AssertEquals('duplicate pointer did not replace ref row',
+      1, Ctx.PendingRefs.Count);
+    Pending := Ctx.PendingRefs.ItemAt(0);
+    AssertNotNull(Pending);
+    AssertEquals('first entity retained',
+      PtrInt(EntityA), PtrInt(Pending^.Entity));
+    AssertEquals('first ref retained',
+      Int64($20), Int64(Pending^.RefHandle));
   finally
     Ctx.Free;
   end;

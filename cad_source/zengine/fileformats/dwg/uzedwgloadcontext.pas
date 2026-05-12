@@ -157,6 +157,8 @@ type
     FFallbackLineType: Pointer;
     FFallbackTextStyle: Pointer;
     FFallbackDimStyle: Pointer;
+    function EntityHandleClaimedByDifferentShell(
+      AEntityHandle: TDWGZCADHandle; AEntity: Pointer): Boolean;
   public
     { TDWGResolverHost surface (R2): exposed publicly so the resolver can
       reach the registry and warning sink through the abstract base. }
@@ -778,6 +780,19 @@ begin
     Entry^.ShellState := AState;
 end;
 
+function TDWGZCADLoadContext.EntityHandleClaimedByDifferentShell(
+  AEntityHandle: TDWGZCADHandle; AEntity: Pointer): Boolean;
+var
+  Entry: TDWGZCADHandleEntry;
+begin
+  Result := False;
+  if not TryGetEntry(AEntityHandle, Entry) then
+    Exit;
+  if (Entry.Kind = dokUnknown) and (Entry.Ptr = nil) then
+    Exit;
+  Result := Entry.Ptr <> AEntity;
+end;
+
 procedure TDWGZCADLoadContext.QueueOwnerResolve(AEntity: Pointer;
   AEntityHandle, AOwnerHandle: TDWGZCADHandle; AFallbackOwner: Pointer;
   ARawIndex: Integer);
@@ -796,6 +811,12 @@ procedure TDWGZCADLoadContext.QueueOwnerResolveCandidates(AEntity: Pointer;
 var
   Fallback: Pointer;
 begin
+  // Large/partially corrupt DWGs can expose duplicate raw objects. Once the
+  // first shell owns a handle, later duplicate pointers must not queue work
+  // under the same key or they can steal owner/ref resolution from it.
+  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then
+    Exit;
+
   Fallback := AFallbackOwner;
   if Fallback = nil then
     Fallback := FFallbackOwner;
@@ -894,6 +915,11 @@ procedure TDWGZCADLoadContext.QueueRefResolveCandidates(AEntity: Pointer;
 var
   Fallback: Pointer;
 begin
+  // See QueueOwnerResolveCandidates: duplicate mapper outputs must not
+  // replace visual refs queued for the shell that actually owns this handle.
+  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then
+    Exit;
+
   Fallback := AFallback;
   if Fallback = nil then
     Fallback := FallbackForSlot(ASlot);
