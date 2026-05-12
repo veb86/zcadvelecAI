@@ -68,6 +68,7 @@ var
   I: BITCODE_BL;
   Handle: TDWGZCADHandle;
   Existing: TDWGZCADHandleEntry;
+  MutEntry: PDWGZCADHandleEntry;
 begin
   if Ctx = nil then
     Exit;
@@ -97,6 +98,14 @@ begin
         // still records the raw index, which is what TZ §6.5 asks for.
         Ctx.RegisterShell(Handle, dokUnknown, nil, Integer(I));
       end;
+      // Issue #1198 P2 (TZ §5): capture fixedtype on every placeholder so
+      // the histogram diagnostic can enumerate raw-object kinds without a
+      // second walk. The write goes through TryGetMutable so the duplicate
+      // branch above still records the type (LibreDWG sometimes emits the
+      // same handle twice in proxy/zombie blocks; we want the count to
+      // reflect both entries).
+      if Ctx.Handles.TryGetMutable(Handle, MutEntry) and (MutEntry <> nil) then
+        MutEntry^.FixedType := Raw.&object[I].fixedtype;
     end;
     Inc(I);
   end;

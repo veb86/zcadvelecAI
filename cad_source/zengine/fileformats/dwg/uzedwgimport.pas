@@ -47,6 +47,7 @@ uses
   uzedwgrawscan,
   uzedwgblockreserve,
   uzedwgsidefiles,
+  uzedwgentityregistry,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -828,6 +829,48 @@ begin
   end;
 end;
 
+{ Issue #1198 P2 (TZ §5): emit the fixedtype histogram after Phase 1 has
+  populated the handle map. The cross-check the audit asks for is exactly
+  "this is what arrived in the file, here is which fixedtypes had a registered
+  handler and which did not". The log is gated on the diagnostic mode so the
+  default load stays quiet; explicit summary/full/trace requests print one
+  line per non-empty fixedtype bucket plus a tail showing how many fixedtypes
+  hit the no-handler branch. }
+procedure DWGEmitFixedTypeHistogram(Ctx: TDWGZCADLoadContext);
+var
+  FixedTypes: TDWGFixedTypeCounterArray;
+  I: Integer;
+  Mode: TDWGDiagMode;
+  Total, Unhandled, UnhandledFT: Integer;
+  HasH: Boolean;
+begin
+  if Ctx = nil then
+    Exit;
+  Mode := DWGDiagModeFromEnv;
+  if Mode = dmOff then
+    Exit;
+  DWGCountByFixedType(Ctx, FixedTypes);
+  Total := 0;
+  Unhandled := 0;
+  UnhandledFT := 0;
+  for I := 0 to High(FixedTypes) do begin
+    HasH := HasHandlerFor(FixedTypes[I].FixedType);
+    Inc(Total, FixedTypes[I].Count);
+    if not HasH then begin
+      Inc(Unhandled, FixedTypes[I].Count);
+      Inc(UnhandledFT);
+    end;
+    zDebugLn(['{WH}DWG fixedtype ',
+      DWGFixedTypeToText(FixedTypes[I].FixedType),
+      ': count=', FixedTypes[I].Count,
+      ', has_handler=', HasH]);
+  end;
+  zDebugLn(['{WH}DWG fixedtype histogram: ', Length(FixedTypes),
+    ' distinct type(s), ', Total, ' handle(s); ',
+    UnhandledFT, ' type(s) without a registered handler (',
+    Unhandled, ' handle(s))']);
+end;
+
 { Issue #1198 P3: emit per-DWG diagnostic side-files when the user has
   opted in via ZCAD_DWG_DIAG=summary|full|trace. Runs after the resolver
   has fully populated PendingOwners / PendingRefs so the CSVs reflect the
@@ -890,6 +933,7 @@ begin
       ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
       ', warnings=', LoadCtx.WarningCount]);
     DWGEmitWarningSummary(LoadCtx);
+    DWGEmitFixedTypeHistogram(LoadCtx);
     DWGEmitSideFiles(LoadCtx, LoadSourcePath);
     // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
     // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).

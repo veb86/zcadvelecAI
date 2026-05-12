@@ -28,6 +28,7 @@ interface
 
 uses
   SysUtils,
+  dwg,
   // Re-exported so old callers see TDWGZCADHandle, the diagnostic codes,
   // attach-callback types and DWGAttachReasonToText through this single unit.
   uzedwgtypes,
@@ -304,6 +305,7 @@ begin
   Entry.Ptr := APtr;
   Entry.RawIndex := ARawIndex;
   Entry.ShellState := AState;
+  Entry.FixedType := DWG_TYPE_UNUSED;
   InsertAt(Index, Entry);
   Result := True;
 end;

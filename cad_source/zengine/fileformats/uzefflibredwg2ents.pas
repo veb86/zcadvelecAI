@@ -57,6 +57,7 @@ uses
   // entity is a one-line edit here plus the new unit itself.
   uzedwgtables,
   uzedwgblocks,
+  uzedwgcontrolobjects,
   uzedwgentline,
   uzedwgentcircle,
   uzedwgentarc,

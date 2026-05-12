@@ -23,7 +23,8 @@ unit uzedwgtypes;
 interface
 
 uses
-  SysUtils;
+  SysUtils,
+  dwg;
 
 type
   TDWGZCADHandle = QWord;
@@ -52,7 +53,16 @@ type
     dokPaperSpace,
     dokContainer,
     dokBlockInsert,
-    dokEntity
+    dokEntity,
+    { Issue #1198 P2 (TZ §5): table-control objects (LAYER_CONTROL, LTYPE_CONTROL,
+      BLOCK_CONTROL, STYLE_CONTROL, DIMSTYLE_CONTROL, VIEW_CONTROL,
+      UCS_CONTROL, VPORT_CONTROL, APPID_CONTROL, VX_CONTROL). The control
+      objects own the table records but do not need a ZCAD-side allocation;
+      promoting them out of dokUnknown lets the resolver classify references
+      to them deterministically instead of treating them as missing kinds.
+      Auxiliary objects such as DICTIONARY / XRECORD / GROUP / MLINESTYLE
+      also land here for the same reason. }
+    dokControlObject
   );
 
   TDWGShellState = (
@@ -92,6 +102,13 @@ type
     Ptr: Pointer;
     RawIndex: Integer;
     ShellState: TDWGShellState;
+    { Issue #1198 P2 (TZ §5): captured by ScanRawObjects from
+      Raw.&object[i].fixedtype so the histogram diagnostic and the resolver's
+      "is this a known control object" check do not need a second walk over
+      the LibreDWG array. DWG_TYPE_UNUSED (0) means "raw scan did not see this
+      handle" (mapper-side RegisterShell calls that pre-date Phase 1, unit
+      tests that pre-seed the registry by hand). }
+    FixedType: DWG_OBJECT_TYPE;
   end;
   PDWGZCADHandleEntry = ^TDWGZCADHandleEntry;
 

@@ -37,6 +37,7 @@ interface
 
 uses
   SysUtils, Classes,
+  dwg,
   uzedwgtypes,
   uzedwgdiagnostics,
   uzedwgloadcontext;
@@ -109,7 +110,30 @@ function DWGShellStateToText(State: TDWGShellState): String;
 function DWGRefSlotToText(Slot: TDWGZCADRefSlot): String;
 function DWGAttachStateToText(State: TDWGAttachState): String;
 
+{ Issue #1198 P2 (TZ §5): translate DWG_OBJECT_TYPE to its symbolic spelling
+  using RTTI. The enum has gaps (e.g. $36, $37, $3a, $3b are unused) and class
+  IDs jump to 500+; for unknown values the function falls back to the hex
+  value so the histogram still produces a useful row. }
+function DWGFixedTypeToText(const FT: DWG_OBJECT_TYPE): String;
+
+type
+  TDWGFixedTypeCounter = record
+    FixedType: DWG_OBJECT_TYPE;
+    Count: Integer;
+  end;
+  TDWGFixedTypeCounterArray = array of TDWGFixedTypeCounter;
+
+{ Histogram of TDWGZCADHandleEntry.FixedType values across the handle map.
+  Returns one entry per distinct FixedType actually observed (no zero buckets,
+  unlike the kind histogram — fixedtype range is wide and sparse). Ordering
+  is by descending Count so the histogram is readable as-is. }
+procedure DWGCountByFixedType(Ctx: TDWGZCADLoadContext;
+  out Counters: TDWGFixedTypeCounterArray);
+
 implementation
+
+uses
+  TypInfo;
 
 { ---------- TDWGSideFileResult ---------- }
 
@@ -172,17 +196,18 @@ end;
 function DWGObjectKindToText(Kind: TDWGZCADObjectKind): String;
 begin
   case Kind of
-    dokUnknown:     Result := 'dokUnknown';
-    dokLayer:       Result := 'dokLayer';
-    dokLineType:    Result := 'dokLineType';
-    dokTextStyle:   Result := 'dokTextStyle';
-    dokDimStyle:    Result := 'dokDimStyle';
-    dokBlockDef:    Result := 'dokBlockDef';
-    dokModelSpace:  Result := 'dokModelSpace';
-    dokPaperSpace:  Result := 'dokPaperSpace';
-    dokContainer:   Result := 'dokContainer';
-    dokBlockInsert: Result := 'dokBlockInsert';
-    dokEntity:      Result := 'dokEntity';
+    dokUnknown:       Result := 'dokUnknown';
+    dokLayer:         Result := 'dokLayer';
+    dokLineType:      Result := 'dokLineType';
+    dokTextStyle:     Result := 'dokTextStyle';
+    dokDimStyle:      Result := 'dokDimStyle';
+    dokBlockDef:      Result := 'dokBlockDef';
+    dokModelSpace:    Result := 'dokModelSpace';
+    dokPaperSpace:    Result := 'dokPaperSpace';
+    dokContainer:     Result := 'dokContainer';
+    dokBlockInsert:   Result := 'dokBlockInsert';
+    dokEntity:        Result := 'dokEntity';
+    dokControlObject: Result := 'dokControlObject';
   else
     Result := 'dok?';
   end;
@@ -226,6 +251,17 @@ begin
   else
     Result := 'as?';
   end;
+end;
+
+function DWGFixedTypeToText(const FT: DWG_OBJECT_TYPE): String;
+begin
+  // GetEnumName walks the RTTI for DWG_OBJECT_TYPE and returns the symbolic
+  // identifier (e.g. 'DWG_TYPE_LINE'). Unused/class IDs that are not part of
+  // the enum still come back as the empty string — we substitute the hex
+  // value so the histogram does not lose those rows entirely.
+  Result := GetEnumName(TypeInfo(DWG_OBJECT_TYPE), Ord(FT));
+  if Result = '' then
+    Result := 'DWG_TYPE_$' + IntToHex(Ord(FT), 2);
 end;
 
 { ---------- Path helper ---------- }
@@ -342,7 +378,7 @@ begin
     Exit;
   Sink := TDWGFileSink.Create(Path);
   try
-    Sink.WriteLine('RawIndex;HandleHex;ResolvedKind;ShellState;HasPtr');
+    Sink.WriteLine('RawIndex;HandleHex;ResolvedKind;ShellState;HasPtr;FixedType');
     for I := 0 to Ctx.Handles.Count - 1 do begin
       Entry := Ctx.Handles.EntryAt(I);
       if Entry = nil then
@@ -352,7 +388,8 @@ begin
         HexHandle(Entry^.Handle) + ';' +
         DWGObjectKindToText(Entry^.Kind) + ';' +
         DWGShellStateToText(Entry^.ShellState) + ';' +
-        BoolToCsv(Entry^.Ptr <> nil));
+        BoolToCsv(Entry^.Ptr <> nil) + ';' +
+        DWGFixedTypeToText(Entry^.FixedType));
     end;
   finally
     Sink.Free;
@@ -473,6 +510,51 @@ begin
   end;
 end;
 
+procedure DWGCountByFixedType(Ctx: TDWGZCADLoadContext;
+  out Counters: TDWGFixedTypeCounterArray);
+var
+  I, J, N: Integer;
+  Entry: PDWGZCADHandleEntry;
+  Found: Boolean;
+  Tmp: TDWGFixedTypeCounter;
+begin
+  SetLength(Counters, 0);
+  if Ctx = nil then
+    Exit;
+  // Linear bucket build: DWG_OBJECT_TYPE has gaps + class IDs in the 500-1000
+  // range, so a flat array indexed by Ord(FT) would waste memory. The handle
+  // map rarely exceeds a few thousand entries, so the O(N*B) cost is fine.
+  for I := 0 to Ctx.Handles.Count - 1 do begin
+    Entry := Ctx.Handles.EntryAt(I);
+    if Entry = nil then
+      Continue;
+    Found := False;
+    for J := 0 to High(Counters) do
+      if Counters[J].FixedType = Entry^.FixedType then begin
+        Inc(Counters[J].Count);
+        Found := True;
+        Break;
+      end;
+    if not Found then begin
+      N := Length(Counters);
+      SetLength(Counters, N + 1);
+      Counters[N].FixedType := Entry^.FixedType;
+      Counters[N].Count := 1;
+    end;
+  end;
+  // Sort by descending count (simple insertion sort — Length(Counters) is
+  // bounded by the number of distinct fixedtypes in the file, typically <40).
+  for I := 1 to High(Counters) do begin
+    Tmp := Counters[I];
+    J := I - 1;
+    while (J >= 0) and (Counters[J].Count < Tmp.Count) do begin
+      Counters[J + 1] := Counters[J];
+      Dec(J);
+    end;
+    Counters[J + 1] := Tmp;
+  end;
+end;
+
 { ---------- Summary TXT ---------- }
 
 procedure DWGWriteSummaryTxt(Ctx: TDWGZCADLoadContext;
@@ -480,6 +562,7 @@ procedure DWGWriteSummaryTxt(Ctx: TDWGZCADLoadContext;
 var
   Sink: TDWGFileSink;
   Kinds: TDWGKindCounterArray;
+  FixedTypes: TDWGFixedTypeCounterArray;
   I: Integer;
   Agg: TDWGImportCodeAggregate;
   Suppressed: Integer;
@@ -513,6 +596,16 @@ begin
       if Kinds[I].Count > 0 then
         Sink.WriteLine(DWGObjectKindToText(Kinds[I].Kind) + ': ' +
           IntToStr(Kinds[I].Count));
+
+    // Issue #1198 P2: fixedtype histogram. Each row reports the symbolic
+    // DWG_TYPE_*, the count and whether the handler registry knows about it
+    // — exactly the cross-check requested in the audit.
+    Sink.WriteLine('');
+    Sink.WriteLine('# Handles by fixedtype');
+    DWGCountByFixedType(Ctx, FixedTypes);
+    for I := 0 to High(FixedTypes) do
+      Sink.WriteLine(DWGFixedTypeToText(FixedTypes[I].FixedType) + ': ' +
+        IntToStr(FixedTypes[I].Count));
 
     Sink.WriteLine('');
     Sink.WriteLine('# Warnings by code');
@@ -566,7 +659,8 @@ procedure DWGWriteSummaryJson(Ctx: TDWGZCADLoadContext;
 var
   Sink: TDWGFileSink;
   Kinds: TDWGKindCounterArray;
-  I, EmittedKinds, EmittedAggs: Integer;
+  FixedTypes: TDWGFixedTypeCounterArray;
+  I, EmittedKinds, EmittedFixedTypes, EmittedAggs: Integer;
   Agg: TDWGImportCodeAggregate;
 begin
   if Ctx = nil then
@@ -598,6 +692,18 @@ begin
           IntToStr(Kinds[I].Count));
         Inc(EmittedKinds);
       end;
+    Sink.WriteRaw('},' + LineEnding);
+
+    Sink.WriteRaw('  "fixed_types": {');
+    DWGCountByFixedType(Ctx, FixedTypes);
+    EmittedFixedTypes := 0;
+    for I := 0 to High(FixedTypes) do begin
+      if EmittedFixedTypes > 0 then
+        Sink.WriteRaw(', ');
+      Sink.WriteRaw('"' + DWGFixedTypeToText(FixedTypes[I].FixedType) + '": ' +
+        IntToStr(FixedTypes[I].Count));
+      Inc(EmittedFixedTypes);
+    end;
     Sink.WriteRaw('},' + LineEnding);
 
     Sink.WriteRaw('  "warnings": {');

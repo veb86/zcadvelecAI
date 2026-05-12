@@ -163,15 +163,38 @@ type
     procedure SourcePathEmptyFallsBackToCwd;
   end;
 
+  { Issue #1198 P2 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P2 / §5) regression:
+    fixedtype histogram and handler-registry introspection. Tests live in the
+    load-context suite because they exercise the FixedType field stored on
+    TDWGZCADHandleEntry plus the small helpers added to uzedwgsidefiles. }
+  TDWGLoadContextFixedTypeTest = class(TTestCase)
+  published
+    procedure RegisterShellInitializesFixedTypeToUnused;
+    procedure FixedTypeIsMutableAfterRegisterShell;
+    procedure FixedTypeToTextReturnsSymbolicNameForKnownEnum;
+    procedure FixedTypeToTextFallsBackToHexForUndeclaredValue;
+    procedure CountByFixedTypeBucketsByDistinctFixedType;
+    procedure CountByFixedTypeOrdersByDescendingCount;
+    procedure CountByFixedTypeIsEmptyForEmptyContext;
+    procedure HasHandlerForReturnsFalseForUnregisteredType;
+    procedure HasHandlerForReturnsTrueForRegisteredControlObject;
+    procedure HandlesCsvIncludesFixedTypeColumn;
+    procedure SummaryTxtIncludesFixedTypeSection;
+    procedure SummaryJsonIncludesFixedTypesField;
+  end;
+
 implementation
 
 uses
   Classes,
   SysUtils,
+  dwg,
   uzedwgtypes,
   uzedwgdiagnostics,
   uzedwgloadcontext,
-  uzedwgsidefiles;
+  uzedwgsidefiles,
+  uzedwgentityregistry,
+  uzedwgcontrolobjects;
 
 type
   // Sentinel pointers used as opaque ZCAD entity stand-ins. The resolver only
@@ -2083,12 +2106,290 @@ begin
     DWGSideFilePath('/x/foo.dwg', '.summary.txt'));
 end;
 
+{ ---------- TDWGLoadContextFixedTypeTest ---------- }
+
+function ReadAllTextFileP2(const Path: String): String;
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+begin
+  Result := '';
+  Stream := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Bytes, Stream.Size);
+    if Stream.Size > 0 then
+      Stream.ReadBuffer(Bytes[0], Stream.Size);
+    SetLength(Result, Length(Bytes));
+    if Length(Bytes) > 0 then
+      Move(Bytes[0], Result[1], Length(Bytes));
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.RegisterShellInitializesFixedTypeToUnused;
+var
+  Map: TDWGZCADHandleMap;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // Mapper-side RegisterShell calls (pre-Phase 1, tests) must not leave the
+  // FixedType field uninitialized — DWG_TYPE_UNUSED (0) is the sentinel that
+  // means "raw scan did not see this handle".
+  Map := TDWGZCADHandleMap.Create;
+  try
+    AssertTrue(Map.RegisterShell($10, dokEntity, MakePtr($A1), 0, msCreated));
+    AssertTrue(Map.TryGet($10, Entry));
+    AssertEquals('fresh shell starts at DWG_TYPE_UNUSED',
+      Ord(DWG_TYPE_UNUSED), Ord(Entry.FixedType));
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeIsMutableAfterRegisterShell;
+var
+  Map: TDWGZCADHandleMap;
+  Mut: PDWGZCADHandleEntry;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // ScanRawObjects writes FixedType through TryGetMutable — the test mirrors
+  // exactly that sequence so a future refactor that loses the mutator surface
+  // breaks here instead of silently leaving FixedType at DWG_TYPE_UNUSED.
+  Map := TDWGZCADHandleMap.Create;
+  try
+    AssertTrue(Map.RegisterShell($20, dokUnknown, nil, 5, msCreated));
+    AssertTrue(Map.TryGetMutable($20, Mut));
+    AssertNotNull(Mut);
+    Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Map.TryGet($20, Entry));
+    AssertEquals(Ord(DWG_TYPE_LINE), Ord(Entry.FixedType));
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeToTextReturnsSymbolicNameForKnownEnum;
+begin
+  // RTTI path: GetEnumName must produce the declared identifier so the
+  // histogram is readable as 'DWG_TYPE_LINE' rather than '0x13'.
+  AssertEquals('DWG_TYPE_LINE',   DWGFixedTypeToText(DWG_TYPE_LINE));
+  AssertEquals('DWG_TYPE_CIRCLE', DWGFixedTypeToText(DWG_TYPE_CIRCLE));
+  AssertEquals('DWG_TYPE_UNUSED', DWGFixedTypeToText(DWG_TYPE_UNUSED));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeToTextFallsBackToHexForUndeclaredValue;
+var
+  Text: String;
+begin
+  // DWG_OBJECT_TYPE has gaps ($36, $37 are not declared identifiers). Casting
+  // a gap integer through the enum yields a value GetEnumName cannot name —
+  // the helper must still produce a non-empty 'DWG_TYPE_$NN' fallback so the
+  // histogram does not lose the row.
+  Text := DWGFixedTypeToText(DWG_OBJECT_TYPE($36));
+  AssertTrue('non-empty fallback', Length(Text) > 0);
+  AssertTrue('hex marker present', Pos('36', Text) > 0);
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeBucketsByDistinctFixedType;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Counters: TDWGFixedTypeCounterArray;
+  I, LineBucket, CircleBucket: Integer;
+begin
+  // Two handles share DWG_TYPE_LINE, one is DWG_TYPE_CIRCLE — the counter
+  // array must contain exactly two buckets with counts 2 and 1.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($A1), 0);
+    Ctx.RegisterShell($11, dokEntity, MakePtr($A2), 1);
+    Ctx.RegisterShell($12, dokEntity, MakePtr($A3), 2);
+    AssertTrue(Ctx.Handles.TryGetMutable($10, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($11, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($12, Mut)); Mut^.FixedType := DWG_TYPE_CIRCLE;
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals('two distinct fixedtypes', 2, Length(Counters));
+    LineBucket := -1;
+    CircleBucket := -1;
+    for I := 0 to High(Counters) do begin
+      if Counters[I].FixedType = DWG_TYPE_LINE then LineBucket := I;
+      if Counters[I].FixedType = DWG_TYPE_CIRCLE then CircleBucket := I;
+    end;
+    AssertTrue('line bucket present', LineBucket >= 0);
+    AssertTrue('circle bucket present', CircleBucket >= 0);
+    AssertEquals('line count', 2, Counters[LineBucket].Count);
+    AssertEquals('circle count', 1, Counters[CircleBucket].Count);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeOrdersByDescendingCount;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Counters: TDWGFixedTypeCounterArray;
+begin
+  // 3 LINE, 1 CIRCLE — LINE must appear first.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($A1), 0);
+    Ctx.RegisterShell($11, dokEntity, MakePtr($A2), 1);
+    Ctx.RegisterShell($12, dokEntity, MakePtr($A3), 2);
+    Ctx.RegisterShell($13, dokEntity, MakePtr($A4), 3);
+    AssertTrue(Ctx.Handles.TryGetMutable($10, Mut)); Mut^.FixedType := DWG_TYPE_CIRCLE;
+    AssertTrue(Ctx.Handles.TryGetMutable($11, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($12, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($13, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals(2, Length(Counters));
+    AssertEquals('first bucket is the highest count',
+      Ord(DWG_TYPE_LINE), Ord(Counters[0].FixedType));
+    AssertEquals(3, Counters[0].Count);
+    AssertEquals(Ord(DWG_TYPE_CIRCLE), Ord(Counters[1].FixedType));
+    AssertEquals(1, Counters[1].Count);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeIsEmptyForEmptyContext;
+var
+  Ctx: TDWGZCADLoadContext;
+  Counters: TDWGFixedTypeCounterArray;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals('no handles -> no buckets', 0, Length(Counters));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HasHandlerForReturnsFalseForUnregisteredType;
+begin
+  // The test unit deliberately does NOT pull entity mappers into its uses
+  // clause, so DWG_TYPE_LINE has no handler registered against the shared
+  // parser singleton.
+  AssertFalse('DWG_TYPE_LINE is unregistered in this test unit',
+    HasHandlerFor(DWG_TYPE_LINE));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HasHandlerForReturnsTrueForRegisteredControlObject;
+begin
+  // uzedwgcontrolobjects.initialization registers DWG_TYPE_SEQEND through
+  // RegisterDWGEntityHandler — the lookup must report it as known.
+  AssertTrue('DWG_TYPE_SEQEND is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_SEQEND));
+  AssertTrue('DWG_TYPE_DICTIONARY is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_DICTIONARY));
+  AssertTrue('DWG_TYPE_LAYER_CONTROL is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_LAYER_CONTROL));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HandlesCsvIncludesFixedTypeColumn;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_csv_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 'h.csv';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 7);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteHandlesCsv(Ctx, Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('header has FixedType column',
+        Pos('FixedType', Text) > 0);
+      AssertTrue('row carries DWG_TYPE_LINE',
+        Pos(';DWG_TYPE_LINE', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.SummaryTxtIncludesFixedTypeSection;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_txt_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 's.txt';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteSummaryTxt(Ctx, '/x/foo.dwg', Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('# Handles by fixedtype section',
+        Pos('# Handles by fixedtype', Text) > 0);
+      AssertTrue('row carries DWG_TYPE_LINE: 1',
+        Pos('DWG_TYPE_LINE: 1', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.SummaryJsonIncludesFixedTypesField;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_json_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 's.json';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteSummaryJson(Ctx, '/x/foo.dwg', Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('fixed_types key', Pos('"fixed_types":', Text) > 0);
+      AssertTrue('DWG_TYPE_LINE entry',
+        Pos('"DWG_TYPE_LINE": 1', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
     TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test,
     TDWGLoadContextSilentFallbackTest,
     TDWGLoadContextWarningAggregateTest,
-    TDWGLoadContextSideFilesTest]);
+    TDWGLoadContextSideFilesTest,
+    TDWGLoadContextFixedTypeTest]);
 
 end.
