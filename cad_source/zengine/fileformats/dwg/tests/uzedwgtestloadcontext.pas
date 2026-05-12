@@ -183,6 +183,32 @@ type
     procedure SummaryJsonIncludesFixedTypesField;
   end;
 
+  { Issue #1198 P5 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P5 / §4.5) regression:
+    pending-list lookups must be O(log N) and preserve legacy semantics.
+    The pending-owner list keys on EntityHandle alone and is expected to
+    return the first matching item (legacy contract). The pending-ref list
+    keys on (EntityHandle, Slot) and replaces the existing item when the
+    same key is queued again. Tests exercise the indexes through the public
+    surface (Append, AppendOrReplace, ItemByEntityHandle / ItemByEntityAndSlot,
+    Clear) plus the integrating context (QueueOwnerResolve / QueueRefResolve). }
+  TDWGLoadContextPendingIndexTest = class(TTestCase)
+  published
+    procedure OwnerLookupFindsAppendedItem;
+    procedure OwnerLookupReturnsNilForMissingHandle;
+    procedure OwnerLookupReturnsFirstItemForRepeatedHandle;
+    procedure OwnerLookupHandlesOutOfOrderInsertion;
+    procedure OwnerClearResetsBothItemsAndIndex;
+    procedure RefLookupFindsAppendedItem;
+    procedure RefLookupReturnsNilForMissingKey;
+    procedure RefLookupKeysSeparatelyOnSlot;
+    procedure RefAppendOrReplaceReusesExistingItemIndex;
+    procedure RefAppendOrReplaceDoesNotGrowIndexForReplace;
+    procedure RefClearResetsBothItemsAndIndex;
+    procedure RefLookupHandlesOutOfOrderInsertion;
+    procedure QueueOwnerResolveIntegrationKeepsItemReachable;
+    procedure QueueRefResolveIntegrationKeepsItemReachable;
+  end;
+
 implementation
 
 uses
@@ -2383,6 +2409,371 @@ begin
   end;
 end;
 
+{ ---------- TDWGLoadContextPendingIndexTest ---------- }
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupFindsAppendedItem;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  Entity: Pointer;
+begin
+  // Baseline: a single Append + lookup must return the same row.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Ctx.QueueOwnerResolve(Entity, $10, $20);
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull('lookup finds queued owner', Pending);
+    AssertEquals('entity round-trips through the index',
+      PtrInt(Entity), PtrInt(Pending^.Entity));
+    AssertEquals('owner handle preserved', Int64($20),
+      Int64(Pending^.OwnerHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupReturnsNilForMissingHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.QueueOwnerResolve(MakePtr($E1), $10, $20);
+    AssertNull('missing handle yields nil',
+      Ctx.PendingOwners.ItemByEntityHandle($DEAD));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupReturnsFirstItemForRepeatedHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  EntityA, EntityB: Pointer;
+begin
+  // Legacy FindByEntityHandle returned the first match. Production code
+  // (resolver) relies on this so it can attribute the queued row to the
+  // first Append even when a mapper re-queues the same handle later.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    EntityA := MakePtr($A1);
+    EntityB := MakePtr($B2);
+    Ctx.QueueOwnerResolve(EntityA, $10, $100);
+    Ctx.QueueOwnerResolve(EntityB, $10, $200);
+    AssertEquals('two rows accumulated', 2, Ctx.PendingOwners.Count);
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull(Pending);
+    AssertEquals('first-match contract preserved',
+      PtrInt(EntityA), PtrInt(Pending^.Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupHandlesOutOfOrderInsertion;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  E10, E5, E20, E1: Pointer;
+begin
+  // The sorted index must stay correct regardless of the handle order
+  // entries arrive in. Binary search depends on the array being sorted.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    E10 := MakePtr($10A);
+    E5  := MakePtr($5A);
+    E20 := MakePtr($20A);
+    E1  := MakePtr($1A);
+    Ctx.QueueOwnerResolve(E10, $10, $F0);
+    Ctx.QueueOwnerResolve(E5,  $5,  $F0);
+    Ctx.QueueOwnerResolve(E20, $20, $F0);
+    Ctx.QueueOwnerResolve(E1,  $1,  $F0);
+
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($1);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E1), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($5);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E5), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E10), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($20);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E20), PtrInt(Pending^.Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerClearResetsBothItemsAndIndex;
+var
+  List: TDWGZCADPendingOwnerList;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  // Clear must empty both FItems and FIndex - if it forgot the index, a
+  // subsequent Append followed by a lookup would chase a stale ItemIdx.
+  List := TDWGZCADPendingOwnerList.Create;
+  try
+    Handles[0] := $F0;
+    List.AppendCandidates(MakePtr($1), $10, Handles, 1, nil, -1);
+    AssertEquals(1, List.Count);
+    AssertNotNull(List.ItemByEntityHandle($10));
+    List.Clear;
+    AssertEquals('items cleared', 0, List.Count);
+    AssertNull('index cleared', List.ItemByEntityHandle($10));
+    // Re-populate with a different handle and verify lookups still resolve.
+    Handles[0] := $F1;
+    List.AppendCandidates(MakePtr($2), $20, Handles, 1, nil, -1);
+    AssertNull('old handle still missing', List.ItemByEntityHandle($10));
+    AssertNotNull('new handle reachable', List.ItemByEntityHandle($20));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupFindsAppendedItem;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer := MakePtr($A1);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Pending := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull('lookup finds queued ref', Pending);
+    AssertEquals('ref handle preserved',
+      Int64($20), Int64(Pending^.RefHandle));
+    AssertEquals('slot preserved',
+      Ord(rsLayer), Ord(Pending^.Slot));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupReturnsNilForMissingKey;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($E1), 0);
+    Ctx.QueueRefResolve(MakePtr($E1), $10, 0, dokLayer, rsLayer, nil);
+    AssertNull('missing handle yields nil',
+      Ctx.PendingRefs.ItemByEntityAndSlot($DEAD, rsLayer));
+    AssertNull('right handle, missing slot yields nil',
+      Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLineType));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupKeysSeparatelyOnSlot;
+var
+  Ctx: TDWGZCADLoadContext;
+  PendingL, PendingT: PDWGZCADPendingRef;
+  Entity, Layer, LType: Pointer;
+begin
+  // The same entity handle with two different ref slots must land in two
+  // independent index entries. Looking up by slot must return the right one.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer  := MakePtr($A1);
+    LType  := MakePtr($B1);
+    Ctx.RegisterShell($10, dokEntity,   Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,    Layer,  1);
+    Ctx.RegisterShell($30, dokLineType, LType,  2);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer,    rsLayer,    nil);
+    Ctx.QueueRefResolve(Entity, $10, $30, dokLineType, rsLineType, nil);
+    AssertEquals('two distinct (handle, slot) rows',
+      2, Ctx.PendingRefs.Count);
+    PendingL := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    PendingT := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLineType);
+    AssertNotNull(PendingL);
+    AssertNotNull(PendingT);
+    AssertEquals('layer slot points at layer handle',
+      Int64($20), Int64(PendingL^.RefHandle));
+    AssertEquals('linetype slot points at linetype handle',
+      Int64($30), Int64(PendingT^.RefHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefAppendOrReplaceReusesExistingItemIndex;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, LayerA, LayerB: Pointer;
+begin
+  // Re-queue for the same (handle, slot) replaces the row in place. The
+  // index entry must still point at the same FItems position.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    LayerA := MakePtr($A1);
+    LayerB := MakePtr($A2);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,  LayerA, 1);
+    Ctx.RegisterShell($21, dokLayer,  LayerB, 2);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Ctx.QueueRefResolve(Entity, $10, $21, dokLayer, rsLayer, nil);
+    AssertEquals('replace - no new row', 1, Ctx.PendingRefs.Count);
+    Pending := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals('latest queue wins',
+      Int64($21), Int64(Pending^.RefHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefAppendOrReplaceDoesNotGrowIndexForReplace;
+var
+  List: TDWGZCADPendingRefList;
+  Idx1, Idx2: Integer;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  // The replace branch must return the existing item index and must not
+  // append a stale index entry. Verified through Count + the returned index.
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $20;
+    Idx1 := List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $21;
+    Idx2 := List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals('same item slot reused', Idx1, Idx2);
+    AssertEquals('no extra items appended', 1, List.Count);
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefClearResetsBothItemsAndIndex;
+var
+  List: TDWGZCADPendingRefList;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $20;
+    List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals(1, List.Count);
+    AssertNotNull(List.ItemByEntityAndSlot($10, rsLayer));
+    List.Clear;
+    AssertEquals('items cleared', 0, List.Count);
+    AssertNull('index cleared', List.ItemByEntityAndSlot($10, rsLayer));
+    // Re-populate with a different (handle, slot) and verify it's reachable.
+    Handles[0] := $21;
+    List.AppendOrReplaceCandidates(MakePtr($E2), $11, Handles, 1,
+      dokLineType, rsLineType, nil, False);
+    AssertNull('old key still missing',
+      List.ItemByEntityAndSlot($10, rsLayer));
+    AssertNotNull('new key reachable',
+      List.ItemByEntityAndSlot($11, rsLineType));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupHandlesOutOfOrderInsertion;
+var
+  List: TDWGZCADPendingRefList;
+  Handles: array[0..0] of TDWGZCADHandle;
+  Pending: PDWGZCADPendingRef;
+begin
+  // The composite (Handle, Slot) index must keep entries sorted regardless
+  // of insertion order. Insert four rows in shuffled order and verify each
+  // is reachable.
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $100;
+    List.AppendOrReplaceCandidates(MakePtr($1), $50, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $101;
+    List.AppendOrReplaceCandidates(MakePtr($2), $10, Handles, 1,
+      dokLineType, rsLineType, nil, False);
+    Handles[0] := $102;
+    List.AppendOrReplaceCandidates(MakePtr($3), $30, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $103;
+    List.AppendOrReplaceCandidates(MakePtr($4), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals(4, List.Count);
+
+    Pending := List.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($103), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($10, rsLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($101), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($30, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($102), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($50, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($100), Int64(Pending^.RefHandle));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueOwnerResolveIntegrationKeepsItemReachable;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  Entity, Block: Pointer;
+begin
+  // End-to-end: queue the owner, run ResolveOwners, then look up the row
+  // via FindPendingOwner. The indexed lookup must still hand back the row
+  // updated by the resolver.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Block  := MakePtr($B1);
+    Ctx.RegisterShell($10, dokEntity,   Entity, 0);
+    Ctx.RegisterShell($20, dokBlockDef, Block,  1);
+    Ctx.QueueOwnerResolve(Entity, $10, $20);
+    Ctx.ResolveOwners;
+    Pending := Ctx.FindPendingOwner($10);
+    AssertNotNull('row reachable via host-level lookup', Pending);
+    AssertEquals('owner attached by resolver',
+      PtrInt(Block), PtrInt(Pending^.AttachedOwner));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueRefResolveIntegrationKeepsItemReachable;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer  := MakePtr($A1);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,  Layer,  1);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($10, rsLayer);
+    AssertNotNull('row reachable via host-level lookup', Pending);
+    AssertEquals('ref attached by resolver',
+      PtrInt(Layer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
@@ -2390,6 +2781,7 @@ initialization
     TDWGLoadContextSilentFallbackTest,
     TDWGLoadContextWarningAggregateTest,
     TDWGLoadContextSideFilesTest,
-    TDWGLoadContextFixedTypeTest]);
+    TDWGLoadContextFixedTypeTest,
+    TDWGLoadContextPendingIndexTest]);
 
 end.

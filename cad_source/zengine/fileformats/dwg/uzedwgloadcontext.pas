@@ -59,9 +59,32 @@ type
     procedure Clear;
   end;
 
+  { Issue #1198 P5 (АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.5/§P5): index entries kept
+    parallel to the lists below to lift FindByEntityHandle /
+    FindByEntityAndSlot from O(N) to O(log N). The lists still append in
+    DWG-read order (the resolver iterates FItems directly); the index is
+    a sorted-by-key dynamic array searched via binary search. }
+  TDWGOwnerIndexEntry = record
+    Handle: TDWGZCADHandle;
+    ItemIdx: Integer;
+  end;
+  TDWGRefIndexEntry = record
+    Handle: TDWGZCADHandle;
+    Slot: TDWGZCADRefSlot;
+    ItemIdx: Integer;
+  end;
+
+  { Issue #1198 P5: pending-owner list with a parallel sorted index. The
+    original implementation searched FItems linearly per call, which became
+    quadratic during ResolveOwners / FinalizeImport on big files. The new
+    index records the first item position per handle to preserve the
+    legacy "return first match" contract of FindByEntityHandle. }
   TDWGZCADPendingOwnerList = class
   private
     FItems: array of TDWGZCADPendingOwner;
+    FIndex: array of TDWGOwnerIndexEntry;
+    function IndexFind(AHandle: TDWGZCADHandle; out Pos: Integer): Boolean;
+    procedure IndexInsert(AHandle: TDWGZCADHandle; AItemIdx: Integer);
     function FindByEntityHandle(AHandle: TDWGZCADHandle;
       out Index: Integer): Boolean;
   public
@@ -80,10 +103,20 @@ type
     have multiple refs (layer + linetype + style) so the list is keyed on
     (entity handle, slot); the production code is allowed to overwrite a
     previously queued ref for the same slot, which keeps the resolver
-    deterministic when a mapper is called twice for the same handle. }
+    deterministic when a mapper is called twice for the same handle.
+
+    Issue #1198 P5: replaced the linear FindByEntityAndSlot with a sorted
+    composite index on (EntityHandle, Slot). The index is a one-to-one map
+    (every (handle, slot) tuple has a single item by AppendOrReplace
+    semantics), so the lookup is a straight binary search. }
   TDWGZCADPendingRefList = class
   private
     FItems: array of TDWGZCADPendingRef;
+    FIndex: array of TDWGRefIndexEntry;
+    function IndexFind(AHandle: TDWGZCADHandle; ASlot: TDWGZCADRefSlot;
+      out Pos: Integer): Boolean;
+    procedure IndexInsert(AHandle: TDWGZCADHandle; ASlot: TDWGZCADRefSlot;
+      AItemIdx: Integer);
     function FindByEntityAndSlot(AHandle: TDWGZCADHandle;
       ASlot: TDWGZCADRefSlot; out Index: Integer): Boolean;
   public
@@ -366,19 +399,64 @@ end;
 
 { ---------- TDWGZCADPendingOwnerList ---------- }
 
+{ Binary search on the sorted FIndex array. The index is sorted by Handle;
+  on a hit Pos is the matching slot, on a miss Pos is the insertion point
+  (consistent with TDWGZCADHandleMap.FindIndex). The Handle key is unique
+  in the index (IndexInsert keeps the first occurrence) so the search
+  returns a single position. }
+function TDWGZCADPendingOwnerList.IndexFind(AHandle: TDWGZCADHandle;
+  out Pos: Integer): Boolean;
+var
+  L, H, M: Integer;
+begin
+  Result := False;
+  L := 0;
+  H := High(FIndex);
+  while L <= H do
+  begin
+    M := L + (H - L) div 2;
+    if FIndex[M].Handle = AHandle then
+    begin
+      Pos := M;
+      Exit(True);
+    end
+    else if FIndex[M].Handle < AHandle then
+      L := M + 1
+    else
+      H := M - 1;
+  end;
+  Pos := L;
+end;
+
+procedure TDWGZCADPendingOwnerList.IndexInsert(AHandle: TDWGZCADHandle;
+  AItemIdx: Integer);
+var
+  Pos, I: Integer;
+  Entry: TDWGOwnerIndexEntry;
+begin
+  if IndexFind(AHandle, Pos) then
+    // Legacy FindByEntityHandle returned the first match for a handle.
+    // Subsequent AppendCandidates calls with the same handle should not
+    // shift the lookup target, so the existing index row stays.
+    Exit;
+  Entry.Handle := AHandle;
+  Entry.ItemIdx := AItemIdx;
+  SetLength(FIndex, Length(FIndex) + 1);
+  for I := High(FIndex) downto Pos + 1 do
+    FIndex[I] := FIndex[I - 1];
+  FIndex[Pos] := Entry;
+end;
+
 function TDWGZCADPendingOwnerList.FindByEntityHandle(AHandle: TDWGZCADHandle;
   out Index: Integer): Boolean;
 var
-  I: Integer;
+  Pos: Integer;
 begin
-  for I := 0 to High(FItems) do
-    if FItems[I].EntityHandle = AHandle then
-    begin
-      Index := I;
-      Exit(True);
-    end;
-  Index := -1;
-  Result := False;
+  Result := IndexFind(AHandle, Pos);
+  if Result then
+    Index := FIndex[Pos].ItemIdx
+  else
+    Index := -1;
 end;
 
 function TDWGZCADPendingOwnerList.Append(AEntity: Pointer;
@@ -421,6 +499,7 @@ begin
   SetLength(FItems, Length(FItems) + 1);
   FItems[High(FItems)] := Item;
   Result := High(FItems);
+  IndexInsert(AEntityHandle, Result);
 end;
 
 function TDWGZCADPendingOwnerList.ItemAt(Index: Integer
@@ -451,23 +530,85 @@ end;
 procedure TDWGZCADPendingOwnerList.Clear;
 begin
   SetLength(FItems, 0);
+  SetLength(FIndex, 0);
 end;
 
 { ---------- TDWGZCADPendingRefList ---------- }
 
+{ Composite (Handle, Slot) lexicographic order, with Handle as the major
+  key. Returns negative if (HA, SA) < (HB, SB), positive if >, zero on
+  equality - same shape as a 3-way compare you would pass to qsort. }
+function PendingRefKeyCompare(const AHandleA: TDWGZCADHandle;
+  const ASlotA: TDWGZCADRefSlot; const AHandleB: TDWGZCADHandle;
+  const ASlotB: TDWGZCADRefSlot): Integer;
+begin
+  if AHandleA < AHandleB then
+    Exit(-1)
+  else if AHandleA > AHandleB then
+    Exit(1);
+  if Ord(ASlotA) < Ord(ASlotB) then
+    Exit(-1)
+  else if Ord(ASlotA) > Ord(ASlotB) then
+    Exit(1);
+  Result := 0;
+end;
+
+function TDWGZCADPendingRefList.IndexFind(AHandle: TDWGZCADHandle;
+  ASlot: TDWGZCADRefSlot; out Pos: Integer): Boolean;
+var
+  L, H, M, C: Integer;
+begin
+  Result := False;
+  L := 0;
+  H := High(FIndex);
+  while L <= H do
+  begin
+    M := L + (H - L) div 2;
+    C := PendingRefKeyCompare(FIndex[M].Handle, FIndex[M].Slot,
+      AHandle, ASlot);
+    if C = 0 then
+    begin
+      Pos := M;
+      Exit(True);
+    end
+    else if C < 0 then
+      L := M + 1
+    else
+      H := M - 1;
+  end;
+  Pos := L;
+end;
+
+procedure TDWGZCADPendingRefList.IndexInsert(AHandle: TDWGZCADHandle;
+  ASlot: TDWGZCADRefSlot; AItemIdx: Integer);
+var
+  Pos, I: Integer;
+  Entry: TDWGRefIndexEntry;
+begin
+  if IndexFind(AHandle, ASlot, Pos) then
+  begin
+    FIndex[Pos].ItemIdx := AItemIdx;
+    Exit;
+  end;
+  Entry.Handle := AHandle;
+  Entry.Slot := ASlot;
+  Entry.ItemIdx := AItemIdx;
+  SetLength(FIndex, Length(FIndex) + 1);
+  for I := High(FIndex) downto Pos + 1 do
+    FIndex[I] := FIndex[I - 1];
+  FIndex[Pos] := Entry;
+end;
+
 function TDWGZCADPendingRefList.FindByEntityAndSlot(AHandle: TDWGZCADHandle;
   ASlot: TDWGZCADRefSlot; out Index: Integer): Boolean;
 var
-  I: Integer;
+  Pos: Integer;
 begin
-  for I := 0 to High(FItems) do
-    if (FItems[I].EntityHandle = AHandle) and (FItems[I].Slot = ASlot) then
-    begin
-      Index := I;
-      Exit(True);
-    end;
-  Index := -1;
-  Result := False;
+  Result := IndexFind(AHandle, ASlot, Pos);
+  if Result then
+    Index := FIndex[Pos].ItemIdx
+  else
+    Index := -1;
 end;
 
 function TDWGZCADPendingRefList.AppendOrReplace(AEntity: Pointer;
@@ -521,6 +662,7 @@ begin
     SetLength(FItems, Length(FItems) + 1);
     FItems[High(FItems)] := Item;
     Result := High(FItems);
+    IndexInsert(AEntityHandle, ASlot, Result);
   end;
 end;
 
@@ -551,6 +693,7 @@ end;
 procedure TDWGZCADPendingRefList.Clear;
 begin
   SetLength(FItems, 0);
+  SetLength(FIndex, 0);
 end;
 
 { ---------- TDWGZCADLoadContext ---------- }
