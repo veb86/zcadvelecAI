@@ -203,6 +203,15 @@ type
     { Diagnostics }
     function WarningCount: Integer;
     function WarningAt(Index: Integer): TDWGImportWarning;
+    { Issue #1198 P4: gate for per-entity zDebugLn fallback lines on the
+      import side. Returns True the first MaxDetailPerKey times for a
+      given (Code, Handle) pair and False after that, so the main log
+      shows the first occurrence and EndDWGImport reports the rest as a
+      single aggregate line. }
+    function ShouldEmitDetail(Code: Integer;
+      Handle: TDWGZCADHandle): Boolean;
+    function WarningAggregateCount: Integer;
+    function WarningAggregateAt(Index: Integer): TDWGImportCodeAggregate;
     property AttachCount: Integer read FStats.AttachCount;
     property FallbackCount: Integer read FStats.FallbackCount;
     property CycleCount: Integer read FStats.CycleCount;
@@ -769,6 +778,23 @@ end;
 function TDWGZCADLoadContext.WarningAt(Index: Integer): TDWGImportWarning;
 begin
   Result := FWarnings.Item(Index);
+end;
+
+function TDWGZCADLoadContext.ShouldEmitDetail(Code: Integer;
+  Handle: TDWGZCADHandle): Boolean;
+begin
+  Result := FWarnings.ShouldEmitDetail(Code, Handle);
+end;
+
+function TDWGZCADLoadContext.WarningAggregateCount: Integer;
+begin
+  Result := FWarnings.AggregateCount;
+end;
+
+function TDWGZCADLoadContext.WarningAggregateAt(Index: Integer
+  ): TDWGImportCodeAggregate;
+begin
+  Result := FWarnings.AggregateAt(Index);
 end;
 
 end.

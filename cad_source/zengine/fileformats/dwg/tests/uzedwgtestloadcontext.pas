@@ -124,12 +124,27 @@ type
     procedure DWGAttachReasonTextCoversAllReasons;
   end;
 
+  { Issue #1198 P4 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P4) regression: warning
+    list must aggregate per-code totals + first-sample + distinct-handle
+    counts, and ShouldEmitDetail must throttle subsequent occurrences of
+    the same (Code, Handle) so the main log only shows the first one. }
+  TDWGLoadContextWarningAggregateTest = class(TTestCase)
+  published
+    procedure AddTracksTotalAndDistinctHandles;
+    procedure FirstSampleIsCapturedAndPreserved;
+    procedure ShouldEmitDetailFiresOnceThenSuppresses;
+    procedure ShouldEmitDetailKeysOnCodeAndHandle;
+    procedure DistinctHandlesIncrementsOnNewHandleOnly;
+    procedure CodeForAttachReasonCoversFallbackReasons;
+  end;
+
 implementation
 
 uses
   Classes,
   SysUtils,
   uzedwgtypes,
+  uzedwgdiagnostics,
   uzedwgloadcontext;
 
 type
@@ -1623,10 +1638,177 @@ begin
       DWGAttachReasonToText(Reason) <> '');
 end;
 
+{ ---------- TDWGLoadContextWarningAggregateTest (Issue #1198 P4) ---------- }
+
+procedure TDWGLoadContextWarningAggregateTest.AddTracksTotalAndDistinctHandles;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I, Found: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Three occurrences of code 1410 against two distinct handles, plus one
+      occurrence of code 1402 against a third handle: aggregate should have
+      two rows, with the right totals on each. }
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $100, 'a');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $100, 'b');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $200, 'c');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND, $300, 'd');
+
+    AssertEquals('aggregate rows', 2, Ctx.WarningAggregateCount);
+    Found := 0;
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_KIND_MISMATCH then begin
+        AssertEquals('total for 1410', 3, Agg.TotalCount);
+        AssertEquals('distinct handles for 1410', 2, Agg.DistinctHandles);
+        Inc(Found);
+      end
+      else if Agg.Code = DWG_WARN_OWNER_NOT_FOUND then begin
+        AssertEquals('total for 1402', 1, Agg.TotalCount);
+        AssertEquals('distinct handles for 1402', 1, Agg.DistinctHandles);
+        Inc(Found);
+      end;
+    end;
+    AssertEquals('both codes reported', 2, Found);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.FirstSampleIsCapturedAndPreserved;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $42, 'first sample');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $43, 'second');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $44, 'third');
+
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_NOT_FOUND then begin
+        AssertTrue('first sample captured', Agg.HasFirstSample);
+        AssertEquals('first sample handle preserved',
+          Int64($42), Int64(Agg.FirstSample.Handle));
+        AssertEquals('first sample text preserved',
+          'first sample', Agg.FirstSample.Text);
+        Exit;
+      end;
+    end;
+    Fail('no aggregate row for DWG_WARN_REF_NOT_FOUND');
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.ShouldEmitDetailFiresOnceThenSuppresses;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { First occurrence wins the slot, the second is throttled. }
+    AssertTrue('first call emits',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+    AssertFalse('second call suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+    AssertFalse('third call still suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.ShouldEmitDetailKeysOnCodeAndHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Different handle => fresh slot, not coalesced with the previous one. }
+    AssertTrue('code 1410 handle $7001',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7001));
+    AssertTrue('code 1410 handle $7002 distinct from $7001',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7002));
+    { Same handle, different code => fresh slot. }
+    AssertTrue('code 1402 handle $7001 distinct from code 1410',
+      Ctx.ShouldEmitDetail(DWG_WARN_OWNER_NOT_FOUND, $7001));
+    { Repeat of any one of them is suppressed. }
+    AssertFalse('code 1410 handle $7001 second time suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7001));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.DistinctHandlesIncrementsOnNewHandleOnly;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Five occurrences split across two handles: distinct=2, total=5. }
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $B0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $B0, '');
+
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_NULL then begin
+        AssertEquals('total', 5, Agg.TotalCount);
+        AssertEquals('distinct handles', 2, Agg.DistinctHandles);
+        Exit;
+      end;
+    end;
+    Fail('no aggregate row for DWG_WARN_REF_NULL');
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.CodeForAttachReasonCoversFallbackReasons;
+begin
+  { Every fallback reason must map to a real diagnostic code so the import
+    side gate uses the same dedup key as the resolver side aggregate. }
+  AssertEquals(DWG_WARN_OWNER_NULL,
+    DWGCodeForAttachReason(arNullOwner));
+  AssertEquals(DWG_WARN_OWNER_NOT_FOUND,
+    DWGCodeForAttachReason(arOwnerNotFound));
+  AssertEquals(DWG_WARN_OWNER_NOT_CONTAINER,
+    DWGCodeForAttachReason(arOwnerNotContainer));
+  AssertEquals(DWG_WARN_OWNER_SELF_CYCLE,
+    DWGCodeForAttachReason(arSelfOwnerCycle));
+  AssertEquals(DWG_WARN_OWNER_CHAIN_CYCLE,
+    DWGCodeForAttachReason(arOwnerChainCycle));
+  AssertEquals(DWG_WARN_OWNER_SKIPPED,
+    DWGCodeForAttachReason(arOwnerSkipped));
+  AssertEquals(DWG_WARN_REF_NULL,
+    DWGCodeForAttachReason(arRefNull));
+  AssertEquals(DWG_WARN_REF_NOT_FOUND,
+    DWGCodeForAttachReason(arRefNotFound));
+  AssertEquals(DWG_WARN_REF_KIND_MISMATCH,
+    DWGCodeForAttachReason(arRefKindMismatch));
+  { Non-fallback reasons return 0 so the caller can guard. }
+  AssertEquals('arResolved has no code', 0,
+    DWGCodeForAttachReason(arResolved));
+  AssertEquals('arPending has no code', 0,
+    DWGCodeForAttachReason(arPending));
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
     TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test,
-    TDWGLoadContextSilentFallbackTest]);
+    TDWGLoadContextSilentFallbackTest,
+    TDWGLoadContextWarningAggregateTest]);
 
 end.

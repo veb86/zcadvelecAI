@@ -42,6 +42,7 @@ uses
   uzeTypes,
   uzeffmanager,
   uzedwgtypes,
+  uzedwgdiagnostics,
   uzedwgloadcontext,
   uzedwgrawscan,
   uzedwgblockreserve,
@@ -408,11 +409,68 @@ begin
     '), zoom=', FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
 end;
 
+{ Issue #1198 P4: locate the DWG handle for an entity pointer by walking
+  the pending-owner list. Used by the attach callbacks to feed
+  LoadCtx.ShouldEmitDetail so the dedup key matches what the resolver
+  put into the warning aggregate. Returns 0 if the entity isn't
+  queued (legacy callers and Stage 2 fallback paths). }
+function DWGOwnerEntityHandleForLog(Entity: Pointer): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingOwner;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingOwners.Count - 1 do begin
+    Pending := LoadCtx.PendingOwners.ItemAt(I);
+    if Pending^.Entity = Entity then
+      Exit(Pending^.EntityHandle);
+  end;
+end;
+
+function DWGRefEntityHandleForLog(Entity: Pointer;
+  Slot: TDWGZCADRefSlot): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingRef;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingRefs.Count - 1 do begin
+    Pending := LoadCtx.PendingRefs.ItemAt(I);
+    if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then
+      Exit(Pending^.EntityHandle);
+  end;
+end;
+
+{ Issue #1198 P4: gate a per-entity fallback log line through the
+  warning list's dedup tracker. Returns True if the caller should emit
+  the zDebugLn line (first occurrence for this Code+Handle pair) and
+  False otherwise — the resolver has already booked the occurrence in
+  the aggregate, so the EndDWGImport summary still reports it. When
+  there is no active load context (legacy callers) the gate stays open
+  so the line is always written. }
+function DWGShouldEmitFallbackDetail(Reason: TDWGAttachReason;
+  EntityHandle: QWord): Boolean;
+var
+  Code: Integer;
+begin
+  if LoadCtx = nil then
+    Exit(True);
+  Code := DWGCodeForAttachReason(Reason);
+  if Code = 0 then
+    Exit(True);
+  Result := LoadCtx.ShouldEmitDetail(Code, EntityHandle);
+end;
+
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
   Reason: TDWGAttachReason; Data: Pointer);
 var
   pobj: PGDBObjEntity;
   newowner: PGDBObjGenericSubEntry;
+  EntityHandle: QWord;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -420,12 +478,15 @@ begin
   if (pobj = nil) or (Owner = nil) then
     Exit;
 
+  EntityHandle := DWGOwnerEntityHandleForLog(Entity);
+
   // INSERT-owned ATTRIB entities are appended after the INSERT has built its
   // block geometry. Adding them now would be undone by BuildGeometry clearing
   // ConstObjArray from the block definition.
   if DWGPointerHasKind(Owner, dokBlockInsert) then begin
     pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
-    if Reason <> arResolved then
+    if (Reason <> arResolved) and
+       DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
       zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
         ' deferred under INSERT via fallback (',
         DWGAttachReasonToText(Reason), ')']);
@@ -435,7 +496,8 @@ begin
   newowner := PGDBObjGenericSubEntry(Owner);
 
   newowner^.AddMi(PGDBObjSubordinated(pobj));
-  if Reason <> arResolved then
+  if (Reason <> arResolved) and
+     DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
     zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
       ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
 
@@ -496,7 +558,9 @@ var
   pDimStyle: PGDBDimStyle;
   pBlockDef: PGDBObjBlockdef;
   pInsert: PGDBObjBlockInsert;
+  EntityHandle: QWord;
 begin
+  EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
   case Slot of
     rsLayer:
       begin
@@ -504,7 +568,8 @@ begin
         if pobj = nil then
           Exit;
         pobj^.vp.Layer := PGDBLayerProp(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' layer fallback (', DWGAttachReasonToText(Reason), ') -> ',
@@ -516,7 +581,8 @@ begin
         if pobj = nil then
           Exit;
         pobj^.vp.LineType := PGDBLtypeProp(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' linetype fallback (', DWGAttachReasonToText(Reason),
@@ -529,11 +595,13 @@ begin
         if player = nil then
           Exit;
         player^.LT := PGDBLtypeProp(Ref);
-        if Reason <> arResolved then
-          zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
-            DWGLTypeNameForLog(PGDBLtypeProp(Ref))])
+        if Reason <> arResolved then begin
+          if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
+            zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
+              ' ', DWGRefHandlesForLog(Entity, Slot),
+              ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
+              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+        end
         else
           zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
             ' ', DWGRefHandlesForLog(Entity, Slot),
@@ -551,7 +619,8 @@ begin
         // whether the target supports the slot).
         if (pobj^.GetObjType = GDBtextID) or (pobj^.GetObjType = GDBMTextID) then
           PGDBObjText(pobj)^.TXTStyle := PGDBTextStyle(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' textstyle fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -572,7 +641,8 @@ begin
           else
             PGDBObjDimension(pobj)^.PDimStyle := pDimStyle;
         end;
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' dimstyle fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -592,7 +662,7 @@ begin
             zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block ref resolves to model/paper space; using empty block'])
-          else
+          else if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
             zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -722,6 +792,34 @@ begin
     ', handles_total=', LoadCtx.Handles.Count]);
 end;
 
+{ Issue #1198 P4: emit one summary line per diagnostic code observed
+  during the import. The first occurrence of each (Code, Handle) pair
+  was already written to the log by the resolver / attach callbacks;
+  this routine adds the "and N more like this" aggregate so the
+  bottom of the import log doubles as the warning-by-code histogram. }
+procedure DWGEmitWarningSummary(Ctx: TDWGZCADLoadContext);
+var
+  I: Integer;
+  Agg: TDWGImportCodeAggregate;
+  Suppressed: Integer;
+begin
+  if Ctx = nil then
+    Exit;
+  for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+    Agg := Ctx.WarningAggregateAt(I);
+    if Agg.TotalCount <= 0 then
+      Continue;
+    Suppressed := Agg.TotalCount - Agg.DistinctHandles;
+    if Suppressed < 0 then
+      Suppressed := 0;
+    zDebugLn(['{WH}DWG warning summary code=', Agg.Code,
+      ' (', DWGWarningCodeToShortName(Agg.Code), '): ',
+      Agg.TotalCount, ' occurrence(s) across ',
+      Agg.DistinctHandles, ' handle(s); ',
+      Suppressed, ' duplicate(s) suppressed from main log']);
+  end;
+end;
+
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 begin
   if LoadCtx = nil then
@@ -752,6 +850,7 @@ begin
       ', unknown_objects=', LoadCtx.UnknownObjects,
       ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
       ', warnings=', LoadCtx.WarningCount]);
+    DWGEmitWarningSummary(LoadCtx);
     // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
     // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
     FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
