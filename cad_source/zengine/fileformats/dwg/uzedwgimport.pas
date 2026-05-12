@@ -46,6 +46,7 @@ uses
   uzedwgloadcontext,
   uzedwgrawscan,
   uzedwgblockreserve,
+  uzedwgsidefiles,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -59,7 +60,8 @@ uses
   raw-scan over the LibreDWG object array that pre-registers handle -> raw
   index entries so duplicate detection happens once and mappers can upgrade
   placeholders instead of fighting the duplicate-handle warning. }
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 
@@ -104,6 +106,10 @@ var
   LoadHeaderViewProps: TDWGViewProps;
   LoadHasActiveVPortViewProps: Boolean = False;
   LoadActiveVPortViewProps: TDWGViewProps;
+  { Issue #1198 P3: source DWG path threaded through Begin/EndDWGImport so
+    the side-file writer can drop *.summary.txt / *.handles.csv next to it.
+    Empty string means "no path was supplied" (legacy callers, unit tests). }
+  LoadSourcePath: String = '';
 
 function DWGDefaultTextStyleProp: GDBTextStyleProp;
 begin
@@ -679,7 +685,8 @@ begin
   end;
 end;
 
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 var
   ByLayerLT: PGDBLtypeProp;
   SysLayer: PGDBLayerProp;
@@ -692,6 +699,7 @@ begin
   end;
   LoadCtx := TDWGZCADLoadContext.Create;
   LoadDrawing := ZContext.PDrawing;
+  LoadSourcePath := ASourcePath;
   LoadHasCurrentLayerHandle := False;
   LoadCurrentLayerHandle := 0;
   LoadHasCurrentLineTypeHandle := False;
@@ -820,6 +828,37 @@ begin
   end;
 end;
 
+{ Issue #1198 P3: emit per-DWG diagnostic side-files when the user has
+  opted in via ZCAD_DWG_DIAG=summary|full|trace. Runs after the resolver
+  has fully populated PendingOwners / PendingRefs so the CSVs reflect the
+  final attach state. Failures during write must not abort the import:
+  the side-file writer is strictly diagnostic, so we swallow exceptions
+  and log a single warning instead. }
+procedure DWGEmitSideFiles(Ctx: TDWGZCADLoadContext; const SourcePath: String);
+var
+  Mode: TDWGDiagMode;
+  Res: TDWGSideFileResult;
+  I: Integer;
+begin
+  if Ctx = nil then
+    Exit;
+  Mode := DWGDiagModeFromEnv;
+  if Mode = dmOff then
+    Exit;
+  try
+    Res := DWGWriteSideFiles(Ctx, SourcePath, Mode);
+    zDebugLn(['{WH}DWG diagnostic side-files (mode=',
+      DWGDiagModeToString(Mode), '): ',
+      Length(Res.FilesWritten), ' file(s) written']);
+    for I := 0 to High(Res.FilesWritten) do
+      zDebugLn(['{WH}  ', Res.FilesWritten[I]]);
+  except
+    on E: Exception do
+      zDebugLn(['{WH}DWG side-files: failed to write (',
+        E.ClassName, '): ', E.Message]);
+  end;
+end;
+
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 begin
   if LoadCtx = nil then
@@ -851,12 +890,14 @@ begin
       ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
       ', warnings=', LoadCtx.WarningCount]);
     DWGEmitWarningSummary(LoadCtx);
+    DWGEmitSideFiles(LoadCtx, LoadSourcePath);
     // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
     // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
     FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
   finally
     FreeAndNil(LoadCtx);
     LoadDrawing := nil;
+    LoadSourcePath := '';
     LoadHasCurrentLayerHandle := False;
     LoadCurrentLayerHandle := 0;
     LoadHasCurrentLineTypeHandle := False;

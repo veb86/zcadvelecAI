@@ -138,6 +138,31 @@ type
     procedure CodeForAttachReasonCoversFallbackReasons;
   end;
 
+  { Issue #1198 P3 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P3 / §6.1) regression:
+    diagnostic side-files. Tests use a tempdir-scoped path and assert that
+    each mode produces the expected files and that CSV headers and rows
+    match the documented columns. }
+  TDWGLoadContextSideFilesTest = class(TTestCase)
+  private
+    FTempDir: String;
+    function TempPath(const Suffix: String): String;
+    function ReadAllText(const Path: String): String;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure ModeFromStringIsCaseInsensitive;
+    procedure ModeOffWritesNothing;
+    procedure ModeSummaryWritesTxtAndJson;
+    procedure ModeFullAddsThreeCsvFiles;
+    procedure HandlesCsvCapturesEveryRegisteredHandle;
+    procedure RefsCsvCapturesEveryPendingRef;
+    procedure OwnersCsvCapturesEveryPendingOwner;
+    procedure SummaryTxtIncludesWarningsByCode;
+    procedure SummaryJsonIsParseableShape;
+    procedure SourcePathEmptyFallsBackToCwd;
+  end;
+
 implementation
 
 uses
@@ -145,7 +170,8 @@ uses
   SysUtils,
   uzedwgtypes,
   uzedwgdiagnostics,
-  uzedwgloadcontext;
+  uzedwgloadcontext,
+  uzedwgsidefiles;
 
 type
   // Sentinel pointers used as opaque ZCAD entity stand-ins. The resolver only
@@ -1804,11 +1830,265 @@ begin
     DWGCodeForAttachReason(arPending));
 end;
 
+{ ---------- TDWGLoadContextSideFilesTest (Issue #1198 P3) ---------- }
+
+procedure TDWGLoadContextSideFilesTest.SetUp;
+begin
+  inherited;
+  FTempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgsidefiles_' + IntToStr(Random(MaxInt)) + '_' +
+    IntToStr(Random(MaxInt));
+  if not ForceDirectories(FTempDir) then
+    Fail('cannot create temp dir ' + FTempDir);
+end;
+
+procedure TDWGLoadContextSideFilesTest.TearDown;
+var
+  Search: TSearchRec;
+begin
+  if DirectoryExists(FTempDir) then begin
+    if FindFirst(IncludeTrailingPathDelimiter(FTempDir) + '*', faAnyFile, Search) = 0 then
+    try
+      repeat
+        if (Search.Name <> '.') and (Search.Name <> '..') then
+          DeleteFile(IncludeTrailingPathDelimiter(FTempDir) + Search.Name);
+      until FindNext(Search) <> 0;
+    finally
+      FindClose(Search);
+    end;
+    RemoveDir(FTempDir);
+  end;
+  inherited;
+end;
+
+function TDWGLoadContextSideFilesTest.TempPath(const Suffix: String): String;
+begin
+  Result := IncludeTrailingPathDelimiter(FTempDir) + 'unit' + Suffix;
+end;
+
+function TDWGLoadContextSideFilesTest.ReadAllText(const Path: String): String;
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+begin
+  Result := '';
+  Stream := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Bytes, Stream.Size);
+    if Stream.Size > 0 then
+      Stream.ReadBuffer(Bytes[0], Stream.Size);
+    SetLength(Result, Length(Bytes));
+    if Length(Bytes) > 0 then
+      Move(Bytes[0], Result[1], Length(Bytes));
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeFromStringIsCaseInsensitive;
+begin
+  AssertTrue('off',     DWGDiagModeFromString('off')     = dmOff);
+  AssertTrue('OFF',     DWGDiagModeFromString('OFF')     = dmOff);
+  AssertTrue('summary', DWGDiagModeFromString('summary') = dmSummary);
+  AssertTrue('Summary', DWGDiagModeFromString('Summary') = dmSummary);
+  AssertTrue('full',    DWGDiagModeFromString('full')    = dmFull);
+  AssertTrue('trace',   DWGDiagModeFromString('trace')   = dmTrace);
+  AssertTrue('unknown', DWGDiagModeFromString('garble')  = dmOff);
+  AssertTrue('empty',   DWGDiagModeFromString('')        = dmOff);
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeOffWritesNothing;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmOff);
+    AssertEquals('no files', 0, Length(Res.FilesWritten));
+    AssertFalse(FileExists(TempPath('.dwg.summary.txt')));
+    AssertFalse(FileExists(TempPath('.dwg.summary.json')));
+    AssertFalse(FileExists(TempPath('.dwg.handles.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeSummaryWritesTxtAndJson;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmSummary);
+    AssertEquals('two files', 2, Length(Res.FilesWritten));
+    AssertTrue('summary.txt exists', FileExists(TempPath('.dwg.summary.txt')));
+    AssertTrue('summary.json exists', FileExists(TempPath('.dwg.summary.json')));
+    AssertFalse('handles.csv absent', FileExists(TempPath('.dwg.handles.csv')));
+    AssertFalse('refs.csv absent', FileExists(TempPath('.dwg.refs.csv')));
+    AssertFalse('owners.csv absent', FileExists(TempPath('.dwg.owners.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeFullAddsThreeCsvFiles;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmFull);
+    AssertEquals('five files', 5, Length(Res.FilesWritten));
+    AssertTrue(FileExists(TempPath('.dwg.summary.txt')));
+    AssertTrue(FileExists(TempPath('.dwg.summary.json')));
+    AssertTrue(FileExists(TempPath('.dwg.handles.csv')));
+    AssertTrue(FileExists(TempPath('.dwg.refs.csv')));
+    AssertTrue(FileExists(TempPath('.dwg.owners.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.HandlesCsvCapturesEveryRegisteredHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 7);
+    Ctx.RegisterShell($20, dokLayer, MakePtr($AA02), 8);
+    Path := TempPath('.dwg.handles.csv');
+    DWGWriteHandlesCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present', Pos('RawIndex;HandleHex;ResolvedKind', Text) > 0);
+    AssertTrue('hex 10 row',  Pos('7;10;dokEntity;', Text) > 0);
+    AssertTrue('hex 20 row',  Pos('8;20;dokLayer;',  Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.RefsCsvCapturesEveryPendingRef;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+  Ent, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ent := MakePtr($AA01);
+    Layer := MakePtr($AA02);
+    Ctx.RegisterShell($10, dokEntity, Ent, 0);
+    Ctx.RegisterShell($20, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Ent, $10, $20, dokLayer, rsLayer, nil);
+    Path := TempPath('.dwg.refs.csv');
+    DWGWriteRefsCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present',
+      Pos('EntityHandle;Slot;RefHandle', Text) > 0);
+    AssertTrue('rsLayer row', Pos('10;rsLayer;20;', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.OwnersCsvCapturesEveryPendingOwner;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+  Ent, Block: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ent := MakePtr($AA01);
+    Block := MakePtr($AA02);
+    Ctx.RegisterShell($10, dokEntity, Ent, 0);
+    Ctx.RegisterShell($20, dokBlockDef, Block, 1);
+    Ctx.QueueOwnerResolve(Ent, $10, $20);
+    Path := TempPath('.dwg.owners.csv');
+    DWGWriteOwnersCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present',
+      Pos('EntityHandle;OwnerHandle;Candidates', Text) > 0);
+    AssertTrue('owner row', Pos('10;20;', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SummaryTxtIncludesWarningsByCode;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $10, 'kindmiss-a');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $11, 'kindmiss-b');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND, $10, 'ownermissing');
+    Path := TempPath('.dwg.summary.txt');
+    DWGWriteSummaryTxt(Ctx, TempPath('.dwg'), Path);
+    Text := ReadAllText(Path);
+    AssertTrue('handles_total line', Pos('handles_total: 1', Text) > 0);
+    AssertTrue('1410 reported', Pos('1410 (ref kind mismatch)', Text) > 0);
+    AssertTrue('1402 reported', Pos('1402 (owner not found)', Text) > 0);
+    AssertTrue('kind histogram', Pos('dokEntity: 1', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SummaryJsonIsParseableShape;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $10, 'kindmiss');
+    Path := TempPath('.dwg.summary.json');
+    DWGWriteSummaryJson(Ctx, TempPath('.dwg'), Path);
+    Text := ReadAllText(Path);
+    { Shape only; the writer is not a JSON-spec-compliant emitter and we
+      do not want to hard-code field order. Just verify the obvious
+      hooks exist so a downstream script can do its own structured read. }
+    AssertTrue('top brace',  Pos('{', Text) > 0);
+    AssertTrue('file key',   Pos('"file":', Text) > 0);
+    AssertTrue('kinds key',  Pos('"kinds":', Text) > 0);
+    AssertTrue('warnings',   Pos('"warnings":', Text) > 0);
+    AssertTrue('1410 entry', Pos('"1410": 1', Text) > 0);
+    AssertTrue('end brace',  Pos('}', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SourcePathEmptyFallsBackToCwd;
+begin
+  { Helper-level test: an empty source path must not crash; the writer
+    falls back to a generic "dwg.<suffix>" name. We don't write the file
+    here (cwd is not under our control) but the path constructor result
+    is well-defined and tested directly. }
+  AssertEquals('dwg.summary.txt', DWGSideFilePath('', '.summary.txt'));
+  AssertEquals('/x/foo.dwg.summary.txt',
+    DWGSideFilePath('/x/foo.dwg', '.summary.txt'));
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
     TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test,
     TDWGLoadContextSilentFallbackTest,
-    TDWGLoadContextWarningAggregateTest]);
+    TDWGLoadContextWarningAggregateTest,
+    TDWGLoadContextSideFilesTest]);
 
 end.

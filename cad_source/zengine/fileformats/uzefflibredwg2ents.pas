@@ -42,7 +42,8 @@ uses
   uzeffmanager,
   uzedwgimport;
 
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 
@@ -74,9 +75,10 @@ uses
   uzedwgentpolyline,
   uzedwgentproxy;
 
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 begin
-  uzedwgimport.BeginDWGImport(ZContext);
+  uzedwgimport.BeginDWGImport(ZContext, ASourcePath);
 end;
 
 procedure ScanDWGImport(var Raw: Dwg_Data);
