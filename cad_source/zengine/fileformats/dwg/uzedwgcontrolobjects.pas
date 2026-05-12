@@ -39,6 +39,7 @@ uses
   SysUtils,
   dwg, dwgproc,
   uzedwghandle,
+  uzeffmanager,
   uzedrawingsimple,
   uzedwgloadcontext,
   uzedwgentityregistry,
