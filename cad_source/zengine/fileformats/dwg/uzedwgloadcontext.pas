@@ -66,6 +66,9 @@ type
   public
     function Append(AEntity: Pointer; AEntityHandle, AOwnerHandle: TDWGZCADHandle;
       AFallbackOwner: Pointer; ARawIndex: Integer): Integer;
+    function AppendCandidates(AEntity: Pointer; AEntityHandle: TDWGZCADHandle;
+      const AOwnerHandles: array of TDWGZCADHandle; AOwnerCount: Integer;
+      AFallbackOwner: Pointer; ARawIndex: Integer): Integer;
     function ItemAt(Index: Integer): PDWGZCADPendingOwner;
     function ItemByEntityHandle(AHandle: TDWGZCADHandle): PDWGZCADPendingOwner;
     function Count: Integer;
@@ -85,6 +88,11 @@ type
   public
     function AppendOrReplace(AEntity: Pointer;
       AEntityHandle, ARefHandle: TDWGZCADHandle;
+      AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
+      AFallback: Pointer; AInlineRef: Boolean = False): Integer;
+    function AppendOrReplaceCandidates(AEntity: Pointer;
+      AEntityHandle: TDWGZCADHandle;
+      const ARefHandles: array of TDWGZCADHandle; ARefCount: Integer;
       AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
       AFallback: Pointer; AInlineRef: Boolean = False): Integer;
     function ItemAt(Index: Integer): PDWGZCADPendingRef;
@@ -156,6 +164,10 @@ type
     procedure QueueOwnerResolve(AEntity: Pointer;
       AEntityHandle, AOwnerHandle: TDWGZCADHandle;
       AFallbackOwner: Pointer = nil; ARawIndex: Integer = -1);
+    procedure QueueOwnerResolveCandidates(AEntity: Pointer;
+      AEntityHandle: TDWGZCADHandle;
+      const AOwnerHandles: array of TDWGZCADHandle; AOwnerCount: Integer;
+      AFallbackOwner: Pointer = nil; ARawIndex: Integer = -1);
 
     { Phase 2.6 (Stage 3): Pending visual reference queue. ASlot tells the
       attach callback which vp field to write; AExpectedKind is checked when
@@ -166,6 +178,11 @@ type
       design and must attach without fallback diagnostics. }
     procedure QueueRefResolve(AEntity: Pointer;
       AEntityHandle, ARefHandle: TDWGZCADHandle;
+      AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
+      AFallback: Pointer = nil; AInlineRef: Boolean = False);
+    procedure QueueRefResolveCandidates(AEntity: Pointer;
+      AEntityHandle: TDWGZCADHandle;
+      const ARefHandles: array of TDWGZCADHandle; ARefCount: Integer;
       AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
       AFallback: Pointer = nil; AInlineRef: Boolean = False);
 
@@ -320,6 +337,22 @@ begin
   SetLength(FEntries, 0);
 end;
 
+procedure DWGAddHandleCandidate(var Candidates: TDWGZCADRefHandleCandidates;
+  AHandle: TDWGZCADHandle);
+var
+  I: Integer;
+begin
+  if AHandle = 0 then
+    Exit;
+  for I := 0 to Candidates.Count - 1 do
+    if Candidates.Values[I] = AHandle then
+      Exit;
+  if Candidates.Count > High(Candidates.Values) then
+    Exit;
+  Candidates.Values[Candidates.Count] := AHandle;
+  Inc(Candidates.Count);
+end;
+
 { ---------- TDWGZCADPendingOwnerList ---------- }
 
 function TDWGZCADPendingOwnerList.FindByEntityHandle(AHandle: TDWGZCADHandle;
@@ -341,12 +374,34 @@ function TDWGZCADPendingOwnerList.Append(AEntity: Pointer;
   AEntityHandle, AOwnerHandle: TDWGZCADHandle; AFallbackOwner: Pointer;
   ARawIndex: Integer): Integer;
 var
+  nowHandles: array[0..0] of TDWGZCADHandle;
+begin
+  nowHandles[0] := AOwnerHandle;
+  Result := AppendCandidates(AEntity, AEntityHandle, nowHandles, 1,
+    AFallbackOwner, ARawIndex);
+end;
+
+function TDWGZCADPendingOwnerList.AppendCandidates(AEntity: Pointer;
+  AEntityHandle: TDWGZCADHandle;
+  const AOwnerHandles: array of TDWGZCADHandle; AOwnerCount: Integer;
+  AFallbackOwner: Pointer; ARawIndex: Integer): Integer;
+var
+  I: Integer;
   Item: TDWGZCADPendingOwner;
 begin
   FillChar(Item, SizeOf(Item), 0);
   Item.Entity := AEntity;
   Item.EntityHandle := AEntityHandle;
-  Item.OwnerHandle := AOwnerHandle;
+  if AOwnerCount < 0 then
+    AOwnerCount := 0;
+  if AOwnerCount > Length(AOwnerHandles) then
+    AOwnerCount := Length(AOwnerHandles);
+  for I := 0 to AOwnerCount - 1 do
+    DWGAddHandleCandidate(Item.OwnerCandidates, AOwnerHandles[I]);
+  if Item.OwnerCandidates.Count > 0 then
+    Item.OwnerHandle := Item.OwnerCandidates.Values[0]
+  else
+    Item.OwnerHandle := 0;
   Item.FallbackOwner := AFallbackOwner;
   Item.RawIndex := ARawIndex;
   Item.AttachState := asPending;
@@ -409,13 +464,35 @@ function TDWGZCADPendingRefList.AppendOrReplace(AEntity: Pointer;
   AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
   AFallback: Pointer; AInlineRef: Boolean): Integer;
 var
-  Existing: Integer;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  Handles[0] := ARefHandle;
+  Result := AppendOrReplaceCandidates(AEntity, AEntityHandle, Handles, 1,
+    AExpectedKind, ASlot, AFallback, AInlineRef);
+end;
+
+function TDWGZCADPendingRefList.AppendOrReplaceCandidates(AEntity: Pointer;
+  AEntityHandle: TDWGZCADHandle;
+  const ARefHandles: array of TDWGZCADHandle; ARefCount: Integer;
+  AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
+  AFallback: Pointer; AInlineRef: Boolean): Integer;
+var
+  Existing, I: Integer;
   Item: TDWGZCADPendingRef;
 begin
   FillChar(Item, SizeOf(Item), 0);
   Item.Entity := AEntity;
   Item.EntityHandle := AEntityHandle;
-  Item.RefHandle := ARefHandle;
+  if ARefCount < 0 then
+    ARefCount := 0;
+  if ARefCount > Length(ARefHandles) then
+    ARefCount := Length(ARefHandles);
+  for I := 0 to ARefCount - 1 do
+    DWGAddHandleCandidate(Item.RefCandidates, ARefHandles[I]);
+  if Item.RefCandidates.Count > 0 then
+    Item.RefHandle := Item.RefCandidates.Values[0]
+  else
+    Item.RefHandle := 0;
   Item.ExpectedKind := AExpectedKind;
   Item.Slot := ASlot;
   Item.Fallback := AFallback;
@@ -551,13 +628,25 @@ procedure TDWGZCADLoadContext.QueueOwnerResolve(AEntity: Pointer;
   AEntityHandle, AOwnerHandle: TDWGZCADHandle; AFallbackOwner: Pointer;
   ARawIndex: Integer);
 var
+  nowHandles: array[0..0] of TDWGZCADHandle;
+begin
+  nowHandles[0] := AOwnerHandle;
+  QueueOwnerResolveCandidates(AEntity, AEntityHandle, nowHandles, 1,
+    AFallbackOwner, ARawIndex);
+end;
+
+procedure TDWGZCADLoadContext.QueueOwnerResolveCandidates(AEntity: Pointer;
+  AEntityHandle: TDWGZCADHandle;
+  const AOwnerHandles: array of TDWGZCADHandle; AOwnerCount: Integer;
+  AFallbackOwner: Pointer; ARawIndex: Integer);
+var
   Fallback: Pointer;
 begin
   Fallback := AFallbackOwner;
   if Fallback = nil then
     Fallback := FFallbackOwner;
-  FPendingOwners.Append(AEntity, AEntityHandle, AOwnerHandle, Fallback,
-    ARawIndex);
+  FPendingOwners.AppendCandidates(AEntity, AEntityHandle, AOwnerHandles,
+    AOwnerCount, Fallback, ARawIndex);
 end;
 
 function TDWGZCADLoadContext.TryGetEntry(AHandle: TDWGZCADHandle;
@@ -636,13 +725,26 @@ procedure TDWGZCADLoadContext.QueueRefResolve(AEntity: Pointer;
   AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
   AFallback: Pointer; AInlineRef: Boolean);
 var
+  nowHandles: array[0..0] of TDWGZCADHandle;
+begin
+  nowHandles[0] := ARefHandle;
+  QueueRefResolveCandidates(AEntity, AEntityHandle, nowHandles, 1,
+    AExpectedKind, ASlot, AFallback, AInlineRef);
+end;
+
+procedure TDWGZCADLoadContext.QueueRefResolveCandidates(AEntity: Pointer;
+  AEntityHandle: TDWGZCADHandle;
+  const ARefHandles: array of TDWGZCADHandle; ARefCount: Integer;
+  AExpectedKind: TDWGZCADObjectKind; ASlot: TDWGZCADRefSlot;
+  AFallback: Pointer; AInlineRef: Boolean);
+var
   Fallback: Pointer;
 begin
   Fallback := AFallback;
   if Fallback = nil then
     Fallback := FallbackForSlot(ASlot);
-  FPendingRefs.AppendOrReplace(AEntity, AEntityHandle, ARefHandle,
-    AExpectedKind, ASlot, Fallback, AInlineRef);
+  FPendingRefs.AppendOrReplaceCandidates(AEntity, AEntityHandle, ARefHandles,
+    ARefCount, AExpectedKind, ASlot, Fallback, AInlineRef);
 end;
 
 function TDWGZCADLoadContext.FindPendingRef(AEntityHandle: TDWGZCADHandle;

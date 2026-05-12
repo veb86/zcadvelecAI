@@ -31,6 +31,9 @@ interface
 uses
   dwg;
 
+const
+  DWG_MAX_REF_HANDLE_CANDIDATES = 3;
+
 type
   { Stage 5 (TZ §12.5): the LibreDWG bindings only expose PDwg_Entity_LINE,
     so we declare the entity pointer aliases the Stage 5 mappers and the
@@ -41,6 +44,11 @@ type
   PDwg_Entity_MTEXT = ^Dwg_Entity_MTEXT;
   PDwg_Object_STYLE = ^Dwg_Object_STYLE;
   PDwg_Object_VPORT = ^Dwg_Object_VPORT;
+
+  TDWGRefHandleCandidates = record
+    Count: Integer;
+    Values: array[0..DWG_MAX_REF_HANDLE_CANDIDATES - 1] of QWord;
+  end;
 
   TDWGEntityLineTypeKind = (
     dltMissing,
@@ -152,13 +160,17 @@ function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
   drops segments to the arNullOwner fallback root and they never render. }
 function DWGObjectOwnerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+function DWGObjectOwnerHandleCandidatesValue(const Obj: Dwg_Object;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 
-{ Generic BITCODE_H decoder: returns False when the ref is nil or both
-  absolute_ref and handleref.value are zero. The two fields are checked in
-  order because LibreDWG fills absolute_ref for resolved cross-references
-  but leaves it at 0 for soft pointers, which then carry the value in
-  handleref.value. }
+{ Generic BITCODE_H decoder: returns False when the ref is nil and no usable
+  handle can be recovered. LibreDWG may already have resolved the reference
+  to an object pointer; when it has, the pointed object's own handle is the
+  most reliable identifier. Fall back to absolute_ref, then handleref.value
+  for unresolved or soft-pointer refs. }
 function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
+function DWGRefHandleCandidatesValue(Ref: BITCODE_H;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 
 { Stage 3 (TZ §12.3): pull layer / linetype refs off an entity-typed
   Dwg_Object. Returns False when Obj is not an entity, or when the ref is
@@ -166,12 +178,19 @@ function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
   expose these slots, so callers reading from a non-entity object get False. }
 function DWGEntityLayerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+function DWGEntityLayerHandleCandidatesValue(const Obj: Dwg_Object;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 function DWGEntityLineTypeHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
 function DWGEntityLineTypeRefValue(const Obj: Dwg_Object;
   out Kind: TDWGEntityLineTypeKind; out Value: QWord): Boolean;
+function DWGEntityLineTypeRefCandidatesValue(const Obj: Dwg_Object;
+  out Kind: TDWGEntityLineTypeKind;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
   out Value: QWord): Boolean;
+function DWGLayerLineTypeHandleCandidatesValue(const PLayer: PDwg_Object_LAYER;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 
 function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
 function DWGColorMethodToText(const Method: Dwg_Color_Method): string;
@@ -214,8 +233,12 @@ function DWGLinetypePropsValue(const PLType: PDwg_Object_LTYPE;
   fallback (typically Standard). }
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;
   out Value: QWord): Boolean;
+function DWGTextStyleHandleCandidatesValue(const PText: PDwg_Entity_TEXT;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 function DWGMTextStyleHandleValue(const PMText: PDwg_Entity_MTEXT;
   out Value: QWord): Boolean;
+function DWGMTextStyleHandleCandidatesValue(const PMText: PDwg_Entity_MTEXT;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
 
 implementation
 
@@ -257,33 +280,75 @@ begin
   Result := Obj.handle.value;
 end;
 
-function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
+procedure DWGAddRefHandleCandidate(var Candidates: TDWGRefHandleCandidates;
+  Value: QWord);
+var
+  I: Integer;
 begin
-  Value := 0;
+  if Value = 0 then
+    Exit;
+  for I := 0 to Candidates.Count - 1 do
+    if Candidates.Values[I] = Value then
+      Exit;
+  if Candidates.Count > High(Candidates.Values) then
+    Exit;
+  Candidates.Values[Candidates.Count] := Value;
+  Inc(Candidates.Count);
+end;
+
+procedure DWGAppendRefHandleCandidates(var Dest: TDWGRefHandleCandidates;
+  const Source: TDWGRefHandleCandidates);
+var
+  I: Integer;
+begin
+  for I := 0 to Source.Count - 1 do
+    DWGAddRefHandleCandidate(Dest, Source.Values[I]);
+end;
+
+function DWGRefHandleCandidatesValue(Ref: BITCODE_H;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if Ref = nil then
     Exit(False);
-  if Ref^.absolute_ref <> 0 then
-  begin
-    Value := Ref^.absolute_ref;
-    Exit(True);
-  end;
-  if Ref^.handleref.value <> 0 then
-  begin
-    Value := Ref^.handleref.value;
-    Exit(True);
-  end;
-  Result := False;
+  if Ref^.obj <> nil then
+    DWGAddRefHandleCandidate(Candidates, Ref^.obj^.handle.value);
+  DWGAddRefHandleCandidate(Candidates, Ref^.absolute_ref);
+  DWGAddRefHandleCandidate(Candidates, Ref^.handleref.value);
+  Result := Candidates.Count > 0;
+end;
+
+function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
+var
+  Candidates: TDWGRefHandleCandidates;
+begin
+  Value := 0;
+  Result := DWGRefHandleCandidatesValue(Ref, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
 end;
 
 function DWGObjectOwnerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
 var
+  Candidates: TDWGRefHandleCandidates;
+begin
+  Value := 0;
+  Result := DWGObjectOwnerHandleCandidatesValue(Obj, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
+end;
+
+function DWGObjectOwnerHandleCandidatesValue(const Obj: Dwg_Object;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+var
   Ent: ^Dwg_Object_Entity;
   Dwg: ^_dwg_struct;
   ImplicitOwner: ^Dwg_Object;
   HRef: BITCODE_H;
+  RefCandidates: TDWGRefHandleCandidates;
 begin
-  Value := 0;
+  FillChar(Candidates, SizeOf(Candidates), 0);
   case Obj.supertype of
     DWG_SUPERTYPE_ENTITY:
       if Obj.tio.entity <> nil then
@@ -318,46 +383,61 @@ begin
               ImplicitOwner := Dwg^.pspace_block;
             if ImplicitOwner <> nil then
             begin
-              Value := ImplicitOwner^.handle.value;
-              if Value <> 0 then
-                Exit(True);
+              DWGAddRefHandleCandidate(Candidates,
+                ImplicitOwner^.handle.value);
             end;
             // Path B: header_vars.BLOCK_RECORD_*SPACE handle reference.
             if Ent^.entmode = 2 then
               HRef := Dwg^.header_vars.BLOCK_RECORD_MSPACE
             else
               HRef := Dwg^.header_vars.BLOCK_RECORD_PSPACE;
-            if DWGRefHandleValue(HRef, Value) then
-              Exit(True);
+            if DWGRefHandleCandidatesValue(HRef, RefCandidates) then
+              DWGAppendRefHandleCandidates(Candidates, RefCandidates);
             // Path C: block_control table entry.
             if Ent^.entmode = 2 then
               HRef := Dwg^.block_control.model_space
             else
               HRef := Dwg^.block_control.paper_space;
-            if DWGRefHandleValue(HRef, Value) then
-              Exit(True);
+            if DWGRefHandleCandidatesValue(HRef, RefCandidates) then
+              DWGAppendRefHandleCandidates(Candidates, RefCandidates);
           end;
           // entmode signalled an implicit owner but no path resolved it
           // (parent missing or the layout records were not loaded). Fall
           // through to ownerhandle so the legacy path still has a chance.
-          Value := 0;
         end;
-        Exit(DWGRefHandleValue(Ent^.ownerhandle, Value));
+        if DWGRefHandleCandidatesValue(Ent^.ownerhandle, RefCandidates) then
+          DWGAppendRefHandleCandidates(Candidates, RefCandidates);
+        Exit(Candidates.Count > 0);
       end;
     DWG_SUPERTYPE_OBJECT:
       if Obj.tio.&object <> nil then
-        Exit(DWGRefHandleValue(Obj.tio.&object^.ownerhandle, Value));
+      begin
+        if DWGRefHandleCandidatesValue(Obj.tio.&object^.ownerhandle,
+          Candidates) then
+          Exit(True);
+      end;
   end;
   Result := False;
 end;
 
 function DWGEntityLayerHandleValue(const Obj: Dwg_Object;
   out Value: QWord): Boolean;
+var
+  Candidates: TDWGRefHandleCandidates;
 begin
   Value := 0;
+  Result := DWGEntityLayerHandleCandidatesValue(Obj, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
+end;
+
+function DWGEntityLayerHandleCandidatesValue(const Obj: Dwg_Object;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if (Obj.supertype <> DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity = nil) then
     Exit(False);
-  Result := DWGRefHandleValue(Obj.tio.entity^.layer, Value);
+  Result := DWGRefHandleCandidatesValue(Obj.tio.entity^.layer, Candidates);
 end;
 
 function DWGEntityLineTypeHandleValue(const Obj: Dwg_Object;
@@ -374,10 +454,22 @@ end;
 function DWGEntityLineTypeRefValue(const Obj: Dwg_Object;
   out Kind: TDWGEntityLineTypeKind; out Value: QWord): Boolean;
 var
+  Candidates: TDWGRefHandleCandidates;
+begin
+  Value := 0;
+  Result := DWGEntityLineTypeRefCandidatesValue(Obj, Kind, Candidates);
+  if Result and (Candidates.Count > 0) then
+    Value := Candidates.Values[0];
+end;
+
+function DWGEntityLineTypeRefCandidatesValue(const Obj: Dwg_Object;
+  out Kind: TDWGEntityLineTypeKind;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+var
   Ent: ^Dwg_Object_Entity;
 begin
   Kind := dltMissing;
-  Value := 0;
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if (Obj.supertype <> DWG_SUPERTYPE_ENTITY) or (Obj.tio.entity = nil) then
     Exit(False);
 
@@ -390,7 +482,7 @@ begin
       Kind := dltByLayer;
       Exit(True);
     end;
-    if DWGRefHandleValue(Ent^.ltype, Value) then
+    if DWGRefHandleCandidatesValue(Ent^.ltype, Candidates) then
     begin
       Kind := dltHandle;
       Exit(True);
@@ -416,7 +508,7 @@ begin
       end;
     3:
       begin
-        if DWGRefHandleValue(Ent^.ltype, Value) then
+        if DWGRefHandleCandidatesValue(Ent^.ltype, Candidates) then
         begin
           Kind := dltHandle;
           Exit(True);
@@ -425,7 +517,7 @@ begin
       end;
   end;
 
-  if DWGRefHandleValue(Ent^.ltype, Value) then
+  if DWGRefHandleCandidatesValue(Ent^.ltype, Candidates) then
   begin
     Kind := dltHandle;
     Exit(True);
@@ -435,11 +527,22 @@ end;
 
 function DWGLayerLineTypeHandleValue(const PLayer: PDwg_Object_LAYER;
   out Value: QWord): Boolean;
+var
+  Candidates: TDWGRefHandleCandidates;
 begin
   Value := 0;
+  Result := DWGLayerLineTypeHandleCandidatesValue(PLayer, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
+end;
+
+function DWGLayerLineTypeHandleCandidatesValue(const PLayer: PDwg_Object_LAYER;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if PLayer = nil then
     Exit(False);
-  Result := DWGRefHandleValue(PLayer^.ltype, Value);
+  Result := DWGRefHandleCandidatesValue(PLayer^.ltype, Candidates);
 end;
 
 function DWGColorIndexToACI(const Color: Dwg_Color; out Value: Integer): Boolean;
@@ -858,20 +961,42 @@ end;
 
 function DWGTextStyleHandleValue(const PText: PDwg_Entity_TEXT;
   out Value: QWord): Boolean;
+var
+  Candidates: TDWGRefHandleCandidates;
 begin
   Value := 0;
+  Result := DWGTextStyleHandleCandidatesValue(PText, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
+end;
+
+function DWGTextStyleHandleCandidatesValue(const PText: PDwg_Entity_TEXT;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if PText = nil then
     Exit(False);
-  Result := DWGRefHandleValue(PText^.style, Value);
+  Result := DWGRefHandleCandidatesValue(PText^.style, Candidates);
 end;
 
 function DWGMTextStyleHandleValue(const PMText: PDwg_Entity_MTEXT;
   out Value: QWord): Boolean;
+var
+  Candidates: TDWGRefHandleCandidates;
 begin
   Value := 0;
+  Result := DWGMTextStyleHandleCandidatesValue(PMText, Candidates);
+  if Result then
+    Value := Candidates.Values[0];
+end;
+
+function DWGMTextStyleHandleCandidatesValue(const PMText: PDwg_Entity_MTEXT;
+  out Candidates: TDWGRefHandleCandidates): Boolean;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
   if PMText = nil then
     Exit(False);
-  Result := DWGRefHandleValue(PMText^.style, Value);
+  Result := DWGRefHandleCandidatesValue(PMText^.style, Candidates);
 end;
 
 end.
