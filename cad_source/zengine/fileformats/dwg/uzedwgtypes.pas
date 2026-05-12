@@ -23,10 +23,20 @@ unit uzedwgtypes;
 interface
 
 uses
-  SysUtils;
+  SysUtils,
+  dwg;
 
 type
   TDWGZCADHandle = QWord;
+
+const
+  DWG_ZCAD_MAX_REF_HANDLE_CANDIDATES = 3;
+
+type
+  TDWGZCADRefHandleCandidates = record
+    Count: Integer;
+    Values: array[0..DWG_ZCAD_MAX_REF_HANDLE_CANDIDATES - 1] of TDWGZCADHandle;
+  end;
 
   { Section 7 of TZ: object kinds the import context recognizes. The kind is
     used by the resolver to decide whether a handle is a valid container
@@ -43,7 +53,16 @@ type
     dokPaperSpace,
     dokContainer,
     dokBlockInsert,
-    dokEntity
+    dokEntity,
+    { Issue #1198 P2 (TZ §5): table-control objects (LAYER_CONTROL, LTYPE_CONTROL,
+      BLOCK_CONTROL, STYLE_CONTROL, DIMSTYLE_CONTROL, VIEW_CONTROL,
+      UCS_CONTROL, VPORT_CONTROL, APPID_CONTROL, VX_CONTROL). The control
+      objects own the table records but do not need a ZCAD-side allocation;
+      promoting them out of dokUnknown lets the resolver classify references
+      to them deterministically instead of treating them as missing kinds.
+      Auxiliary objects such as DICTIONARY / XRECORD / GROUP / MLINESTYLE
+      also land here for the same reason. }
+    dokControlObject
   );
 
   TDWGShellState = (
@@ -83,6 +102,13 @@ type
     Ptr: Pointer;
     RawIndex: Integer;
     ShellState: TDWGShellState;
+    { Issue #1198 P2 (TZ §5): captured by ScanRawObjects from
+      Raw.&object[i].fixedtype so the histogram diagnostic and the resolver's
+      "is this a known control object" check do not need a second walk over
+      the LibreDWG array. DWG_TYPE_UNUSED (0) means "raw scan did not see this
+      handle" (mapper-side RegisterShell calls that pre-date Phase 1, unit
+      tests that pre-seed the registry by hand). }
+    FixedType: DWG_OBJECT_TYPE;
   end;
   PDWGZCADHandleEntry = ^TDWGZCADHandleEntry;
 
@@ -90,6 +116,7 @@ type
     Entity: Pointer;
     EntityHandle: TDWGZCADHandle;
     OwnerHandle: TDWGZCADHandle;
+    OwnerCandidates: TDWGZCADRefHandleCandidates;
     FallbackOwner: Pointer;
     RawIndex: Integer;
     AttachState: TDWGAttachState;
@@ -123,6 +150,7 @@ type
     Entity: Pointer;
     EntityHandle: TDWGZCADHandle;
     RefHandle: TDWGZCADHandle;
+    RefCandidates: TDWGZCADRefHandleCandidates;
     ExpectedKind: TDWGZCADObjectKind;
     Slot: TDWGZCADRefSlot;
     Fallback: Pointer;
@@ -185,6 +213,13 @@ const
   DWG_WARN_UNKNOWN_ENTITY       = 1413;
   DWG_WARN_UNKNOWN_OBJECT       = 1414;
   DWG_WARN_UNKNOWN_NO_COPY      = 1415;
+  { Issue #1198 P6 (АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.4/§P6): AddTextStyle emits this
+    when an empty-named or colliding STYLE record is re-registered under a
+    handle-derived synthetic name ('dwg_<hex>' or '<orig>_dwg<hex>'). Distinct
+    from DWG_WARN_DUPLICATE_HANDLE (1407): the duplicate-handle warning fires
+    after the aliasing happened, this one is logged at the moment we *prevent*
+    the alias by choosing a different name. }
+  DWG_WARN_TEXTSTYLE_RENAMED    = 1416;
 
 function DWGAttachReasonToText(Reason: TDWGAttachReason): String;
 

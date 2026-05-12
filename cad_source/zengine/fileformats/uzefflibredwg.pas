@@ -115,7 +115,9 @@ begin
       // R4 (TZ §3.4): ScanDWGImport runs the Phase 1 raw scan between Begin
       // and parseDwg_Data so duplicate-handle detection and raw-index capture
       // happen once, before any mapper allocation.
-      BeginDWGImport(ZCDCtx);
+      // Issue #1198 P3: forward the source path so EndDWGImport can emit
+      // diagnostic side-files next to the DWG when ZCAD_DWG_DIAG is set.
+      BeginDWGImport(ZCDCtx, filename);
       try
         ScanDWGImport(dwg);
         GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));
@@ -165,7 +167,9 @@ begin
     end;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
-      BeginDWGImport(ZCDCtx);
+      // Issue #1198 P3: forward the source path so EndDWGImport can emit
+      // diagnostic side-files next to the DXF when ZCAD_DWG_DIAG is set.
+      BeginDWGImport(ZCDCtx, filename);
       try
         ScanDWGImport(dwg);
         GetDWGParser.parseDwg_Data(ZCDCtx,dwg,@PLP,TData(lph));

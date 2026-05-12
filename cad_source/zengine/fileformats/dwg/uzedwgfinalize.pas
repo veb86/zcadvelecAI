@@ -63,40 +63,116 @@ procedure FinalizeImport(Ctx: TDWGZCADLoadContext;
 
 implementation
 
-{ Stage 4 (TZ §12.4): mirror the DWGOwnerIsBlockDef helper from
-  uzedwgimport.pas without exporting it — the original lives there because
-  attach needs it; we keep a private copy here so finalize stays a leaf
-  unit (no circular dependency back into uzedwgimport). }
-function FinalizeOwnerIsBlockDef(Ctx: TDWGZCADLoadContext;
-  Owner: Pointer): Boolean;
+{ Stage 4 (TZ §12.4): the legacy FinalizeOwnerIsBlockDef helper used to do
+  a linear scan over Ctx.Handles for every entity in the outer loop, which
+  is O(N^2). Issue #1198 P5 (АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.5) replaces it with
+  a per-Finalize cache: walk the registry once up front and collect the
+  block-def / block-insert pointer sets into sorted dynamic arrays, then
+  do a binary-search membership check per owner.
+
+  The cache is a local record (built and dropped within FinalizeImport) so
+  no state leaks between imports and the existing API surface stays
+  unchanged. Pointers are stored as PtrUInt to keep the comparison cheap
+  and well-defined across architectures. }
+type
+  TOwnerPtrCache = record
+    BlockDefs: array of PtrUInt;
+    BlockInserts: array of PtrUInt;
+  end;
+
+function PtrSortedFind(const Arr: array of PtrUInt; AValue: PtrUInt): Boolean;
 var
-  I: Integer;
-  Entry: PDWGZCADHandleEntry;
+  L, H, M: Integer;
 begin
   Result := False;
-  if (Ctx = nil) or (Owner = nil) then
-    Exit;
-  for I := 0 to Ctx.Handles.Count - 1 do begin
-    Entry := Ctx.Handles.EntryAt(I);
-    if (Entry^.Kind = dokBlockDef) and (Entry^.Ptr = Owner) then
-      Exit(True);
+  L := 0;
+  H := High(Arr);
+  while L <= H do
+  begin
+    M := L + (H - L) div 2;
+    if Arr[M] = AValue then
+      Exit(True)
+    else if Arr[M] < AValue then
+      L := M + 1
+    else
+      H := M - 1;
   end;
 end;
 
-function FinalizeOwnerIsBlockInsert(Ctx: TDWGZCADLoadContext;
-  Owner: Pointer): Boolean;
+procedure SortPtrArrayAscending(var Arr: array of PtrUInt);
 var
-  I: Integer;
+  I, J: Integer;
+  Pivot, Tmp: PtrUInt;
+begin
+  // Insertion sort - cache populations are tiny relative to the entity
+  // count (one entry per block def / insert) so the constant factor wins
+  // over QuickSort's setup.
+  for I := 1 to High(Arr) do
+  begin
+    Pivot := Arr[I];
+    J := I - 1;
+    while (J >= 0) and (Arr[J] > Pivot) do
+    begin
+      Tmp := Arr[J + 1];
+      Arr[J + 1] := Arr[J];
+      Arr[J] := Tmp;
+      Dec(J);
+    end;
+  end;
+end;
+
+procedure BuildOwnerPtrCache(Ctx: TDWGZCADLoadContext;
+  out Cache: TOwnerPtrCache);
+var
+  I, DefCount, InsCount: Integer;
   Entry: PDWGZCADHandleEntry;
 begin
-  Result := False;
-  if (Ctx = nil) or (Owner = nil) then
+  SetLength(Cache.BlockDefs, 0);
+  SetLength(Cache.BlockInserts, 0);
+  if Ctx = nil then
     Exit;
-  for I := 0 to Ctx.Handles.Count - 1 do begin
+  // Pre-size both arrays to the upper bound (Count) so SetLength does not
+  // copy through O(N) intermediate sizes; trimming after the fill is cheap.
+  SetLength(Cache.BlockDefs, Ctx.Handles.Count);
+  SetLength(Cache.BlockInserts, Ctx.Handles.Count);
+  DefCount := 0;
+  InsCount := 0;
+  for I := 0 to Ctx.Handles.Count - 1 do
+  begin
     Entry := Ctx.Handles.EntryAt(I);
-    if (Entry^.Kind = dokBlockInsert) and (Entry^.Ptr = Owner) then
-      Exit(True);
+    if Entry^.Ptr = nil then
+      Continue;
+    if Entry^.Kind = dokBlockDef then
+    begin
+      Cache.BlockDefs[DefCount] := PtrUInt(Entry^.Ptr);
+      Inc(DefCount);
+    end
+    else if Entry^.Kind = dokBlockInsert then
+    begin
+      Cache.BlockInserts[InsCount] := PtrUInt(Entry^.Ptr);
+      Inc(InsCount);
+    end;
   end;
+  SetLength(Cache.BlockDefs, DefCount);
+  SetLength(Cache.BlockInserts, InsCount);
+  SortPtrArrayAscending(Cache.BlockDefs);
+  SortPtrArrayAscending(Cache.BlockInserts);
+end;
+
+function FinalizeOwnerIsBlockDef(const Cache: TOwnerPtrCache;
+  Owner: Pointer): Boolean;
+begin
+  if Owner = nil then
+    Exit(False);
+  Result := PtrSortedFind(Cache.BlockDefs, PtrUInt(Owner));
+end;
+
+function FinalizeOwnerIsBlockInsert(const Cache: TOwnerPtrCache;
+  Owner: Pointer): Boolean;
+begin
+  if Owner = nil then
+    Exit(False);
+  Result := PtrSortedFind(Cache.BlockInserts, PtrUInt(Owner));
 end;
 
 procedure FinalizeEntityGeometry(Pobj: PGDBObjEntity;
@@ -108,6 +184,7 @@ begin
 end;
 
 procedure AttachDeferredInsertChildren(Ctx: TDWGZCADLoadContext;
+  const Cache: TOwnerPtrCache;
   Drawing: PTSimpleDrawing; var DC: TDrawContext; var Processed: Integer);
 var
   I: Integer;
@@ -131,7 +208,7 @@ begin
     Owner := Pending^.AttachedOwner;
     if Owner = nil then
       Owner := Pending^.FallbackOwner;
-    if not FinalizeOwnerIsBlockInsert(Ctx, Owner) then
+    if not FinalizeOwnerIsBlockInsert(Cache, Owner) then
       Continue;
 
     Insert := PGDBObjBlockInsert(Owner);
@@ -152,6 +229,7 @@ var
   Owner: Pointer;
   ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
   VisualWarnings: Integer;
+  Cache: TOwnerPtrCache;
 begin
   if (Ctx = nil) or (Drawing = nil) then
     Exit;
@@ -161,6 +239,11 @@ begin
   SkippedInsertChild := 0;
   SkippedNoOwner := 0;
   VisualWarnings := 0;
+
+  // Issue #1198 P5: pre-build the (BlockDef, BlockInsert) pointer cache so
+  // the per-entity FinalizeOwnerIs* checks below are O(log N) instead of
+  // O(N), turning the whole finalize pass from O(N^2) into O(N log N).
+  BuildOwnerPtrCache(Ctx, Cache);
 
   for I := 0 to Ctx.Handles.Count - 1 do begin
     Entry := Ctx.Handles.EntryAt(I);
@@ -195,11 +278,11 @@ begin
 
     // Block-def contents stay deferred (TZ §12.4). Counting them so the
     // diagnostic line below can show how the registry was split.
-    if FinalizeOwnerIsBlockDef(Ctx, Owner) then begin
+    if FinalizeOwnerIsBlockDef(Cache, Owner) then begin
       Inc(SkippedBlockDef);
       Continue;
     end;
-    if FinalizeOwnerIsBlockInsert(Ctx, Owner) then begin
+    if FinalizeOwnerIsBlockInsert(Cache, Owner) then begin
       Inc(SkippedInsertChild);
       Continue;
     end;
@@ -223,7 +306,7 @@ begin
     Inc(ProcessedEntities);
   end;
 
-  AttachDeferredInsertChildren(Ctx, Drawing, DC, ProcessedEntities);
+  AttachDeferredInsertChildren(Ctx, Cache, Drawing, DC, ProcessedEntities);
 
   zDebugLn(['{WH}DWG finalize: built=', ProcessedEntities,
     ', deferred_blockdef=', SkippedBlockDef,

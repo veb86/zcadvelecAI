@@ -124,13 +124,128 @@ type
     procedure DWGAttachReasonTextCoversAllReasons;
   end;
 
+  { Issue #1198 P4 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P4) regression: warning
+    list must aggregate per-code totals + first-sample + distinct-handle
+    counts, and ShouldEmitDetail must throttle subsequent occurrences of
+    the same (Code, Handle) so the main log only shows the first one. }
+  TDWGLoadContextWarningAggregateTest = class(TTestCase)
+  published
+    procedure AddTracksTotalAndDistinctHandles;
+    procedure FirstSampleIsCapturedAndPreserved;
+    procedure ShouldEmitDetailFiresOnceThenSuppresses;
+    procedure ShouldEmitDetailKeysOnCodeAndHandle;
+    procedure DistinctHandlesIncrementsOnNewHandleOnly;
+    procedure CodeForAttachReasonCoversFallbackReasons;
+  end;
+
+  { Issue #1198 P3 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P3 / §6.1) regression:
+    diagnostic side-files. Tests use a tempdir-scoped path and assert that
+    each mode produces the expected files and that CSV headers and rows
+    match the documented columns. }
+  TDWGLoadContextSideFilesTest = class(TTestCase)
+  private
+    FTempDir: String;
+    function TempPath(const Suffix: String): String;
+    function ReadAllText(const Path: String): String;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
+  published
+    procedure ModeFromStringIsCaseInsensitive;
+    procedure ModeOffWritesNothing;
+    procedure ModeSummaryWritesTxtAndJson;
+    procedure ModeFullAddsThreeCsvFiles;
+    procedure HandlesCsvCapturesEveryRegisteredHandle;
+    procedure RefsCsvCapturesEveryPendingRef;
+    procedure OwnersCsvCapturesEveryPendingOwner;
+    procedure SummaryTxtIncludesWarningsByCode;
+    procedure SummaryJsonIsParseableShape;
+    procedure SourcePathEmptyFallsBackToCwd;
+  end;
+
+  { Issue #1198 P2 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P2 / §5) regression:
+    fixedtype histogram and handler-registry introspection. Tests live in the
+    load-context suite because they exercise the FixedType field stored on
+    TDWGZCADHandleEntry plus the small helpers added to uzedwgsidefiles. }
+  TDWGLoadContextFixedTypeTest = class(TTestCase)
+  published
+    procedure RegisterShellInitializesFixedTypeToUnused;
+    procedure FixedTypeIsMutableAfterRegisterShell;
+    procedure FixedTypeToTextReturnsSymbolicNameForKnownEnum;
+    procedure FixedTypeToTextFallsBackToHexForUndeclaredValue;
+    procedure CountByFixedTypeBucketsByDistinctFixedType;
+    procedure CountByFixedTypeOrdersByDescendingCount;
+    procedure CountByFixedTypeIsEmptyForEmptyContext;
+    procedure HasHandlerForReturnsFalseForUnregisteredType;
+    procedure HasHandlerForReturnsTrueForRegisteredControlObject;
+    procedure HandlesCsvIncludesFixedTypeColumn;
+    procedure SummaryTxtIncludesFixedTypeSection;
+    procedure SummaryJsonIncludesFixedTypesField;
+  end;
+
+  { Issue #1198 P5 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P5 / §4.5) regression:
+    pending-list lookups must be O(log N) and preserve legacy semantics.
+    The pending-owner list keys on EntityHandle alone and is expected to
+    return the first matching item (legacy contract). The pending-ref list
+    keys on (EntityHandle, Slot) and replaces the existing item when the
+    same key is queued again. Tests exercise the indexes through the public
+    surface (Append, AppendOrReplace, ItemByEntityHandle / ItemByEntityAndSlot,
+    Clear) plus the integrating context (QueueOwnerResolve / QueueRefResolve). }
+  TDWGLoadContextPendingIndexTest = class(TTestCase)
+  published
+    procedure OwnerLookupFindsAppendedItem;
+    procedure OwnerLookupReturnsNilForMissingHandle;
+    procedure OwnerLookupReturnsFirstItemForRepeatedHandle;
+    procedure OwnerLookupHandlesOutOfOrderInsertion;
+    procedure OwnerClearResetsBothItemsAndIndex;
+    procedure RefLookupFindsAppendedItem;
+    procedure RefLookupReturnsNilForMissingKey;
+    procedure RefLookupKeysSeparatelyOnSlot;
+    procedure RefAppendOrReplaceReusesExistingItemIndex;
+    procedure RefAppendOrReplaceDoesNotGrowIndexForReplace;
+    procedure RefClearResetsBothItemsAndIndex;
+    procedure RefLookupHandlesOutOfOrderInsertion;
+    procedure QueueOwnerResolveIntegrationKeepsItemReachable;
+    procedure QueueRefResolveIntegrationKeepsItemReachable;
+  end;
+
+  { Issue #1198 P6 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §4.4/§P6) regression:
+    AddTextStyle must not collapse distinct DWG handles onto a single ZCAD
+    pstyle by renaming everything to 'Standard'. The pure helpers
+    DWGTextStyleBaseName / DWGTextStyleUniquifyName / DWGTextStylePtrOwned-
+    ByAnotherHandle encode the new rules; these tests pin them so future
+    refactors cannot silently regress to the old aliasing behaviour. The
+    tests use opaque pointers and a real TDWGZCADLoadContext (no ZCAD
+    drawing dependency) so they run in the same isolated harness as the
+    other Stage-5 regressions. }
+  TDWGLoadContextTextStyleNameTest = class(TTestCase)
+  published
+    procedure BaseNameUsesFontFileForShapeStyles;
+    procedure BaseNameUsesDecodedNameWhenPresent;
+    procedure BaseNameFallsBackToHandleHexWhenNameEmpty;
+    procedure BaseNameFallsBackToStandardWhenHandleZero;
+    procedure UniquifyAppendsHandleHexSuffix;
+    procedure UniquifyHandlesZeroHandleDefensively;
+    procedure PtrOwnedReturnsFalseForUnregisteredPointer;
+    procedure PtrOwnedReturnsFalseForSameHandleReregistration;
+    procedure PtrOwnedReturnsTrueWhenAnotherHandleClaimsPointer;
+    procedure PtrOwnedIgnoresEntriesOfOtherKinds;
+    procedure PtrOwnedReturnsFalseForNilContextOrPtr;
+  end;
+
 implementation
 
 uses
   Classes,
   SysUtils,
+  dwg,
   uzedwgtypes,
-  uzedwgloadcontext;
+  uzedwgdiagnostics,
+  uzedwgloadcontext,
+  uzedwgsidefiles,
+  uzedwgentityregistry,
+  uzedwgcontrolobjects,
+  uzedwgstylename;
 
 type
   // Sentinel pointers used as opaque ZCAD entity stand-ins. The resolver only
@@ -1623,10 +1738,1231 @@ begin
       DWGAttachReasonToText(Reason) <> '');
 end;
 
+{ ---------- TDWGLoadContextWarningAggregateTest (Issue #1198 P4) ---------- }
+
+procedure TDWGLoadContextWarningAggregateTest.AddTracksTotalAndDistinctHandles;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I, Found: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Three occurrences of code 1410 against two distinct handles, plus one
+      occurrence of code 1402 against a third handle: aggregate should have
+      two rows, with the right totals on each. }
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $100, 'a');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $100, 'b');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $200, 'c');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND, $300, 'd');
+
+    AssertEquals('aggregate rows', 2, Ctx.WarningAggregateCount);
+    Found := 0;
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_KIND_MISMATCH then begin
+        AssertEquals('total for 1410', 3, Agg.TotalCount);
+        AssertEquals('distinct handles for 1410', 2, Agg.DistinctHandles);
+        Inc(Found);
+      end
+      else if Agg.Code = DWG_WARN_OWNER_NOT_FOUND then begin
+        AssertEquals('total for 1402', 1, Agg.TotalCount);
+        AssertEquals('distinct handles for 1402', 1, Agg.DistinctHandles);
+        Inc(Found);
+      end;
+    end;
+    AssertEquals('both codes reported', 2, Found);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.FirstSampleIsCapturedAndPreserved;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $42, 'first sample');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $43, 'second');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NOT_FOUND, $44, 'third');
+
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_NOT_FOUND then begin
+        AssertTrue('first sample captured', Agg.HasFirstSample);
+        AssertEquals('first sample handle preserved',
+          Int64($42), Int64(Agg.FirstSample.Handle));
+        AssertEquals('first sample text preserved',
+          'first sample', Agg.FirstSample.Text);
+        Exit;
+      end;
+    end;
+    Fail('no aggregate row for DWG_WARN_REF_NOT_FOUND');
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.ShouldEmitDetailFiresOnceThenSuppresses;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { First occurrence wins the slot, the second is throttled. }
+    AssertTrue('first call emits',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+    AssertFalse('second call suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+    AssertFalse('third call still suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7000));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.ShouldEmitDetailKeysOnCodeAndHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Different handle => fresh slot, not coalesced with the previous one. }
+    AssertTrue('code 1410 handle $7001',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7001));
+    AssertTrue('code 1410 handle $7002 distinct from $7001',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7002));
+    { Same handle, different code => fresh slot. }
+    AssertTrue('code 1402 handle $7001 distinct from code 1410',
+      Ctx.ShouldEmitDetail(DWG_WARN_OWNER_NOT_FOUND, $7001));
+    { Repeat of any one of them is suppressed. }
+    AssertFalse('code 1410 handle $7001 second time suppressed',
+      Ctx.ShouldEmitDetail(DWG_WARN_REF_KIND_MISMATCH, $7001));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.DistinctHandlesIncrementsOnNewHandleOnly;
+var
+  Ctx: TDWGZCADLoadContext;
+  Agg: TDWGImportCodeAggregate;
+  I: Integer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    { Five occurrences split across two handles: distinct=2, total=5. }
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $A0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $B0, '');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_NULL, $B0, '');
+
+    for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+      Agg := Ctx.WarningAggregateAt(I);
+      if Agg.Code = DWG_WARN_REF_NULL then begin
+        AssertEquals('total', 5, Agg.TotalCount);
+        AssertEquals('distinct handles', 2, Agg.DistinctHandles);
+        Exit;
+      end;
+    end;
+    Fail('no aggregate row for DWG_WARN_REF_NULL');
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextWarningAggregateTest.CodeForAttachReasonCoversFallbackReasons;
+begin
+  { Every fallback reason must map to a real diagnostic code so the import
+    side gate uses the same dedup key as the resolver side aggregate. }
+  AssertEquals(DWG_WARN_OWNER_NULL,
+    DWGCodeForAttachReason(arNullOwner));
+  AssertEquals(DWG_WARN_OWNER_NOT_FOUND,
+    DWGCodeForAttachReason(arOwnerNotFound));
+  AssertEquals(DWG_WARN_OWNER_NOT_CONTAINER,
+    DWGCodeForAttachReason(arOwnerNotContainer));
+  AssertEquals(DWG_WARN_OWNER_SELF_CYCLE,
+    DWGCodeForAttachReason(arSelfOwnerCycle));
+  AssertEquals(DWG_WARN_OWNER_CHAIN_CYCLE,
+    DWGCodeForAttachReason(arOwnerChainCycle));
+  AssertEquals(DWG_WARN_OWNER_SKIPPED,
+    DWGCodeForAttachReason(arOwnerSkipped));
+  AssertEquals(DWG_WARN_REF_NULL,
+    DWGCodeForAttachReason(arRefNull));
+  AssertEquals(DWG_WARN_REF_NOT_FOUND,
+    DWGCodeForAttachReason(arRefNotFound));
+  AssertEquals(DWG_WARN_REF_KIND_MISMATCH,
+    DWGCodeForAttachReason(arRefKindMismatch));
+  { Non-fallback reasons return 0 so the caller can guard. }
+  AssertEquals('arResolved has no code', 0,
+    DWGCodeForAttachReason(arResolved));
+  AssertEquals('arPending has no code', 0,
+    DWGCodeForAttachReason(arPending));
+end;
+
+{ ---------- TDWGLoadContextSideFilesTest (Issue #1198 P3) ---------- }
+
+procedure TDWGLoadContextSideFilesTest.SetUp;
+begin
+  inherited;
+  FTempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgsidefiles_' + IntToStr(Random(MaxInt)) + '_' +
+    IntToStr(Random(MaxInt));
+  if not ForceDirectories(FTempDir) then
+    Fail('cannot create temp dir ' + FTempDir);
+end;
+
+procedure TDWGLoadContextSideFilesTest.TearDown;
+var
+  Search: TSearchRec;
+begin
+  if DirectoryExists(FTempDir) then begin
+    if FindFirst(IncludeTrailingPathDelimiter(FTempDir) + '*', faAnyFile, Search) = 0 then
+    try
+      repeat
+        if (Search.Name <> '.') and (Search.Name <> '..') then
+          DeleteFile(IncludeTrailingPathDelimiter(FTempDir) + Search.Name);
+      until FindNext(Search) <> 0;
+    finally
+      FindClose(Search);
+    end;
+    RemoveDir(FTempDir);
+  end;
+  inherited;
+end;
+
+function TDWGLoadContextSideFilesTest.TempPath(const Suffix: String): String;
+begin
+  Result := IncludeTrailingPathDelimiter(FTempDir) + 'unit' + Suffix;
+end;
+
+function TDWGLoadContextSideFilesTest.ReadAllText(const Path: String): String;
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+begin
+  Result := '';
+  Stream := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Bytes, Stream.Size);
+    if Stream.Size > 0 then
+      Stream.ReadBuffer(Bytes[0], Stream.Size);
+    SetLength(Result, Length(Bytes));
+    if Length(Bytes) > 0 then
+      Move(Bytes[0], Result[1], Length(Bytes));
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeFromStringIsCaseInsensitive;
+begin
+  AssertTrue('off',     DWGDiagModeFromString('off')     = dmOff);
+  AssertTrue('OFF',     DWGDiagModeFromString('OFF')     = dmOff);
+  AssertTrue('summary', DWGDiagModeFromString('summary') = dmSummary);
+  AssertTrue('Summary', DWGDiagModeFromString('Summary') = dmSummary);
+  AssertTrue('full',    DWGDiagModeFromString('full')    = dmFull);
+  AssertTrue('trace',   DWGDiagModeFromString('trace')   = dmTrace);
+  AssertTrue('unknown', DWGDiagModeFromString('garble')  = dmOff);
+  AssertTrue('empty',   DWGDiagModeFromString('')        = dmOff);
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeOffWritesNothing;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmOff);
+    AssertEquals('no files', 0, Length(Res.FilesWritten));
+    AssertFalse(FileExists(TempPath('.dwg.summary.txt')));
+    AssertFalse(FileExists(TempPath('.dwg.summary.json')));
+    AssertFalse(FileExists(TempPath('.dwg.handles.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeSummaryWritesTxtAndJson;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmSummary);
+    AssertEquals('two files', 2, Length(Res.FilesWritten));
+    AssertTrue('summary.txt exists', FileExists(TempPath('.dwg.summary.txt')));
+    AssertTrue('summary.json exists', FileExists(TempPath('.dwg.summary.json')));
+    AssertFalse('handles.csv absent', FileExists(TempPath('.dwg.handles.csv')));
+    AssertFalse('refs.csv absent', FileExists(TempPath('.dwg.refs.csv')));
+    AssertFalse('owners.csv absent', FileExists(TempPath('.dwg.owners.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.ModeFullAddsThreeCsvFiles;
+var
+  Ctx: TDWGZCADLoadContext;
+  Res: TDWGSideFileResult;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Res := DWGWriteSideFiles(Ctx, TempPath('.dwg'), dmFull);
+    AssertEquals('five files', 5, Length(Res.FilesWritten));
+    AssertTrue(FileExists(TempPath('.dwg.summary.txt')));
+    AssertTrue(FileExists(TempPath('.dwg.summary.json')));
+    AssertTrue(FileExists(TempPath('.dwg.handles.csv')));
+    AssertTrue(FileExists(TempPath('.dwg.refs.csv')));
+    AssertTrue(FileExists(TempPath('.dwg.owners.csv')));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.HandlesCsvCapturesEveryRegisteredHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 7);
+    Ctx.RegisterShell($20, dokLayer, MakePtr($AA02), 8);
+    Path := TempPath('.dwg.handles.csv');
+    DWGWriteHandlesCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present', Pos('RawIndex;HandleHex;ResolvedKind', Text) > 0);
+    AssertTrue('hex 10 row',  Pos('7;10;dokEntity;', Text) > 0);
+    AssertTrue('hex 20 row',  Pos('8;20;dokLayer;',  Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.RefsCsvCapturesEveryPendingRef;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+  Ent, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ent := MakePtr($AA01);
+    Layer := MakePtr($AA02);
+    Ctx.RegisterShell($10, dokEntity, Ent, 0);
+    Ctx.RegisterShell($20, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Ent, $10, $20, dokLayer, rsLayer, nil);
+    Path := TempPath('.dwg.refs.csv');
+    DWGWriteRefsCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present',
+      Pos('EntityHandle;Slot;RefHandle', Text) > 0);
+    AssertTrue('rsLayer row', Pos('10;rsLayer;20;', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.OwnersCsvCapturesEveryPendingOwner;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+  Ent, Block: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ent := MakePtr($AA01);
+    Block := MakePtr($AA02);
+    Ctx.RegisterShell($10, dokEntity, Ent, 0);
+    Ctx.RegisterShell($20, dokBlockDef, Block, 1);
+    Ctx.QueueOwnerResolve(Ent, $10, $20);
+    Path := TempPath('.dwg.owners.csv');
+    DWGWriteOwnersCsv(Ctx, Path);
+    Text := ReadAllText(Path);
+    AssertTrue('header present',
+      Pos('EntityHandle;OwnerHandle;Candidates', Text) > 0);
+    AssertTrue('owner row', Pos('10;20;', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SummaryTxtIncludesWarningsByCode;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $10, 'kindmiss-a');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $11, 'kindmiss-b');
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_OWNER_NOT_FOUND, $10, 'ownermissing');
+    Path := TempPath('.dwg.summary.txt');
+    DWGWriteSummaryTxt(Ctx, TempPath('.dwg'), Path);
+    Text := ReadAllText(Path);
+    AssertTrue('handles_total line', Pos('handles_total: 1', Text) > 0);
+    AssertTrue('1410 reported', Pos('1410 (ref kind mismatch)', Text) > 0);
+    AssertTrue('1402 reported', Pos('1402 (owner not found)', Text) > 0);
+    AssertTrue('kind histogram', Pos('dokEntity: 1', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SummaryJsonIsParseableShape;
+var
+  Ctx: TDWGZCADLoadContext;
+  Path, Text: String;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+    Ctx.RaiseWarning(wsWarning, DWG_WARN_REF_KIND_MISMATCH, $10, 'kindmiss');
+    Path := TempPath('.dwg.summary.json');
+    DWGWriteSummaryJson(Ctx, TempPath('.dwg'), Path);
+    Text := ReadAllText(Path);
+    { Shape only; the writer is not a JSON-spec-compliant emitter and we
+      do not want to hard-code field order. Just verify the obvious
+      hooks exist so a downstream script can do its own structured read. }
+    AssertTrue('top brace',  Pos('{', Text) > 0);
+    AssertTrue('file key',   Pos('"file":', Text) > 0);
+    AssertTrue('kinds key',  Pos('"kinds":', Text) > 0);
+    AssertTrue('warnings',   Pos('"warnings":', Text) > 0);
+    AssertTrue('1410 entry', Pos('"1410": 1', Text) > 0);
+    AssertTrue('end brace',  Pos('}', Text) > 0);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextSideFilesTest.SourcePathEmptyFallsBackToCwd;
+begin
+  { Helper-level test: an empty source path must not crash; the writer
+    falls back to a generic "dwg.<suffix>" name. We don't write the file
+    here (cwd is not under our control) but the path constructor result
+    is well-defined and tested directly. }
+  AssertEquals('dwg.summary.txt', DWGSideFilePath('', '.summary.txt'));
+  AssertEquals('/x/foo.dwg.summary.txt',
+    DWGSideFilePath('/x/foo.dwg', '.summary.txt'));
+end;
+
+{ ---------- TDWGLoadContextFixedTypeTest ---------- }
+
+function ReadAllTextFileP2(const Path: String): String;
+var
+  Stream: TFileStream;
+  Bytes: TBytes;
+begin
+  Result := '';
+  Stream := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Bytes, Stream.Size);
+    if Stream.Size > 0 then
+      Stream.ReadBuffer(Bytes[0], Stream.Size);
+    SetLength(Result, Length(Bytes));
+    if Length(Bytes) > 0 then
+      Move(Bytes[0], Result[1], Length(Bytes));
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.RegisterShellInitializesFixedTypeToUnused;
+var
+  Map: TDWGZCADHandleMap;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // Mapper-side RegisterShell calls (pre-Phase 1, tests) must not leave the
+  // FixedType field uninitialized — DWG_TYPE_UNUSED (0) is the sentinel that
+  // means "raw scan did not see this handle".
+  Map := TDWGZCADHandleMap.Create;
+  try
+    AssertTrue(Map.RegisterShell($10, dokEntity, MakePtr($A1), 0, msCreated));
+    AssertTrue(Map.TryGet($10, Entry));
+    AssertEquals('fresh shell starts at DWG_TYPE_UNUSED',
+      Ord(DWG_TYPE_UNUSED), Ord(Entry.FixedType));
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeIsMutableAfterRegisterShell;
+var
+  Map: TDWGZCADHandleMap;
+  Mut: PDWGZCADHandleEntry;
+  Entry: TDWGZCADHandleEntry;
+begin
+  // ScanRawObjects writes FixedType through TryGetMutable — the test mirrors
+  // exactly that sequence so a future refactor that loses the mutator surface
+  // breaks here instead of silently leaving FixedType at DWG_TYPE_UNUSED.
+  Map := TDWGZCADHandleMap.Create;
+  try
+    AssertTrue(Map.RegisterShell($20, dokUnknown, nil, 5, msCreated));
+    AssertTrue(Map.TryGetMutable($20, Mut));
+    AssertNotNull(Mut);
+    Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Map.TryGet($20, Entry));
+    AssertEquals(Ord(DWG_TYPE_LINE), Ord(Entry.FixedType));
+  finally
+    Map.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeToTextReturnsSymbolicNameForKnownEnum;
+begin
+  // RTTI path: GetEnumName must produce the declared identifier so the
+  // histogram is readable as 'DWG_TYPE_LINE' rather than '0x13'.
+  AssertEquals('DWG_TYPE_LINE',   DWGFixedTypeToText(DWG_TYPE_LINE));
+  AssertEquals('DWG_TYPE_CIRCLE', DWGFixedTypeToText(DWG_TYPE_CIRCLE));
+  AssertEquals('DWG_TYPE_UNUSED', DWGFixedTypeToText(DWG_TYPE_UNUSED));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.FixedTypeToTextFallsBackToHexForUndeclaredValue;
+var
+  Text: String;
+begin
+  // DWG_OBJECT_TYPE has gaps ($36, $37 are not declared identifiers). Casting
+  // a gap integer through the enum yields a value GetEnumName cannot name —
+  // the helper must still produce a non-empty 'DWG_TYPE_$NN' fallback so the
+  // histogram does not lose the row.
+  Text := DWGFixedTypeToText(DWG_OBJECT_TYPE($36));
+  AssertTrue('non-empty fallback', Length(Text) > 0);
+  AssertTrue('hex marker present', Pos('36', Text) > 0);
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeBucketsByDistinctFixedType;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Counters: TDWGFixedTypeCounterArray;
+  I, LineBucket, CircleBucket: Integer;
+begin
+  // Two handles share DWG_TYPE_LINE, one is DWG_TYPE_CIRCLE — the counter
+  // array must contain exactly two buckets with counts 2 and 1.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($A1), 0);
+    Ctx.RegisterShell($11, dokEntity, MakePtr($A2), 1);
+    Ctx.RegisterShell($12, dokEntity, MakePtr($A3), 2);
+    AssertTrue(Ctx.Handles.TryGetMutable($10, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($11, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($12, Mut)); Mut^.FixedType := DWG_TYPE_CIRCLE;
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals('two distinct fixedtypes', 2, Length(Counters));
+    LineBucket := -1;
+    CircleBucket := -1;
+    for I := 0 to High(Counters) do begin
+      if Counters[I].FixedType = DWG_TYPE_LINE then LineBucket := I;
+      if Counters[I].FixedType = DWG_TYPE_CIRCLE then CircleBucket := I;
+    end;
+    AssertTrue('line bucket present', LineBucket >= 0);
+    AssertTrue('circle bucket present', CircleBucket >= 0);
+    AssertEquals('line count', 2, Counters[LineBucket].Count);
+    AssertEquals('circle count', 1, Counters[CircleBucket].Count);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeOrdersByDescendingCount;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Counters: TDWGFixedTypeCounterArray;
+begin
+  // 3 LINE, 1 CIRCLE — LINE must appear first.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($A1), 0);
+    Ctx.RegisterShell($11, dokEntity, MakePtr($A2), 1);
+    Ctx.RegisterShell($12, dokEntity, MakePtr($A3), 2);
+    Ctx.RegisterShell($13, dokEntity, MakePtr($A4), 3);
+    AssertTrue(Ctx.Handles.TryGetMutable($10, Mut)); Mut^.FixedType := DWG_TYPE_CIRCLE;
+    AssertTrue(Ctx.Handles.TryGetMutable($11, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($12, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    AssertTrue(Ctx.Handles.TryGetMutable($13, Mut)); Mut^.FixedType := DWG_TYPE_LINE;
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals(2, Length(Counters));
+    AssertEquals('first bucket is the highest count',
+      Ord(DWG_TYPE_LINE), Ord(Counters[0].FixedType));
+    AssertEquals(3, Counters[0].Count);
+    AssertEquals(Ord(DWG_TYPE_CIRCLE), Ord(Counters[1].FixedType));
+    AssertEquals(1, Counters[1].Count);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.CountByFixedTypeIsEmptyForEmptyContext;
+var
+  Ctx: TDWGZCADLoadContext;
+  Counters: TDWGFixedTypeCounterArray;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DWGCountByFixedType(Ctx, Counters);
+    AssertEquals('no handles -> no buckets', 0, Length(Counters));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HasHandlerForReturnsFalseForUnregisteredType;
+begin
+  // The test unit deliberately does NOT pull entity mappers into its uses
+  // clause, so DWG_TYPE_LINE has no handler registered against the shared
+  // parser singleton.
+  AssertFalse('DWG_TYPE_LINE is unregistered in this test unit',
+    HasHandlerFor(DWG_TYPE_LINE));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HasHandlerForReturnsTrueForRegisteredControlObject;
+begin
+  // uzedwgcontrolobjects.initialization registers DWG_TYPE_SEQEND through
+  // RegisterDWGEntityHandler — the lookup must report it as known.
+  AssertTrue('DWG_TYPE_SEQEND is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_SEQEND));
+  AssertTrue('DWG_TYPE_DICTIONARY is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_DICTIONARY));
+  AssertTrue('DWG_TYPE_LAYER_CONTROL is registered by uzedwgcontrolobjects',
+    HasHandlerFor(DWG_TYPE_LAYER_CONTROL));
+end;
+
+procedure TDWGLoadContextFixedTypeTest.HandlesCsvIncludesFixedTypeColumn;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_csv_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 'h.csv';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 7);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteHandlesCsv(Ctx, Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('header has FixedType column',
+        Pos('FixedType', Text) > 0);
+      AssertTrue('row carries DWG_TYPE_LINE',
+        Pos(';DWG_TYPE_LINE', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.SummaryTxtIncludesFixedTypeSection;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_txt_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 's.txt';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteSummaryTxt(Ctx, '/x/foo.dwg', Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('# Handles by fixedtype section',
+        Pos('# Handles by fixedtype', Text) > 0);
+      AssertTrue('row carries DWG_TYPE_LINE: 1',
+        Pos('DWG_TYPE_LINE: 1', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
+procedure TDWGLoadContextFixedTypeTest.SummaryJsonIncludesFixedTypesField;
+var
+  Ctx: TDWGZCADLoadContext;
+  Mut: PDWGZCADHandleEntry;
+  Path, Text, TempDir: String;
+begin
+  TempDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'dwgtest_p2_json_' + IntToStr(Random(MaxInt));
+  ForceDirectories(TempDir);
+  Path := IncludeTrailingPathDelimiter(TempDir) + 's.json';
+  try
+    Ctx := TDWGZCADLoadContext.Create;
+    try
+      Ctx.RegisterShell($10, dokEntity, MakePtr($AA01), 0);
+      AssertTrue(Ctx.Handles.TryGetMutable($10, Mut));
+      Mut^.FixedType := DWG_TYPE_LINE;
+      DWGWriteSummaryJson(Ctx, '/x/foo.dwg', Path);
+      Text := ReadAllTextFileP2(Path);
+      AssertTrue('fixed_types key', Pos('"fixed_types":', Text) > 0);
+      AssertTrue('DWG_TYPE_LINE entry',
+        Pos('"DWG_TYPE_LINE": 1', Text) > 0);
+    finally
+      Ctx.Free;
+    end;
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    RemoveDir(TempDir);
+  end;
+end;
+
+{ ---------- TDWGLoadContextPendingIndexTest ---------- }
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupFindsAppendedItem;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  Entity: Pointer;
+begin
+  // Baseline: a single Append + lookup must return the same row.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Ctx.QueueOwnerResolve(Entity, $10, $20);
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull('lookup finds queued owner', Pending);
+    AssertEquals('entity round-trips through the index',
+      PtrInt(Entity), PtrInt(Pending^.Entity));
+    AssertEquals('owner handle preserved', Int64($20),
+      Int64(Pending^.OwnerHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupReturnsNilForMissingHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.QueueOwnerResolve(MakePtr($E1), $10, $20);
+    AssertNull('missing handle yields nil',
+      Ctx.PendingOwners.ItemByEntityHandle($DEAD));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupReturnsFirstItemForRepeatedHandle;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  EntityA, EntityB: Pointer;
+begin
+  // Legacy FindByEntityHandle returned the first match. Production code
+  // (resolver) relies on this so it can attribute the queued row to the
+  // first Append even when a mapper re-queues the same handle later.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    EntityA := MakePtr($A1);
+    EntityB := MakePtr($B2);
+    Ctx.QueueOwnerResolve(EntityA, $10, $100);
+    Ctx.QueueOwnerResolve(EntityB, $10, $200);
+    AssertEquals('two rows accumulated', 2, Ctx.PendingOwners.Count);
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull(Pending);
+    AssertEquals('first-match contract preserved',
+      PtrInt(EntityA), PtrInt(Pending^.Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerLookupHandlesOutOfOrderInsertion;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  E10, E5, E20, E1: Pointer;
+begin
+  // The sorted index must stay correct regardless of the handle order
+  // entries arrive in. Binary search depends on the array being sorted.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    E10 := MakePtr($10A);
+    E5  := MakePtr($5A);
+    E20 := MakePtr($20A);
+    E1  := MakePtr($1A);
+    Ctx.QueueOwnerResolve(E10, $10, $F0);
+    Ctx.QueueOwnerResolve(E5,  $5,  $F0);
+    Ctx.QueueOwnerResolve(E20, $20, $F0);
+    Ctx.QueueOwnerResolve(E1,  $1,  $F0);
+
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($1);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E1), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($5);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E5), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($10);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E10), PtrInt(Pending^.Entity));
+    Pending := Ctx.PendingOwners.ItemByEntityHandle($20);
+    AssertNotNull(Pending); AssertEquals(PtrInt(E20), PtrInt(Pending^.Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.OwnerClearResetsBothItemsAndIndex;
+var
+  List: TDWGZCADPendingOwnerList;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  // Clear must empty both FItems and FIndex - if it forgot the index, a
+  // subsequent Append followed by a lookup would chase a stale ItemIdx.
+  List := TDWGZCADPendingOwnerList.Create;
+  try
+    Handles[0] := $F0;
+    List.AppendCandidates(MakePtr($1), $10, Handles, 1, nil, -1);
+    AssertEquals(1, List.Count);
+    AssertNotNull(List.ItemByEntityHandle($10));
+    List.Clear;
+    AssertEquals('items cleared', 0, List.Count);
+    AssertNull('index cleared', List.ItemByEntityHandle($10));
+    // Re-populate with a different handle and verify lookups still resolve.
+    Handles[0] := $F1;
+    List.AppendCandidates(MakePtr($2), $20, Handles, 1, nil, -1);
+    AssertNull('old handle still missing', List.ItemByEntityHandle($10));
+    AssertNotNull('new handle reachable', List.ItemByEntityHandle($20));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupFindsAppendedItem;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer := MakePtr($A1);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Pending := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull('lookup finds queued ref', Pending);
+    AssertEquals('ref handle preserved',
+      Int64($20), Int64(Pending^.RefHandle));
+    AssertEquals('slot preserved',
+      Ord(rsLayer), Ord(Pending^.Slot));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupReturnsNilForMissingKey;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ctx.RegisterShell($10, dokEntity, MakePtr($E1), 0);
+    Ctx.QueueRefResolve(MakePtr($E1), $10, 0, dokLayer, rsLayer, nil);
+    AssertNull('missing handle yields nil',
+      Ctx.PendingRefs.ItemByEntityAndSlot($DEAD, rsLayer));
+    AssertNull('right handle, missing slot yields nil',
+      Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLineType));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupKeysSeparatelyOnSlot;
+var
+  Ctx: TDWGZCADLoadContext;
+  PendingL, PendingT: PDWGZCADPendingRef;
+  Entity, Layer, LType: Pointer;
+begin
+  // The same entity handle with two different ref slots must land in two
+  // independent index entries. Looking up by slot must return the right one.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer  := MakePtr($A1);
+    LType  := MakePtr($B1);
+    Ctx.RegisterShell($10, dokEntity,   Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,    Layer,  1);
+    Ctx.RegisterShell($30, dokLineType, LType,  2);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer,    rsLayer,    nil);
+    Ctx.QueueRefResolve(Entity, $10, $30, dokLineType, rsLineType, nil);
+    AssertEquals('two distinct (handle, slot) rows',
+      2, Ctx.PendingRefs.Count);
+    PendingL := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    PendingT := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLineType);
+    AssertNotNull(PendingL);
+    AssertNotNull(PendingT);
+    AssertEquals('layer slot points at layer handle',
+      Int64($20), Int64(PendingL^.RefHandle));
+    AssertEquals('linetype slot points at linetype handle',
+      Int64($30), Int64(PendingT^.RefHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefAppendOrReplaceReusesExistingItemIndex;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, LayerA, LayerB: Pointer;
+begin
+  // Re-queue for the same (handle, slot) replaces the row in place. The
+  // index entry must still point at the same FItems position.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    LayerA := MakePtr($A1);
+    LayerB := MakePtr($A2);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,  LayerA, 1);
+    Ctx.RegisterShell($21, dokLayer,  LayerB, 2);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Ctx.QueueRefResolve(Entity, $10, $21, dokLayer, rsLayer, nil);
+    AssertEquals('replace - no new row', 1, Ctx.PendingRefs.Count);
+    Pending := Ctx.PendingRefs.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals('latest queue wins',
+      Int64($21), Int64(Pending^.RefHandle));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefAppendOrReplaceDoesNotGrowIndexForReplace;
+var
+  List: TDWGZCADPendingRefList;
+  Idx1, Idx2: Integer;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  // The replace branch must return the existing item index and must not
+  // append a stale index entry. Verified through Count + the returned index.
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $20;
+    Idx1 := List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $21;
+    Idx2 := List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals('same item slot reused', Idx1, Idx2);
+    AssertEquals('no extra items appended', 1, List.Count);
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefClearResetsBothItemsAndIndex;
+var
+  List: TDWGZCADPendingRefList;
+  Handles: array[0..0] of TDWGZCADHandle;
+begin
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $20;
+    List.AppendOrReplaceCandidates(MakePtr($E1), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals(1, List.Count);
+    AssertNotNull(List.ItemByEntityAndSlot($10, rsLayer));
+    List.Clear;
+    AssertEquals('items cleared', 0, List.Count);
+    AssertNull('index cleared', List.ItemByEntityAndSlot($10, rsLayer));
+    // Re-populate with a different (handle, slot) and verify it's reachable.
+    Handles[0] := $21;
+    List.AppendOrReplaceCandidates(MakePtr($E2), $11, Handles, 1,
+      dokLineType, rsLineType, nil, False);
+    AssertNull('old key still missing',
+      List.ItemByEntityAndSlot($10, rsLayer));
+    AssertNotNull('new key reachable',
+      List.ItemByEntityAndSlot($11, rsLineType));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.RefLookupHandlesOutOfOrderInsertion;
+var
+  List: TDWGZCADPendingRefList;
+  Handles: array[0..0] of TDWGZCADHandle;
+  Pending: PDWGZCADPendingRef;
+begin
+  // The composite (Handle, Slot) index must keep entries sorted regardless
+  // of insertion order. Insert four rows in shuffled order and verify each
+  // is reachable.
+  List := TDWGZCADPendingRefList.Create;
+  try
+    Handles[0] := $100;
+    List.AppendOrReplaceCandidates(MakePtr($1), $50, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $101;
+    List.AppendOrReplaceCandidates(MakePtr($2), $10, Handles, 1,
+      dokLineType, rsLineType, nil, False);
+    Handles[0] := $102;
+    List.AppendOrReplaceCandidates(MakePtr($3), $30, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    Handles[0] := $103;
+    List.AppendOrReplaceCandidates(MakePtr($4), $10, Handles, 1,
+      dokLayer, rsLayer, nil, False);
+    AssertEquals(4, List.Count);
+
+    Pending := List.ItemByEntityAndSlot($10, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($103), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($10, rsLineType);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($101), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($30, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($102), Int64(Pending^.RefHandle));
+    Pending := List.ItemByEntityAndSlot($50, rsLayer);
+    AssertNotNull(Pending);
+    AssertEquals(Int64($100), Int64(Pending^.RefHandle));
+  finally
+    List.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueOwnerResolveIntegrationKeepsItemReachable;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingOwner;
+  Entity, Block: Pointer;
+begin
+  // End-to-end: queue the owner, run ResolveOwners, then look up the row
+  // via FindPendingOwner. The indexed lookup must still hand back the row
+  // updated by the resolver.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Block  := MakePtr($B1);
+    Ctx.RegisterShell($10, dokEntity,   Entity, 0);
+    Ctx.RegisterShell($20, dokBlockDef, Block,  1);
+    Ctx.QueueOwnerResolve(Entity, $10, $20);
+    Ctx.ResolveOwners;
+    Pending := Ctx.FindPendingOwner($10);
+    AssertNotNull('row reachable via host-level lookup', Pending);
+    AssertEquals('owner attached by resolver',
+      PtrInt(Block), PtrInt(Pending^.AttachedOwner));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextPendingIndexTest.QueueRefResolveIntegrationKeepsItemReachable;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Entity, Layer: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($E1);
+    Layer  := MakePtr($A1);
+    Ctx.RegisterShell($10, dokEntity, Entity, 0);
+    Ctx.RegisterShell($20, dokLayer,  Layer,  1);
+    Ctx.QueueRefResolve(Entity, $10, $20, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+    Pending := Ctx.FindPendingRef($10, rsLayer);
+    AssertNotNull('row reachable via host-level lookup', Pending);
+    AssertEquals('ref attached by resolver',
+      PtrInt(Layer), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+{ ---------- TDWGLoadContextTextStyleNameTest (Issue #1198 P6) ---------- }
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameUsesFontFileForShapeStyles;
+begin
+  // Shape styles (used inside LTYPE patterns) carry their font file as the
+  // identity; the rule is preserved from the legacy code so existing linetype
+  // shapes keep resolving to the same pstyle after the refactor.
+  AssertEquals('shape with fontfile uses fontfile as base name',
+    'ltshp.shx',
+    DWGTextStyleBaseName('Custom', 'ltshp.shx', True, $42));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameUsesDecodedNameWhenPresent;
+begin
+  // Real text styles (IsShape=False) prefer their decoded name. Handle is
+  // available but irrelevant on this path — we only fall back to it when the
+  // name decoded to an empty string.
+  AssertEquals('non-empty name wins over handle fallback',
+    'MyStyle',
+    DWGTextStyleBaseName('MyStyle', 'arial.ttf', False, $99));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameFallsBackToHandleHexWhenNameEmpty;
+begin
+  // Empty decoded name + non-zero handle: the legacy code lost the original
+  // identity by renaming to 'Standard'. The new rule keeps the handle hex
+  // so distinct DWG entries with empty names stay distinct in ZCAD.
+  AssertEquals('empty name falls back to handle-derived placeholder',
+    'dwg_2A',
+    DWGTextStyleBaseName('', '', False, $2A));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.BaseNameFallsBackToStandardWhenHandleZero;
+begin
+  // Defensive guard: when there is no handle either, behaviour reverts to
+  // the legacy 'Standard' fallback so synthetic test fixtures or future
+  // handle-less callers stay deterministic.
+  AssertEquals('zero handle still uses Standard',
+    'Standard',
+    DWGTextStyleBaseName('', '', False, 0));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.UniquifyAppendsHandleHexSuffix;
+begin
+  // Collision rename uses the handle hex as a suffix so re-importing the
+  // same DWG produces the same name (stable across runs).
+  AssertEquals('uniquify appends handle hex suffix',
+    'Roman_dwg10',
+    DWGTextStyleUniquifyName('Roman', $10));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.UniquifyHandlesZeroHandleDefensively;
+begin
+  // Handle=0 should still uniquify (callers must never get the same name
+  // back as the base) — we emit '_dwg0'.
+  AssertEquals('zero handle uniquify emits _dwg0 suffix',
+    'A_dwg0',
+    DWGTextStyleUniquifyName('A', 0));
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForUnregisteredPointer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // No other handle has registered this pointer yet, so the collision
+  // detector must return False (caller proceeds with original name).
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($AA);
+    AssertFalse('empty registry reports no collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $100));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForSameHandleReregistration;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // A handle re-registering itself (e.g. mapper invoked twice for the same
+  // STYLE record) must NOT be reported as a collision — that would force a
+  // spurious rename. The check filters on Entry.Handle <> ANewHandle.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($BB);
+    AssertTrue('seed registration succeeds',
+      Ctx.RegisterShell($100, dokTextStyle, Ptr, 0));
+    AssertFalse('same handle does not count as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $100));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsTrueWhenAnotherHandleClaimsPointer;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // Two distinct handles cannot share the same pstyle — this is the trigger
+  // for the uniquify path in AddTextStyle. The detector must spot it.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($CC);
+    AssertTrue('seed registration for first handle',
+      Ctx.RegisterShell($200, dokTextStyle, Ptr, 0));
+    AssertTrue('second handle on same pstyle reported as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $201));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedIgnoresEntriesOfOtherKinds;
+var
+  Ctx: TDWGZCADLoadContext;
+  Ptr: Pointer;
+begin
+  // The detector must filter on Entry.Kind = dokTextStyle. A different kind
+  // pointing at the same address (theoretically rare but possible in tests)
+  // must NOT trip the uniquify path, otherwise unrelated tables would force
+  // textstyle renames.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Ptr := MakePtr($DD);
+    AssertTrue('seed dokLayer registration on shared ptr',
+      Ctx.RegisterShell($300, dokLayer, Ptr, 0));
+    AssertFalse('non-textstyle entry does not count as collision',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, Ptr, $301));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextTextStyleNameTest.PtrOwnedReturnsFalseForNilContextOrPtr;
+var
+  Ctx: TDWGZCADLoadContext;
+begin
+  // Defensive guards: AddTextStyle calls the detector unconditionally when
+  // the load context is wired in. Both a nil context and a nil candidate
+  // pointer must short-circuit to False so the caller proceeds normally.
+  AssertFalse('nil context short-circuits to false',
+    DWGTextStylePtrOwnedByAnotherHandle(nil, MakePtr($EE), $400));
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    AssertFalse('nil candidate pointer short-circuits to false',
+      DWGTextStylePtrOwnedByAnotherHandle(Ctx, nil, $400));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
     TDWGLoadContextTextStyleRefTest, TDWGLoadContextStage6Test,
-    TDWGLoadContextSilentFallbackTest]);
+    TDWGLoadContextSilentFallbackTest,
+    TDWGLoadContextWarningAggregateTest,
+    TDWGLoadContextSideFilesTest,
+    TDWGLoadContextFixedTypeTest,
+    TDWGLoadContextPendingIndexTest,
+    TDWGLoadContextTextStyleNameTest]);
 
 end.

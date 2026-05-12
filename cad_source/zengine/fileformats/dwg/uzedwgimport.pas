@@ -42,9 +42,12 @@ uses
   uzeTypes,
   uzeffmanager,
   uzedwgtypes,
+  uzedwgdiagnostics,
   uzedwgloadcontext,
   uzedwgrawscan,
   uzedwgblockreserve,
+  uzedwgsidefiles,
+  uzedwgentityregistry,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -58,7 +61,8 @@ uses
   raw-scan over the LibreDWG object array that pre-registers handle -> raw
   index entries so duplicate detection happens once and mappers can upgrade
   placeholders instead of fighting the duplicate-handle warning. }
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 
@@ -74,11 +78,14 @@ procedure DWGCaptureActiveVPortView(const Props: TDWGViewProps);
 
 { Stage 5 helper extracted from uzefflibredwg2ents.pas: register the entity
   shell + pending owner + layer/linetype/textstyle refs in one call. The
-  WantTextStyle / TextStyleHandle pair is set by TEXT/MTEXT mappers and
-  ignored by everything else. }
+  scalar TextStyleHandle overload is preserved for old callers; TEXT/MTEXT
+  mappers pass the raw BITCODE_H so alternate decoded handles survive. }
 procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
   WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind = dokEntity);
+procedure DWGRegisterEntityShellWithTextStyleRef(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object; TextStyleRef: BITCODE_H;
   AKind: TDWGZCADObjectKind = dokEntity);
 
 implementation
@@ -100,6 +107,10 @@ var
   LoadHeaderViewProps: TDWGViewProps;
   LoadHasActiveVPortViewProps: Boolean = False;
   LoadActiveVPortViewProps: TDWGViewProps;
+  { Issue #1198 P3: source DWG path threaded through Begin/EndDWGImport so
+    the side-file writer can drop *.summary.txt / *.handles.csv next to it.
+    Empty string means "no path was supplied" (legacy callers, unit tests). }
+  LoadSourcePath: String = '';
 
 function DWGDefaultTextStyleProp: GDBTextStyleProp;
 begin
@@ -405,11 +416,68 @@ begin
     '), zoom=', FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
 end;
 
+{ Issue #1198 P4: locate the DWG handle for an entity pointer by walking
+  the pending-owner list. Used by the attach callbacks to feed
+  LoadCtx.ShouldEmitDetail so the dedup key matches what the resolver
+  put into the warning aggregate. Returns 0 if the entity isn't
+  queued (legacy callers and Stage 2 fallback paths). }
+function DWGOwnerEntityHandleForLog(Entity: Pointer): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingOwner;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingOwners.Count - 1 do begin
+    Pending := LoadCtx.PendingOwners.ItemAt(I);
+    if Pending^.Entity = Entity then
+      Exit(Pending^.EntityHandle);
+  end;
+end;
+
+function DWGRefEntityHandleForLog(Entity: Pointer;
+  Slot: TDWGZCADRefSlot): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingRef;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingRefs.Count - 1 do begin
+    Pending := LoadCtx.PendingRefs.ItemAt(I);
+    if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then
+      Exit(Pending^.EntityHandle);
+  end;
+end;
+
+{ Issue #1198 P4: gate a per-entity fallback log line through the
+  warning list's dedup tracker. Returns True if the caller should emit
+  the zDebugLn line (first occurrence for this Code+Handle pair) and
+  False otherwise — the resolver has already booked the occurrence in
+  the aggregate, so the EndDWGImport summary still reports it. When
+  there is no active load context (legacy callers) the gate stays open
+  so the line is always written. }
+function DWGShouldEmitFallbackDetail(Reason: TDWGAttachReason;
+  EntityHandle: QWord): Boolean;
+var
+  Code: Integer;
+begin
+  if LoadCtx = nil then
+    Exit(True);
+  Code := DWGCodeForAttachReason(Reason);
+  if Code = 0 then
+    Exit(True);
+  Result := LoadCtx.ShouldEmitDetail(Code, EntityHandle);
+end;
+
 procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
   Reason: TDWGAttachReason; Data: Pointer);
 var
   pobj: PGDBObjEntity;
   newowner: PGDBObjGenericSubEntry;
+  EntityHandle: QWord;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -417,12 +485,15 @@ begin
   if (pobj = nil) or (Owner = nil) then
     Exit;
 
+  EntityHandle := DWGOwnerEntityHandleForLog(Entity);
+
   // INSERT-owned ATTRIB entities are appended after the INSERT has built its
   // block geometry. Adding them now would be undone by BuildGeometry clearing
   // ConstObjArray from the block definition.
   if DWGPointerHasKind(Owner, dokBlockInsert) then begin
     pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
-    if Reason <> arResolved then
+    if (Reason <> arResolved) and
+       DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
       zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
         ' deferred under INSERT via fallback (',
         DWGAttachReasonToText(Reason), ')']);
@@ -432,7 +503,8 @@ begin
   newowner := PGDBObjGenericSubEntry(Owner);
 
   newowner^.AddMi(PGDBObjSubordinated(pobj));
-  if Reason <> arResolved then
+  if (Reason <> arResolved) and
+     DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
     zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
       ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
 
@@ -493,7 +565,9 @@ var
   pDimStyle: PGDBDimStyle;
   pBlockDef: PGDBObjBlockdef;
   pInsert: PGDBObjBlockInsert;
+  EntityHandle: QWord;
 begin
+  EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
   case Slot of
     rsLayer:
       begin
@@ -501,7 +575,8 @@ begin
         if pobj = nil then
           Exit;
         pobj^.vp.Layer := PGDBLayerProp(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' layer fallback (', DWGAttachReasonToText(Reason), ') -> ',
@@ -513,7 +588,8 @@ begin
         if pobj = nil then
           Exit;
         pobj^.vp.LineType := PGDBLtypeProp(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' linetype fallback (', DWGAttachReasonToText(Reason),
@@ -526,11 +602,13 @@ begin
         if player = nil then
           Exit;
         player^.LT := PGDBLtypeProp(Ref);
-        if Reason <> arResolved then
-          zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
-            DWGLTypeNameForLog(PGDBLtypeProp(Ref))])
+        if Reason <> arResolved then begin
+          if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
+            zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
+              ' ', DWGRefHandlesForLog(Entity, Slot),
+              ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
+              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+        end
         else
           zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
             ' ', DWGRefHandlesForLog(Entity, Slot),
@@ -548,7 +626,8 @@ begin
         // whether the target supports the slot).
         if (pobj^.GetObjType = GDBtextID) or (pobj^.GetObjType = GDBMTextID) then
           PGDBObjText(pobj)^.TXTStyle := PGDBTextStyle(Ref);
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' textstyle fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -569,7 +648,8 @@ begin
           else
             PGDBObjDimension(pobj)^.PDimStyle := pDimStyle;
         end;
-        if Reason <> arResolved then
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
             ' ', DWGRefHandlesForLog(Entity, Slot),
             ' dimstyle fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -589,7 +669,7 @@ begin
             zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block ref resolves to model/paper space; using empty block'])
-          else
+          else if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
             zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
               ' ', DWGRefHandlesForLog(Entity, Slot),
               ' block fallback (', DWGAttachReasonToText(Reason), ')']);
@@ -606,7 +686,8 @@ begin
   end;
 end;
 
-procedure BeginDWGImport(var ZContext: TZDrawingContext);
+procedure BeginDWGImport(var ZContext: TZDrawingContext;
+  const ASourcePath: String = '');
 var
   ByLayerLT: PGDBLtypeProp;
   SysLayer: PGDBLayerProp;
@@ -619,6 +700,7 @@ begin
   end;
   LoadCtx := TDWGZCADLoadContext.Create;
   LoadDrawing := ZContext.PDrawing;
+  LoadSourcePath := ASourcePath;
   LoadHasCurrentLayerHandle := False;
   LoadCurrentLayerHandle := 0;
   LoadHasCurrentLineTypeHandle := False;
@@ -719,6 +801,107 @@ begin
     ', handles_total=', LoadCtx.Handles.Count]);
 end;
 
+{ Issue #1198 P4: emit one summary line per diagnostic code observed
+  during the import. The first occurrence of each (Code, Handle) pair
+  was already written to the log by the resolver / attach callbacks;
+  this routine adds the "and N more like this" aggregate so the
+  bottom of the import log doubles as the warning-by-code histogram. }
+procedure DWGEmitWarningSummary(Ctx: TDWGZCADLoadContext);
+var
+  I: Integer;
+  Agg: TDWGImportCodeAggregate;
+  Suppressed: Integer;
+begin
+  if Ctx = nil then
+    Exit;
+  for I := 0 to Ctx.WarningAggregateCount - 1 do begin
+    Agg := Ctx.WarningAggregateAt(I);
+    if Agg.TotalCount <= 0 then
+      Continue;
+    Suppressed := Agg.TotalCount - Agg.DistinctHandles;
+    if Suppressed < 0 then
+      Suppressed := 0;
+    zDebugLn(['{WH}DWG warning summary code=', Agg.Code,
+      ' (', DWGWarningCodeToShortName(Agg.Code), '): ',
+      Agg.TotalCount, ' occurrence(s) across ',
+      Agg.DistinctHandles, ' handle(s); ',
+      Suppressed, ' duplicate(s) suppressed from main log']);
+  end;
+end;
+
+{ Issue #1198 P2 (TZ §5): emit the fixedtype histogram after Phase 1 has
+  populated the handle map. The cross-check the audit asks for is exactly
+  "this is what arrived in the file, here is which fixedtypes had a registered
+  handler and which did not". The log is gated on the diagnostic mode so the
+  default load stays quiet; explicit summary/full/trace requests print one
+  line per non-empty fixedtype bucket plus a tail showing how many fixedtypes
+  hit the no-handler branch. }
+procedure DWGEmitFixedTypeHistogram(Ctx: TDWGZCADLoadContext);
+var
+  FixedTypes: TDWGFixedTypeCounterArray;
+  I: Integer;
+  Mode: TDWGDiagMode;
+  Total, Unhandled, UnhandledFT: Integer;
+  HasH: Boolean;
+begin
+  if Ctx = nil then
+    Exit;
+  Mode := DWGDiagModeFromEnv;
+  if Mode = dmOff then
+    Exit;
+  DWGCountByFixedType(Ctx, FixedTypes);
+  Total := 0;
+  Unhandled := 0;
+  UnhandledFT := 0;
+  for I := 0 to High(FixedTypes) do begin
+    HasH := HasHandlerFor(FixedTypes[I].FixedType);
+    Inc(Total, FixedTypes[I].Count);
+    if not HasH then begin
+      Inc(Unhandled, FixedTypes[I].Count);
+      Inc(UnhandledFT);
+    end;
+    zDebugLn(['{WH}DWG fixedtype ',
+      DWGFixedTypeToText(FixedTypes[I].FixedType),
+      ': count=', FixedTypes[I].Count,
+      ', has_handler=', HasH]);
+  end;
+  zDebugLn(['{WH}DWG fixedtype histogram: ', Length(FixedTypes),
+    ' distinct type(s), ', Total, ' handle(s); ',
+    UnhandledFT, ' type(s) without a registered handler (',
+    Unhandled, ' handle(s))']);
+end;
+
+{ Issue #1198 P3: emit per-DWG diagnostic side-files when the user has
+  opted in via ZCAD_DWG_DIAG=summary|full|trace. Runs after the resolver
+  has fully populated PendingOwners / PendingRefs so the CSVs reflect the
+  final attach state. Failures during write must not abort the import:
+  the side-file writer is strictly diagnostic, so we swallow exceptions
+  and log a single warning instead. }
+procedure DWGEmitSideFiles(Ctx: TDWGZCADLoadContext; const SourcePath: String);
+var
+  Mode: TDWGDiagMode;
+  Res: TDWGSideFileResult;
+  I: Integer;
+begin
+  if Ctx = nil then
+    Exit;
+  Mode := DWGDiagModeFromEnv;
+  if Mode = dmOff then
+    Exit;
+  try
+    Res := DWGWriteSideFiles(Ctx, SourcePath, Mode);
+    zDebugLn(['{WH}DWG diagnostic side-files (mode=',
+      DWGDiagModeToString(Mode), '): ',
+      Length(Res.FilesWritten), ' file(s) written']);
+    for I := 0 to High(Res.FilesWritten) do
+      zDebugLn(['{WH}  ', Res.FilesWritten[I]]);
+  except
+    on E: Exception do
+      zDebugLn(['{WH}DWG side-files: failed to write (',
+        E.ClassName, '): ', E.Message]);
+  end;
+end;
+
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 begin
   if LoadCtx = nil then
@@ -749,12 +932,16 @@ begin
       ', unknown_objects=', LoadCtx.UnknownObjects,
       ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
       ', warnings=', LoadCtx.WarningCount]);
+    DWGEmitWarningSummary(LoadCtx);
+    DWGEmitFixedTypeHistogram(LoadCtx);
+    DWGEmitSideFiles(LoadCtx, LoadSourcePath);
     // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
     // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
     FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
   finally
     FreeAndNil(LoadCtx);
     LoadDrawing := nil;
+    LoadSourcePath := '';
     LoadHasCurrentLayerHandle := False;
     LoadCurrentLayerHandle := 0;
     LoadHasCurrentLineTypeHandle := False;
@@ -769,12 +956,13 @@ begin
   end;
 end;
 
-procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
+procedure DWGRegisterEntityShellWithTextStyleCandidates(pobj: PGDBObjEntity;
   var DWGObject: Dwg_Object;
-  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  WantTextStyle: Boolean; const TextStyleCandidates: TDWGRefHandleCandidates;
   AKind: TDWGZCADObjectKind);
 var
-  EntityHandle, OwnerHandle, LayerHandle, LtypeHandle: QWord;
+  EntityHandle, OwnerHandle: QWord;
+  OwnerCandidates, LayerCandidates, LtypeCandidates: TDWGRefHandleCandidates;
   LtypeKind: TDWGEntityLineTypeKind;
   LtypeFallback: PGDBLtypeProp;
   LtypeInline: Boolean;
@@ -784,15 +972,19 @@ begin
   if LoadCtx = nil then
     Exit;
   EntityHandle := DWGObjectHandleValue(DWGObject);
-  if not DWGObjectOwnerHandleValue(DWGObject, OwnerHandle) then
+  if DWGObjectOwnerHandleCandidatesValue(DWGObject, OwnerCandidates) then
+    OwnerHandle := OwnerCandidates.Values[0]
+  else begin
+    FillChar(OwnerCandidates, SizeOf(OwnerCandidates), 0);
     OwnerHandle := 0;
+  end;
   // Issue #1120: when entmode is 1 (paper) or 2 (model) the owner is implicit
   // and DWGObjectOwnerHandleValue tries Dwg^.mspace_block / pspace_block,
   // header_vars.BLOCK_RECORD_*SPACE and block_control.*_space in turn. When
   // all three paths fail OwnerHandle stays 0, the resolver attaches via
   // arNullOwner and the segments only render under the fallback root. Log a
   // hint so future regressions surface in the build log instead of looking
-  // like a generic "{WHM} ... attached via fallback (null owner)".
+  // like a generic "{WH} ... attached via fallback (null owner)".
   EntMode := -1;
   if (DWGObject.supertype = DWG_SUPERTYPE_ENTITY) and
      (DWGObject.tio.entity <> nil) then
@@ -805,7 +997,8 @@ begin
       ' block_control.*_space and ownerhandle all empty)']);
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, AKind, pobj, -1);
-  LoadCtx.QueueOwnerResolve(pobj, EntityHandle, OwnerHandle);
+  LoadCtx.QueueOwnerResolveCandidates(pobj, EntityHandle,
+    OwnerCandidates.Values, OwnerCandidates.Count);
 
   if DWGEntityCommonPropsValue(DWGObject, CommonProps) then begin
     pobj^.vp.Color := CommonProps.ColorIndex;
@@ -816,11 +1009,12 @@ begin
         ' is marked invisible in the DWG common entity flags']);
   end;
 
-  if not DWGEntityLayerHandleValue(DWGObject, LayerHandle) then
-    LayerHandle := 0;
-  if DWGEntityLineTypeRefValue(DWGObject, LtypeKind, LtypeHandle) then begin
+  if not DWGEntityLayerHandleCandidatesValue(DWGObject, LayerCandidates) then
+    FillChar(LayerCandidates, SizeOf(LayerCandidates), 0);
+  if DWGEntityLineTypeRefCandidatesValue(DWGObject, LtypeKind,
+    LtypeCandidates) then begin
     if LtypeKind <> dltHandle then begin
-      LtypeHandle := 0;
+      FillChar(LtypeCandidates, SizeOf(LtypeCandidates), 0);
       LtypeFallback := DWGSystemLineTypeForKind(LtypeKind);
       LtypeInline := LtypeFallback <> nil;
     end else
@@ -829,7 +1023,7 @@ begin
       LtypeInline := False;
     end;
   end else begin
-    LtypeHandle := 0;
+    FillChar(LtypeCandidates, SizeOf(LtypeCandidates), 0);
     LtypeKind := dltMissing;
     LtypeFallback := nil;
     LtypeInline := False;
@@ -846,13 +1040,43 @@ begin
   //    ', lineweight=', CommonProps.LineWeight,
   //    ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
   //    ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
-  LoadCtx.QueueRefResolve(pobj, EntityHandle, LayerHandle,
-    dokLayer, rsLayer, nil);
-  LoadCtx.QueueRefResolve(pobj, EntityHandle, LtypeHandle,
-    dokLineType, rsLineType, LtypeFallback, LtypeInline);
+  LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LayerCandidates.Values,
+    LayerCandidates.Count, dokLayer, rsLayer, nil);
+  LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LtypeCandidates.Values,
+    LtypeCandidates.Count, dokLineType, rsLineType, LtypeFallback,
+    LtypeInline);
   if WantTextStyle then
-    LoadCtx.QueueRefResolve(pobj, EntityHandle, TextStyleHandle,
+    LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle,
+      TextStyleCandidates.Values, TextStyleCandidates.Count,
       dokTextStyle, rsTextStyle, nil);
+end;
+
+procedure DWGRegisterEntityShell(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object;
+  WantTextStyle: Boolean; TextStyleHandle: QWord;
+  AKind: TDWGZCADObjectKind);
+var
+  TextStyleCandidates: TDWGRefHandleCandidates;
+begin
+  FillChar(TextStyleCandidates, SizeOf(TextStyleCandidates), 0);
+  if TextStyleHandle <> 0 then begin
+    TextStyleCandidates.Count := 1;
+    TextStyleCandidates.Values[0] := TextStyleHandle;
+  end;
+  DWGRegisterEntityShellWithTextStyleCandidates(pobj, DWGObject,
+    WantTextStyle, TextStyleCandidates, AKind);
+end;
+
+procedure DWGRegisterEntityShellWithTextStyleRef(pobj: PGDBObjEntity;
+  var DWGObject: Dwg_Object; TextStyleRef: BITCODE_H;
+  AKind: TDWGZCADObjectKind);
+var
+  TextStyleCandidates: TDWGRefHandleCandidates;
+begin
+  if not DWGRefHandleCandidatesValue(TextStyleRef, TextStyleCandidates) then
+    FillChar(TextStyleCandidates, SizeOf(TextStyleCandidates), 0);
+  DWGRegisterEntityShellWithTextStyleCandidates(pobj, DWGObject, True,
+    TextStyleCandidates, AKind);
 end;
 
 initialization

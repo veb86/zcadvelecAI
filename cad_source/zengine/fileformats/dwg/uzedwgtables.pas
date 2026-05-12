@@ -39,6 +39,9 @@ uses
 
 implementation
 
+uses
+  uzedwgstylename;
+
 type
   PDwg_Object_DIMSTYLE = ^Dwg_Object_DIMSTYLE;
 
@@ -180,7 +183,8 @@ var
   player: PGDBLayerProp;
   name: string;
   LayerProps: TDWGLayerVisualProps;
-  Handle, LtHandle: QWord;
+  Handle: QWord;
+  LtCandidates: TDWGRefHandleCandidates;
   ContinuousLT: PGDBLtypeProp;
   Ctx: TDWGZCADLoadContext;
 begin
@@ -224,15 +228,16 @@ begin
     // have been registered. Issue #1122: this uses a layer-specific ref slot
     // because the target pointer is PGDBLayerProp, not PGDBObjEntity.
     if (player <> nil) and (Handle <> 0) then begin
-      if not DWGLayerLineTypeHandleValue(PDWGLayer, LtHandle) then
-        LtHandle := 0;
+      if not DWGLayerLineTypeHandleCandidatesValue(PDWGLayer,
+        LtCandidates) then
+        FillChar(LtCandidates, SizeOf(LtCandidates), 0);
       ContinuousLT := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.getAddres(
         'Continuous'));
       if ContinuousLT = nil then
         ContinuousLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(
           TLTContinous);
-      Ctx.QueueRefResolve(player, Handle, LtHandle,
-        dokLineType, rsLayerLineType, ContinuousLT);
+      Ctx.QueueRefResolveCandidates(player, Handle, LtCandidates.Values,
+        LtCandidates.Count, dokLineType, rsLayerLineType, ContinuousLT);
     end;
   end;
 end;
@@ -283,10 +288,11 @@ var
   pstyle: PGDBTextStyle;
   Props: TDWGTextStyleProps;
   TextProp: GDBTextStyleProp;
-  name, StyleName, FontFile, FontFamily: string;
+  name, BaseName, StyleName, FontFile, FontFamily: string;
   Handle: QWord;
   Ctx: TDWGZCADLoadContext;
   UsedInLType: Boolean;
+  WasRenamed: Boolean;
 begin
   if not DWGTextStylePropsValue(PDWGStyle, DWGContext.DWGVer,
     DWGContext.DWGCodePage, Props) then
@@ -298,19 +304,38 @@ begin
   name := DWGDecodedTextForZCAD(name);
   FontFile := DWGDecodedTextForZCAD(FontFile);
   UsedInLType := Props.IsShape;
-  if UsedInLType and (FontFile <> '') then
-    StyleName := FontFile
-  else if name <> '' then
-    StyleName := name
-  else
-    StyleName := 'Standard';
+  Handle := DWGObjectHandleValue(DWGObject);
+  // P6: pick the base name first (without forcing 'Standard' when the decode
+  // produced no usable string — fall back to handle-derived 'dwg_<hex>').
+  BaseName := DWGTextStyleBaseName(name, FontFile, UsedInLType, Handle);
+  StyleName := BaseName;
+  // Track whether we ended up substituting a synthetic name so the warning
+  // logged below carries useful context (caller may have asked for "Standard"
+  // and got a different name, or had a real name that collided).
+  WasRenamed := (name = '') and (not (UsedInLType and (FontFile <> '')))
+                and (Handle <> 0);
 
   TextProp.size := Props.TextSize;
   TextProp.wfactor := Props.WidthFactor;
   TextProp.oblique := Props.ObliqueAngle;
 
+  Ctx := GetLoadCtx;
   pstyle := ZContext.PDrawing^.TextStyleTable.FindStyle(StyleName,
     UsedInLType);
+  // P6: if the name we picked already exists and its pstyle is owned by a
+  // different DWG handle, the legacy code would either reuse it (and let
+  // the next RegisterShell fail with DWG_WARN_DUPLICATE_HANDLE — issue
+  // #1198 §4.4) or, in TLOLoad mode, overwrite the other handle's props in
+  // place. Both behaviours lose information. We instead bump the name to
+  // '<base>_dwg<hex>' so the second handle gets its own pstyle.
+  if (pstyle <> nil) and (Handle <> 0) and
+     DWGTextStylePtrOwnedByAnotherHandle(Ctx, pstyle, Handle) then begin
+    StyleName := DWGTextStyleUniquifyName(BaseName, Handle);
+    WasRenamed := True;
+    pstyle := ZContext.PDrawing^.TextStyleTable.FindStyle(StyleName,
+      UsedInLType);
+  end;
+
   if pstyle <> nil then begin
     if ZContext.LoadMode = TLOLoad then
       pstyle := ZContext.PDrawing^.TextStyleTable.setstyle(StyleName,
@@ -319,11 +344,12 @@ begin
     pstyle := ZContext.PDrawing^.TextStyleTable.addstyle(StyleName,
       FontFile, FontFamily, TextProp, UsedInLType);
 
-  Ctx := GetLoadCtx;
   if Ctx <> nil then begin
-    Handle := DWGObjectHandleValue(DWGObject);
     if Handle <> 0 then
       Ctx.RegisterShell(Handle, dokTextStyle, pstyle, -1);
+    if WasRenamed then
+      Ctx.RaiseWarning(wsWarning, DWG_WARN_TEXTSTYLE_RENAMED, Handle,
+        'textstyle renamed: "' + name + '" -> "' + StyleName + '"');
     if (pstyle <> nil) and (not UsedInLType) and
        ((Ctx.FallbackTextStyle = nil) or
         (CompareText(StyleName, 'Standard') = 0)) then

@@ -58,6 +58,13 @@ procedure RegisterDWGObjectHandler(const DOT: DWG_OBJECT_TYPE;
   parseDwg_Data. }
 function GetDWGParser: TZCADDWGParser;
 
+{ Issue #1198 P2 (TZ §5): introspection used by the diagnostic histogram so it
+  can flag fixedtypes that arrived in the file but have no registered handler.
+  Looks up the DOT in the parser's internal dispatch table; result is True
+  iff at least one entity- or object-handler is registered for that DOT. The
+  query is cheap (THashmap.GetValue) — the histogram calls it once per bucket. }
+function HasHandlerFor(const DOT: DWG_OBJECT_TYPE): Boolean;
+
 implementation
 
 var
@@ -80,6 +87,17 @@ procedure RegisterDWGObjectHandler(const DOT: DWG_OBJECT_TYPE;
   const H: TDWGEntityHandler);
 begin
   GetDWGParser.RegisterDWGObjectLoadProc(DOT, H);
+end;
+
+function HasHandlerFor(const DOT: DWG_OBJECT_TYPE): Boolean;
+var
+  Parser: TZCADDWGParser;
+  dod: TZCADDWGParser.TDWGObjectData;
+begin
+  Parser := GetDWGParser;
+  if Parser.DWGObj2LPDict = nil then
+    Exit(False);
+  Result := Parser.DWGObj2LPDict.GetValue(DOT, dod);
 end;
 
 initialization
