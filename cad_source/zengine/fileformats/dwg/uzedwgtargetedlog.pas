@@ -71,6 +71,8 @@ type
     { Проверка вхождения. Активный «горячий путь» в hook'ах загрузчика. }
     function Contains(AHandle: TDWGZCADHandle): Boolean;
     function Count: Integer;
+    { Доступ к handle'у по индексу. Используется для вывода списка в лог. }
+    function ValueAt(Index: Integer): TDWGZCADHandle;
   end;
 
 { Перечитать список целевых handle'ов из окружения. Вызывается в начале
@@ -180,6 +182,13 @@ begin
   Result := FCount;
 end;
 
+function TDWGTargetedHandleSet.ValueAt(Index: Integer): TDWGZCADHandle;
+begin
+  if (Index < 0) or (Index >= FCount) then
+    Exit(0);
+  Result := FValues[Index];
+end;
+
 { ---------- Парсер списка handle'ов ---------- }
 
 { Проверка одного символа на принадлежность шестнадцатеричной цифре.
@@ -279,16 +288,22 @@ end;
 procedure TargetedLogRefreshFromEnv;
 var
   Raw: string;
+  I: Integer;
 begin
   TargetSet.Clear;
   Raw := GetEnvironmentVariable(DWG_TARGET_HANDLES_ENV_VAR);
   if Raw <> '' then
     ParseTargetList(Raw, TargetSet);
   TargetSetInitialized := True;
-  if TargetSet.Count > 0 then
+  if TargetSet.Count > 0 then begin
     programlog.LogOutFormatStr(
-      'uzedwgtargetedlog: tracking %d DWG handle(s) from %s',
-      [TargetSet.Count, DWG_TARGET_HANDLES_ENV_VAR], LM_Info);
+      'uzedwgtargetedlog: tracking %d DWG handle(s) from %s=''%s''',
+      [TargetSet.Count, DWG_TARGET_HANDLES_ENV_VAR, Raw], LM_Info);
+    for I := 0 to TargetSet.Count - 1 do
+      programlog.LogOutFormatStr(
+        'uzedwgtargetedlog:   [%d] handle=%s',
+        [I, IntToHex(TargetSet.ValueAt(I), 1)], LM_Info);
+  end;
 end;
 
 procedure TargetedLogClear;

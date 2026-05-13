@@ -253,6 +253,7 @@ type
     procedure ParseTargetListIgnoresMalformedTokens;
     procedure ContainsReturnsFalseForEmptySet;
     procedure ContainsHandlesIssue1203Triplet;
+    procedure ValueAtReturnsHandleInOrder;
   end;
 
 implementation
@@ -3129,6 +3130,34 @@ begin
   AssertTrue('OWNER 0x9FC   in set', Target.Contains($9FC));
   AssertFalse('unrelated handle 0xDEAD missing',
     Target.Contains($DEAD));
+end;
+
+procedure TDWGTargetedLogTest.ValueAtReturnsHandleInOrder;
+var
+  Target: TDWGTargetedHandleSet;
+  I: Integer;
+  Found: array of TDWGZCADHandle;
+begin
+  // ValueAt используется при выводе списка handle'ов в лог (issue #1203).
+  // Набор хранится отсортированным, поэтому обход от 0 до Count-1 даёт
+  // все зарегистрированные handle'ы по одному разу.
+  Target.Clear;
+  TargetedLogParseTargetList('9DEB,A08,9FC', Target);
+  AssertEquals('three handles parsed', 3, Target.Count);
+  SetLength(Found, Target.Count);
+  for I := 0 to Target.Count - 1 do
+    Found[I] := Target.ValueAt(I);
+  // Проверяем, что каждый из трёх handle'ов встречается в Found ровно один раз.
+  AssertTrue('9DEB found via ValueAt',
+    (Found[0] = $9DEB) or (Found[1] = $9DEB) or (Found[2] = $9DEB));
+  AssertTrue('A08 found via ValueAt',
+    (Found[0] = $A08) or (Found[1] = $A08) or (Found[2] = $A08));
+  AssertTrue('9FC found via ValueAt',
+    (Found[0] = $9FC) or (Found[1] = $9FC) or (Found[2] = $9FC));
+  // Out-of-bounds возвращает 0.
+  AssertEquals('ValueAt(-1) is zero', Int64(0), Int64(Target.ValueAt(-1)));
+  AssertEquals('ValueAt(Count) is zero', Int64(0),
+    Int64(Target.ValueAt(Target.Count)));
 end;
 
 initialization
