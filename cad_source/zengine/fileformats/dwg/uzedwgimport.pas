@@ -48,6 +48,7 @@ uses
   uzedwgblockreserve,
   uzedwgsidefiles,
   uzedwgentityregistry,
+  uzedwgtargetedlog,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -487,6 +488,17 @@ begin
 
   EntityHandle := DWGOwnerEntityHandleForLog(Entity);
 
+  // Issue #1203: точечный лог факта присоединения сущности к владельцу.
+  // Срабатывает, когда целевой handle добрался до фазы attach (т.е. shell
+  // зарегистрирован, владелец разрешён). Если этого сообщения нет в логе —
+  // объект был отсеян раньше: либо его не было в Phase 1 сканере, либо
+  // mapper не зарегистрировал shell, либо resolver не нашёл владельца.
+  if TargetedLogHandle(EntityHandle) then
+    TargetedLog('attach', EntityHandle,
+      Format('reason=%s owner_is_insert=%s',
+        [DWGAttachReasonToText(Reason),
+         BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]));
+
   // INSERT-owned ATTRIB entities are appended after the INSERT has built its
   // block geometry. Adding them now would be undone by BuildGeometry clearing
   // ConstObjArray from the block definition.
@@ -568,6 +580,14 @@ var
   EntityHandle: QWord;
 begin
   EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
+  // Issue #1203: точечный лог разрешения ссылки. Полезен, чтобы понять,
+  // на какой слот (layer/linetype/textstyle/dimstyle/blockdef) ушёл
+  // fallback и в каком состоянии (Reason).
+  if TargetedLogHandle(EntityHandle) then
+    TargetedLog('attach-ref', EntityHandle,
+      Format('slot=%d reason=%s ref=%s',
+        [Ord(Slot), DWGAttachReasonToText(Reason),
+         BoolToStr(Ref <> nil, True)]));
   case Slot of
     rsLayer:
       begin
@@ -698,6 +718,11 @@ begin
     zDebugLn(['{WHM}DWG load context already active; force-resetting']);
     FreeAndNil(LoadCtx);
   end;
+  // Issue #1203: перечитываем список целевых handle'ов из переменной окружения
+  // в самом начале импорта. Если ZCAD_DWG_TARGET_HANDLES пуста — последующие
+  // вызовы TargetedLogXxx будут no-op'ами; если задана — каждое прохождение
+  // целевого handle через ключевые точки конвейера будет залогировано.
+  TargetedLogRefreshFromEnv;
   LoadCtx := TDWGZCADLoadContext.Create;
   LoadDrawing := ZContext.PDrawing;
   LoadSourcePath := ASourcePath;
@@ -997,6 +1022,11 @@ begin
       ' block_control.*_space and ownerhandle all empty)']);
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, AKind, pobj, -1);
+  // Issue #1203: точечный лог регистрации shell-а сущности. Срабатывает,
+  // если EntityHandle или OwnerHandle входят в список целевых.
+  TargetedLogPair('register', EntityHandle, OwnerHandle,
+    Format('fixedtype=%d kind=%d owner_candidates=%d entmode=%d',
+      [Ord(DWGObject.fixedtype), Ord(AKind), OwnerCandidates.Count, EntMode]));
   LoadCtx.QueueOwnerResolveCandidates(pobj, EntityHandle,
     OwnerCandidates.Values, OwnerCandidates.Count);
 

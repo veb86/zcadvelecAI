@@ -32,6 +32,7 @@ uses
   uzedwgentityregistry,
   uzeffmanager,
   uzedwgtypes,
+  uzedwgtargetedlog,
   uzedwgimport;
 
 implementation
@@ -50,10 +51,16 @@ begin
   // entities to attach to the model-space root before their block-def owner
   // was visible.
   LineHandle := DWGObjectHandleValue(DWGObject);
+  // Issue #1203: точечный лог входа в mapper LINE. Содержит длину сегмента,
+  // чтобы было понятно, скипнется ли объект из-за нулевой геометрии.
+  TargetedLog('parse-line', LineHandle, '');
   DWGCopyLineEndpoints(PLine^, Endpoints);
   if DWGLineEndpointsAreZeroLength(Endpoints) then begin
     zDebugLn(['{WH}DWG LINE ', IntToHex(LineHandle, 1),
       ' skipped: zero-length geometry']);
+    // Issue #1203: явно отметим в целевом логе, что объект отсеян здесь —
+    // частая причина «исчезновения» вырожденных LINE-сущностей.
+    TargetedLog('skip-zero-line', LineHandle, 'zero-length geometry');
     if GetLoadCtx <> nil then
       GetLoadCtx.MarkShellState(LineHandle, msSkipped);
     Exit;

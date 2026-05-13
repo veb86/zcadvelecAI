@@ -25,6 +25,7 @@ uses
   uzeentsubordinated,
   uzedwgloadcontext,
   uzedwgentityregistry,
+  uzedwgtargetedlog,
   uzeffmanager,
   uzedwgimport;
 
@@ -56,6 +57,11 @@ var
   Props: TDWGMTextProps;
   uniValue: UnicodeString;
 begin
+  // Issue #1203: точечный лог входа в mapper MTEXT. Если этого сообщения
+  // нет в логе для интересующего handle — значит, parseDwg_Data не дошёл
+  // до MTEXT обработчика (LibreDWG не отдал объект или fixedtype не
+  // соответствует DWG_TYPE_MTEXT).
+  TargetedLog('parse-mtext', DWGObjectHandleValue(DWGObject), '');
   pobj := AllocAndInitMText(nil);
   DWGCopyMTextProps(PMText^, DWGContext.DWGVer, DWGContext.DWGCodePage,
     Props);
