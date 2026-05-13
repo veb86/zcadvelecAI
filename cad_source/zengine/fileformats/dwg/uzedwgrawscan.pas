@@ -63,7 +63,86 @@ type
   (this keeps unit tests that pre-seed the registry working without change). }
 procedure ScanRawObjects(var Raw: Dwg_Data; Ctx: TDWGZCADLoadContext);
 
+{ Issue #1206: format one raw LibreDWG object for trace logging. The line
+  includes both hex and decimal handles so values copied from dwgread JSON
+  can be searched directly in the ZCAD log. }
+function DWGRawObjectTraceLine(const Obj: Dwg_Object;
+  AIndex: Integer): String;
+
 implementation
+
+uses
+  uzbLogIntf,
+  uzedwgsidefiles;
+
+function DWGHandleDecText(Value: TDWGZCADHandle): String;
+var
+  Digit: Integer;
+begin
+  if Value = 0 then
+    Exit('0');
+  Result := '';
+  while Value > 0 do begin
+    Digit := Integer(Value mod 10);
+    Result := Chr(Ord('0') + Digit) + Result;
+    Value := Value div 10;
+  end;
+end;
+
+function DWGHandleTraceText(Value: TDWGZCADHandle): String;
+begin
+  if Value = 0 then
+    Result := '0/0'
+  else
+    Result := IntToHex(Value, 1) + '/' + DWGHandleDecText(Value);
+end;
+
+function DWGHandleCandidatesTraceText(
+  const Candidates: TDWGZCADRefHandleCandidates): String;
+var
+  I: Integer;
+begin
+  if Candidates.Count <= 0 then
+    Exit('(none)');
+  Result := '';
+  for I := 0 to Candidates.Count - 1 do begin
+    if I > 0 then
+      Result := Result + ',';
+    Result := Result + DWGHandleTraceText(Candidates.Values[I]);
+  end;
+end;
+
+function DWGRawObjectEntMode(const Obj: Dwg_Object): Integer;
+begin
+  Result := -1;
+  if (Obj.supertype = DWG_SUPERTYPE_ENTITY) and
+     (Obj.tio.entity <> nil) then
+    Result := Obj.tio.entity^.entmode;
+end;
+
+function DWGRawObjectTraceLine(const Obj: Dwg_Object;
+  AIndex: Integer): String;
+var
+  Handle: TDWGZCADHandle;
+  OwnerCandidates: TDWGZCADRefHandleCandidates;
+  OwnerText: String;
+begin
+  Handle := DWGObjectHandleValue(Obj);
+  if DWGObjectOwnerHandleCandidatesValue(Obj, OwnerCandidates) then
+    OwnerText := DWGHandleCandidatesTraceText(OwnerCandidates)
+  else
+    OwnerText := '(none)';
+  Result :=
+    'DWG raw object trace: index=' + IntToStr(AIndex) +
+    ' handle_hex=' + IntToHex(Handle, 1) +
+    ' handle_dec=' + DWGHandleDecText(Handle) +
+    ' supertype=' + IntToStr(Ord(Obj.supertype)) +
+    ' fixedtype=' + DWGFixedTypeToText(Obj.fixedtype) +
+    ' fixedtype_ord=' + IntToStr(Ord(Obj.fixedtype)) +
+    ' has_handler=' + BoolToStr(HasHandlerFor(Obj.fixedtype), True) +
+    ' entmode=' + IntToStr(DWGRawObjectEntMode(Obj)) +
+    ' owner_candidates=' + OwnerText;
+end;
 
 procedure ScanRawObjects(var Raw: Dwg_Data; Ctx: TDWGZCADLoadContext);
 var
@@ -71,16 +150,23 @@ var
   Handle: TDWGZCADHandle;
   Existing: TDWGZCADHandleEntry;
   MutEntry: PDWGZCADHandleEntry;
+  TraceRawObjects: Boolean;
 begin
   if Ctx = nil then
     Exit;
   if Raw.num_objects = 0 then
     Exit;
+  TraceRawObjects := DWGDiagModeFromEnv = dmTrace;
   // Walking the array via &object[i] mirrors parseDwg_Data so any pointer
   // arithmetic mistake in the binding would surface in both places at once.
   I := 0;
   while I < Raw.num_objects do begin
     Handle := DWGObjectHandleValue(Raw.&object[I]);
+    // Issue #1206: optional full raw-object trace. This logs every object
+    // LibreDWG returned before the loader filters handle=0 or missing mapper
+    // cases, so it can prove whether a dwgread handle reached ZCAD at all.
+    if TraceRawObjects then
+      zDebugLn(['{WH}', DWGRawObjectTraceLine(Raw.&object[I], Integer(I))]);
     // Handle 0 is reserved for the model-space root (registered in
     // BeginDWGImport) and for raw entries LibreDWG could not decode. Skipping
     // them here keeps the duplicate detector from firing on every truncated

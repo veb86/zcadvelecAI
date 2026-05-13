@@ -19,8 +19,7 @@
     - off     : do nothing (default)
     - summary : <dwg>.summary.txt + <dwg>.summary.json
     - full    : summary + <dwg>.handles.csv / refs.csv / owners.csv
-    - trace   : full + per-call ref candidate trace (placeholder; the actual
-                trace lines are emitted by the resolver when enabled)
+    - trace   : full + per-raw-object scan trace in the main log
 
   The writer is RAM-friendly: it iterates the load context lists directly
   and streams to disk; nothing is staged in memory beyond a few hundred
