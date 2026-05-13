@@ -16,11 +16,12 @@ type
     procedure EmptyRefReturnsFalse;
     procedure AbsoluteRefWinsOverHandleref;
     procedure HandlerefIsFallbackWhenAbsoluteRefIsZero;
-    procedure ResolvedObjectHandleWinsOverScalarRefs;
-    procedure RefHandleCandidatesKeepScalarFallbacks;
+    procedure AbsoluteRefWinsOverResolvedObjectHandle;
+    procedure RefHandleCandidatesPreferScalarHandles;
     procedure ObjectHandleValueReadsRawHandle;
+    procedure ObjectHandleNormalizeUsesObjectRefAbsoluteRefs;
     procedure ObjectOwnerHandleEntityReadsOwnerRef;
-    procedure ObjectOwnerHandleCandidatesKeepScalarFallbacks;
+    procedure ObjectOwnerHandleCandidatesPreferScalarHandles;
     procedure ObjectOwnerHandleObjectReadsOwnerRef;
     procedure ObjectOwnerHandleNilTioReturnsFalse;
     // Issue #1118: entmode-aware owner resolution. When LibreDWG sets
@@ -275,7 +276,7 @@ begin
   AssertEquals(Int64($33), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.ResolvedObjectHandleWinsOverScalarRefs;
+procedure TFPDWGProcHandleTest.AbsoluteRefWinsOverResolvedObjectHandle;
 var
   RawRef: Dwg_Object_Ref;
   Target: Dwg_Object;
@@ -283,16 +284,16 @@ var
 begin
   FillChar(RawRef, SizeOf(RawRef), 0);
   FillChar(Target, SizeOf(Target), 0);
-  Target.handle.value := $100A;
+  Target.handle.value := $325E;
   RawRef.obj := @Target;
-  RawRef.absolute_ref := $100B;
-  RawRef.handleref.value := $100B;
+  RawRef.absolute_ref := $A325E;
+  RawRef.handleref.value := $A325E;
 
   AssertTrue(DWGRefHandleValue(@RawRef, Value));
-  AssertEquals(Int64($100A), Int64(Value));
+  AssertEquals(Int64($A325E), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.RefHandleCandidatesKeepScalarFallbacks;
+procedure TFPDWGProcHandleTest.RefHandleCandidatesPreferScalarHandles;
 var
   RawRef: Dwg_Object_Ref;
   Target: Dwg_Object;
@@ -308,11 +309,11 @@ begin
 
   AssertTrue(DWGRefHandleCandidatesValue(@RawRef, Candidates));
   AssertEquals(2, Candidates.Count);
-  AssertEquals(Int64($100A), Int64(Candidates.Values[0]));
-  AssertEquals(Int64($5D), Int64(Candidates.Values[1]));
+  AssertEquals(Int64($5D), Int64(Candidates.Values[0]));
+  AssertEquals(Int64($100A), Int64(Candidates.Values[1]));
   AssertTrue(DWGRefHandleValue(@RawRef, Value));
-  AssertEquals('single-value helper keeps existing precedence',
-    Int64($100A), Int64(Value));
+  AssertEquals('single-value helper prefers scalar handle',
+    Int64($5D), Int64(Value));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectHandleValueReadsRawHandle;
@@ -323,6 +324,44 @@ begin
   Obj.handle.value := $ABCDEF;
 
   AssertEquals(Int64($ABCDEF), Int64(DWGObjectHandleValue(Obj)));
+end;
+
+procedure TFPDWGProcHandleTest.ObjectHandleNormalizeUsesObjectRefAbsoluteRefs;
+var
+  Raw: Dwg_Data;
+  Objects: array[0..1] of Dwg_Object;
+  Refs: array[0..1] of Dwg_Object_Ref;
+  RefPtrs: array[0..1] of PDwg_Object_Ref;
+begin
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Refs, SizeOf(Refs), 0);
+
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+  Raw.num_object_refs := Length(RefPtrs);
+  Raw.object_ref := @RefPtrs[0];
+
+  Objects[0].index := 0;
+  Objects[0].parent := @Raw;
+  Objects[0].handle.value := $325E;
+  Objects[1].index := 1;
+  Objects[1].parent := @Raw;
+  Objects[1].handle.value := $325E;
+
+  Refs[0].obj := @Objects[0];
+  Refs[0].absolute_ref := $325E;
+  Refs[1].obj := @Objects[1];
+  Refs[1].absolute_ref := $A325E;
+  RefPtrs[0] := @Refs[0];
+  RefPtrs[1] := @Refs[1];
+
+  DWGNormalizeObjectHandles(Raw);
+
+  AssertEquals('first object keeps low handle',
+    Int64($325E), Int64(DWGObjectHandleValue(Objects[0])));
+  AssertEquals('second object recovers full handle from object_ref',
+    Int64($A325E), Int64(DWGObjectHandleValue(Objects[1])));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntityReadsOwnerRef;
@@ -344,7 +383,7 @@ begin
   AssertEquals(Int64($40), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.ObjectOwnerHandleCandidatesKeepScalarFallbacks;
+procedure TFPDWGProcHandleTest.ObjectOwnerHandleCandidatesPreferScalarHandles;
 var
   Obj, Target: Dwg_Object;
   Ent: Dwg_Object_Entity;
@@ -367,11 +406,11 @@ begin
 
   AssertTrue(DWGObjectOwnerHandleCandidatesValue(Obj, Candidates));
   AssertEquals(2, Candidates.Count);
-  AssertEquals(Int64($61), Int64(Candidates.Values[0]));
-  AssertEquals(Int64($62), Int64(Candidates.Values[1]));
+  AssertEquals(Int64($62), Int64(Candidates.Values[0]));
+  AssertEquals(Int64($61), Int64(Candidates.Values[1]));
   AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
-  AssertEquals('single-value owner helper keeps existing precedence',
-    Int64($61), Int64(Value));
+  AssertEquals('single-value owner helper prefers scalar handle',
+    Int64($62), Int64(Value));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectOwnerHandleObjectReadsOwnerRef;

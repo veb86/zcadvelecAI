@@ -137,6 +137,12 @@ type
 { Object handle: the stable QWord identifier the import context indexes by. }
 function DWGObjectHandleValue(const Obj: Dwg_Object): QWord;
 
+{ Normalize Dwg_Object.handle.value from LibreDWG's resolved object-ref tables.
+  Some decoded files expose only the low bits in the object record while
+  absolute_ref keeps the full DXF handle; import phases call this once before
+  scanning/dispatch so duplicate detection and mapper logs use the full key. }
+procedure DWGNormalizeObjectHandles(var Raw: Dwg_Data);
+
 { Owner handle on a Dwg_Object. Returns False when the object has no owner
   (typical for top-level objects). The actual lookup goes through
   DWGRefHandleValue so a present-but-zero ownerhandle is treated as missing.
@@ -164,10 +170,11 @@ function DWGObjectOwnerHandleCandidatesValue(const Obj: Dwg_Object;
   out Candidates: TDWGRefHandleCandidates): Boolean;
 
 { Generic BITCODE_H decoder: returns False when the ref is nil and no usable
-  handle can be recovered. LibreDWG may already have resolved the reference
-  to an object pointer; when it has, the pointed object's own handle is the
-  most reliable identifier. Fall back to absolute_ref, then handleref.value
-  for unresolved or soft-pointer refs. }
+  handle can be recovered. LibreDWG documents absolute_ref as the DXF/global
+  handle, so it is preferred before the resolved object's raw handle. This is
+  important for partial/legacy bindings where Dwg_Object.handle.value may be
+  truncated to the low bits while the Dwg_Object_Ref still carries the full
+  absolute handle. Fall back to the resolved object, then handleref.value. }
 function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
 function DWGRefHandleCandidatesValue(Ref: BITCODE_H;
   out Candidates: TDWGRefHandleCandidates): Boolean;
@@ -280,6 +287,44 @@ begin
   Result := Obj.handle.value;
 end;
 
+function DWGRefAbsoluteHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
+begin
+  Value := 0;
+  if Ref = nil then
+    Exit(False);
+  if Ref^.absolute_ref <> 0 then
+    Value := Ref^.absolute_ref;
+  Result := Value <> 0;
+end;
+
+procedure DWGNormalizeObjectHandlesFromRefs(var Raw: Dwg_Data;
+  Refs: ^PDwg_Object_Ref; Count: BITCODE_BL);
+var
+  I: BITCODE_BL;
+  Ref: PDwg_Object_Ref;
+  Handle: QWord;
+begin
+  if (Count = 0) or (Refs = nil) then
+    Exit;
+  I := 0;
+  while I < Count do
+  begin
+    Ref := Refs[I];
+    if (Ref <> nil) and (Ref^.obj <> nil) and
+       (Ref^.obj^.parent = @Raw) and
+       DWGRefAbsoluteHandleValue(Ref, Handle) then
+      Ref^.obj^.handle.value := Handle;
+    Inc(I);
+  end;
+end;
+
+procedure DWGNormalizeObjectHandles(var Raw: Dwg_Data);
+begin
+  DWGNormalizeObjectHandlesFromRefs(Raw, Raw.object_ref, Raw.num_object_refs);
+  DWGNormalizeObjectHandlesFromRefs(Raw, Raw.object_ordered_ref,
+    Raw.num_object_ordered_refs);
+end;
+
 procedure DWGAddRefHandleCandidate(var Candidates: TDWGRefHandleCandidates;
   Value: QWord);
 var
@@ -311,9 +356,9 @@ begin
   FillChar(Candidates, SizeOf(Candidates), 0);
   if Ref = nil then
     Exit(False);
-  if Ref^.obj <> nil then
-    DWGAddRefHandleCandidate(Candidates, Ref^.obj^.handle.value);
   DWGAddRefHandleCandidate(Candidates, Ref^.absolute_ref);
+  if Ref^.obj <> nil then
+    DWGAddRefHandleCandidate(Candidates, DWGObjectHandleValue(Ref^.obj^));
   DWGAddRefHandleCandidate(Candidates, Ref^.handleref.value);
   Result := Candidates.Count > 0;
 end;
@@ -384,7 +429,7 @@ begin
             if ImplicitOwner <> nil then
             begin
               DWGAddRefHandleCandidate(Candidates,
-                ImplicitOwner^.handle.value);
+                DWGObjectHandleValue(ImplicitOwner^));
             end;
             // Path B: header_vars.BLOCK_RECORD_*SPACE handle reference.
             if Ent^.entmode = 2 then

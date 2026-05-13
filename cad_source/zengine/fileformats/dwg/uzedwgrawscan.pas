@@ -156,6 +156,7 @@ begin
     Exit;
   if Raw.num_objects = 0 then
     Exit;
+  DWGNormalizeObjectHandles(Raw);
   TraceRawObjects := DWGDiagModeFromEnv = dmTrace;
   // Walking the array via &object[i] mirrors parseDwg_Data so any pointer
   // arithmetic mistake in the binding would surface in both places at once.
