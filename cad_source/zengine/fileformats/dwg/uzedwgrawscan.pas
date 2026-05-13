@@ -40,7 +40,9 @@ uses
   dwg,
   uzedwgtypes,
   uzedwghandle,
-  uzedwgloadcontext;
+  uzedwgloadcontext,
+  uzedwgentityregistry,
+  uzedwgtargetedlog;
 
 type
   { Per-object metadata captured by the raw scan so callers can branch on the
@@ -84,6 +86,17 @@ begin
     // them here keeps the duplicate detector from firing on every truncated
     // object in a partial-read scenario.
     if Handle <> 0 then begin
+      // Issue #1203: точечный лог Phase 1. Если интересующий handle отсюда
+      // не виден — значит, LibreDWG вообще не вернул объект из dwg.&object[i],
+      // и проблема лежит не в загрузчике ZCAD, а в декодировании DWG.
+      // Дополнительно сообщаем, зарегистрирован ли mapper для данного
+      // fixedtype: если has_handler=False, parseDwg_Data молча пропустит
+      // объект и до фаз register/attach дело не дойдёт.
+      TargetedLog('scan', Handle,
+        Format('index=%d supertype=%d fixedtype=%d has_handler=%s',
+          [Integer(I), Ord(Raw.&object[I].supertype),
+           Ord(Raw.&object[I].fixedtype),
+           BoolToStr(HasHandlerFor(Raw.&object[I].fixedtype), True)]));
       if Ctx.Handles.TryGet(Handle, Existing) then begin
         // A real duplicate at the raw level: two LibreDWG entries claim the
         // same handle. Only warn if the existing entry was not itself a raw
