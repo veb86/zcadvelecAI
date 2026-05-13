@@ -45,6 +45,8 @@ type
   PDwg_Object_STYLE = ^Dwg_Object_STYLE;
   PDwg_Object_VPORT = ^Dwg_Object_VPORT;
 
+  PPDwg_Object_Ref = ^PDwg_Object_Ref;
+
   TDWGRefHandleCandidates = record
     Count: Integer;
     Values: array[0..DWG_MAX_REF_HANDLE_CANDIDATES - 1] of QWord;
@@ -298,7 +300,7 @@ begin
 end;
 
 procedure DWGNormalizeObjectHandlesFromRefs(var Raw: Dwg_Data;
-  Refs: ^PDwg_Object_Ref; Count: BITCODE_BL);
+  Refs: PPDwg_Object_Ref; Count: BITCODE_BL);
 var
   I: BITCODE_BL;
   Ref: PDwg_Object_Ref;
