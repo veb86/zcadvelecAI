@@ -480,6 +480,7 @@ implementation
     DWGContext:TDWGCtx;
   begin
     DWGContext.CreateRec(dwg);
+    DWGNormalizeObjectHandles(dwg);
     if DWGObj2LPDict<>nil then begin
       i:=0;
       while (i<dwg.num_objects) do begin

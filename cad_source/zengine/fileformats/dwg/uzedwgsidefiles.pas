@@ -131,9 +131,6 @@ procedure DWGCountByFixedType(Ctx: TDWGZCADLoadContext;
 
 implementation
 
-uses
-  TypInfo;
-
 { ---------- TDWGSideFileResult ---------- }
 
 procedure TDWGSideFileResult.Clear;
@@ -254,12 +251,11 @@ end;
 
 function DWGFixedTypeToText(const FT: DWG_OBJECT_TYPE): String;
 begin
-  // GetEnumName walks the RTTI for DWG_OBJECT_TYPE and returns the symbolic
-  // identifier (e.g. 'DWG_TYPE_LINE'). Unused/class IDs that are not part of
-  // the enum still come back as the empty string — we substitute the hex
-  // value so the histogram does not lose those rows entirely.
-  Result := GetEnumName(TypeInfo(DWG_OBJECT_TYPE), Ord(FT));
-  if Result = '' then
+  // WriteStr handles the sparse explicit values in DWG_OBJECT_TYPE correctly;
+  // TypInfo.GetEnumName indexes dense enum RTTI and can mislabel $2c MTEXT as
+  // the next declared value. Unknown gap/class IDs fall back to hex.
+  WriteStr(Result, FT);
+  if (Result = '') or (Pos('DWG_TYPE_', Result) <> 1) then
     Result := 'DWG_TYPE_$' + IntToHex(Ord(FT), 2);
 end;
 

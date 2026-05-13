@@ -2256,10 +2256,12 @@ end;
 
 procedure TDWGLoadContextFixedTypeTest.FixedTypeToTextReturnsSymbolicNameForKnownEnum;
 begin
-  // RTTI path: GetEnumName must produce the declared identifier so the
-  // histogram is readable as 'DWG_TYPE_LINE' rather than '0x13'.
+  // Sparse enum values must keep their declared identifier so the histogram
+  // and raw trace do not mislabel MTEXT ($2c) as a neighbouring type.
   AssertEquals('DWG_TYPE_LINE',   DWGFixedTypeToText(DWG_TYPE_LINE));
   AssertEquals('DWG_TYPE_CIRCLE', DWGFixedTypeToText(DWG_TYPE_CIRCLE));
+  AssertEquals('DWG_TYPE_MTEXT',  DWGFixedTypeToText(DWG_TYPE_MTEXT));
+  AssertEquals('DWG_TYPE_LEADER', DWGFixedTypeToText(DWG_TYPE_LEADER));
   AssertEquals('DWG_TYPE_UNUSED', DWGFixedTypeToText(DWG_TYPE_UNUSED));
 end;
 
@@ -2268,9 +2270,8 @@ var
   Text: String;
 begin
   // DWG_OBJECT_TYPE has gaps ($36, $37 are not declared identifiers). Casting
-  // a gap integer through the enum yields a value GetEnumName cannot name —
-  // the helper must still produce a non-empty 'DWG_TYPE_$NN' fallback so the
-  // histogram does not lose the row.
+  // a gap integer through the enum must still produce a non-empty
+  // 'DWG_TYPE_$NN' fallback so the histogram does not lose the row.
   Text := DWGFixedTypeToText(DWG_OBJECT_TYPE($36));
   AssertTrue('non-empty fallback', Length(Text) > 0);
   AssertTrue('hex marker present', Pos('36', Text) > 0);
@@ -3199,7 +3200,7 @@ begin
   FillChar(OwnerRef, SizeOf(OwnerRef), 0);
   Obj.handle.value := $A325E;
   Obj.supertype := DWG_SUPERTYPE_ENTITY;
-  Obj.fixedtype := DWG_TYPE_LINE;
+  Obj.fixedtype := DWG_TYPE_MTEXT;
   Obj.tio.entity := @Entity;
   Entity.ownerhandle := @OwnerRef;
   OwnerRef.absolute_ref := $120;
@@ -3212,7 +3213,7 @@ begin
   AssertTrue('decimal handle is present',
     Pos('handle_dec=668254', Text) > 0);
   AssertTrue('fixedtype name is present',
-    Pos('fixedtype=DWG_TYPE_LINE', Text) > 0);
+    Pos('fixedtype=DWG_TYPE_MTEXT', Text) > 0);
   AssertTrue('handler flag is present', Pos('has_handler=', Text) > 0);
   AssertTrue('owner candidates are present',
     Pos('owner_candidates=120/288,121/289', Text) > 0);
