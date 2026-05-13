@@ -235,6 +235,14 @@ type
     procedure PtrOwnedReturnsFalseForNilContextOrPtr;
   end;
 
+  { Issue #1206 regression: trace diagnostics must show every raw LibreDWG
+    object with both hex and decimal handles so a handle copied from dwgread
+    (for example 668254(dec) = A325E(hex)) can be found in the ZCAD log. }
+  TDWGRawScanTraceTest = class(TTestCase)
+  published
+    procedure RawObjectTraceLineIncludesHexAndDecimalHandle;
+  end;
+
   { Issue #1203 regression: targeted per-handle logging. Тесты проверяют, что
     парсер списка handle'ов корректно разбирает десятичные значения dwgread,
     hex-токены с разными префиксами, разделителями и хвостовыми пробелами,
@@ -271,6 +279,7 @@ uses
   uzedwgentityregistry,
   uzedwgcontrolobjects,
   uzedwgstylename,
+  uzedwgrawscan,
   uzedwgtargetedlog;
 
 type
@@ -3176,6 +3185,29 @@ begin
     Int64(Target.ValueAt(Target.Count)));
 end;
 
+{ ---------- TDWGRawScanTraceTest (Issue #1206) ---------- }
+
+procedure TDWGRawScanTraceTest.RawObjectTraceLineIncludesHexAndDecimalHandle;
+var
+  Obj: Dwg_Object;
+  Text: String;
+begin
+  FillChar(Obj, SizeOf(Obj), 0);
+  Obj.handle.value := $A325E;
+  Obj.supertype := DWG_SUPERTYPE_ENTITY;
+  Obj.fixedtype := DWG_TYPE_LINE;
+
+  Text := DWGRawObjectTraceLine(Obj, 17);
+
+  AssertTrue('index is present', Pos('index=17', Text) > 0);
+  AssertTrue('hex handle is present', Pos('handle_hex=A325E', Text) > 0);
+  AssertTrue('decimal handle is present',
+    Pos('handle_dec=668254', Text) > 0);
+  AssertTrue('fixedtype name is present',
+    Pos('fixedtype=DWG_TYPE_LINE', Text) > 0);
+  AssertTrue('handler flag is present', Pos('has_handler=', Text) > 0);
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
@@ -3186,6 +3218,7 @@ initialization
     TDWGLoadContextFixedTypeTest,
     TDWGLoadContextPendingIndexTest,
     TDWGLoadContextTextStyleNameTest,
+    TDWGRawScanTraceTest,
     TDWGTargetedLogTest]);
 
 end.
