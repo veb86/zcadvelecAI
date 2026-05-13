@@ -21,13 +21,18 @@
 
   Этот модуль решает задачу точечного логирования: разработчик задаёт список
   интересующих handle'ов через переменную окружения ZCAD_DWG_TARGET_HANDLES
-  (значения в шестнадцатеричном формате, через запятую), а вызовы
+  (значения из dwgread JSON в десятичном формате либо hex с A-F/0x/$,
+  через запятую), а вызовы
   TargetedLogXxx размещены в ключевых точках конвейера загрузки. Если handle
   не входит в список — функции являются no-op'ами (нулевая нагрузка на
   обычную загрузку).
 
-  Пример настройки для отладки MTEXT 0xA32DE и LINE 0xA08 / OWNER 0x9FC:
-    SET ZCAD_DWG_TARGET_HANDLES=A32DE,A08,9FC
+  Пример настройки для отладки MTEXT 0xA325E и LINE 0xA08 / OWNER 0x9FC:
+    SET ZCAD_DWG_TARGET_HANDLES=A325E,A08,9FC
+
+  Если handle скопирован из JSON dwgread как [0,3,668254], можно задавать
+  десятичное значение напрямую:
+    SET ZCAD_DWG_TARGET_HANDLES=668254
 
   Формат лога — единая строка, идущая через uzclog с типом LM_Info, чтобы
   целевые сообщения было легко выделить из общего потока. }
@@ -45,8 +50,9 @@ uses
 
 const
   { Имя переменной окружения, через которую задаётся список целевых handle'ов.
-    Значение — список шестнадцатеричных чисел, разделённых запятыми, пробелами,
-    точками с запятой или двоеточиями. Префикс 0x / $ допускается. }
+    Значение — список чисел из dwgread JSON в десятичном формате либо hex с
+    A-F/0x/$, разделённых запятыми, пробелами, точками с запятой или
+    двоеточиями. }
   DWG_TARGET_HANDLES_ENV_VAR = 'ZCAD_DWG_TARGET_HANDLES';
 
   { Верхний предел числа отслеживаемых handle'ов. Достаточно для типичной
@@ -104,10 +110,11 @@ procedure TargetedLog(const Phase: string; AHandle: TDWGZCADHandle;
 procedure TargetedLogPair(const Phase: string; AEntity, AOwner: TDWGZCADHandle;
   const Details: string);
 
-{ Парсинг одного hex-токена и списка handle'ов. Выведены в interface
-  специально ради юнит-тестов: эмулировать установку переменной окружения
-  кроссплатформенно (Windows SetEnvironmentVariable / POSIX setenv) сложнее,
-  чем дать тесту прямой доступ к парсеру. }
+{ Парсинг одного hex-токена и списка handle'ов. Список дополнительно принимает
+  десятичные значения из dwgread JSON. Функции выведены в interface специально
+  ради юнит-тестов: эмулировать установку переменной окружения кроссплатформенно
+  (Windows SetEnvironmentVariable / POSIX setenv) сложнее, чем дать тесту
+  прямой доступ к парсеру. }
 function TargetedLogParseHexHandle(const Token: string;
   out Value: TDWGZCADHandle): Boolean;
 procedure TargetedLogParseTargetList(const Raw: string;
@@ -239,10 +246,66 @@ begin
   Result := True;
 end;
 
+function TokenHasExplicitHexPrefix(const Token: string): Boolean;
+var
+  Trimmed: string;
+begin
+  Trimmed := Trim(Token);
+  Result := ((Length(Trimmed) >= 2) and (Trimmed[1] = '0') and
+             ((Trimmed[2] = 'x') or (Trimmed[2] = 'X')))
+         or ((Length(Trimmed) >= 1) and (Trimmed[1] = '$'));
+end;
+
+function TokenHasHexLetter(const Token: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to Length(Token) do
+    if ((Token[I] >= 'a') and (Token[I] <= 'f')) or
+       ((Token[I] >= 'A') and (Token[I] <= 'F')) then
+      Exit(True);
+end;
+
+function TryParseDecimalHandle(const Token: string; out Value: TDWGZCADHandle
+  ): Boolean;
+var
+  Trimmed: string;
+  I:       Integer;
+  Acc:     QWord;
+  Digit:   Integer;
+begin
+  Result := False;
+  Trimmed := Trim(Token);
+  if Trimmed = '' then
+    Exit;
+  Acc := 0;
+  for I := 1 to Length(Trimmed) do begin
+    if (Trimmed[I] < '0') or (Trimmed[I] > '9') then
+      Exit;
+    Digit := Ord(Trimmed[I]) - Ord('0');
+    if Acc > (High(QWord) - QWord(Digit)) div 10 then
+      Exit;
+    Acc := Acc * 10 + QWord(Digit);
+  end;
+  Value := Acc;
+  Result := True;
+end;
+
+function TryParseTargetHandle(const Token: string; out Value: TDWGZCADHandle
+  ): Boolean;
+begin
+  if TokenHasExplicitHexPrefix(Token) or TokenHasHexLetter(Token) then
+    Result := TryParseHexHandle(Token, Value)
+  else
+    Result := TryParseDecimalHandle(Token, Value);
+end;
+
 { Разобрать список целевых handle'ов из строки. Разделители: запятая, пробел,
-  точка с запятой, двоеточие. Некорректные токены пропускаются без шумной
-  диагностики — пользователь увидит реальный эффект (или его отсутствие) по
-  факту работы загрузчика. }
+  точка с запятой, двоеточие. Голые числа читаются как десятичные значения из
+  JSON dwgread; hex можно задавать через A-F или префиксы 0x/$.
+  Некорректные токены пропускаются без шумной диагностики — пользователь
+  увидит реальный эффект (или его отсутствие) по факту работы загрузчика. }
 procedure ParseTargetList(const Raw: string; var Target: TDWGTargetedHandleSet);
 var
   I:      Integer;
@@ -253,7 +316,7 @@ var
   begin
     if Token = '' then
       Exit;
-    if TryParseHexHandle(Token, Handle) then
+    if TryParseTargetHandle(Token, Handle) then
       Target.Add(Handle);
     Token := '';
   end;
