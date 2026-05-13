@@ -3190,12 +3190,20 @@ end;
 procedure TDWGRawScanTraceTest.RawObjectTraceLineIncludesHexAndDecimalHandle;
 var
   Obj: Dwg_Object;
+  Entity: Dwg_Object_Entity;
+  OwnerRef: Dwg_Object_Ref;
   Text: String;
 begin
   FillChar(Obj, SizeOf(Obj), 0);
+  FillChar(Entity, SizeOf(Entity), 0);
+  FillChar(OwnerRef, SizeOf(OwnerRef), 0);
   Obj.handle.value := $A325E;
   Obj.supertype := DWG_SUPERTYPE_ENTITY;
   Obj.fixedtype := DWG_TYPE_LINE;
+  Obj.tio.entity := @Entity;
+  Entity.ownerhandle := @OwnerRef;
+  OwnerRef.absolute_ref := $120;
+  OwnerRef.handleref.value := $121;
 
   Text := DWGRawObjectTraceLine(Obj, 17);
 
@@ -3206,6 +3214,8 @@ begin
   AssertTrue('fixedtype name is present',
     Pos('fixedtype=DWG_TYPE_LINE', Text) > 0);
   AssertTrue('handler flag is present', Pos('has_handler=', Text) > 0);
+  AssertTrue('owner candidates are present',
+    Pos('owner_candidates=120/288,121/289', Text) > 0);
 end;
 
 initialization

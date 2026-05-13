@@ -98,7 +98,7 @@ begin
 end;
 
 function DWGHandleCandidatesTraceText(
-  const Candidates: TDWGZCADRefHandleCandidates): String;
+  const Candidates: TDWGRefHandleCandidates): String;
 var
   I: Integer;
 begin
@@ -124,7 +124,7 @@ function DWGRawObjectTraceLine(const Obj: Dwg_Object;
   AIndex: Integer): String;
 var
   Handle: TDWGZCADHandle;
-  OwnerCandidates: TDWGZCADRefHandleCandidates;
+  OwnerCandidates: TDWGRefHandleCandidates;
   OwnerText: String;
 begin
   Handle := DWGObjectHandleValue(Obj);
