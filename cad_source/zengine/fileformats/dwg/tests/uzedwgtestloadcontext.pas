@@ -236,8 +236,9 @@ type
   end;
 
   { Issue #1203 regression: targeted per-handle logging. Тесты проверяют, что
-    парсер списка handle'ов корректно разбирает hex-токены с разными
-    префиксами, разделителями и хвостовыми пробелами, а Contains-логика
+    парсер списка handle'ов корректно разбирает десятичные значения dwgread,
+    hex-токены с разными префиксами, разделителями и хвостовыми пробелами,
+    а Contains-логика
     набора правильно отвечает на запросы для целевых и нецелевых handle'ов.
     Сама запись в лог здесь не проверяется — это просто LogOutFormatStr,
     диагностика которого уже покрыта другими модулями. Тесты идут через
@@ -249,6 +250,7 @@ type
     procedure ParseHexHandleAcceptsZeroXPrefix;
     procedure ParseHexHandleAcceptsDollarPrefix;
     procedure ParseHexHandleRejectsMalformedTokens;
+    procedure ParseTargetListAcceptsDwgreadDecimalHandle;
     procedure ParseTargetListSplitsOnMultipleSeparators;
     procedure ParseTargetListIgnoresMalformedTokens;
     procedure ContainsReturnsFalseForEmptySet;
@@ -3047,8 +3049,8 @@ var
   Value: TDWGZCADHandle;
 begin
   // Базовый формат — «голый» hex без префикса. Регистр символов смешанный.
-  AssertTrue('A32DE accepted', TargetedLogParseHexHandle('A32DE', Value));
-  AssertEquals('A32DE value', Int64($A32DE), Int64(Value));
+  AssertTrue('A325E accepted', TargetedLogParseHexHandle('A325E', Value));
+  AssertEquals('A325E value', Int64($A325E), Int64(Value));
   AssertTrue('a08 lower accepted', TargetedLogParseHexHandle('a08', Value));
   AssertEquals('a08 value', Int64($A08), Int64(Value));
 end;
@@ -3057,8 +3059,8 @@ procedure TDWGTargetedLogTest.ParseHexHandleAcceptsZeroXPrefix;
 var
   Value: TDWGZCADHandle;
 begin
-  AssertTrue('0xA32DE accepted', TargetedLogParseHexHandle('0xA32DE', Value));
-  AssertEquals('0xA32DE value', Int64($A32DE), Int64(Value));
+  AssertTrue('0xA325E accepted', TargetedLogParseHexHandle('0xA325E', Value));
+  AssertEquals('0xA325E value', Int64($A325E), Int64(Value));
   AssertTrue('0X9FC accepted',  TargetedLogParseHexHandle('0X9FC', Value));
   AssertEquals('0X9FC value', Int64($9FC), Int64(Value));
 end;
@@ -3082,15 +3084,28 @@ begin
   AssertFalse('$ only rejected', TargetedLogParseHexHandle('$', Value));
 end;
 
+procedure TDWGTargetedLogTest.ParseTargetListAcceptsDwgreadDecimalHandle;
+var
+  Target: TDWGTargetedHandleSet;
+begin
+  // dwgread JSON prints object handle.value as decimal, e.g. [0,3,668254].
+  // The target list must resolve that token to the same handle as 0xA325E.
+  Target.Clear;
+  TargetedLogParseTargetList('668254', Target);
+  AssertEquals('one decimal handle parsed', 1, Target.Count);
+  AssertTrue('decimal 668254 resolves to A325E', Target.Contains($A325E));
+  AssertFalse('not interpreted as hex 0x668254', Target.Contains($668254));
+end;
+
 procedure TDWGTargetedLogTest.ParseTargetListSplitsOnMultipleSeparators;
 var
   Target: TDWGTargetedHandleSet;
 begin
   // Разделители: запятая, точка с запятой, двоеточие, пробел и любая их смесь.
   Target.Clear;
-  TargetedLogParseTargetList('0xA32DE; $A08:9FC', Target);
+  TargetedLogParseTargetList('0xA325E; $A08:9FC', Target);
   AssertEquals('three handles parsed', 3, Target.Count);
-  AssertTrue('A32DE present', Target.Contains($A32DE));
+  AssertTrue('A325E present', Target.Contains($A325E));
   AssertTrue('A08 present',   Target.Contains($A08));
   AssertTrue('9FC present',   Target.Contains($9FC));
   AssertFalse('1234 absent',  Target.Contains($1234));
@@ -3114,18 +3129,19 @@ var
 begin
   Target.Clear;
   AssertEquals('initially empty', 0, Target.Count);
-  AssertFalse('lookup misses on empty set', Target.Contains($A32DE));
+  AssertFalse('lookup misses on empty set', Target.Contains($A325E));
 end;
 
 procedure TDWGTargetedLogTest.ContainsHandlesIssue1203Triplet;
 var
   Target: TDWGTargetedHandleSet;
 begin
-  // Конкретный сценарий из issue #1203: MTEXT 0xA32DE, LINE 0xA08, OWNER 0x9FC.
+  // Конкретный сценарий из issue #1203/#1206:
+  // MTEXT handle [0,3,668254] = 0xA325E, LINE 0xA08, OWNER 0x9FC.
   Target.Clear;
-  TargetedLogParseTargetList('A32DE,A08,9FC', Target);
+  TargetedLogParseTargetList('A325E,A08,9FC', Target);
   AssertEquals('three handles parsed', 3, Target.Count);
-  AssertTrue('MTEXT 0xA32DE in set', Target.Contains($A32DE));
+  AssertTrue('MTEXT 0xA325E in set', Target.Contains($A325E));
   AssertTrue('LINE  0xA08   in set', Target.Contains($A08));
   AssertTrue('OWNER 0x9FC   in set', Target.Contains($9FC));
   AssertFalse('unrelated handle 0xDEAD missing',
