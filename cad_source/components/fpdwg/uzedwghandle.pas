@@ -172,11 +172,14 @@ function DWGObjectOwnerHandleCandidatesValue(const Obj: Dwg_Object;
   out Candidates: TDWGRefHandleCandidates): Boolean;
 
 { Generic BITCODE_H decoder: returns False when the ref is nil and no usable
-  handle can be recovered. LibreDWG documents absolute_ref as the DXF/global
-  handle, so it is preferred before the resolved object's raw handle. This is
-  important for partial/legacy bindings where Dwg_Object.handle.value may be
-  truncated to the low bits while the Dwg_Object_Ref still carries the full
-  absolute handle. Fall back to the resolved object, then handleref.value. }
+  handle can be recovered. Issue #1213 follow-up: priority mirrors
+  fpdwginspect's HandleRefFromBitCode — the resolved object's own
+  Dwg_Object.handle.value comes first, then Ref^.absolute_ref, then
+  Ref^.handleref.value. R2007+ files were observed with absolute_ref
+  truncated to 16 bits (OFFSETOBJHANDLE refs) while LibreDWG still carried
+  the full 64-bit handle on the resolved object header; preferring
+  obj.handle.value avoids the FFFF -> 0 wraparound that previously dropped
+  every entity above handle 0xFFFF (handle_hex=A325E in the issue). }
 function DWGRefHandleValue(Ref: BITCODE_H; out Value: QWord): Boolean;
 function DWGRefHandleCandidatesValue(Ref: BITCODE_H;
   out Candidates: TDWGRefHandleCandidates): Boolean;
@@ -372,9 +375,15 @@ begin
   FillChar(Candidates, SizeOf(Candidates), 0);
   if Ref = nil then
     Exit(False);
-  DWGAddRefHandleCandidate(Candidates, Ref^.absolute_ref);
+  // Issue #1213: mirror fpdwginspect's HandleRefFromBitCode priority order.
+  // Ref^.obj^.handle.value is LibreDWG's canonical resolved handle and was
+  // observed to carry the full 64-bit value even when absolute_ref had been
+  // truncated to the low 16 bits (R2007+ OFFSETOBJHANDLE refs). Putting it
+  // first prevents handle-wraparound at A325E from collapsing the entity
+  // into the duplicate-handle bucket.
   if Ref^.obj <> nil then
     DWGAddRefHandleCandidate(Candidates, DWGObjectHandleValue(Ref^.obj^));
+  DWGAddRefHandleCandidate(Candidates, Ref^.absolute_ref);
   DWGAddRefHandleCandidate(Candidates, Ref^.handleref.value);
   Result := Candidates.Count > 0;
 end;
