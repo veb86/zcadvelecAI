@@ -474,17 +474,67 @@ implementation
   //    end;
   //  end;
   //end;
+
+    // Issue #1213: when no mapper is registered for an ENTITY fixedtype,
+    // fall back to the UNKNOWN_ENT handler so primitives ZCAD does not model
+    // directly (e.g. MULTILEADER, MLINE, IMAGE, TABLE) still reach a handler
+    // and surface as proxy entities via their preview-graphics bytes.
+    // fpdwginspect's TDWGObjectFactory.CreateMaterializedObject performs the
+    // analogous fallback to its TDWGUnknownMapper — which is precisely why
+    // `fpdwginspect --dump-unknown` lists primitives the ZCAD loader was
+    // silently dropping.
+    //
+    // Scope notes:
+    //   * Only ENTITY supertype gets the fallback. OBJECT supertype types
+    //     already silently skipped are metadata, not drawable primitives;
+    //     the fixedtype histogram diagnostic still enumerates them.
+    //   * VERTEX_* and SEQEND-like child entities are consumed inside their
+    //     parent polyline / insert mapper. Routing them through UNKNOWN_ENT
+    //     would emit a spurious "unknown entity" warning for every vertex,
+    //     so they are excluded explicitly.
+    //   * UNUSED / FREED slots carry no payload to dispatch on.
+    function IsParentOwnedChildEntity(FixedType:DWG_OBJECT_TYPE):Boolean;
+    begin
+      case FixedType of
+        DWG_TYPE_VERTEX_2D,
+        DWG_TYPE_VERTEX_3D,
+        DWG_TYPE_VERTEX_MESH,
+        DWG_TYPE_VERTEX_PFACE,
+        DWG_TYPE_VERTEX_PFACE_FACE:
+          Result:=True;
+      else
+        Result:=False;
+      end;
+    end;
+
+    function ResolveFallbackDispatch(const Obj:Dwg_Object;
+      out FallbackDod:TDWGObjectData):Boolean;
+    begin
+      Result:=False;
+      if Obj.supertype<>DWG_SUPERTYPE_ENTITY then
+        Exit;
+      if (Obj.fixedtype=DWG_TYPE_UNUSED) or (Obj.fixedtype=DWG_TYPE_FREED) then
+        Exit;
+      if IsParentOwnedChildEntity(Obj.fixedtype) then
+        Exit;
+      Result:=DWGObj2LPDict.GetValue(DWG_TYPE_UNKNOWN_ENT,FallbackDod);
+    end;
+
   var
     i:BITCODE_BL;
     dod:TDWGObjectData;
     DWGContext:TDWGCtx;
+    Dispatched:Boolean;
   begin
     DWGContext.CreateRec(dwg);
     DWGNormalizeObjectHandles(dwg);
     if DWGObj2LPDict<>nil then begin
       i:=0;
       while (i<dwg.num_objects) do begin
-        if DWGObj2LPDict.GetValue(dwg.&object[i].fixedtype,dod) then begin
+        Dispatched:=DWGObj2LPDict.GetValue(dwg.&object[i].fixedtype,dod);
+        if not Dispatched then
+          Dispatched:=ResolveFallbackDispatch(dwg.&object[i],dod);
+        if Dispatched then begin
           if dod.LoadEntityProc<>nil then begin
             if dwg.&object[i].tio.entity<>nil then
               dod.LoadEntityProc(ZContext,DWGContext,dwg.&object[i],
