@@ -20,6 +20,12 @@ type
     procedure RefHandleCandidatesPreferScalarHandles;
     procedure ObjectHandleValueReadsRawHandle;
     procedure ObjectHandleNormalizeUsesObjectRefAbsoluteRefs;
+    // Issue #1213: normalization must be widen-only. Some refs (e.g. R2007+
+    // OFFSETOBJHANDLE) reach this code with absolute_ref already truncated
+    // to the low 16 bits, while the object header itself still carries the
+    // full handle. Replacing the full handle with the narrow ref was what
+    // produced the FFFF -> 0 -> 1 wraparound reported in #1213.
+    procedure ObjectHandleNormalizePreservesFullHandleAgainstTruncatedRef;
     procedure ObjectOwnerHandleEntityReadsOwnerRef;
     procedure ObjectOwnerHandleCandidatesPreferScalarHandles;
     procedure ObjectOwnerHandleObjectReadsOwnerRef;
@@ -380,6 +386,53 @@ begin
     Int64($325E), Int64(DWGObjectHandleValue(Objects[0])));
   AssertEquals('second object recovers full handle from object_ref',
     Int64($A325E), Int64(DWGObjectHandleValue(Objects[1])));
+end;
+
+procedure TFPDWGProcHandleTest.
+  ObjectHandleNormalizePreservesFullHandleAgainstTruncatedRef;
+var
+  Raw: Dwg_Data;
+  Objects: array[0..1] of Dwg_Object;
+  Refs: array[0..1] of Dwg_Object_Ref;
+  RefPtrs: array[0..1] of PDwg_Object_Ref;
+begin
+  // Issue #1213: regression. When LibreDWG decoded the object header with
+  // the full 64-bit handle but the corresponding Object_Ref ended up with
+  // absolute_ref masked to the low 16 bits (observed on R2007+ files with
+  // OFFSETOBJHANDLE refs above 0xFFFF), the old normalization replaced
+  // the good handle with the truncated value. From then on every handle
+  // wrapped — index 11713 in the original bug report had handle_hex=FFFF,
+  // index 11714 had handle_hex=0, index 11715 handle_hex=1, and so on —
+  // and ScanRawObjects deduplicated all of them down to a single entry.
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Refs, SizeOf(Refs), 0);
+
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+  Raw.num_object_refs := Length(RefPtrs);
+  Raw.object_ref := @RefPtrs[0];
+
+  Objects[0].index := 0;
+  Objects[0].parent := @Raw;
+  Objects[0].handle.value := $A325E;
+  Objects[1].index := 1;
+  Objects[1].parent := @Raw;
+  Objects[1].handle.value := $1FFFF;
+
+  Refs[0].obj := @Objects[0];
+  Refs[0].absolute_ref := $325E;
+  Refs[1].obj := @Objects[1];
+  Refs[1].absolute_ref := $FFFF;
+  RefPtrs[0] := @Refs[0];
+  RefPtrs[1] := @Refs[1];
+
+  DWGNormalizeObjectHandles(Raw);
+
+  AssertEquals('full handle survives narrower absolute_ref',
+    Int64($A325E), Int64(DWGObjectHandleValue(Objects[0])));
+  AssertEquals('full handle above 16 bits survives FFFF absolute_ref',
+    Int64($1FFFF), Int64(DWGObjectHandleValue(Objects[1])));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectOwnerHandleEntityReadsOwnerRef;

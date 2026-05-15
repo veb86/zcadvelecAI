@@ -304,7 +304,7 @@ procedure DWGNormalizeObjectHandlesFromRefs(var Raw: Dwg_Data;
 var
   I: BITCODE_BL;
   Ref: PDwg_Object_Ref;
-  Handle: QWord;
+  AbsoluteHandle: QWord;
 begin
   if (Count = 0) or (Refs = nil) then
     Exit;
@@ -312,10 +312,24 @@ begin
   while I < Count do
   begin
     Ref := Refs[I];
+    // Issue #1213: normalize widen-only. The original code unconditionally
+    // overwrote Ref^.obj^.handle.value with absolute_ref. That fixes one
+    // class of LibreDWG bug (handle.value left at a low truncated value
+    // while absolute_ref carries the full handle, covered by the existing
+    // ObjectHandleNormalizeUsesObjectRefAbsoluteRefs test) but introduces
+    // the opposite one when absolute_ref itself is the truncated value
+    // (R2007+ OFFSETOBJHANDLE refs sometimes carry only the low 16 bits).
+    // When that happens the loader saw the wraparound reported in #1213:
+    // handle_hex=FFFF at index 11713, then 0, 1, 2, ... — every subsequent
+    // object's full handle was overwritten with its absolute_ref mod 2^16,
+    // collapsing into the duplicate-handle path and dropping the entity.
+    // Only widening the handle preserves the more informative of the two
+    // sources without losing the case the original normalization fixed.
     if (Ref <> nil) and (Ref^.obj <> nil) and
        (Ref^.obj^.parent = @Raw) and
-       DWGRefAbsoluteHandleValue(Ref, Handle) then
-      Ref^.obj^.handle.value := Handle;
+       DWGRefAbsoluteHandleValue(Ref, AbsoluteHandle) and
+       (AbsoluteHandle > Ref^.obj^.handle.value) then
+      Ref^.obj^.handle.value := AbsoluteHandle;
     Inc(I);
   end;
 end;
