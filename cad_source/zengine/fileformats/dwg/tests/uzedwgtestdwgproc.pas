@@ -16,8 +16,14 @@ type
     procedure EmptyRefReturnsFalse;
     procedure AbsoluteRefWinsOverHandleref;
     procedure HandlerefIsFallbackWhenAbsoluteRefIsZero;
-    procedure AbsoluteRefWinsOverResolvedObjectHandle;
-    procedure RefHandleCandidatesPreferScalarHandles;
+    // Issue #1213 follow-up: priority must match fpdwginspect's
+    // HandleRefFromBitCode — the resolved object's own handle.value wins
+    // over absolute_ref. R2007+ OFFSETOBJHANDLE refs carry absolute_ref
+    // truncated to the low 16 bits while obj.handle.value still holds the
+    // full 64-bit handle; the previous absolute_ref-first order dropped
+    // every entity whose handle exceeded 0xFFFF.
+    procedure ResolvedObjectHandleWinsOverAbsoluteRef;
+    procedure RefHandleCandidatesPreferResolvedObjectHandle;
     procedure ObjectHandleValueReadsRawHandle;
     procedure ObjectHandleNormalizeUsesObjectRefAbsoluteRefs;
     // Issue #1213: normalization must be widen-only. Some refs (e.g. R2007+
@@ -27,7 +33,7 @@ type
     // produced the FFFF -> 0 -> 1 wraparound reported in #1213.
     procedure ObjectHandleNormalizePreservesFullHandleAgainstTruncatedRef;
     procedure ObjectOwnerHandleEntityReadsOwnerRef;
-    procedure ObjectOwnerHandleCandidatesPreferScalarHandles;
+    procedure ObjectOwnerHandleCandidatesPreferResolvedObjectHandle;
     procedure ObjectOwnerHandleObjectReadsOwnerRef;
     procedure ObjectOwnerHandleNilTioReturnsFalse;
     // Issue #1118: entmode-aware owner resolution. When LibreDWG sets
@@ -300,30 +306,39 @@ begin
   AssertEquals(Int64($33), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.AbsoluteRefWinsOverResolvedObjectHandle;
+procedure TFPDWGProcHandleTest.ResolvedObjectHandleWinsOverAbsoluteRef;
 var
   RawRef: Dwg_Object_Ref;
   Target: Dwg_Object;
   Value: QWord;
 begin
+  // Issue #1213: in the failing files Target.handle.value held the full
+  // canonical handle ($A325E) while absolute_ref had been truncated to
+  // 16 bits ($325E). fpdwginspect's HandleRefFromBitCode picks the
+  // resolved object's own handle first; the main loader must do the same
+  // so the entity is not dropped into the wrong duplicate bucket.
   FillChar(RawRef, SizeOf(RawRef), 0);
   FillChar(Target, SizeOf(Target), 0);
-  Target.handle.value := $325E;
+  Target.handle.value := $A325E;
   RawRef.obj := @Target;
-  RawRef.absolute_ref := $A325E;
-  RawRef.handleref.value := $A325E;
+  RawRef.absolute_ref := $325E;
+  RawRef.handleref.value := $325E;
 
   AssertTrue(DWGRefHandleValue(@RawRef, Value));
   AssertEquals(Int64($A325E), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.RefHandleCandidatesPreferScalarHandles;
+procedure TFPDWGProcHandleTest.RefHandleCandidatesPreferResolvedObjectHandle;
 var
   RawRef: Dwg_Object_Ref;
   Target: Dwg_Object;
   Candidates: TDWGRefHandleCandidates;
   Value: QWord;
 begin
+  // Issue #1213 follow-up: mirrors fpdwginspect's HandleRefFromBitCode.
+  // The candidate list must put obj.handle.value at index 0 so callers
+  // that iterate to the first matching registry entry pick the full
+  // canonical handle before any narrower fallback.
   FillChar(RawRef, SizeOf(RawRef), 0);
   FillChar(Target, SizeOf(Target), 0);
   Target.handle.value := $100A;
@@ -333,11 +348,11 @@ begin
 
   AssertTrue(DWGRefHandleCandidatesValue(@RawRef, Candidates));
   AssertEquals(2, Candidates.Count);
-  AssertEquals(Int64($5D), Int64(Candidates.Values[0]));
-  AssertEquals(Int64($100A), Int64(Candidates.Values[1]));
+  AssertEquals(Int64($100A), Int64(Candidates.Values[0]));
+  AssertEquals(Int64($5D), Int64(Candidates.Values[1]));
   AssertTrue(DWGRefHandleValue(@RawRef, Value));
-  AssertEquals('single-value helper prefers scalar handle',
-    Int64($5D), Int64(Value));
+  AssertEquals('single-value helper prefers resolved object handle',
+    Int64($100A), Int64(Value));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectHandleValueReadsRawHandle;
@@ -454,7 +469,8 @@ begin
   AssertEquals(Int64($40), Int64(Value));
 end;
 
-procedure TFPDWGProcHandleTest.ObjectOwnerHandleCandidatesPreferScalarHandles;
+procedure TFPDWGProcHandleTest.
+  ObjectOwnerHandleCandidatesPreferResolvedObjectHandle;
 var
   Obj, Target: Dwg_Object;
   Ent: Dwg_Object_Entity;
@@ -462,6 +478,7 @@ var
   Candidates: TDWGRefHandleCandidates;
   Value: QWord;
 begin
+  // Issue #1213 follow-up: owner candidates carry obj.handle.value first.
   FillChar(Obj, SizeOf(Obj), 0);
   FillChar(Target, SizeOf(Target), 0);
   FillChar(Ent, SizeOf(Ent), 0);
@@ -477,11 +494,11 @@ begin
 
   AssertTrue(DWGObjectOwnerHandleCandidatesValue(Obj, Candidates));
   AssertEquals(2, Candidates.Count);
-  AssertEquals(Int64($62), Int64(Candidates.Values[0]));
-  AssertEquals(Int64($61), Int64(Candidates.Values[1]));
+  AssertEquals(Int64($61), Int64(Candidates.Values[0]));
+  AssertEquals(Int64($62), Int64(Candidates.Values[1]));
   AssertTrue(DWGObjectOwnerHandleValue(Obj, Value));
-  AssertEquals('single-value owner helper prefers scalar handle',
-    Int64($62), Int64(Value));
+  AssertEquals('single-value owner helper prefers resolved object handle',
+    Int64($61), Int64(Value));
 end;
 
 procedure TFPDWGProcHandleTest.ObjectOwnerHandleObjectReadsOwnerRef;

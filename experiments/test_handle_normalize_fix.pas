@@ -2,9 +2,14 @@ program test_handle_normalize_fix;
 {$mode objfpc}{$H+}
 {$modeswitch advancedrecords}
 
-{ Standalone reproduction for issue #1213. Verifies that
-  DWGNormalizeObjectHandlesFromRefs no longer overwrites a full handle on
-  Dwg_Object with a narrower absolute_ref. Compiles without libredwg.so. }
+{ Standalone reproduction for issue #1213. Covers two pieces:
+  - DWGNormalizeObjectHandlesFromRefs is widen-only and does not overwrite
+    a full Dwg_Object handle with a narrower absolute_ref.
+  - DWGRefHandleCandidatesValue puts Ref^.obj^.handle.value first, matching
+    fpdwginspect's HandleRefFromBitCode (issue #1213 follow-up — was the
+    actual root cause of the wraparound when ref-driven lookups dropped the
+    canonical full handle in favour of a 16-bit absolute_ref). Compiles
+    without libredwg.so. }
 
 uses
   SysUtils,
@@ -99,9 +104,48 @@ begin
   Check('full handle above 16 bits survives FFFF absolute_ref', $1FFFF, Objects[1].handle.value);
 end;
 
+procedure RunRefCandidatePriorityTest;
+var
+  Target: Dwg_Object;
+  Ref: Dwg_Object_Ref;
+  Candidates: TDWGRefHandleCandidates;
+  Value: QWord;
+begin
+  FillChar(Target, SizeOf(Target), 0);
+  FillChar(Ref, SizeOf(Ref), 0);
+
+  // Reproduce the canonical-vs-truncated mismatch: the resolved object
+  // already carries the full 64-bit handle while absolute_ref has been
+  // squeezed into the low 16 bits.
+  Target.handle.value := $A325E;
+  Ref.obj := @Target;
+  Ref.absolute_ref := $325E;
+  Ref.handleref.value := $325E;
+
+  WriteLn('-- regression: RefHandleCandidatesPreferResolvedObjectHandle');
+  if not DWGRefHandleCandidatesValue(@Ref, Candidates) then begin
+    WriteLn('FAIL: candidates not produced');
+    Inc(Failures);
+  end else begin
+    Check('candidates[0] is the full handle from obj.handle.value',
+      $A325E, Candidates.Values[0]);
+    if Candidates.Count >= 2 then
+      Check('candidates[1] keeps absolute_ref as fallback',
+        $325E, Candidates.Values[1]);
+  end;
+  if DWGRefHandleValue(@Ref, Value) then
+    Check('DWGRefHandleValue returns the full handle',
+      $A325E, Value)
+  else begin
+    WriteLn('FAIL: DWGRefHandleValue returned False');
+    Inc(Failures);
+  end;
+end;
+
 begin
   RunExistingTest;
   RunRegressionTest;
+  RunRefCandidatePriorityTest;
   WriteLn;
   if Failures = 0 then
     WriteLn('All handle normalization checks pass.')
