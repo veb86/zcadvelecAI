@@ -191,6 +191,24 @@ type
     procedure CopyPolylineRefsCopiesOwnedVertexHandles;
   end;
 
+  { Issue #1213: fallback dispatch. parseDwg_Data used to silently drop every
+    raw object whose fixedtype was not in DWGObj2LPDict. The fix routes
+    unmapped ENTITY-supertype objects through the registered UNKNOWN_ENT
+    handler — mirroring fpdwginspect's TDWGUnknownMapper fallback — so
+    primitives ZCAD does not model directly (e.g. MULTILEADER, MLINE, IMAGE,
+    TABLE) reach a handler instead of disappearing. These tests exercise the
+    dispatch table directly with fake Dwg_Data so they do not need
+    libredwg.so. }
+  TFPDWGProcFallbackDispatchTest = class(TTestCase)
+  published
+    procedure UnmappedEntityRoutesToUnknownEntHandler;
+    procedure SpecificHandlerWinsOverUnknownEntFallback;
+    procedure VertexEntityIsNotRoutedToUnknownEnt;
+    procedure UnknownEntFallbackSkippedWhenNoUnknownEntHandlerRegistered;
+    procedure UnmappedObjectIsNotRoutedToUnknownEnt;
+    procedure FreedAndUnusedEntitiesAreNotDispatched;
+  end;
+
 implementation
 
 uses
@@ -2448,6 +2466,254 @@ begin
   AssertEquals('second handle', Int64($102), Int64(Props.VertexHandles[1]));
 end;
 
+{ Issue #1213: parseDwg_Data fallback dispatch tests. The generic GDWGParser
+  is specialized below with a tiny counter context so we can verify which
+  registered handler each fixedtype reaches without dragging the ZCAD entity
+  graph in. The fake Dwg_Data is constructed via FillChar exactly like the
+  other handle tests in this unit, so libredwg.so is not required. }
+
+type
+  TParserTestCtx = record
+    UnknownEntCalls: Integer;
+    UnknownObjCalls: Integer;
+    SpecificCalls: Integer;
+    LastFixedType: DWG_OBJECT_TYPE;
+  end;
+
+  TParserTestParser = specialize GDWGParser<TParserTestCtx>;
+
+procedure FallbackTest_UnknownEntHandler(var Ctx: TParserTestCtx;
+  var DWGContext: TDWGCtx; var DWGObject: Dwg_Object; P: Pointer);
+begin
+  Inc(Ctx.UnknownEntCalls);
+  Ctx.LastFixedType := DWGObject.fixedtype;
+end;
+
+procedure FallbackTest_UnknownObjHandler(var Ctx: TParserTestCtx;
+  var DWGContext: TDWGCtx; var DWGObject: Dwg_Object; P: Pointer);
+begin
+  Inc(Ctx.UnknownObjCalls);
+  Ctx.LastFixedType := DWGObject.fixedtype;
+end;
+
+procedure FallbackTest_SpecificHandler(var Ctx: TParserTestCtx;
+  var DWGContext: TDWGCtx; var DWGObject: Dwg_Object; P: Pointer);
+begin
+  Inc(Ctx.SpecificCalls);
+  Ctx.LastFixedType := DWGObject.fixedtype;
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.UnmappedEntityRoutesToUnknownEntHandler;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..0] of Dwg_Object;
+  Ent: Dwg_Object_Entity;
+begin
+  // Sanity: an ENTITY-supertype fixedtype with no specific mapper registered
+  // must reach the UNKNOWN_ENT fallback. This is the production bug behind
+  // issue #1213: without the fallback the primitive disappears silently.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[0].fixedtype := DWG_TYPE_MULTILEADER;
+  Objects[0].tio.entity := @Ent;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_UNKNOWN_ENT,
+      @FallbackTest_UnknownEntHandler);
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('fallback dispatched MULTILEADER to UNKNOWN_ENT',
+    1, Ctx.UnknownEntCalls);
+  AssertEquals('fixedtype preserved when entering fallback',
+    Ord(DWG_TYPE_MULTILEADER), Ord(Ctx.LastFixedType));
+  AssertEquals('UNKNOWN_OBJ branch untouched', 0, Ctx.UnknownObjCalls);
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.SpecificHandlerWinsOverUnknownEntFallback;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..0] of Dwg_Object;
+  Ent: Dwg_Object_Entity;
+begin
+  // Specific mapper must still win when one is registered; the fallback only
+  // fires when DWGObj2LPDict.GetValue misses. Verifying this guards against a
+  // regression where the fallback would shadow a real handler.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[0].fixedtype := DWG_TYPE_LINE;
+  Objects[0].tio.entity := @Ent;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_UNKNOWN_ENT,
+      @FallbackTest_UnknownEntHandler);
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_LINE,
+      @FallbackTest_SpecificHandler);
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('specific LINE handler invoked', 1, Ctx.SpecificCalls);
+  AssertEquals('UNKNOWN_ENT fallback skipped when specific handler exists',
+    0, Ctx.UnknownEntCalls);
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.VertexEntityIsNotRoutedToUnknownEnt;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..0] of Dwg_Object;
+  Ent: Dwg_Object_Entity;
+begin
+  // VERTEX_* entities are consumed inside their parent polyline mapper. The
+  // fallback must skip them or every vertex would emit a spurious "unknown
+  // entity" warning. This test pins the exclusion list down: VERTEX_2D must
+  // pass through parseDwg_Data without dispatching anywhere.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[0].fixedtype := DWG_TYPE_VERTEX_2D;
+  Objects[0].tio.entity := @Ent;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_UNKNOWN_ENT,
+      @FallbackTest_UnknownEntHandler);
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('VERTEX_2D excluded from UNKNOWN_ENT fallback',
+    0, Ctx.UnknownEntCalls);
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.UnknownEntFallbackSkippedWhenNoUnknownEntHandlerRegistered;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..0] of Dwg_Object;
+  Ent: Dwg_Object_Entity;
+begin
+  // If the host loader never registered UNKNOWN_ENT, the fallback must
+  // gracefully no-op instead of crashing or invoking some unrelated handler.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[0].fixedtype := DWG_TYPE_MULTILEADER;
+  Objects[0].tio.entity := @Ent;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('no handler registered: nothing dispatched',
+    0, Ctx.UnknownEntCalls + Ctx.SpecificCalls + Ctx.UnknownObjCalls);
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.UnmappedObjectIsNotRoutedToUnknownEnt;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..0] of Dwg_Object;
+  Inner: Dwg_Object_Object;
+begin
+  // OBJECT supertype intentionally has no fallback; those are metadata
+  // tables, not drawable primitives, and routing them through UNKNOWN_ENT
+  // would emit a spurious warning for every layout / dictionary / xrecord.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Inner, SizeOf(Inner), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_OBJECT;
+  Objects[0].fixedtype := DWG_TYPE_MTEXTOBJECTCONTEXTDATA;
+  Objects[0].tio.&object := @Inner;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_UNKNOWN_ENT,
+      @FallbackTest_UnknownEntHandler);
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('OBJECT supertype excluded from UNKNOWN_ENT fallback',
+    0, Ctx.UnknownEntCalls);
+end;
+
+procedure TFPDWGProcFallbackDispatchTest.FreedAndUnusedEntitiesAreNotDispatched;
+var
+  Parser: TParserTestParser;
+  Ctx: TParserTestCtx;
+  Raw: Dwg_Data;
+  Objects: array[0..1] of Dwg_Object;
+  Ent: Dwg_Object_Entity;
+begin
+  // UNUSED / FREED slots carry no payload — LibreDWG fills them when an
+  // entry was decoded into a zombie state. Dispatching them anywhere risks
+  // dereferencing garbage.
+  FillChar(Ctx, SizeOf(Ctx), 0);
+  FillChar(Raw, SizeOf(Raw), 0);
+  FillChar(Objects, SizeOf(Objects), 0);
+  FillChar(Ent, SizeOf(Ent), 0);
+  Objects[0].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[0].fixedtype := DWG_TYPE_UNUSED;
+  Objects[0].tio.entity := @Ent;
+  Objects[1].supertype := DWG_SUPERTYPE_ENTITY;
+  Objects[1].fixedtype := DWG_TYPE_FREED;
+  Objects[1].tio.entity := @Ent;
+  Raw.num_objects := Length(Objects);
+  Raw.&object := @Objects[0];
+
+  Parser := TParserTestParser.Create;
+  try
+    Parser.RegisterDWGEntityLoadProc(DWG_TYPE_UNKNOWN_ENT,
+      @FallbackTest_UnknownEntHandler);
+    Parser.parseDwg_Data(Ctx, Raw, nil, 0);
+  finally
+    Parser.Free;
+  end;
+
+  AssertEquals('UNUSED / FREED entries excluded from fallback',
+    0, Ctx.UnknownEntCalls);
+end;
+
 begin
   RegisterTests([
     TFPDWGProcHandleTest, TFPDWGProcReadCodeTest,
@@ -2457,6 +2723,7 @@ begin
     TFPDWGProcTextTest, TFPDWGProcMTextTest,
     TFPDWGProcInsertTest,
     TFPDWGProcLWPolylineTest, TFPDWGProcProxyTest,
-    TFPDWGProcStage8GeometryTest
+    TFPDWGProcStage8GeometryTest,
+    TFPDWGProcFallbackDispatchTest
   ]);
 end.
