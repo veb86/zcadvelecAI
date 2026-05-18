@@ -239,7 +239,7 @@ type
     { Diagnostics }
     function WarningCount: Integer;
     function WarningAt(Index: Integer): TDWGImportWarning;
-    { Issue #1198 P4: gate for per-entity zDebugLn fallback lines on the
+    { Issue #1198 P4: gate for per-entity DWG fallback log lines on the
       import side. Returns True the first MaxDetailPerKey times for a
       given (Code, Handle) pair and False after that, so the main log
       shows the first occurrence and EndDWGImport reports the rest as a

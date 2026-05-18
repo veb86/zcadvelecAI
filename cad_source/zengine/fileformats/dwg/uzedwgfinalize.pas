@@ -43,7 +43,6 @@ unit uzedwgfinalize;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   uzedrawingsimple,
   uzeentity,
@@ -62,6 +61,9 @@ procedure FinalizeImport(Ctx: TDWGZCADLoadContext;
   Drawing: PTSimpleDrawing; var DC: TDrawContext);
 
 implementation
+
+uses
+  uzedwglog;
 
 { Stage 4 (TZ §12.4): the legacy FinalizeOwnerIsBlockDef helper used to do
   a linear scan over Ctx.Handles for every entity in the outer loop, which
@@ -262,8 +264,8 @@ begin
     Pending := Ctx.FindPendingOwner(Entry^.Handle);
     if Pending = nil then begin
       Inc(SkippedNoOwner);
-      zDebugLn(['{WHM}DWG finalize skip entity ', IntToHex(Entry^.Handle, 1),
-        ': no pending owner row']);
+      DWGLogWarningFormatStr('DWG finalize skip entity %s: no pending owner row',
+        [DWGHandleLogText(Entry^.Handle)]);
       Continue;
     end;
     Owner := Pending^.AttachedOwner;
@@ -271,8 +273,9 @@ begin
       Owner := Pending^.FallbackOwner;
     if Owner = nil then begin
       Inc(SkippedNoOwner);
-      zDebugLn(['{WHM}DWG finalize skip entity ', IntToHex(Entry^.Handle, 1),
-        ': no resolved or fallback owner']);
+      DWGLogWarningFormatStr(
+        'DWG finalize skip entity %s: no resolved or fallback owner',
+        [DWGHandleLogText(Entry^.Handle)]);
       Continue;
     end;
 
@@ -289,17 +292,20 @@ begin
 
     if Pobj^.vp.Layer = nil then begin
       Inc(VisualWarnings);
-      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
-        ' has nil layer after ref resolve']);
+      DWGLogWarningFormatStr(
+        'DWG finalize entity %s has nil layer after ref resolve',
+        [DWGHandleLogText(Entry^.Handle)]);
     end else if not Pobj^.vp.Layer^._on then begin
       Inc(VisualWarnings);
-      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
-        ' is on disabled layer ', Pobj^.vp.Layer^.Name]);
+      DWGLogWarningFormatStr(
+        'DWG finalize entity %s is on disabled layer %s',
+        [DWGHandleLogText(Entry^.Handle), Pobj^.vp.Layer^.Name]);
     end;
     if Pobj^.vp.LineType = nil then begin
       Inc(VisualWarnings);
-      zDebugLn(['{WHM}DWG finalize entity ', IntToHex(Entry^.Handle, 1),
-        ' has nil linetype after ref resolve']);
+      DWGLogWarningFormatStr(
+        'DWG finalize entity %s has nil linetype after ref resolve',
+        [DWGHandleLogText(Entry^.Handle)]);
     end;
 
     FinalizeEntityGeometry(Pobj, Drawing, DC);
@@ -308,11 +314,10 @@ begin
 
   AttachDeferredInsertChildren(Ctx, Cache, Drawing, DC, ProcessedEntities);
 
-  zDebugLn(['{WH}DWG finalize: built=', ProcessedEntities,
-    ', deferred_blockdef=', SkippedBlockDef,
-    ', deferred_insert_child=', SkippedInsertChild,
-    ', no_owner=', SkippedNoOwner,
-    ', visual_warnings=', VisualWarnings]);
+  DWGLogInfoFormatStr(
+    'DWG finalize: built=%d, deferred_blockdef=%d, deferred_insert_child=%d, no_owner=%d, visual_warnings=%d',
+    [ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
+     VisualWarnings]);
 end;
 
 end.

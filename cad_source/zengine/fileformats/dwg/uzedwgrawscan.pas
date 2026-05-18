@@ -72,7 +72,6 @@ function DWGRawObjectTraceLine(const Obj: Dwg_Object;
 implementation
 
 uses
-  uzbLogIntf,
   uzedwglog,
   uzedwgsidefiles;
 
@@ -161,7 +160,7 @@ begin
   if Raw.num_objects = 0 then
     Exit;
   DWGNormalizeObjectHandles(Raw);
-  TraceRawObjects := DWGDiagModeFromEnv = dmTrace;
+  TraceRawObjects := DWGDiagModeFromConst = dmTrace;
   // Walking the array via &object[i] mirrors parseDwg_Data so any pointer
   // arithmetic mistake in the binding would surface in both places at once.
   I := 0;
@@ -187,7 +186,8 @@ begin
     // LibreDWG returned before the loader filters handle=0 or missing mapper
     // cases, so it can prove whether a dwgread handle reached ZCAD at all.
     if TraceRawObjects then
-      zDebugLn(['{WH}', DWGRawObjectTraceLine(Raw.&object[I], Integer(I))]);
+      DWGLogInfoFormatStr('%s',
+        [DWGRawObjectTraceLine(Raw.&object[I], Integer(I))]);
     // Handle 0 is reserved for the model-space root (registered in
     // BeginDWGImport) and for raw entries LibreDWG could not decode. Skipping
     // them here keeps the duplicate detector from firing on every truncated

@@ -11,9 +11,9 @@
 { Issue #1198 P3 (per АНАЛИЗ_ЗАГРУЗЧИКА_DWG.md §P3 / §6.1):
   diagnostic side-file writer for the DWG loader. Emits structured CSV +
   TXT/JSON dumps next to a problematic DWG so a developer can drop into a
-  failing import without re-running it. Activation and verbosity are
-  controlled by the ZCAD_DWG_DIAG environment variable so the feature is
-  invisible to users by default.
+  failing import without re-running it. Activation and verbosity are controlled
+  by the DWG_DIAG_MODE constant so the feature is invisible to users by
+  default and cannot be changed accidentally from the process environment.
 
   Modes (matching the spec table in §6.1):
     - off     : do nothing (default)
@@ -50,7 +50,10 @@ type
   );
 
 const
-  DWG_DIAG_ENV_VAR = 'ZCAD_DWG_DIAG';
+  { Compile-time/default diagnostic mode. Keep dmOff for release builds.
+    Developers can temporarily change this constant to dmSummary, dmFull or
+    dmTrace while investigating a DWG loader problem, then rebuild. }
+  DWG_DIAG_MODE = dmOff;
 
   { Issue #1198 §6.2: top-N broken handles included in summary.json. Ten is
     enough to spot cascading owner/ref damage in a single glance without
@@ -71,10 +74,8 @@ type
     procedure AddFile(const Path: String);
   end;
 
-{ Reads the diagnostic mode from the environment. Unknown values map to
-  dmOff so a typo does not silently corrupt user files. The lookup is case
-  insensitive so ZCAD_DWG_DIAG=Full, full, FULL all behave identically. }
-function DWGDiagModeFromEnv: TDWGDiagMode;
+{ Reads the diagnostic mode from the compile-time/default constant. }
+function DWGDiagModeFromConst: TDWGDiagMode;
 function DWGDiagModeFromString(const S: String): TDWGDiagMode;
 function DWGDiagModeToString(Mode: TDWGDiagMode): String;
 
@@ -87,13 +88,13 @@ function DWGSideFilePath(const SourcePath, Suffix: String): String;
   record that callers can inspect; FilesWritten is also populated so the
   caller can echo paths to the main log. A nil context or an empty
   SourcePath with no writable cwd is a no-op (TDWGSideFileResult.Mode
-  stays dmOff). The Mode passed in always wins over the env so callers
-  can force a specific mode without touching the process environment. }
+  stays dmOff). The Mode passed in always wins, so tests can force a
+  specific mode without touching the compile-time default. }
 function DWGWriteSideFiles(Ctx: TDWGZCADLoadContext;
   const SourcePath: String; Mode: TDWGDiagMode): TDWGSideFileResult;
 
 { Per-file writers. Public so unit tests can exercise each file in
-  isolation. None of these inspect the env; callers are expected to gate
+  isolation. None of these read global state; callers are expected to gate
   on Mode themselves. }
 procedure DWGWriteHandlesCsv(Ctx: TDWGZCADLoadContext; const Path: String);
 procedure DWGWriteRefsCsv(Ctx: TDWGZCADLoadContext; const Path: String);
@@ -170,9 +171,9 @@ begin
     Result := dmOff;
 end;
 
-function DWGDiagModeFromEnv: TDWGDiagMode;
+function DWGDiagModeFromConst: TDWGDiagMode;
 begin
-  Result := DWGDiagModeFromString(GetEnvironmentVariable(DWG_DIAG_ENV_VAR));
+  Result := DWG_DIAG_MODE;
 end;
 
 function DWGDiagModeToString(Mode: TDWGDiagMode): String;

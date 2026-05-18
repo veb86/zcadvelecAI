@@ -22,7 +22,6 @@ unit uzeffLibreDWG;
 {$ModeSwitch advancedrecords}
 interface
 uses
-  uzbLogIntf, LazLoggerBase,
   SysUtils,
   dwg,dwgproc,
   uzeffmanager,
@@ -45,24 +44,34 @@ procedure addfromdxf(const filename:String;var ZCDCtx:TZDrawingContext;const Log
 implementation
 
 uses
-  uzeffLibreDWG2Ents;
+  uzeffLibreDWG2Ents,
+  uzedwglog;
 
 procedure DebugDWG(dwg:PDwg_Data);
 begin
-  DebugLn(['{WH}header.version: '+DWG_V2Str(dwg^.header.version)]);
-  zDebugLn(['{WH}header.from_version: ',DWG_V2Str(dwg^.header.from_version)]);
-  zDebugLn(['{WH}header.is_maint: ',dwg^.header.is_maint]);
-  zDebugLn(['{WH}header.zero_one_or_three: ',dwg^.header.zero_one_or_three]);
-  zDebugLn(['{WH}header.numheader_vars: ',dwg^.header.numheader_vars]);
-  zDebugLn(['{WH}header.thumbnail_address: ',dwg^.header.thumbnail_address]);
-  zDebugLn(['{WH}header.dwg_version: ',dwg^.header.dwg_version]);
-  zDebugLn(['{WH}header.maint_version: ',dwg^.header.maint_version]);
-  zDebugLn(['{WH}header.codepage: ',dwg^.header.codepage]);
-  zDebugLn(['{WH}dwg.counts: classes=',dwg^.num_classes,
-    ', objects=',dwg^.num_objects,
-    ', alloced_objects=',dwg^.num_alloced_objects,
-    ', entities=',dwg^.num_entities,
-    ', object_refs=',dwg^.num_object_refs]);
+  DWGLogInfoFormatStr('header.version: %s',
+    [DWG_V2Str(dwg^.header.version)]);
+  DWGLogInfoFormatStr('header.from_version: %s',
+    [DWG_V2Str(dwg^.header.from_version)]);
+  DWGLogInfoFormatStr('header.is_maint: %s',
+    [IntToStr(dwg^.header.is_maint)]);
+  DWGLogInfoFormatStr('header.zero_one_or_three: %s',
+    [IntToStr(dwg^.header.zero_one_or_three)]);
+  DWGLogInfoFormatStr('header.numheader_vars: %s',
+    [IntToStr(dwg^.header.numheader_vars)]);
+  DWGLogInfoFormatStr('header.thumbnail_address: %s',
+    [IntToStr(dwg^.header.thumbnail_address)]);
+  DWGLogInfoFormatStr('header.dwg_version: %s',
+    [IntToStr(dwg^.header.dwg_version)]);
+  DWGLogInfoFormatStr('header.maint_version: %s',
+    [IntToStr(dwg^.header.maint_version)]);
+  DWGLogInfoFormatStr('header.codepage: %s',
+    [IntToStr(dwg^.header.codepage)]);
+  DWGLogInfoFormatStr(
+    'dwg.counts: classes=%d, objects=%d, alloced_objects=%d, entities=%d, object_refs=%d',
+    [Integer(dwg^.num_classes), Integer(dwg^.num_objects),
+     Integer(dwg^.num_alloced_objects), Integer(dwg^.num_entities),
+     Integer(dwg^.num_object_refs)]);
 end;
 
 procedure PLP(const Data:TData;const Counter:TCounter);
@@ -77,19 +86,19 @@ var
   lph:TLPSHandle;
   Loaded:Boolean;
 begin
-  zDebugLn('{WH}%s',[rsNotYetImplemented]);
+  DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
   try
     LoadLibreDWG;
   except
     on E : Exception do begin
-      zDebugLn(['{EHM}LibreDWG: ',E.Message]);
+      DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
       exit;
     end;
   end;
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
   Loaded:=False;
-  zDebugLn(['{WH}try load file: ',ansistring(filename)]);
+  DWGLogInfoFormatStr('try load file: %s', [filename]);
   lph:=lps.StartLongProcess('LibreDWG.dwg_read_file',nil);
   try
     {$IFDEF WINDOWS}
@@ -99,12 +108,13 @@ begin
     {$ENDIF}
     Loaded:=True;
     lps.EndLongProcess(lph);
-    zDebugLn(['{WH}LibreDWG read code: ',Success,' (',
-      DWGReadCodeToText(Success),')']);
+    DWGLogInfoFormatStr('LibreDWG read code: %d (%s)',
+      [Success, DWGReadCodeToText(Success)]);
     DebugDWG(@dwg);
     if DWGReadCodeIsCritical(Success) then begin
-      zDebugLn(['{EHM}LibreDWG: critical read error code ',Success,' (',
-        DWGReadCodeToText(Success),'), aborting parse']);
+      DWGLogErrorFormatStr(
+        'LibreDWG: critical read error code %d (%s), aborting parse',
+        [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
@@ -116,7 +126,7 @@ begin
       // and parseDwg_Data so duplicate-handle detection and raw-index capture
       // happen once, before any mapper allocation.
       // Issue #1198 P3: forward the source path so EndDWGImport can emit
-      // diagnostic side-files next to the DWG when ZCAD_DWG_DIAG is set.
+      // diagnostic side-files next to the DWG when DWG_DIAG_MODE enables them.
       BeginDWGImport(ZCDCtx, filename);
       try
         ScanDWGImport(dwg);
@@ -139,36 +149,37 @@ var
   lph:TLPSHandle;
   Loaded:Boolean;
 begin
-  zDebugLn('{WH}%s',[rsNotYetImplemented]);
+  DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
   try
     LoadLibreDWG;
   except
     on E : Exception do begin
-      debugln('{EHM}LibreDWG: ',E.Message);
+      DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
       exit;
     end;
   end;
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
   Loaded:=False;
-  zDebugLn(['{WH}try load file: ',ansistring(filename)]);
+  DWGLogInfoFormatStr('try load file: %s', [filename]);
   lph:=lps.StartLongProcess('LibreDWG.dxf_read_file',nil);
   try
     Success:=dxf_read_file(pchar(ansistring(filename)),@dwg);
     Loaded:=True;
     lps.EndLongProcess(lph);
-    zDebugLn(['{WH}LibreDWG read code: ',Success,' (',
-      DWGReadCodeToText(Success),')']);
+    DWGLogInfoFormatStr('LibreDWG read code: %d (%s)',
+      [Success, DWGReadCodeToText(Success)]);
     DebugDWG(@dwg);
     if DWGReadCodeIsCritical(Success) then begin
-      zDebugLn(['{EHM}LibreDWG: critical dxf read error code ',Success,' (',
-        DWGReadCodeToText(Success),'), aborting parse']);
+      DWGLogErrorFormatStr(
+        'LibreDWG: critical dxf read error code %d (%s), aborting parse',
+        [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
       // Issue #1198 P3: forward the source path so EndDWGImport can emit
-      // diagnostic side-files next to the DXF when ZCAD_DWG_DIAG is set.
+      // diagnostic side-files next to the DXF when DWG_DIAG_MODE enables them.
       BeginDWGImport(ZCDCtx, filename);
       try
         ScanDWGImport(dwg);

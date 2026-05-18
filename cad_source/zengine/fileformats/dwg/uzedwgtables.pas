@@ -25,7 +25,6 @@ unit uzedwgtables;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
@@ -40,6 +39,7 @@ uses
 implementation
 
 uses
+  uzedwglog,
   uzedwgstylename;
 
 type
@@ -189,7 +189,7 @@ var
   Ctx: TDWGZCADLoadContext;
 begin
   BITCODE_T2Text(PDWGLayer^.name, DWGContext, name);
-  zDebugLn(['{WH}Layer: ', name]);
+  DWGLogInfoFormatStr('Layer: %s', [name]);
   name := DWGDecodedTextForZCAD(name);
   player := ZContext.PDrawing^.LayerTable.MergeItem(name, ZContext.LoadMode);
   if player <> nil then begin
@@ -200,23 +200,20 @@ begin
     player^._on := LayerProps.On;
     player^._lock := LayerProps.Locked;
     player^._print := LayerProps.Plot;
-    zDebugLn(['{WH}layer ', name,
-      ' visual color=', player^.color,
-      ', lineweight=', player^.lineweight,
-      ', on=', BoolToStr(player^._on, True),
-      ', raw_off=', BoolToStr(PDWGLayer^.off <> 0, True),
-      ', locked=', BoolToStr(player^._lock, True),
-      ', plot=', BoolToStr(player^._print, True),
-      ', color.index=', PDWGLayer^.color.index,
-      ', color.raw=', PDWGLayer^.color.raw,
-      ', color.rgb=$', IntToHex(PDWGLayer^.color.rgb, 8),
-      ', color.method=', DWGColorMethodToText(PDWGLayer^.color.method),
-      '($', IntToHex(Ord(PDWGLayer^.color.method), 2), ')',
-      ', color.flag=', PDWGLayer^.color.flag]);
+    DWGLogInfoFormatStr(
+      'layer %s visual color=%d, lineweight=%d, on=%s, raw_off=%s, locked=%s, plot=%s, color.index=%s, color.raw=%s, color.rgb=$%s, color.method=%s($%s), color.flag=%s',
+      [name, player^.color, player^.lineweight,
+       BoolToStr(player^._on, True), BoolToStr(PDWGLayer^.off <> 0, True),
+       BoolToStr(player^._lock, True), BoolToStr(player^._print, True),
+       IntToStr(PDWGLayer^.color.index), IntToStr(PDWGLayer^.color.raw),
+       IntToHex(PDWGLayer^.color.rgb, 8),
+       DWGColorMethodToText(PDWGLayer^.color.method),
+       IntToHex(Ord(PDWGLayer^.color.method), 2),
+       IntToStr(PDWGLayer^.color.flag)]);
     if DWGColorLooksLikeLostACI(PDWGLayer^.color) then
-      zDebugLn(['{WH}layer ', name,
-        ' color diagnostic: LibreDWG reported ACI white without raw index; ',
-        'original DWG layer ACI may be unavailable after RGB normalization']);
+      DWGLogWarningFormatStr(
+        'layer %s color diagnostic: LibreDWG reported ACI white without raw index; original DWG layer ACI may be unavailable after RGB normalization',
+        [name]);
     //desk:AnsiString;
   end;
   Ctx := GetLoadCtx;
@@ -256,7 +253,7 @@ begin
     DWGContext.DWGCodePage, Props) then
     Exit;
   name := Props.Name;
-  zDebugLn(['{WH}LineType: ', name]);
+  DWGLogInfoFormatStr('LineType: %s', [name]);
   name := DWGDecodedTextForZCAD(name);
   Props.Description := DWGDecodedTextForZCAD(Props.Description);
   for I := 0 to High(Props.Dashes) do
@@ -271,9 +268,8 @@ begin
     if pltype^.Name = '' then
       pltype^.init(name);
     DWGApplyLineTypePattern(pltype, Props, Ctx);
-    zDebugLn(['{WH}linetype ', name,
-      ' pattern_len=', FloatToStr(pltype^.LengthDXF),
-      ', dashes=', Length(Props.Dashes)]);
+    DWGLogInfoFormatStr('linetype %s pattern_len=%s, dashes=%d',
+      [name, FloatToStr(pltype^.LengthDXF), Length(Props.Dashes)]);
   end;
   if Ctx <> nil then begin
     Handle := DWGObjectHandleValue(DWGObject);
@@ -298,7 +294,7 @@ begin
     DWGContext.DWGCodePage, Props) then
     Exit;
   name := Props.Name;
-  zDebugLn(['{WH}TextStyle: ', name]);
+  DWGLogInfoFormatStr('TextStyle: %s', [name]);
   FontFile := Props.FontFile;
   FontFamily := '';
   name := DWGDecodedTextForZCAD(name);
@@ -418,7 +414,7 @@ begin
   Name := DWGDecodedTextForZCAD(Name);
   if Name = '' then
     Name := 'Standard';
-  zDebugLn(['{WH}DimStyle: ', Name]);
+  DWGLogInfoFormatStr('DimStyle: %s', [Name]);
 
   PDimStyle := PGDBDimStyle(ZContext.PDrawing^.DimStyleTable.getAddres(Name));
   if PDimStyle = nil then begin
@@ -456,14 +452,14 @@ begin
     Exit;
   BITCODE_T2Text(PDWGVPort^.name, DWGContext, Name);
   Name := DWGDecodedTextForZCAD(Name);
-  zDebugLn(['{WH}VPort: ', Name]);
+  DWGLogInfoFormatStr('VPort: %s', [Name]);
   if CompareText(Name, '*ACTIVE') <> 0 then
     Exit;
 
   if DWGVPortViewPropsValue(PDWGVPort, Props) then
     DWGCaptureActiveVPortView(Props)
   else
-    zDebugLn(['{WHM}DWG active VPORT has no usable view size']);
+    DWGLogWarningFormatStr('DWG active VPORT has no usable view size', []);
 end;
 
 initialization

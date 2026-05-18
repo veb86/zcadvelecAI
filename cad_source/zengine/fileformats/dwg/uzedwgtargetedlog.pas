@@ -20,7 +20,7 @@
   при разрешении ссылок или при привязке к владельцу.
 
   Этот модуль решает задачу точечного логирования: разработчик задаёт список
-  интересующих handle'ов через переменную окружения ZCAD_DWG_TARGET_HANDLES
+  интересующих handle'ов через константу DWG_TARGET_HANDLE_LIST
   (значения из dwgread JSON в десятичном формате либо hex с A-F/0x/$,
   через запятую), а вызовы
   TargetedLogXxx размещены в ключевых точках конвейера загрузки. Если handle
@@ -28,11 +28,11 @@
   обычную загрузку).
 
   Пример настройки для отладки MTEXT 0xA325E и LINE 0xA08 / OWNER 0x9FC:
-    SET ZCAD_DWG_TARGET_HANDLES=A325E,A08,9FC
+    DWG_TARGET_HANDLE_LIST = 'A325E,A08,9FC'
 
   Если handle скопирован из JSON dwgread как [0,3,668254], можно задавать
   десятичное значение напрямую:
-    SET ZCAD_DWG_TARGET_HANDLES=668254
+    DWG_TARGET_HANDLE_LIST = '668254'
 
   Формат лога — единая строка в специализированном модуле programlog DWG,
   чтобы целевые сообщения можно было включать отдельно от обычной загрузки. }
@@ -49,11 +49,11 @@ uses
   uzedwgtypes;
 
 const
-  { Имя переменной окружения, через которую задаётся список целевых handle'ов.
+  { Compile-time/default list of target handles. Keep empty for release builds.
     Значение — список чисел из dwgread JSON в десятичном формате либо hex с
     A-F/0x/$, разделённых запятыми, пробелами, точками с запятой или
     двоеточиями. }
-  DWG_TARGET_HANDLES_ENV_VAR = 'ZCAD_DWG_TARGET_HANDLES';
+  DWG_TARGET_HANDLE_LIST = '';
 
   { Верхний предел числа отслеживаемых handle'ов. Достаточно для типичной
     отладочной сессии и не даёт случайно «зацепить» весь чертёж, если
@@ -69,7 +69,7 @@ type
     FCount:  Integer;
     function FindIndex(AHandle: TDWGZCADHandle; out Index: Integer): Boolean;
   public
-    { Очистка набора (используется при перечитывании окружения). }
+    { Очистка набора (используется при перечитывании константы). }
     procedure Clear;
     { Добавить handle. Дубликаты молча игнорируются; при переполнении возвращает
       False, чтобы вызывающая сторона могла увидеть факт усечения. }
@@ -81,13 +81,13 @@ type
     function ValueAt(Index: Integer): TDWGZCADHandle;
   end;
 
-{ Перечитать список целевых handle'ов из окружения. Вызывается в начале
-  каждого импорта; результаты кэшируются до следующего вызова или до
+{ Перечитать список целевых handle'ов из константы. Вызывается в начале
+  каждого импорта; результат кэшируется до следующего вызова или до
   принудительного сброса через TargetedLogClear. }
-procedure TargetedLogRefreshFromEnv;
+procedure TargetedLogRefresh;
 
-{ Принудительно сбросить кэш (на случай, если тесты подменяют переменную
-  окружения между прогонами). }
+{ Принудительно сбросить кэш (на случай, если тесты проверяют разные списки
+  между прогонами). }
 procedure TargetedLogClear;
 
 { Проверка: интересен ли данный handle разработчику. Возвращает False, если
@@ -112,9 +112,8 @@ procedure TargetedLogPair(const Phase: string; AEntity, AOwner: TDWGZCADHandle;
 
 { Парсинг одного hex-токена и списка handle'ов. Список дополнительно принимает
   десятичные значения из dwgread JSON. Функции выведены в interface специально
-  ради юнит-тестов: эмулировать установку переменной окружения кроссплатформенно
-  (Windows SetEnvironmentVariable / POSIX setenv) сложнее, чем дать тесту
-  прямой доступ к парсеру. }
+  ради юнит-тестов: проверять парсер напрямую проще, чем менять
+  compile-time константу под отдельные тестовые случаи. }
 function TargetedLogParseHexHandle(const Token: string;
   out Value: TDWGZCADHandle): Boolean;
 procedure TargetedLogParseTargetList(const Raw: string;
@@ -127,7 +126,7 @@ uses
 
 var
   { Кэш списка целевых handle'ов. Все обращения идут через TargetedLogHandle,
-    которая на первый вызов запрашивает обновление из переменной окружения. }
+    которая на первый вызов запрашивает обновление из константы. }
   TargetSet:           TDWGTargetedHandleSet;
   TargetSetInitialized: Boolean = False;
 
@@ -304,7 +303,7 @@ end;
 { Разобрать список целевых handle'ов из строки. Разделители: запятая, пробел,
   точка с запятой, двоеточие. Голые числа читаются как десятичные значения из
   JSON dwgread; hex можно задавать через A-F или префиксы 0x/$.
-  Некорректные токены пропускаются без шумной диагностики — пользователь
+  Некорректные токены пропускаются без шумной диагностики — разработчик
   увидит реальный эффект (или его отсутствие) по факту работы загрузчика. }
 procedure ParseTargetList(const Raw: string; var Target: TDWGTargetedHandleSet);
 var
@@ -348,20 +347,20 @@ begin
   ParseTargetList(Raw, Target);
 end;
 
-procedure TargetedLogRefreshFromEnv;
+procedure TargetedLogRefresh;
 var
   Raw: string;
   I: Integer;
 begin
   TargetSet.Clear;
-  Raw := GetEnvironmentVariable(DWG_TARGET_HANDLES_ENV_VAR);
+  Raw := DWG_TARGET_HANDLE_LIST;
   if Raw <> '' then
     ParseTargetList(Raw, TargetSet);
   TargetSetInitialized := True;
   if TargetSet.Count > 0 then begin
     DWGLogInfoFormatStr(
-      'uzedwgtargetedlog: tracking %d DWG handle(s) from %s=''%s''',
-      [TargetSet.Count, DWG_TARGET_HANDLES_ENV_VAR, Raw]);
+      'uzedwgtargetedlog: tracking %d DWG handle(s) from DWG_TARGET_HANDLE_LIST=''%s''',
+      [TargetSet.Count, Raw]);
     for I := 0 to TargetSet.Count - 1 do
       DWGLogInfoFormatStr(
         'uzedwgtargetedlog:   [%d] handle=%s',
@@ -378,14 +377,14 @@ end;
 function TargetedLogIsActive: Boolean;
 begin
   if not TargetSetInitialized then
-    TargetedLogRefreshFromEnv;
+    TargetedLogRefresh;
   Result := TargetSet.Count > 0;
 end;
 
 function TargetedLogHandle(AHandle: TDWGZCADHandle): Boolean;
 begin
   if not TargetSetInitialized then
-    TargetedLogRefreshFromEnv;
+    TargetedLogRefresh;
   if TargetSet.Count = 0 then
     Exit(False);
   Result := TargetSet.Contains(AHandle);

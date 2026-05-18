@@ -27,7 +27,6 @@ unit uzedwgimport;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc,uzedwghandle,
   uzeentgenericsubentry, uzedrawingsimple,
@@ -169,12 +168,11 @@ begin
     Exit;
   LoadActiveVPortViewProps := Props;
   LoadHasActiveVPortViewProps := True;
-  zDebugLn(['{WH}DWG active VPORT view: center=(',
-    FloatToStr(Props.CenterX), ', ', FloatToStr(Props.CenterY),
-    '), height=', FloatToStr(Props.Height),
-    ', width=', FloatToStr(Props.Width),
-    ', has_width=', BoolToStr(Props.HasWidth, True),
-    ', space=', DWGViewSpaceToText(Props.Space)]);
+  DWGLogInfoFormatStr(
+    'DWG active VPORT view: center=(%s, %s), height=%s, width=%s, has_width=%s, space=%s',
+    [FloatToStr(Props.CenterX), FloatToStr(Props.CenterY),
+     FloatToStr(Props.Height), FloatToStr(Props.Width),
+     BoolToStr(Props.HasWidth, True), DWGViewSpaceToText(Props.Space)]);
 end;
 
 function DWGEnsureTextStyle(var Drawing: TSimpleDrawing): PGDBTextStyle;
@@ -265,15 +263,15 @@ begin
        (Entry.Kind = dokLayer) then
       CurrentLayer := PGDBLayerProp(Entry.Ptr);
     if CurrentLayer = nil then
-      zDebugLn(['{WH}DWG current layer handle ',
-        IntToHex(LoadCurrentLayerHandle, 1),
-        ' did not resolve to a layer; using system layer']);
+      DWGLogWarningFormatStr(
+        'DWG current layer handle %s did not resolve to a layer; using system layer',
+        [DWGHandleLogText(LoadCurrentLayerHandle)]);
   end;
   if CurrentLayer = nil then
     CurrentLayer := ZContext.PDrawing^.LayerTable.GetSystemLayer;
   ZContext.PDrawing^.CurrentLayer := CurrentLayer;
   if CurrentLayer <> nil then
-    zDebugLn(['{WH}DWG current layer -> ', CurrentLayer^.Name]);
+    DWGLogInfoFormatStr('DWG current layer -> %s', [CurrentLayer^.Name]);
 end;
 
 procedure ApplyDWGCurrentLineType(var ZContext: TZDrawingContext);
@@ -287,15 +285,15 @@ begin
        (Entry.Kind = dokLineType) then
       CurrentLType := PGDBLtypeProp(Entry.Ptr);
     if CurrentLType = nil then
-      zDebugLn(['{WH}DWG current linetype handle ',
-        IntToHex(LoadCurrentLineTypeHandle, 1),
-        ' did not resolve to a linetype; using ByLayer']);
+      DWGLogWarningFormatStr(
+        'DWG current linetype handle %s did not resolve to a linetype; using ByLayer',
+        [DWGHandleLogText(LoadCurrentLineTypeHandle)]);
   end;
   if CurrentLType = nil then
     CurrentLType := DWGSystemLineTypeForKind(dltByLayer);
   ZContext.PDrawing^.CurrentLType := CurrentLType;
   if CurrentLType <> nil then
-    zDebugLn(['{WH}DWG current linetype -> ', CurrentLType^.Name]);
+    DWGLogInfoFormatStr('DWG current linetype -> %s', [CurrentLType^.Name]);
 end;
 
 procedure ApplyDWGCurrentTextStyle(var ZContext: TZDrawingContext);
@@ -309,15 +307,15 @@ begin
        (Entry.Kind = dokTextStyle) then
       CurrentStyle := PGDBTextStyle(Entry.Ptr);
     if CurrentStyle = nil then
-      zDebugLn(['{WH}DWG current textstyle handle ',
-        IntToHex(LoadCurrentTextStyleHandle, 1),
-        ' did not resolve to a text style; using Standard']);
+      DWGLogWarningFormatStr(
+        'DWG current textstyle handle %s did not resolve to a text style; using Standard',
+        [DWGHandleLogText(LoadCurrentTextStyleHandle)]);
   end;
   if (CurrentStyle = nil) or CurrentStyle^.UsedInLTYPE then
     CurrentStyle := DWGEnsureTextStyle(ZContext.PDrawing^);
   ZContext.PDrawing^.CurrentTextStyle := CurrentStyle;
   if CurrentStyle <> nil then
-    zDebugLn(['{WH}DWG current textstyle -> ', CurrentStyle^.Name]);
+    DWGLogInfoFormatStr('DWG current textstyle -> %s', [CurrentStyle^.Name]);
 end;
 
 procedure ApplyDWGCurrentDimStyle(var ZContext: TZDrawingContext);
@@ -331,15 +329,15 @@ begin
        (Entry.Kind = dokDimStyle) then
       CurrentDimStyle := PGDBDimStyle(Entry.Ptr);
     if CurrentDimStyle = nil then
-      zDebugLn(['{WH}DWG current dimstyle handle ',
-        IntToHex(LoadCurrentDimStyleHandle, 1),
-        ' did not resolve to a dimstyle; using Standard']);
+      DWGLogWarningFormatStr(
+        'DWG current dimstyle handle %s did not resolve to a dimstyle; using Standard',
+        [DWGHandleLogText(LoadCurrentDimStyleHandle)]);
   end;
   if CurrentDimStyle = nil then
     CurrentDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
   ZContext.PDrawing^.CurrentDimStyle := CurrentDimStyle;
   if CurrentDimStyle <> nil then
-    zDebugLn(['{WH}DWG current dimstyle -> ', CurrentDimStyle^.Name]);
+    DWGLogInfoFormatStr('DWG current dimstyle -> %s', [CurrentDimStyle^.Name]);
 end;
 
 procedure ApplyDWGHeaderEntityProps(var ZContext: TZDrawingContext);
@@ -351,12 +349,12 @@ begin
   ZContext.PDrawing^.CLTScale := LoadHeaderEntityProps.LineTypeScale;
   ZContext.PDrawing^.LTScale := LoadHeaderEntityProps.GlobalLineTypeScale;
   ZContext.PDrawing^.LWDisplay := LoadHeaderEntityProps.LineWeightDisplay;
-  zDebugLn(['{WH}DWG current entity defaults -> color=',
-    ZContext.PDrawing^.CColor,
-    ', lineweight=', ZContext.PDrawing^.CurrentLineW,
-    ', celtscale=', FloatToStr(ZContext.PDrawing^.CLTScale),
-    ', ltscale=', FloatToStr(ZContext.PDrawing^.LTScale),
-    ', lwdisplay=', BoolToStr(ZContext.PDrawing^.LWDisplay, True)]);
+  DWGLogInfoFormatStr(
+    'DWG current entity defaults -> color=%d, lineweight=%d, celtscale=%s, ltscale=%s, lwdisplay=%s',
+    [ZContext.PDrawing^.CColor, ZContext.PDrawing^.CurrentLineW,
+     FloatToStr(ZContext.PDrawing^.CLTScale),
+     FloatToStr(ZContext.PDrawing^.LTScale),
+     BoolToStr(ZContext.PDrawing^.LWDisplay, True)]);
 end;
 
 function DWGSelectViewProps(out Props: TDWGViewProps; out Source: string): Boolean;
@@ -373,8 +371,9 @@ begin
     Exit(True);
   end;
   if LoadHasHeaderViewProps and (LoadHeaderViewProps.Space = dvsPaperSpace) then
-    zDebugLn(['{WH}DWG header view is paper-space; ignoring it because ZCAD ',
-      'opens DWG drawings in model space']);
+    DWGLogInfoFormatStr(
+      'DWG header view is paper-space; ignoring it because ZCAD opens DWG drawings in model space',
+      []);
   Result := False;
 end;
 
@@ -412,10 +411,11 @@ begin
     end;
   end;
 
-  zDebugLn(['{WH}DWG view from ', Source, ' applied: camera=(',
-    FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.x), ', ',
-    FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.y),
-    '), zoom=', FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
+  DWGLogInfoFormatStr(
+    'DWG view from %s applied: camera=(%s, %s), zoom=%s',
+    [Source, FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.x),
+     FloatToStr(ZContext.PDrawing^.pcamera^.prop.point.y),
+     FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
 end;
 
 { Issue #1198 P4: locate the DWG handle for an entity pointer by walking
@@ -485,9 +485,9 @@ begin
   end;
 end;
 
-{ Issue #1198 P4: gate a per-entity fallback log line through the
+{ Issue #1198 P4: gate a per-entity fallback detail line through the
   warning list's dedup tracker. Returns True if the caller should emit
-  the zDebugLn line (first occurrence for this Code+Handle pair) and
+  the DWG log line (first occurrence for this Code+Handle pair) and
   False otherwise — the resolver has already booked the occurrence in
   the aggregate, so the EndDWGImport summary still reports it. When
   there is no active load context (legacy callers) the gate stays open
@@ -545,9 +545,9 @@ begin
     pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
     if (Reason <> arResolved) and
        DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-      zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-        ' deferred under INSERT via fallback (',
-        DWGAttachReasonToText(Reason), ')']);
+      DWGLogWarningFormatStr(
+        'entity %s deferred under INSERT via fallback (%s)',
+        [HexStr(PtrUInt(pobj), 16), DWGAttachReasonToText(Reason)]);
     Exit;
   end;
 
@@ -556,8 +556,8 @@ begin
   newowner^.AddMi(PGDBObjSubordinated(pobj));
   if (Reason <> arResolved) and
      DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-    zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-      ' attached via fallback (', DWGAttachReasonToText(Reason), ')']);
+    DWGLogWarningFormatStr('entity %s attached via fallback (%s)',
+      [HexStr(PtrUInt(pobj), 16), DWGAttachReasonToText(Reason)]);
 
   // R7 (TZ §3.7): BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd
   // moved to uzedwgfinalize.FinalizeImport. Attach is back to being just an
@@ -643,10 +643,11 @@ begin
         pobj^.vp.Layer := PGDBLayerProp(Ref);
         if (Reason <> arResolved) and
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' layer fallback (', DWGAttachReasonToText(Reason), ') -> ',
-            DWGLayerNameForLog(PGDBLayerProp(Ref))]);
+          DWGLogWarningFormatStr(
+            'entity %s %s layer fallback (%s) -> %s',
+            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+             DWGAttachReasonToText(Reason),
+             DWGLayerNameForLog(PGDBLayerProp(Ref))]);
       end;
     rsLineType:
       begin
@@ -656,11 +657,11 @@ begin
         pobj^.vp.LineType := PGDBLtypeProp(Ref);
         if (Reason <> arResolved) and
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' linetype fallback (', DWGAttachReasonToText(Reason),
-            ', layer=', DWGLayerNameForLog(pobj^.vp.Layer), ') -> ',
-            DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+          DWGLogWarningFormatStr(
+            'entity %s %s linetype fallback (%s, layer=%s) -> %s',
+            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+             DWGAttachReasonToText(Reason), DWGLayerNameForLog(pobj^.vp.Layer),
+             DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
       end;
     rsLayerLineType:
       begin
@@ -670,15 +671,16 @@ begin
         player^.LT := PGDBLtypeProp(Ref);
         if Reason <> arResolved then begin
           if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-            zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
-              ' ', DWGRefHandlesForLog(Entity, Slot),
-              ' linetype fallback (', DWGAttachReasonToText(Reason), ') -> ',
-              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+            DWGLogWarningFormatStr(
+              'layer %s %s linetype fallback (%s) -> %s',
+              [DWGLayerNameForLog(player), DWGRefHandlesForLog(Entity, Slot),
+               DWGAttachReasonToText(Reason),
+               DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
         end
         else
-          zDebugLn(['{WH}layer ', DWGLayerNameForLog(player),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' linetype -> ', DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
+          DWGLogInfoFormatStr('layer %s %s linetype -> %s',
+            [DWGLayerNameForLog(player), DWGRefHandlesForLog(Entity, Slot),
+             DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
       end;
     rsTextStyle:
       begin
@@ -694,9 +696,10 @@ begin
           PGDBObjText(pobj)^.TXTStyle := PGDBTextStyle(Ref);
         if (Reason <> arResolved) and
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' textstyle fallback (', DWGAttachReasonToText(Reason), ')']);
+          DWGLogWarningFormatStr(
+            'entity %s %s textstyle fallback (%s)',
+            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+             DWGAttachReasonToText(Reason)]);
       end;
     rsDimStyle:
       begin
@@ -716,9 +719,10 @@ begin
         end;
         if (Reason <> arResolved) and
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-          zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-            ' ', DWGRefHandlesForLog(Entity, Slot),
-            ' dimstyle fallback (', DWGAttachReasonToText(Reason), ')']);
+          DWGLogWarningFormatStr(
+            'entity %s %s dimstyle fallback (%s)',
+            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+             DWGAttachReasonToText(Reason)]);
       end;
     rsBlockDef:
       begin
@@ -732,13 +736,14 @@ begin
         else begin
           pBlockDef := DWGEnsureFallbackBlockDef;
           if Reason = arResolved then
-            zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-              ' ', DWGRefHandlesForLog(Entity, Slot),
-              ' block ref resolves to model/paper space; using empty block'])
+            DWGLogWarningFormatStr(
+              'entity %s %s block ref resolves to model/paper space; using empty block',
+              [HexStr(PtrUInt(pobj), 16),
+               DWGRefHandlesForLog(Entity, Slot)])
           else if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
-            zDebugLn(['{WH}entity ', HexStr(PtrUInt(pobj), 16),
-              ' ', DWGRefHandlesForLog(Entity, Slot),
-              ' block fallback (', DWGAttachReasonToText(Reason), ')']);
+            DWGLogWarningFormatStr('entity %s %s block fallback (%s)',
+              [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+               DWGAttachReasonToText(Reason)]);
         end;
         if pBlockDef <> nil then begin
           pInsert^.PDef := pBlockDef;
@@ -761,14 +766,15 @@ var
   StdDimStyle: PGDBDimStyle;
 begin
   if LoadCtx <> nil then begin
-    zDebugLn(['{WHM}DWG load context already active; force-resetting']);
+    DWGLogWarningFormatStr('DWG load context already active; force-resetting',
+      []);
     FreeAndNil(LoadCtx);
   end;
-  // Issue #1203: перечитываем список целевых handle'ов из переменной окружения
-  // в самом начале импорта. Если ZCAD_DWG_TARGET_HANDLES пуста — последующие
+  // Issue #1203: перечитываем список целевых handle'ов из константы
+  // в самом начале импорта. Если DWG_TARGET_HANDLE_LIST пуста — последующие
   // вызовы TargetedLogXxx будут no-op'ами; если задана — каждое прохождение
   // целевого handle через ключевые точки конвейера будет залогировано.
-  TargetedLogRefreshFromEnv;
+  TargetedLogRefresh;
   LoadCtx := TDWGZCADLoadContext.Create;
   LoadDrawing := ZContext.PDrawing;
   LoadSourcePath := ASourcePath;
@@ -842,25 +848,22 @@ begin
   LoadHasHeaderViewProps :=
     DWGHeaderViewPropsValue(Raw, LoadHeaderViewProps);
   if LoadHasHeaderEntityProps then
-    zDebugLn(['{WH}DWG header defaults: CLAYER=',
-      DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
-      ', CELTYPE=',
-      DWGHeaderHandleForLog(LoadHasCurrentLineTypeHandle, LoadCurrentLineTypeHandle),
-      ', TEXTSTYLE=',
-      DWGHeaderHandleForLog(LoadHasCurrentTextStyleHandle, LoadCurrentTextStyleHandle),
-      ', DIMSTYLE=',
-      DWGHeaderHandleForLog(LoadHasCurrentDimStyleHandle, LoadCurrentDimStyleHandle),
-      ', CECOLOR=', LoadHeaderEntityProps.ColorIndex,
-      ', CELWEIGHT=', LoadHeaderEntityProps.LineWeight,
-      ', CELTSCALE=', FloatToStr(LoadHeaderEntityProps.LineTypeScale),
-      ', LTSCALE=', FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
-      ', LWDISPLAY=', BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
+    DWGLogInfoFormatStr(
+      'DWG header defaults: CLAYER=%s, CELTYPE=%s, TEXTSTYLE=%s, DIMSTYLE=%s, CECOLOR=%d, CELWEIGHT=%d, CELTSCALE=%s, LTSCALE=%s, LWDISPLAY=%s',
+      [DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
+       DWGHeaderHandleForLog(LoadHasCurrentLineTypeHandle, LoadCurrentLineTypeHandle),
+       DWGHeaderHandleForLog(LoadHasCurrentTextStyleHandle, LoadCurrentTextStyleHandle),
+       DWGHeaderHandleForLog(LoadHasCurrentDimStyleHandle, LoadCurrentDimStyleHandle),
+       LoadHeaderEntityProps.ColorIndex, LoadHeaderEntityProps.LineWeight,
+       FloatToStr(LoadHeaderEntityProps.LineTypeScale),
+       FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
+       BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
   if LoadHasHeaderViewProps then
-    zDebugLn(['{WH}DWG header view: center=(',
-      FloatToStr(LoadHeaderViewProps.CenterX), ', ',
-      FloatToStr(LoadHeaderViewProps.CenterY), '), height=',
-      FloatToStr(LoadHeaderViewProps.Height), ', space=',
-      DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
+    DWGLogInfoFormatStr('DWG header view: center=(%s, %s), height=%s, space=%s',
+      [FloatToStr(LoadHeaderViewProps.CenterX),
+       FloatToStr(LoadHeaderViewProps.CenterY),
+       FloatToStr(LoadHeaderViewProps.Height),
+       DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
   if LoadDrawing <> nil then
     DWGReserveBlockDefCapacity(Raw, LoadDrawing^.BlockDefArray);
   HandlesBefore := LoadCtx.Handles.Count;
@@ -870,13 +873,6 @@ begin
     [Raw.num_classes, Raw.num_objects, Raw.num_alloced_objects,
      Raw.num_entities, Raw.num_object_refs, LoadCtx.Handles.Count - HandlesBefore,
      LoadCtx.Handles.Count]);
-  zDebugLn(['{WH}DWG raw objects: classes=', Raw.num_classes,
-    ', objects=', Raw.num_objects,
-    ', alloced_objects=', Raw.num_alloced_objects,
-    ', entities=', Raw.num_entities,
-    ', object_refs=', Raw.num_object_refs,
-    ', handles_registered=', LoadCtx.Handles.Count - HandlesBefore,
-    ', handles_total=', LoadCtx.Handles.Count]);
 end;
 
 { Issue #1198 P4: emit one summary line per diagnostic code observed
@@ -899,11 +895,10 @@ begin
     Suppressed := Agg.TotalCount - Agg.DistinctHandles;
     if Suppressed < 0 then
       Suppressed := 0;
-    zDebugLn(['{WH}DWG warning summary code=', Agg.Code,
-      ' (', DWGWarningCodeToShortName(Agg.Code), '): ',
-      Agg.TotalCount, ' occurrence(s) across ',
-      Agg.DistinctHandles, ' handle(s); ',
-      Suppressed, ' duplicate(s) suppressed from main log']);
+    DWGLogWarningFormatStr(
+      'DWG warning summary code=%d (%s): %d occurrence(s) across %d handle(s); %d duplicate(s) suppressed from main log',
+      [Agg.Code, DWGWarningCodeToShortName(Agg.Code), Agg.TotalCount,
+       Agg.DistinctHandles, Suppressed]);
   end;
 end;
 
@@ -924,7 +919,7 @@ var
 begin
   if Ctx = nil then
     Exit;
-  Mode := DWGDiagModeFromEnv;
+  Mode := DWGDiagModeFromConst;
   if Mode = dmOff then
     Exit;
   DWGCountByFixedType(Ctx, FixedTypes);
@@ -938,19 +933,17 @@ begin
       Inc(Unhandled, FixedTypes[I].Count);
       Inc(UnhandledFT);
     end;
-    zDebugLn(['{WH}DWG fixedtype ',
-      DWGFixedTypeToText(FixedTypes[I].FixedType),
-      ': count=', FixedTypes[I].Count,
-      ', has_handler=', HasH]);
+    DWGLogInfoFormatStr('DWG fixedtype %s: count=%d, has_handler=%s',
+      [DWGFixedTypeToText(FixedTypes[I].FixedType), FixedTypes[I].Count,
+       BoolToStr(HasH, True)]);
   end;
-  zDebugLn(['{WH}DWG fixedtype histogram: ', Length(FixedTypes),
-    ' distinct type(s), ', Total, ' handle(s); ',
-    UnhandledFT, ' type(s) without a registered handler (',
-    Unhandled, ' handle(s))']);
+  DWGLogInfoFormatStr(
+    'DWG fixedtype histogram: %d distinct type(s), %d handle(s); %d type(s) without a registered handler (%d handle(s))',
+    [Length(FixedTypes), Total, UnhandledFT, Unhandled]);
 end;
 
 { Issue #1198 P3: emit per-DWG diagnostic side-files when the user has
-  opted in via ZCAD_DWG_DIAG=summary|full|trace. Runs after the resolver
+  opted in via DWG_DIAG_MODE=dmSummary|dmFull|dmTrace. Runs after the resolver
   has fully populated PendingOwners / PendingRefs so the CSVs reflect the
   final attach state. Failures during write must not abort the import:
   the side-file writer is strictly diagnostic, so we swallow exceptions
@@ -963,20 +956,20 @@ var
 begin
   if Ctx = nil then
     Exit;
-  Mode := DWGDiagModeFromEnv;
+  Mode := DWGDiagModeFromConst;
   if Mode = dmOff then
     Exit;
   try
     Res := DWGWriteSideFiles(Ctx, SourcePath, Mode);
-    zDebugLn(['{WH}DWG diagnostic side-files (mode=',
-      DWGDiagModeToString(Mode), '): ',
-      Length(Res.FilesWritten), ' file(s) written']);
+    DWGLogInfoFormatStr('DWG diagnostic side-files (mode=%s): %d file(s) written',
+      [DWGDiagModeToString(Mode), Length(Res.FilesWritten)]);
     for I := 0 to High(Res.FilesWritten) do
-      zDebugLn(['{WH}  ', Res.FilesWritten[I]]);
+      DWGLogInfoFormatStr('DWG diagnostic side-file: %s',
+        [Res.FilesWritten[I]]);
   except
     on E: Exception do
-      zDebugLn(['{WH}DWG side-files: failed to write (',
-        E.ClassName, '): ', E.Message]);
+      DWGLogWarningFormatStr('DWG side-files: failed to write (%s): %s',
+        [E.ClassName, E.Message]);
   end;
 end;
 
@@ -1004,20 +997,6 @@ begin
        LoadCtx.ProxiesLoaded, LoadCtx.ProxiesFailed, LoadCtx.UnknownEntities,
        LoadCtx.UnknownObjects, LoadCtx.DroppedDueToFreedRaw,
        LoadCtx.WarningCount]);
-    zDebugLn(['{WH}DWG owner resolve: handles=', LoadCtx.Handles.Count,
-      ', pending_owners=', LoadCtx.PendingOwners.Count,
-      ', pending_refs=', LoadCtx.PendingRefs.Count,
-      ', attached=', LoadCtx.AttachCount,
-      ', fallback=', LoadCtx.FallbackCount,
-      ', cycles=', LoadCtx.CycleCount,
-      ', refs_attached=', LoadCtx.RefAttachCount,
-      ', refs_fallback=', LoadCtx.RefFallbackCount,
-      ', proxy_loaded=', LoadCtx.ProxiesLoaded,
-      ', proxy_failed=', LoadCtx.ProxiesFailed,
-      ', unknown_entities=', LoadCtx.UnknownEntities,
-      ', unknown_objects=', LoadCtx.UnknownObjects,
-      ', freed_raw_drops=', LoadCtx.DroppedDueToFreedRaw,
-      ', warnings=', LoadCtx.WarningCount]);
     DWGEmitWarningSummary(LoadCtx);
     DWGEmitFixedTypeHistogram(LoadCtx);
     DWGEmitSideFiles(LoadCtx, LoadSourcePath);
@@ -1076,11 +1055,9 @@ begin
      (DWGObject.tio.entity <> nil) then
     EntMode := DWGObject.tio.entity^.entmode;
   if (OwnerHandle = 0) and ((EntMode = 1) or (EntMode = 2)) then
-    zDebugLn(['{WH}entmode=', EntMode,
-      ' implicit owner unresolved for entity ',
-      IntToHex(EntityHandle, 1),
-      ' (mspace/pspace_block, header_vars.BLOCK_RECORD_*SPACE,',
-      ' block_control.*_space and ownerhandle all empty)']);
+    DWGLogWarningFormatStr(
+      'entmode=%d implicit owner unresolved for entity %s (mspace/pspace_block, header_vars.BLOCK_RECORD_*SPACE, block_control.*_space and ownerhandle all empty)',
+      [EntMode, DWGHandleLogText(EntityHandle)]);
   if EntityHandle <> 0 then
     LoadCtx.RegisterShell(EntityHandle, AKind, pobj, -1);
   // Issue #1203: точечный лог регистрации shell-а сущности. Срабатывает,
@@ -1096,8 +1073,9 @@ begin
     pobj^.vp.LineWeight := CommonProps.LineWeight;
     pobj^.vp.LineTypeScale := CommonProps.LineTypeScale;
     if CommonProps.Invisible then
-      zDebugLn(['{WH}DWG entity ', IntToHex(EntityHandle, 1),
-        ' is marked invisible in the DWG common entity flags']);
+      DWGLogInfoFormatStr(
+        'DWG entity %s is marked invisible in the DWG common entity flags',
+        [DWGHandleLogText(EntityHandle)]);
   end;
 
   if not DWGEntityLayerHandleCandidatesValue(DWGObject, LayerCandidates) then
@@ -1120,17 +1098,12 @@ begin
     LtypeInline := False;
   end;
   //if DWGObject.fixedtype = DWG_TYPE_LINE then
-  //  zDebugLn(['{WH}DWG LINE shell handle=', IntToHex(EntityHandle, 1),
-  //    ', entmode=', EntMode,
-  //    ', owner=', IntToHex(OwnerHandle, 1),
-  //    ', layer_ref=', IntToHex(LayerHandle, 1),
-  //    ', ltype_kind=', DWGEntityLineTypeKindToText(LtypeKind),
-  //    ', ltype_ref=', IntToHex(LtypeHandle, 1),
-  //    ', ltype_flags=', CommonProps.LineTypeFlags,
-  //    ', color=', CommonProps.ColorIndex,
-  //    ', lineweight=', CommonProps.LineWeight,
-  //    ', ltscale=', FloatToStr(CommonProps.LineTypeScale),
-  //    ', invisible=', BoolToStr(CommonProps.Invisible, True)]);
+  //  DWGLogInfoFormatStr(
+  //    'DWG LINE shell handle=%s, entmode=%d, owner=%s, ltype_kind=%s, color=%d, lineweight=%d, ltscale=%s, invisible=%s',
+  //    [DWGHandleLogText(EntityHandle), EntMode, DWGHandleLogText(OwnerHandle),
+  //     DWGEntityLineTypeKindToText(LtypeKind), CommonProps.ColorIndex,
+  //     CommonProps.LineWeight, FloatToStr(CommonProps.LineTypeScale),
+  //     BoolToStr(CommonProps.Invisible, True)]);
   LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LayerCandidates.Values,
     LayerCandidates.Count, dokLayer, rsLayer, nil);
   LoadCtx.QueueRefResolveCandidates(pobj, EntityHandle, LtypeCandidates.Values,

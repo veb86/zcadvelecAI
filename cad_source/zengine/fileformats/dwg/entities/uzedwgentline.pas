@@ -23,7 +23,6 @@ unit uzedwgentline;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc, uzedwghandle,
   uzedrawingsimple,
@@ -36,6 +35,9 @@ uses
   uzedwgimport;
 
 implementation
+
+uses
+  uzedwglog;
 
 procedure AddLineEntity(var ZContext: TZDrawingContext;
   var DWGContext: TDWGCtx; var DWGObject: Dwg_Object; PLine: PDwg_Entity_LINE);
@@ -56,8 +58,8 @@ begin
   TargetedLog('parse-line', LineHandle, '');
   DWGCopyLineEndpoints(PLine^, Endpoints);
   if DWGLineEndpointsAreZeroLength(Endpoints) then begin
-    zDebugLn(['{WH}DWG LINE ', IntToHex(LineHandle, 1),
-      ' skipped: zero-length geometry']);
+    DWGLogWarningFormatStr('DWG LINE %s skipped: zero-length geometry',
+      [DWGHandleLogText(LineHandle)]);
     // Issue #1203: явно отметим в целевом логе, что объект отсеян здесь —
     // частая причина «исчезновения» вырожденных LINE-сущностей.
     TargetedLog('skip-zero-line', LineHandle, 'zero-length geometry');
@@ -74,11 +76,12 @@ begin
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.y := Endpoints.EndY;
   PGDBObjLine(pobj)^.CoordInOCS.lEnd.z := Endpoints.EndZ;
 
-  //zDebugLn(['{WH}DWG LINE geometry handle=', IntToHex(LineHandle, 1),
-  //  ' start=(', FloatToStr(Endpoints.StartX), ',',
-  //  FloatToStr(Endpoints.StartY), ',', FloatToStr(Endpoints.StartZ), ')',
-  //  ' end=(', FloatToStr(Endpoints.EndX), ',',
-  //  FloatToStr(Endpoints.EndY), ',', FloatToStr(Endpoints.EndZ), ')']);
+  //DWGLogInfoFormatStr(
+  //  'DWG LINE geometry handle=%s start=(%s,%s,%s) end=(%s,%s,%s)',
+  //  [DWGHandleLogText(LineHandle), FloatToStr(Endpoints.StartX),
+  //   FloatToStr(Endpoints.StartY), FloatToStr(Endpoints.StartZ),
+  //   FloatToStr(Endpoints.EndX), FloatToStr(Endpoints.EndY),
+  //   FloatToStr(Endpoints.EndZ)]);
 
   if GetLoadCtx <> nil then
     DWGRegisterEntityShell(pobj, DWGObject, False, 0)

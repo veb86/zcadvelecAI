@@ -17,7 +17,6 @@ unit uzedwgentdimension;
 interface
 
 uses
-  uzbLogIntf,
   Math, SysUtils,
   dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,

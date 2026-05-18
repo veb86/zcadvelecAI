@@ -17,7 +17,6 @@ unit uzedwgentinsert;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
@@ -32,6 +31,9 @@ uses
   uzedwgimport;
 
 implementation
+
+uses
+  uzedwglog;
 
 type
   PDwg_Entity_INSERT = ^Dwg_Entity_INSERT;
@@ -128,11 +130,10 @@ begin
   if not DWGRefHandleValue(PInsert^.block_header, BlockHandle) then
     BlockHandle := 0;
 
-  zDebugLn(['{WH}DWG INSERT handle=', IntToHex(DWGObjectHandleValue(
-    DWGObject), 1),
-    ' block_ref=', IntToHex(BlockHandle, 1),
-    ' name=', BlockName,
-    ' attribs=', PInsert^.num_owned]);
+  DWGLogInfoFormatStr(
+    'DWG INSERT handle=%s block_ref=%s name=%s attribs=%d',
+    [DWGHandleLogText(DWGObjectHandleValue(DWGObject)),
+     DWGHandleLogText(BlockHandle), BlockName, Integer(PInsert^.num_owned)]);
 
   if GetLoadCtx <> nil then begin
     DWGRegisterEntityShell(PGDBObjEntity(PObj), DWGObject, False, 0,
@@ -158,12 +159,12 @@ begin
   ApplyInsertTransform(PObj, Props);
 
   if (PMInsert^.num_cols > 1) or (PMInsert^.num_rows > 1) then
-    zDebugLn(['{WHM}DWG MINSERT handle=', IntToHex(DWGObjectHandleValue(
-      DWGObject), 1),
-      ' array ', PMInsert^.num_cols, 'x', PMInsert^.num_rows,
-      ' spacing=(', FloatToStr(PMInsert^.col_spacing), ',',
-      FloatToStr(PMInsert^.row_spacing),
-      ') imported as base INSERT']);
+    DWGLogWarningFormatStr(
+      'DWG MINSERT handle=%s array %dx%d spacing=(%s,%s) imported as base INSERT',
+      [DWGHandleLogText(DWGObjectHandleValue(DWGObject)),
+       Integer(PMInsert^.num_cols), Integer(PMInsert^.num_rows),
+       FloatToStr(PMInsert^.col_spacing),
+       FloatToStr(PMInsert^.row_spacing)]);
 
   if GetLoadCtx <> nil then begin
     DWGRegisterEntityShell(PGDBObjEntity(PObj), DWGObject, False, 0,
