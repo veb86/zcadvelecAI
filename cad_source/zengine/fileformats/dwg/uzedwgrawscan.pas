@@ -73,6 +73,7 @@ implementation
 
 uses
   uzbLogIntf,
+  uzedwglog,
   uzedwgsidefiles;
 
 function DWGHandleDecText(Value: TDWGZCADHandle): String;
@@ -150,6 +151,9 @@ var
   Handle: TDWGZCADHandle;
   Existing: TDWGZCADHandleEntry;
   MutEntry: PDWGZCADHandleEntry;
+  OwnerCandidates: TDWGRefHandleCandidates;
+  OwnerKnown: Boolean;
+  HasHandler: Boolean;
   TraceRawObjects: Boolean;
 begin
   if Ctx = nil then
@@ -163,6 +167,22 @@ begin
   I := 0;
   while I < Raw.num_objects do begin
     Handle := DWGObjectHandleValue(Raw.&object[I]);
+    OwnerKnown := DWGObjectOwnerHandleCandidatesValue(Raw.&object[I],
+      OwnerCandidates);
+    if not OwnerKnown then
+      FillChar(OwnerCandidates, SizeOf(OwnerCandidates), 0);
+    HasHandler := HasHandlerFor(Raw.&object[I].fixedtype);
+    DWGLogInfoFormatStr(
+      'DWG [read] raw_index=%d handle=%s supertype=%d fixedtype=%s fixedtype_ord=%d has_handler=%s entmode=%d',
+      [Integer(I), DWGHandleLogText(Handle), Ord(Raw.&object[I].supertype),
+       DWGFixedTypeToText(Raw.&object[I].fixedtype),
+       Ord(Raw.&object[I].fixedtype), BoolToStr(HasHandler, True),
+       DWGRawObjectEntMode(Raw.&object[I])]);
+    DWGLogInfoFormatStr(
+      'DWG [decode] raw_index=%d handle=%s owner_candidates=%s owner_known=%s',
+      [Integer(I), DWGHandleLogText(Handle),
+       DWGHandleArrayLogText(OwnerCandidates.Values, OwnerCandidates.Count),
+       BoolToStr(OwnerKnown, True)]);
     // Issue #1206: optional full raw-object trace. This logs every object
     // LibreDWG returned before the loader filters handle=0 or missing mapper
     // cases, so it can prove whether a dwgread handle reached ZCAD at all.
@@ -183,7 +203,7 @@ begin
         Format('index=%d supertype=%d fixedtype=%d has_handler=%s',
           [Integer(I), Ord(Raw.&object[I].supertype),
            Ord(Raw.&object[I].fixedtype),
-           BoolToStr(HasHandlerFor(Raw.&object[I].fixedtype), True)]));
+           BoolToStr(HasHandler, True)]));
       if Ctx.Handles.TryGet(Handle, Existing) then begin
         // A real duplicate at the raw level: two LibreDWG entries claim the
         // same handle. Only warn if the existing entry was not itself a raw

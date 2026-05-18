@@ -49,6 +49,7 @@ uses
   uzedwgsidefiles,
   uzedwgentityregistry,
   uzedwgtargetedlog,
+  uzedwglog,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -437,6 +438,21 @@ begin
   end;
 end;
 
+function DWGOwnerHandleForLog(Entity: Pointer): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingOwner;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingOwners.Count - 1 do begin
+    Pending := LoadCtx.PendingOwners.ItemAt(I);
+    if Pending^.Entity = Entity then
+      Exit(Pending^.OwnerHandle);
+  end;
+end;
+
 function DWGRefEntityHandleForLog(Entity: Pointer;
   Slot: TDWGZCADRefSlot): QWord;
 var
@@ -450,6 +466,22 @@ begin
     Pending := LoadCtx.PendingRefs.ItemAt(I);
     if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then
       Exit(Pending^.EntityHandle);
+  end;
+end;
+
+function DWGRefHandleForLog(Entity: Pointer;
+  Slot: TDWGZCADRefSlot): QWord;
+var
+  I: Integer;
+  Pending: PDWGZCADPendingRef;
+begin
+  Result := 0;
+  if LoadCtx = nil then
+    Exit;
+  for I := 0 to LoadCtx.PendingRefs.Count - 1 do begin
+    Pending := LoadCtx.PendingRefs.ItemAt(I);
+    if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then
+      Exit(Pending^.RefHandle);
   end;
 end;
 
@@ -479,6 +511,7 @@ var
   pobj: PGDBObjEntity;
   newowner: PGDBObjGenericSubEntry;
   EntityHandle: QWord;
+  OwnerHandle: QWord;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -487,6 +520,12 @@ begin
     Exit;
 
   EntityHandle := DWGOwnerEntityHandleForLog(Entity);
+  OwnerHandle := DWGOwnerHandleForLog(Entity);
+  DWGLogInfoFormatStr(
+    'DWG [attach] entity=%s owner=%s entity_ptr=%p owner_ptr=%p reason=%s fallback=%s owner_is_insert=%s',
+    [DWGHandleLogText(EntityHandle), DWGHandleLogText(OwnerHandle), Entity,
+     Owner, DWGAttachReasonToText(Reason), BoolToStr(Reason <> arResolved, True),
+     BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]);
 
   // Issue #1203: точечный лог факта присоединения сущности к владельцу.
   // Срабатывает, когда целевой handle добрался до фазы attach (т.е. shell
@@ -578,8 +617,15 @@ var
   pBlockDef: PGDBObjBlockdef;
   pInsert: PGDBObjBlockInsert;
   EntityHandle: QWord;
+  RefHandle: QWord;
 begin
   EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
+  RefHandle := DWGRefHandleForLog(Entity, Slot);
+  DWGLogInfoFormatStr(
+    'DWG [attach-ref] entity=%s ref=%s slot=%s entity_ptr=%p ref_ptr=%p reason=%s fallback=%s',
+    [DWGHandleLogText(EntityHandle), DWGHandleLogText(RefHandle),
+     DWGRefSlotToLogText(Slot), Entity, Ref, DWGAttachReasonToText(Reason),
+     BoolToStr(Reason <> arResolved, True)]);
   // Issue #1203: точечный лог разрешения ссылки. Полезен, чтобы понять,
   // на какой слот (layer/linetype/textstyle/dimstyle/blockdef) ушёл
   // fallback и в каком состоянии (Reason).
@@ -762,6 +808,8 @@ begin
   LoadCtx.SetFallbackDimStyle(StdDimStyle);
 
   LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
+  DWGLogInfoFormatStr('DWG [begin] source=%s drawing=%p root=%p',
+    [ASourcePath, ZContext.PDrawing, ZContext.PDrawing^.pObjRoot]);
 end;
 
 function DWGHeaderHandleForLog(HasHandle: Boolean; Handle: QWord): string;
@@ -817,6 +865,11 @@ begin
     DWGReserveBlockDefCapacity(Raw, LoadDrawing^.BlockDefArray);
   HandlesBefore := LoadCtx.Handles.Count;
   ScanRawObjects(Raw, LoadCtx);
+  DWGLogInfoFormatStr(
+    'DWG [scan-summary] classes=%d objects=%d alloced_objects=%d entities=%d object_refs=%d handles_registered=%d handles_total=%d',
+    [Raw.num_classes, Raw.num_objects, Raw.num_alloced_objects,
+     Raw.num_entities, Raw.num_object_refs, LoadCtx.Handles.Count - HandlesBefore,
+     LoadCtx.Handles.Count]);
   zDebugLn(['{WH}DWG raw objects: classes=', Raw.num_classes,
     ', objects=', Raw.num_objects,
     ', alloced_objects=', Raw.num_alloced_objects,
@@ -943,6 +996,14 @@ begin
     ApplyDWGHeaderEntityProps(ZContext);
     ApplyDWGViewState(ZContext);
     LoadCtx.ResolveOwners;
+    DWGLogInfoFormatStr(
+      'DWG [resolve-summary] handles=%d pending_owners=%d pending_refs=%d attached=%d fallback=%d cycles=%d refs_attached=%d refs_fallback=%d proxy_loaded=%d proxy_failed=%d unknown_entities=%d unknown_objects=%d freed_raw_drops=%d warnings=%d',
+      [LoadCtx.Handles.Count, LoadCtx.PendingOwners.Count,
+       LoadCtx.PendingRefs.Count, LoadCtx.AttachCount, LoadCtx.FallbackCount,
+       LoadCtx.CycleCount, LoadCtx.RefAttachCount, LoadCtx.RefFallbackCount,
+       LoadCtx.ProxiesLoaded, LoadCtx.ProxiesFailed, LoadCtx.UnknownEntities,
+       LoadCtx.UnknownObjects, LoadCtx.DroppedDueToFreedRaw,
+       LoadCtx.WarningCount]);
     zDebugLn(['{WH}DWG owner resolve: handles=', LoadCtx.Handles.Count,
       ', pending_owners=', LoadCtx.PendingOwners.Count,
       ', pending_refs=', LoadCtx.PendingRefs.Count,
