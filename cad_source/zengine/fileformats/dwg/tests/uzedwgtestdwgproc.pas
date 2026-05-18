@@ -199,6 +199,8 @@ type
     procedure CopyEllipseCopiesAxesAndAngles;
     procedure CopySplineCopiesKnotsControlAndFitPoints;
     procedure CopyHatchCopiesPolylineBoundary;
+    procedure HatchArcSampleAngleMirrorsClockwiseDXFEdge;
+    procedure HatchArcSampleAnglePreservesDXFNegativeCCWSweep;
     procedure CopyHatchCopiesPatternDefLines;
     procedure CopyPolylineRefsCopiesOwnedVertexHandles;
   end;
@@ -225,6 +227,7 @@ implementation
 
 uses
   SysUtils,
+  Math,
   dwg,
   dwgproc,
   uzedwghandle,
@@ -2464,6 +2467,26 @@ begin
   AssertEquals('point count', 3, Length(Props.Paths[0].PolylinePoints));
   AssertEquals('point[1].bulge', 0.25,
     Props.Paths[0].PolylinePoints[1].Bulge, 0.0);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.HatchArcSampleAngleMirrorsClockwiseDXFEdge;
+begin
+  AssertEquals('middle sample follows DXF clockwise transform',
+    DegToRad(285.0),
+    DWGHatchArcSampleAngle(DegToRad(30.0), DegToRad(120.0), False, 8, 16),
+    1e-12);
+  AssertEquals('last sample lands on mirrored end angle',
+    DegToRad(240.0),
+    DWGHatchArcSampleAngle(DegToRad(30.0), DegToRad(120.0), False, 16, 16),
+    1e-12);
+end;
+
+procedure TFPDWGProcStage8GeometryTest.HatchArcSampleAnglePreservesDXFNegativeCCWSweep;
+begin
+  AssertEquals('negative CCW sweep is not normalized to the opposite arc',
+    DegToRad(165.0),
+    DWGHatchArcSampleAngle(DegToRad(300.0), DegToRad(30.0), True, 8, 16),
+    1e-12);
 end;
 
 procedure TFPDWGProcStage8GeometryTest.CopyHatchCopiesPatternDefLines;
