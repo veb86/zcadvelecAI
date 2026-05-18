@@ -252,6 +252,7 @@ type
     procedure FormatsLoaderEnums;
     procedure FormatsHandleCandidates;
     procedure WarningPhasesSeparateOwnerAndRefFailures;
+    procedure DefaultConstantsKeepExtraDiagnosticsOff;
   end;
 
   { Issue #1203 regression: targeted per-handle logging. Тесты проверяют, что
@@ -261,8 +262,8 @@ type
     набора правильно отвечает на запросы для целевых и нецелевых handle'ов.
     Сама запись в лог здесь не проверяется — это просто LogOutFormatStr,
     диагностика которого уже покрыта другими модулями. Тесты идут через
-    публичные хелперы парсера, чтобы не возиться с кроссплатформенной
-    установкой переменной окружения. }
+    публичные хелперы парсера, чтобы проверять разбор отдельно от
+    compile-time константы, задающей список при реальном импорте. }
   TDWGTargetedLogTest = class(TTestCase)
   published
     procedure ParseHexHandleAcceptsBareHex;
@@ -3279,6 +3280,24 @@ begin
     DWGWarningCodePhaseText(DWG_WARN_REF_KIND_MISMATCH));
   AssertEquals('duplicate warning phase', 'handle-resolution-warning',
     DWGWarningCodePhaseText(DWG_WARN_DUPLICATE_HANDLE));
+end;
+
+procedure TDWGDedicatedLogTest.DefaultConstantsKeepExtraDiagnosticsOff;
+var
+  Target: TDWGTargetedHandleSet;
+begin
+  AssertTrue('side-file diagnostics default to off',
+    DWGDiagModeFromConst = dmOff);
+
+  Target.Clear;
+  TargetedLogParseTargetList(DWG_TARGET_HANDLE_LIST, Target);
+  AssertEquals('targeted handle constant is empty by default',
+    0, Target.Count);
+
+  TargetedLogClear;
+  TargetedLogRefresh;
+  AssertFalse('targeted logging inactive by default',
+    TargetedLogIsActive);
 end;
 
 initialization

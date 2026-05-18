@@ -17,7 +17,6 @@ unit uzedwgentattrib;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
@@ -98,7 +97,6 @@ procedure AddAttribEntity(var ZContext: TZDrawingContext;
   PAttrib: PDwg_Entity_ATTRIB);
 var
   PObj: PGDBObjText;
-  TagText: string;
 begin
   if PAttrib = nil then
     Exit;
@@ -109,10 +107,6 @@ begin
     PAttrib^.width_factor, PAttrib^.oblique_angle, PAttrib^.rotation,
     PAttrib^.generation, PAttrib^.horiz_alignment,
     PAttrib^.vert_alignment, PAttrib^.text_value);
-  DWGSafeDecodeText(PAttrib^.tag, DWGContext.DWGVer, DWGContext.DWGCodePage,
-    TagText);
-  //zDebugLn(['{WH}DWG ATTRIB handle=', IntToHex(DWGObjectHandleValue(
-  //  DWGObject), 1), ' tag=', TagText, ' flags=', PAttrib^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttrib^.style);
 end;
 
@@ -121,7 +115,6 @@ procedure AddAttDefEntity(var ZContext: TZDrawingContext;
   PAttDef: PDwg_Entity_ATTDEF);
 var
   PObj: PGDBObjText;
-  TagText: string;
 begin
   if PAttDef = nil then
     Exit;
@@ -132,13 +125,9 @@ begin
     PAttDef^.width_factor, PAttDef^.oblique_angle, PAttDef^.rotation,
     PAttDef^.generation, PAttDef^.horiz_alignment,
     PAttDef^.vert_alignment, PAttDef^.default_value);
-  DWGSafeDecodeText(PAttDef^.tag, DWGContext.DWGVer,
-    DWGContext.DWGCodePage, TagText);
   { ATTDEF.prompt is optional UI text and is not needed for the imported
     entity. Some R2007+ files expose an unstable prompt pointer through
     LibreDWG, so avoid dereferencing it only for diagnostics. }
-  //zDebugLn(['{WH}DWG ATTDEF handle=', IntToHex(DWGObjectHandleValue(
-  //  DWGObject), 1), ' tag=', TagText, ' flags=', PAttDef^.flags]);
   RegisterAttribShell(PObj, ZContext, DWGObject, PAttDef^.style);
 end;
 

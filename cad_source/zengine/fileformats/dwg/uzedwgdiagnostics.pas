@@ -19,7 +19,7 @@
   tracks per-code totals, the first sample observed for each code, and a
   dedup set keyed on (Code, Handle). The dedup set is used by the import
   side (DWGAttachRef / DWGAttachEntity) to suppress repeat per-entity
-  zDebugLn lines once the same code+handle has already been logged. The
+  DWG log detail lines once the same code+handle has already been logged. The
   per-code total feeds the import-summary line emitted at end-of-import,
   so a reader sees the first occurrence in full, plus an aggregate
   «and N more like this» footer instead of thousands of identical lines. }
@@ -62,7 +62,7 @@ type
 
     Issue #1198 P4: the list also maintains a (Code, Handle) dedup set
     and per-code aggregates. Resolver fallbacks come through Add and feed
-    both views; the import-side zDebugLn gates query ShouldEmitDetail to
+    both views; the import-side DWG log gates query ShouldEmitDetail to
     suppress per-entity repetition in the main log. }
   { Tracking entry for a (Code, Handle) dedup key. Stored sorted by Key
     in TDWGImportWarningList.FEmittedKeys so lookups stay O(log N) as
@@ -95,7 +95,7 @@ type
     procedure Clear;
     { Issue #1198 P4: return True the first MaxDetailPerKey times for a
       given (Code, Handle) pair, False after that. Callers wrap their
-      per-entity zDebugLn in this so the main log only shows the first
+      per-entity DWG log detail in this so the main log only shows the first
       occurrence and the EndDWGImport summary covers the rest. }
     function ShouldEmitDetail(Code: Integer;
       Handle: TDWGZCADHandle): Boolean;

@@ -40,7 +40,7 @@
 
 - `cad_source/zengine/fileformats/dwg/uzedwgrawscan.pas:148-164`: `ScanRawObjects` вызывается до mapper-ов и сначала запускает `DWGNormalizeObjectHandles`.
 - `cad_source/zengine/fileformats/dwg/uzedwgrawscan.pas:168-180`: scan идет по `Raw.&object[i]`, берет handle через `DWGObjectHandleValue` и пишет строку `DWG [read]`.
-- `cad_source/zengine/fileformats/dwg/uzedwgrawscan.pas:186-190`: при `ZCAD_DWG_DIAG=trace` можно получить полную trace-строку по каждому raw-объекту.
+- `cad_source/zengine/fileformats/dwg/uzedwgrawscan.pas:186-190`: при `DWG_DIAG_MODE = dmTrace` можно получить полную trace-строку по каждому raw-объекту через модуль programlog `DWG`.
 - `cad_source/zengine/fileformats/dwg/uzedwgrawscan.pas:195-219`: handle `0` пропускается, остальные handle регистрируются как placeholder `dokUnknown`. Если такой handle уже есть, scan фиксирует duplicate вместо создания второй записи.
 
 ### Регистрация объектов и разрешение ссылок
@@ -94,8 +94,8 @@
 
 ## Что проверять вручную при повторении
 
-1. Включить полный trace raw-объектов: `ZCAD_DWG_DIAG=trace`.
-2. Для конкретных handles включить точечный лог: `ZCAD_DWG_TARGET_HANDLES=A325E` или список через разделители, поддержанные `TargetedLogRefreshFromEnv`.
+1. Включить полный trace raw-объектов: временно поставить `DWG_DIAG_MODE = dmTrace` в `dwg/uzedwgsidefiles.pas`, пересобрать и запускать ZCAD с включенным модулем `DWG` (`logfile <path> lem DWG`).
+2. Для конкретных handles включить точечный лог: временно поставить `DWG_TARGET_HANDLE_LIST = 'A325E'` в `dwg/uzedwgtargetedlog.pas` или задать список через поддержанные разделители, затем пересобрать.
 3. Сравнить строки `DWG [read] raw_index=... handle=...` и `DWG raw object trace: ... handle_hex=...` с выводом `fpdwginspect` на том же DWG.
 4. Если после текущей защиты снова виден ряд `FFFF, 0, 1, 2`, искать новый путь, где scalar `absolute_ref` выбирается раньше `obj.handle.value` или где объект отсутствует в `object_ref/object_ordered_ref` и не проходит через `DWGNormalizeObjectHandles`.
 5. Если raw scan показывает правильный handle, но объект не появляется в чертеже, следующая точка проверки - наличие mapper-а (`has_handler`) и очереди resolver-а (`DWG [decode-owner]`, `DWG [decode-ref]`).

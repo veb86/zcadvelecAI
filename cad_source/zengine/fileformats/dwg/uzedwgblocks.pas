@@ -23,7 +23,6 @@ unit uzedwgblocks;
 interface
 
 uses
-  uzbLogIntf,
   SysUtils,
   dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
@@ -36,6 +35,9 @@ uses
   uzedwgimport;
 
 implementation
+
+uses
+  uzedwglog;
 
 { Stage 4 (TZ §12.4): a block header may describe model-space, paper-space or
   a user block. The first two are containers but not user-visible blocks, so
@@ -87,7 +89,7 @@ var
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name, DWGContext, name);
   name := DWGDecodedTextForZCAD(name);
-  //zDebugLn(['{WH}BlockHeader: ', name]);
+  //DWGLogInfoFormatStr('BlockHeader: %s', [name]);
 
   Ctx := GetLoadCtx;
   if Ctx = nil then
@@ -133,7 +135,7 @@ begin
       // Duplicate-by-name in merge mode: do not overwrite, but still register
       // the new handle so children inside this duplicate landed under the
       // already-loaded block definition.
-      zDebugLn(['{WH}BlockHeader: duplicate "', name, '" merged']);
+      DWGLogInfoFormatStr('BlockHeader: duplicate "%s" merged', [name]);
     end;
   end else begin
     pBlockDef := ZContext.PDrawing^.BlockDefArray.create(name);
@@ -153,7 +155,7 @@ var
   name: string;
 begin
   BITCODE_T2Text(PDWGBlock_Header^.name, DWGContext, name);
-  //zDebugLn(['{WH}Block: ', name]);
+  //DWGLogInfoFormatStr('Block: %s', [name]);
 end;
 
 initialization
