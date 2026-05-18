@@ -34,8 +34,8 @@
   десятичное значение напрямую:
     SET ZCAD_DWG_TARGET_HANDLES=668254
 
-  Формат лога — единая строка, идущая через uzclog с типом LM_Info, чтобы
-  целевые сообщения было легко выделить из общего потока. }
+  Формат лога — единая строка в специализированном модуле programlog DWG,
+  чтобы целевые сообщения можно было включать отдельно от обычной загрузки. }
 
 unit uzedwgtargetedlog;
 
@@ -96,7 +96,7 @@ function TargetedLogIsActive: Boolean;
 function TargetedLogHandle(AHandle: TDWGZCADHandle): Boolean;
 
 { Базовая операция записи: если handle входит в целевой набор — печатает
-  заранее форматированную строку через programlog.LogOutFormatStr с LM_Info.
+  заранее форматированную строку через DWG-модуль programlog с LM_Info.
   Phase — короткий ярлык точки кода ('scan', 'register', 'parse', 'attach',
   'attach-ref'), Details — произвольный текст с конкретикой места.
 
@@ -123,7 +123,7 @@ procedure TargetedLogParseTargetList(const Raw: string;
 implementation
 
 uses
-  uzclog;
+  uzedwglog;
 
 var
   { Кэш списка целевых handle'ов. Все обращения идут через TargetedLogHandle,
@@ -359,13 +359,13 @@ begin
     ParseTargetList(Raw, TargetSet);
   TargetSetInitialized := True;
   if TargetSet.Count > 0 then begin
-    programlog.LogOutFormatStr(
+    DWGLogInfoFormatStr(
       'uzedwgtargetedlog: tracking %d DWG handle(s) from %s=''%s''',
-      [TargetSet.Count, DWG_TARGET_HANDLES_ENV_VAR, Raw], LM_Info);
+      [TargetSet.Count, DWG_TARGET_HANDLES_ENV_VAR, Raw]);
     for I := 0 to TargetSet.Count - 1 do
-      programlog.LogOutFormatStr(
+      DWGLogInfoFormatStr(
         'uzedwgtargetedlog:   [%d] handle=%s',
-        [I, IntToHex(TargetSet.ValueAt(I), 1)], LM_Info);
+        [I, DWGHandleLogText(TargetSet.ValueAt(I))]);
   end;
 end;
 
@@ -396,9 +396,9 @@ procedure TargetedLog(const Phase: string; AHandle: TDWGZCADHandle;
 begin
   if not TargetedLogHandle(AHandle) then
     Exit;
-  programlog.LogOutFormatStr(
+  DWGLogInfoFormatStr(
     'uzedwgtargetedlog [%s] handle=%s %s',
-    [Phase, IntToHex(AHandle, 1), Details], LM_Info);
+    [Phase, DWGHandleLogText(AHandle), Details]);
 end;
 
 procedure TargetedLogPair(const Phase: string; AEntity, AOwner: TDWGZCADHandle;
@@ -412,9 +412,9 @@ begin
   IsOwnerTarget  := (AOwner  <> 0) and TargetSet.Contains(AOwner);
   if not (IsEntityTarget or IsOwnerTarget) then
     Exit;
-  programlog.LogOutFormatStr(
+  DWGLogInfoFormatStr(
     'uzedwgtargetedlog [%s] entity=%s owner=%s %s',
-    [Phase, IntToHex(AEntity, 1), IntToHex(AOwner, 1), Details], LM_Info);
+    [Phase, DWGHandleLogText(AEntity), DWGHandleLogText(AOwner), Details]);
 end;
 
 initialization

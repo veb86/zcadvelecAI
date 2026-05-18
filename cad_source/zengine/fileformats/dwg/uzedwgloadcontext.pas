@@ -270,6 +270,9 @@ type
 
 implementation
 
+uses
+  uzedwglog;
+
 { ---------- TDWGZCADHandleMap ---------- }
 
 function TDWGZCADHandleMap.FindIndex(AHandle: TDWGZCADHandle;
@@ -764,10 +767,20 @@ function TDWGZCADLoadContext.RegisterShell(AHandle: TDWGZCADHandle;
   AKind: TDWGZCADObjectKind; APtr: Pointer; ARawIndex: Integer): Boolean;
 begin
   Result := FHandles.RegisterShell(AHandle, AKind, APtr, ARawIndex, msCreated);
-  if not Result then
+  if Result then
+    DWGLogInfoFormatStr(
+      'DWG [create] handle=%s kind=%s ptr=%p raw_index=%d state=%s',
+      [DWGHandleLogText(AHandle), DWGObjectKindToLogText(AKind), APtr,
+       ARawIndex, DWGShellStateToLogText(msCreated)])
+  else begin
+    DWGLogWarningFormatStr(
+      'DWG [create-error] handle=%s kind=%s ptr=%p raw_index=%d reason=duplicate',
+      [DWGHandleLogText(AHandle), DWGObjectKindToLogText(AKind), APtr,
+       ARawIndex]);
     FWarnings.Add(wsWarning, DWG_WARN_DUPLICATE_HANDLE, AHandle,
       Format('Duplicate handle %s ignored; first shell remains indexed',
         [IntToHex(AHandle, 1)]));
+  end;
 end;
 
 function TDWGZCADLoadContext.MarkShellState(AHandle: TDWGZCADHandle;
@@ -776,8 +789,12 @@ var
   Entry: PDWGZCADHandleEntry;
 begin
   Result := FHandles.TryGetMutable(AHandle, Entry);
-  if Result then
+  if Result then begin
     Entry^.ShellState := AState;
+    DWGLogInfoFormatStr(
+      'DWG [state] handle=%s state=%s',
+      [DWGHandleLogText(AHandle), DWGShellStateToLogText(AState)]);
+  end;
 end;
 
 function TDWGZCADLoadContext.EntityHandleClaimedByDifferentShell(
@@ -814,14 +831,23 @@ begin
   // Large/partially corrupt DWGs can expose duplicate raw objects. Once the
   // first shell owns a handle, later duplicate pointers must not queue work
   // under the same key or they can steal owner/ref resolution from it.
-  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then
+  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then begin
+    DWGLogWarningFormatStr(
+      'DWG [decode-owner-skip] entity=%s owner_candidates=%s raw_index=%d reason=duplicate-shell',
+      [DWGHandleLogText(AEntityHandle),
+       DWGHandleArrayLogText(AOwnerHandles, AOwnerCount), ARawIndex]);
     Exit;
+  end;
 
   Fallback := AFallbackOwner;
   if Fallback = nil then
     Fallback := FFallbackOwner;
   FPendingOwners.AppendCandidates(AEntity, AEntityHandle, AOwnerHandles,
     AOwnerCount, Fallback, ARawIndex);
+  DWGLogInfoFormatStr(
+    'DWG [decode-owner] entity=%s owner_candidates=%s fallback=%p raw_index=%d',
+    [DWGHandleLogText(AEntityHandle),
+     DWGHandleArrayLogText(AOwnerHandles, AOwnerCount), Fallback, ARawIndex]);
 end;
 
 function TDWGZCADLoadContext.TryGetEntry(AHandle: TDWGZCADHandle;
@@ -845,6 +871,23 @@ end;
 procedure TDWGZCADLoadContext.RaiseWarning(Severity: TDWGImportSeverity;
   Code: Integer; Handle: TDWGZCADHandle; const Text: String);
 begin
+  case Severity of
+    wsError:
+      DWGLogErrorFormatStr(
+        'DWG [%s] severity=%s code=%d handle=%s text=%s',
+        [DWGWarningCodePhaseText(Code), DWGImportSeverityToLogText(Severity),
+         Code, DWGHandleLogText(Handle), Text]);
+    wsWarning:
+      DWGLogWarningFormatStr(
+        'DWG [%s] severity=%s code=%d handle=%s text=%s',
+        [DWGWarningCodePhaseText(Code), DWGImportSeverityToLogText(Severity),
+         Code, DWGHandleLogText(Handle), Text]);
+  else
+    DWGLogInfoFormatStr(
+      'DWG [%s] severity=%s code=%d handle=%s text=%s',
+      [DWGWarningCodePhaseText(Code), DWGImportSeverityToLogText(Severity),
+       Code, DWGHandleLogText(Handle), Text]);
+  end;
   FWarnings.Add(Severity, Code, Handle, Text);
 end;
 
@@ -917,14 +960,26 @@ var
 begin
   // See QueueOwnerResolveCandidates: duplicate mapper outputs must not
   // replace visual refs queued for the shell that actually owns this handle.
-  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then
+  if EntityHandleClaimedByDifferentShell(AEntityHandle, AEntity) then begin
+    DWGLogWarningFormatStr(
+      'DWG [decode-ref-skip] entity=%s slot=%s ref_candidates=%s expected=%s reason=duplicate-shell',
+      [DWGHandleLogText(AEntityHandle), DWGRefSlotToLogText(ASlot),
+       DWGHandleArrayLogText(ARefHandles, ARefCount),
+       DWGObjectKindToLogText(AExpectedKind)]);
     Exit;
+  end;
 
   Fallback := AFallback;
   if Fallback = nil then
     Fallback := FallbackForSlot(ASlot);
   FPendingRefs.AppendOrReplaceCandidates(AEntity, AEntityHandle, ARefHandles,
     ARefCount, AExpectedKind, ASlot, Fallback, AInlineRef);
+  DWGLogInfoFormatStr(
+    'DWG [decode-ref] entity=%s slot=%s ref_candidates=%s expected=%s fallback=%p inline=%s',
+    [DWGHandleLogText(AEntityHandle), DWGRefSlotToLogText(ASlot),
+     DWGHandleArrayLogText(ARefHandles, ARefCount),
+     DWGObjectKindToLogText(AExpectedKind), Fallback,
+     BoolToStr(AInlineRef, True)]);
 end;
 
 function TDWGZCADLoadContext.FindPendingRef(AEntityHandle: TDWGZCADHandle;

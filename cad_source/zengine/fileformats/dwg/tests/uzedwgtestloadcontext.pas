@@ -243,6 +243,17 @@ type
     procedure RawObjectTraceLineIncludesHexAndDecimalHandle;
   end;
 
+  { Issue #1217 regression: detailed DWG import diagnostics must live behind
+    a dedicated programlog module and use stable text helpers. The tests pin
+    those helper strings because raw read/decode/create/attach log lines use
+    them directly. }
+  TDWGDedicatedLogTest = class(TTestCase)
+  published
+    procedure FormatsLoaderEnums;
+    procedure FormatsHandleCandidates;
+    procedure WarningPhasesSeparateOwnerAndRefFailures;
+  end;
+
   { Issue #1203 regression: targeted per-handle logging. Тесты проверяют, что
     парсер списка handle'ов корректно разбирает десятичные значения dwgread,
     hex-токены с разными префиксами, разделителями и хвостовыми пробелами,
@@ -280,6 +291,7 @@ uses
   uzedwgcontrolobjects,
   uzedwgstylename,
   uzedwgrawscan,
+  uzedwglog,
   uzedwgtargetedlog;
 
 type
@@ -3219,6 +3231,56 @@ begin
     Pos('owner_candidates=120/288,121/289', Text) > 0);
 end;
 
+{ ---------- TDWGDedicatedLogTest (Issue #1217) ---------- }
+
+procedure TDWGDedicatedLogTest.FormatsLoaderEnums;
+begin
+  AssertEquals('entity kind', 'entity',
+    DWGObjectKindToLogText(dokEntity));
+  AssertEquals('block insert kind', 'block-insert',
+    DWGObjectKindToLogText(dokBlockInsert));
+  AssertEquals('layer linetype slot', 'layer-linetype',
+    DWGRefSlotToLogText(rsLayerLineType));
+  AssertEquals('created shell state', 'created',
+    DWGShellStateToLogText(msCreated));
+  AssertEquals('fallback attach state', 'fallback',
+    DWGAttachStateToLogText(asFallback));
+  AssertEquals('error severity', 'error',
+    DWGImportSeverityToLogText(wsError));
+end;
+
+procedure TDWGDedicatedLogTest.FormatsHandleCandidates;
+var
+  Candidates: TDWGZCADRefHandleCandidates;
+  Handles: array[0..1] of TDWGZCADHandle;
+begin
+  FillChar(Candidates, SizeOf(Candidates), 0);
+  AssertEquals('empty candidates', '(none)',
+    DWGHandleCandidatesLogText(Candidates));
+
+  Candidates.Count := 3;
+  Candidates.Values[0] := $A325E;
+  Candidates.Values[1] := $A08;
+  Candidates.Values[2] := $9FC;
+  AssertEquals('candidate order is stable', 'A325E,A08,9FC',
+    DWGHandleCandidatesLogText(Candidates));
+
+  Handles[0] := $10;
+  Handles[1] := $20;
+  AssertEquals('open array count is capped', '10,20',
+    DWGHandleArrayLogText(Handles, 5));
+end;
+
+procedure TDWGDedicatedLogTest.WarningPhasesSeparateOwnerAndRefFailures;
+begin
+  AssertEquals('owner warning phase', 'owner-resolution-error',
+    DWGWarningCodePhaseText(DWG_WARN_OWNER_NOT_FOUND));
+  AssertEquals('ref warning phase', 'ref-resolution-error',
+    DWGWarningCodePhaseText(DWG_WARN_REF_KIND_MISMATCH));
+  AssertEquals('duplicate warning phase', 'handle-resolution-warning',
+    DWGWarningCodePhaseText(DWG_WARN_DUPLICATE_HANDLE));
+end;
+
 initialization
   RegisterTests([TDWGLoadContextHandleMapTest, TDWGLoadContextResolveTest,
     TDWGLoadContextRefTest, TDWGLoadContextBlockTest,
@@ -3230,6 +3292,7 @@ initialization
     TDWGLoadContextPendingIndexTest,
     TDWGLoadContextTextStyleNameTest,
     TDWGRawScanTraceTest,
+    TDWGDedicatedLogTest,
     TDWGTargetedLogTest]);
 
 end.
