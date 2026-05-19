@@ -38,6 +38,7 @@ type
     procedure OwnerChainCycleABCABreaks;
     procedure AttachIsIdempotentAcrossResolveCalls;
     procedure AttachCallbackReceivesOwnerAndReason;
+    procedure AttachCallbackExReceivesHandleContext;
     procedure ChildOfBlockHeaderIsNotAttachedToRoot;
     procedure AlternateOwnerHandleResolvesAfterPrimaryNonContainer;
   end;
@@ -61,6 +62,7 @@ type
     procedure NullLayerLineTypeFallsBackToContinuous;
     procedure InlineLineTypeAttachesWithoutFallbackWarning;
     procedure RefAttachCallbackReceivesSlotAndReason;
+    procedure RefAttachCallbackExReceivesHandleContext;
     procedure NilPtrShellIsTreatedAsNotFound;
   end;
 
@@ -307,9 +309,20 @@ type
     Reason: TDWGAttachReason;
   end;
 
+  TFakeAttachExCall = record
+    Entity: Pointer;
+    Owner: Pointer;
+    Context: TDWGAttachContext;
+  end;
+
   PFakeRecorder = ^TFakeRecorder;
   TFakeRecorder = record
     Calls: array of TFakeAttachCall;
+  end;
+
+  PFakeExRecorder = ^TFakeExRecorder;
+  TFakeExRecorder = record
+    Calls: array of TFakeAttachExCall;
   end;
 
 procedure FakeAttach(Entity: Pointer; Owner: Pointer;
@@ -322,6 +335,20 @@ begin
   Call.Entity := Entity;
   Call.Owner := Owner;
   Call.Reason := Reason;
+  SetLength(Rec^.Calls, Length(Rec^.Calls) + 1);
+  Rec^.Calls[High(Rec^.Calls)] := Call;
+end;
+
+procedure FakeAttachEx(Entity: Pointer; Owner: Pointer;
+  const Context: TDWGAttachContext; Data: Pointer);
+var
+  Rec: PFakeExRecorder;
+  Call: TFakeAttachExCall;
+begin
+  Rec := PFakeExRecorder(Data);
+  Call.Entity := Entity;
+  Call.Owner := Owner;
+  Call.Context := Context;
   SetLength(Rec^.Calls, Length(Rec^.Calls) + 1);
   Rec^.Calls[High(Rec^.Calls)] := Call;
 end;
@@ -830,6 +857,45 @@ begin
   end;
 end;
 
+procedure TDWGLoadContextResolveTest.AttachCallbackExReceivesHandleContext;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeExRecorder;
+  Block, Line, Root: Pointer;
+begin
+  // Issue #1234 P1/P5: production attach logging must receive the handles
+  // from the resolver's pending item instead of reconstructing them by
+  // scanning PendingOwners.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Block := MakePtr($BA10);
+    Line := MakePtr($EA10);
+    Root := MakePtr($FA10);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetFallbackOwner(Root);
+    Ctx.SetAttachProcEx(@FakeAttachEx, @Recorder);
+
+    Ctx.RegisterShell($301, dokEntity, Line, 0);
+    Ctx.RegisterShell($302, dokBlockDef, Block, 1);
+    Ctx.QueueOwnerResolve(Line, $301, $302);
+    Ctx.ResolveOwners;
+
+    AssertEquals('one attach call', 1, Length(Recorder.Calls));
+    AssertEquals('callback entity', PtrInt(Line),
+      PtrInt(Recorder.Calls[0].Entity));
+    AssertEquals('callback owner', PtrInt(Block),
+      PtrInt(Recorder.Calls[0].Owner));
+    AssertEquals('context entity handle', Int64($301),
+      Int64(Recorder.Calls[0].Context.EntityHandle));
+    AssertEquals('context owner handle', Int64($302),
+      Int64(Recorder.Calls[0].Context.TargetHandle));
+    AssertEquals('context reason', Ord(arResolved),
+      Ord(Recorder.Calls[0].Context.Reason));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 procedure TDWGLoadContextResolveTest.ChildOfBlockHeaderIsNotAttachedToRoot;
 var
   Ctx: TDWGZCADLoadContext;
@@ -880,9 +946,20 @@ type
     Reason: TDWGAttachReason;
   end;
 
+  TFakeRefAttachExCall = record
+    Entity: Pointer;
+    Ref: Pointer;
+    Context: TDWGAttachContext;
+  end;
+
   PFakeRefRecorder = ^TFakeRefRecorder;
   TFakeRefRecorder = record
     Calls: array of TFakeRefAttachCall;
+  end;
+
+  PFakeRefExRecorder = ^TFakeRefExRecorder;
+  TFakeRefExRecorder = record
+    Calls: array of TFakeRefAttachExCall;
   end;
 
 procedure FakeRefAttach(Entity: Pointer; Ref: Pointer;
@@ -896,6 +973,20 @@ begin
   Call.Ref := Ref;
   Call.Slot := Slot;
   Call.Reason := Reason;
+  SetLength(Rec^.Calls, Length(Rec^.Calls) + 1);
+  Rec^.Calls[High(Rec^.Calls)] := Call;
+end;
+
+procedure FakeRefAttachEx(Entity: Pointer; Ref: Pointer;
+  const Context: TDWGAttachContext; Data: Pointer);
+var
+  Rec: PFakeRefExRecorder;
+  Call: TFakeRefAttachExCall;
+begin
+  Rec := PFakeRefExRecorder(Data);
+  Call.Entity := Entity;
+  Call.Ref := Ref;
+  Call.Context := Context;
   SetLength(Rec^.Calls, Length(Rec^.Calls) + 1);
   Rec^.Calls[High(Rec^.Calls)] := Call;
 end;
@@ -1237,6 +1328,41 @@ begin
     AssertEquals(Ord(arResolved), Ord(Recorder.Calls[0].Reason));
     AssertEquals(PtrInt(Layer), PtrInt(Recorder.Calls[0].Ref));
     AssertEquals(PtrInt(Entity), PtrInt(Recorder.Calls[0].Entity));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.RefAttachCallbackExReceivesHandleContext;
+var
+  Ctx: TDWGZCADLoadContext;
+  Recorder: TFakeRefExRecorder;
+  Entity, Layer: Pointer;
+begin
+  // Issue #1234 P1: production ref attach logging must get handle context
+  // directly from the resolver's pending ref and avoid PendingRefs scans.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    Entity := MakePtr($EA20);
+    Layer := MakePtr($AA20);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetRefAttachProcEx(@FakeRefAttachEx, @Recorder);
+    Ctx.RegisterShell($401, dokEntity, Entity, 0);
+    Ctx.RegisterShell($402, dokLayer, Layer, 1);
+    Ctx.QueueRefResolve(Entity, $401, $402, dokLayer, rsLayer, nil);
+    Ctx.ResolveRefs;
+
+    AssertEquals(1, Length(Recorder.Calls));
+    AssertEquals(PtrInt(Entity), PtrInt(Recorder.Calls[0].Entity));
+    AssertEquals(PtrInt(Layer), PtrInt(Recorder.Calls[0].Ref));
+    AssertEquals('context entity handle', Int64($401),
+      Int64(Recorder.Calls[0].Context.EntityHandle));
+    AssertEquals('context ref handle', Int64($402),
+      Int64(Recorder.Calls[0].Context.TargetHandle));
+    AssertEquals('context slot', Ord(rsLayer),
+      Ord(Recorder.Calls[0].Context.Slot));
+    AssertEquals('context reason', Ord(arResolved),
+      Ord(Recorder.Calls[0].Context.Reason));
   finally
     Ctx.Free;
   end;

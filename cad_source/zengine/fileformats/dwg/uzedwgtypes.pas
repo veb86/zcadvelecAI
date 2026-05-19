@@ -146,6 +146,17 @@ type
     rsLayerLineType
   );
 
+  { Attach callback context supplied by the resolver from the exact pending
+    queue item being finished. TargetHandle is the owner handle for owner
+    attachment and the resolved/fallback reference handle for ref attachment.
+    Slot is meaningful for reference callbacks only. }
+  TDWGAttachContext = record
+    EntityHandle: TDWGZCADHandle;
+    TargetHandle: TDWGZCADHandle;
+    Slot: TDWGZCADRefSlot;
+    Reason: TDWGAttachReason;
+  end;
+
   TDWGZCADPendingRef = record
     Entity: Pointer;
     EntityHandle: TDWGZCADHandle;
@@ -177,6 +188,11 @@ type
   TDWGAttachProc = procedure(Entity: Pointer; Owner: Pointer;
     Reason: TDWGAttachReason; Data: Pointer);
 
+  { Extended owner callback used by the DWG production importer. It avoids
+    reconstructing diagnostic handles by scanning the global pending queue. }
+  TDWGAttachProcEx = procedure(Entity: Pointer; Owner: Pointer;
+    const Context: TDWGAttachContext; Data: Pointer);
+
   { Stage 3 callback used by ResolveRefs to write the resolved reference
     pointer (PGDBLayerProp / PGDBLtypeProp / PGDBTextStyle / ...) back into
     the entity's vp record. Slot tells the production code which field to
@@ -185,6 +201,11 @@ type
     without a real ZCAD entity. }
   TDWGRefAttachProc = procedure(Entity: Pointer; Ref: Pointer;
     Slot: TDWGZCADRefSlot; Reason: TDWGAttachReason; Data: Pointer);
+
+  { Extended ref callback used by the DWG production importer. It carries the
+    pending queue context directly, so attach logging is O(1) per ref. }
+  TDWGRefAttachProcEx = procedure(Entity: Pointer; Ref: Pointer;
+    const Context: TDWGAttachContext; Data: Pointer);
 
   EDWGLoadContext = class(Exception);
 
