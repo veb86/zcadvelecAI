@@ -63,7 +63,8 @@ procedure FinalizeImport(Ctx: TDWGZCADLoadContext;
 implementation
 
 uses
-  uzedwglog;
+  uzedwglog,
+  uzeTypes;
 
 { Stage 4 (TZ §12.4): the legacy FinalizeOwnerIsBlockDef helper used to do
   a linear scan over Ctx.Handles for every entity in the outer loop, which
@@ -232,92 +233,126 @@ var
   ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
   VisualWarnings: Integer;
   Cache: TOwnerPtrCache;
+  TotalTimer, PhaseTimer: TTimeMeter;
 begin
   if (Ctx = nil) or (Drawing = nil) then
     Exit;
 
+  TotalTimer := TTimeMeter.StartMeasure;
   ProcessedEntities := 0;
   SkippedBlockDef := 0;
   SkippedInsertChild := 0;
   SkippedNoOwner := 0;
   VisualWarnings := 0;
-
-  // Issue #1198 P5: pre-build the (BlockDef, BlockInsert) pointer cache so
-  // the per-entity FinalizeOwnerIs* checks below are O(log N) instead of
-  // O(N), turning the whole finalize pass from O(N^2) into O(N log N).
-  BuildOwnerPtrCache(Ctx, Cache);
-
-  for I := 0 to Ctx.Handles.Count - 1 do begin
-    Entry := Ctx.Handles.EntryAt(I);
-    if not (Entry^.Kind in [dokEntity, dokBlockInsert]) then
-      Continue;
-    Pobj := PGDBObjEntity(Entry^.Ptr);
-    if Pobj = nil then
-      Continue;
-
-    // Lookup the resolved owner via the pending-owner queue. The queue is
-    // not cleared by ResolveOwners so we can use it as a post-resolve index
-    // without keeping a parallel list. An entity that never made it through
-    // resolve still has the pending row but with AttachedOwner=nil — we use
-    // the FallbackOwner (model-space root) the same way DWGAttachEntity
-    // would have done.
-    Pending := Ctx.FindPendingOwner(Entry^.Handle);
-    if Pending = nil then begin
-      Inc(SkippedNoOwner);
-      DWGLogWarningFormatStr('DWG finalize skip entity %s: no pending owner row',
-        [DWGHandleLogText(Entry^.Handle)]);
-      Continue;
-    end;
-    Owner := Pending^.AttachedOwner;
-    if Owner = nil then
-      Owner := Pending^.FallbackOwner;
-    if Owner = nil then begin
-      Inc(SkippedNoOwner);
-      DWGLogWarningFormatStr(
-        'DWG finalize skip entity %s: no resolved or fallback owner',
-        [DWGHandleLogText(Entry^.Handle)]);
-      Continue;
+  SetLength(Cache.BlockDefs, 0);
+  SetLength(Cache.BlockInserts, 0);
+  try
+    // Issue #1198 P5: pre-build the (BlockDef, BlockInsert) pointer cache so
+    // the per-entity FinalizeOwnerIs* checks below are O(log N) instead of
+    // O(N), turning the whole finalize pass from O(N^2) into O(N log N).
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      BuildOwnerPtrCache(Ctx, Cache);
+    finally
+      PhaseTimer.EndMeasure;
+      DWGLogTiming('dwg-finalize.owner-cache', PhaseTimer.ElapsedMiliSec,
+        Format('handles=%d blockdefs=%d inserts=%d',
+          [Ctx.Handles.Count, Length(Cache.BlockDefs),
+           Length(Cache.BlockInserts)]));
     end;
 
-    // Block-def contents stay deferred (TZ §12.4). Counting them so the
-    // diagnostic line below can show how the registry was split.
-    if FinalizeOwnerIsBlockDef(Cache, Owner) then begin
-      Inc(SkippedBlockDef);
-      Continue;
-    end;
-    if FinalizeOwnerIsBlockInsert(Cache, Owner) then begin
-      Inc(SkippedInsertChild);
-      Continue;
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      for I := 0 to Ctx.Handles.Count - 1 do begin
+        Entry := Ctx.Handles.EntryAt(I);
+        if not (Entry^.Kind in [dokEntity, dokBlockInsert]) then
+          Continue;
+        Pobj := PGDBObjEntity(Entry^.Ptr);
+        if Pobj = nil then
+          Continue;
+
+        // Lookup the resolved owner via the pending-owner queue. The queue is
+        // not cleared by ResolveOwners so we can use it as a post-resolve index
+        // without keeping a parallel list. An entity that never made it through
+        // resolve still has the pending row but with AttachedOwner=nil — we use
+        // the FallbackOwner (model-space root) the same way DWGAttachEntity
+        // would have done.
+        Pending := Ctx.FindPendingOwner(Entry^.Handle);
+        if Pending = nil then begin
+          Inc(SkippedNoOwner);
+          DWGLogWarningFormatStr('DWG finalize skip entity %s: no pending owner row',
+            [DWGHandleLogText(Entry^.Handle)]);
+          Continue;
+        end;
+        Owner := Pending^.AttachedOwner;
+        if Owner = nil then
+          Owner := Pending^.FallbackOwner;
+        if Owner = nil then begin
+          Inc(SkippedNoOwner);
+          DWGLogWarningFormatStr(
+            'DWG finalize skip entity %s: no resolved or fallback owner',
+            [DWGHandleLogText(Entry^.Handle)]);
+          Continue;
+        end;
+
+        // Block-def contents stay deferred (TZ §12.4). Counting them so the
+        // diagnostic line below can show how the registry was split.
+        if FinalizeOwnerIsBlockDef(Cache, Owner) then begin
+          Inc(SkippedBlockDef);
+          Continue;
+        end;
+        if FinalizeOwnerIsBlockInsert(Cache, Owner) then begin
+          Inc(SkippedInsertChild);
+          Continue;
+        end;
+
+        if Pobj^.vp.Layer = nil then begin
+          Inc(VisualWarnings);
+          DWGLogWarningFormatStr(
+            'DWG finalize entity %s has nil layer after ref resolve',
+            [DWGHandleLogText(Entry^.Handle)]);
+        end else if not Pobj^.vp.Layer^._on then begin
+          Inc(VisualWarnings);
+          DWGLogWarningFormatStr(
+            'DWG finalize entity %s is on disabled layer %s',
+            [DWGHandleLogText(Entry^.Handle), Pobj^.vp.Layer^.Name]);
+        end;
+        if Pobj^.vp.LineType = nil then begin
+          Inc(VisualWarnings);
+          DWGLogWarningFormatStr(
+            'DWG finalize entity %s has nil linetype after ref resolve',
+            [DWGHandleLogText(Entry^.Handle)]);
+        end;
+
+        FinalizeEntityGeometry(Pobj, Drawing, DC);
+        Inc(ProcessedEntities);
+      end;
+    finally
+      PhaseTimer.EndMeasure;
+      DWGLogTiming('dwg-finalize.entity-loop', PhaseTimer.ElapsedMiliSec,
+        Format('handles=%d built=%d skipped_blockdef=%d skipped_insert_child=%d no_owner=%d visual_warnings=%d',
+          [Ctx.Handles.Count, ProcessedEntities, SkippedBlockDef,
+           SkippedInsertChild, SkippedNoOwner, VisualWarnings]));
     end;
 
-    if Pobj^.vp.Layer = nil then begin
-      Inc(VisualWarnings);
-      DWGLogWarningFormatStr(
-        'DWG finalize entity %s has nil layer after ref resolve',
-        [DWGHandleLogText(Entry^.Handle)]);
-    end else if not Pobj^.vp.Layer^._on then begin
-      Inc(VisualWarnings);
-      DWGLogWarningFormatStr(
-        'DWG finalize entity %s is on disabled layer %s',
-        [DWGHandleLogText(Entry^.Handle), Pobj^.vp.Layer^.Name]);
-    end;
-    if Pobj^.vp.LineType = nil then begin
-      Inc(VisualWarnings);
-      DWGLogWarningFormatStr(
-        'DWG finalize entity %s has nil linetype after ref resolve',
-        [DWGHandleLogText(Entry^.Handle)]);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      AttachDeferredInsertChildren(Ctx, Cache, Drawing, DC, ProcessedEntities);
+    finally
+      PhaseTimer.EndMeasure;
+      DWGLogTiming('dwg-finalize.insert-children', PhaseTimer.ElapsedMiliSec,
+        Format('built_total=%d', [ProcessedEntities]));
     end;
 
-    FinalizeEntityGeometry(Pobj, Drawing, DC);
-    Inc(ProcessedEntities);
+    DWGLogInfoFormatStr(
+      'DWG finalize: built=%d, deferred_blockdef=%d, deferred_insert_child=%d, no_owner=%d, visual_warnings=%d',
+      [ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
+       VisualWarnings]);
+  finally
+    TotalTimer.EndMeasure;
+    DWGLogTiming('dwg-finalize.total', TotalTimer.ElapsedMiliSec,
+      Format('handles=%d built=%d', [Ctx.Handles.Count, ProcessedEntities]));
   end;
-
-  AttachDeferredInsertChildren(Ctx, Cache, Drawing, DC, ProcessedEntities);
-
-  DWGLogInfoFormatStr(
-    'DWG finalize: built=%d, deferred_blockdef=%d, deferred_insert_child=%d, no_owner=%d, visual_warnings=%d',
-    [ProcessedEntities, SkippedBlockDef, SkippedInsertChild, SkippedNoOwner,
-     VisualWarnings]);
 end;
 
 end.
