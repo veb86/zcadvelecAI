@@ -46,6 +46,7 @@ implementation
 uses
   uzeffLibreDWG2Ents,
   uzedwglog,
+  uzedwgtimerlog,
   uzeTypes;
 
 procedure DebugDWG(dwg:PDwg_Data);
@@ -80,10 +81,10 @@ begin
  lps.ProgressLongProcess(TLPSHandle(Data),Counter);
 end;
 
-procedure DWGLogTimerDone(var Timer: TTimeMeter; const Phase, Detail: String);
+procedure DWGTimerLogDone(var Timer: TTimeMeter; const Phase, Detail: String);
 begin
   Timer.EndMeasure;
-  DWGLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
+  DWGTimerLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
 end;
 
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
@@ -114,7 +115,7 @@ begin
         end;
       end;
     finally
-      DWGLogTimerDone(PhaseTimer, 'addfromdwg.load-libredwg',
+      DWGTimerLogDone(PhaseTimer, 'addfromdwg.load-libredwg',
         Format('filename="%s"', [filename]));
     end;
 
@@ -133,7 +134,7 @@ begin
     finally
       if lph<>LPSHEmpty then
         lps.EndLongProcess(lph);
-      DWGLogTimerDone(PhaseTimer, 'addfromdwg.read-file',
+      DWGTimerLogDone(PhaseTimer, 'addfromdwg.read-file',
         Format('filename="%s" loaded=%s code=%d objects=%d',
           [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
     end;
@@ -168,7 +169,7 @@ begin
     finally
       if lph<>LPSHEmpty then
         lps.EndLongProcess(lph);
-      DWGLogTimerDone(PhaseTimer, 'addfromdwg.parse-data',
+      DWGTimerLogDone(PhaseTimer, 'addfromdwg.parse-data',
         Format('filename="%s" objects=%d',
           [filename, ObjectsRead]));
     end;
@@ -178,12 +179,12 @@ begin
       try
         dwg_free(@dwg);
       finally
-        DWGLogTimerDone(PhaseTimer, 'addfromdwg.free-data',
+        DWGTimerLogDone(PhaseTimer, 'addfromdwg.free-data',
           Format('filename="%s" objects=%d',
             [filename, ObjectsRead]));
       end;
     end;
-    DWGLogTimerDone(TotalTimer, 'addfromdwg.total',
+    DWGTimerLogDone(TotalTimer, 'addfromdwg.total',
       Format('filename="%s" loaded=%s code=%d objects=%d',
         [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
   end;
@@ -216,7 +217,7 @@ begin
         end;
       end;
     finally
-      DWGLogTimerDone(PhaseTimer, 'addfromdxf.load-libredwg',
+      DWGTimerLogDone(PhaseTimer, 'addfromdxf.load-libredwg',
         Format('filename="%s"', [filename]));
     end;
 
@@ -231,7 +232,7 @@ begin
     finally
       if lph<>LPSHEmpty then
         lps.EndLongProcess(lph);
-      DWGLogTimerDone(PhaseTimer, 'addfromdxf.read-file',
+      DWGTimerLogDone(PhaseTimer, 'addfromdxf.read-file',
         Format('filename="%s" loaded=%s code=%d objects=%d',
           [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
     end;
@@ -260,7 +261,7 @@ begin
     finally
       if lph<>LPSHEmpty then
         lps.EndLongProcess(lph);
-      DWGLogTimerDone(PhaseTimer, 'addfromdxf.parse-data',
+      DWGTimerLogDone(PhaseTimer, 'addfromdxf.parse-data',
         Format('filename="%s" objects=%d',
           [filename, ObjectsRead]));
     end;
@@ -270,12 +271,12 @@ begin
       try
         dwg_free(@dwg);
       finally
-        DWGLogTimerDone(PhaseTimer, 'addfromdxf.free-data',
+        DWGTimerLogDone(PhaseTimer, 'addfromdxf.free-data',
           Format('filename="%s" objects=%d',
             [filename, ObjectsRead]));
       end;
     end;
-    DWGLogTimerDone(TotalTimer, 'addfromdxf.total',
+    DWGTimerLogDone(TotalTimer, 'addfromdxf.total',
       Format('filename="%s" loaded=%s code=%d objects=%d',
         [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
   end;

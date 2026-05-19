@@ -64,6 +64,7 @@ implementation
 
 uses
   uzedwglog,
+  uzedwgtimerlog,
   uzeTypes;
 
 { Stage 4 (TZ §12.4): the legacy FinalizeOwnerIsBlockDef helper used to do
@@ -255,7 +256,7 @@ begin
       BuildOwnerPtrCache(Ctx, Cache);
     finally
       PhaseTimer.EndMeasure;
-      DWGLogTiming('dwg-finalize.owner-cache', PhaseTimer.ElapsedMiliSec,
+      DWGTimerLogTiming('dwg-finalize.owner-cache', PhaseTimer.ElapsedMiliSec,
         Format('handles=%d blockdefs=%d inserts=%d',
           [Ctx.Handles.Count, Length(Cache.BlockDefs),
            Length(Cache.BlockInserts)]));
@@ -329,7 +330,7 @@ begin
       end;
     finally
       PhaseTimer.EndMeasure;
-      DWGLogTiming('dwg-finalize.entity-loop', PhaseTimer.ElapsedMiliSec,
+      DWGTimerLogTiming('dwg-finalize.entity-loop', PhaseTimer.ElapsedMiliSec,
         Format('handles=%d built=%d skipped_blockdef=%d skipped_insert_child=%d no_owner=%d visual_warnings=%d',
           [Ctx.Handles.Count, ProcessedEntities, SkippedBlockDef,
            SkippedInsertChild, SkippedNoOwner, VisualWarnings]));
@@ -340,7 +341,7 @@ begin
       AttachDeferredInsertChildren(Ctx, Cache, Drawing, DC, ProcessedEntities);
     finally
       PhaseTimer.EndMeasure;
-      DWGLogTiming('dwg-finalize.insert-children', PhaseTimer.ElapsedMiliSec,
+      DWGTimerLogTiming('dwg-finalize.insert-children', PhaseTimer.ElapsedMiliSec,
         Format('built_total=%d', [ProcessedEntities]));
     end;
 
@@ -350,7 +351,7 @@ begin
        VisualWarnings]);
   finally
     TotalTimer.EndMeasure;
-    DWGLogTiming('dwg-finalize.total', TotalTimer.ElapsedMiliSec,
+    DWGTimerLogTiming('dwg-finalize.total', TotalTimer.ElapsedMiliSec,
       Format('handles=%d built=%d', [Ctx.Handles.Count, ProcessedEntities]));
   end;
 end;
