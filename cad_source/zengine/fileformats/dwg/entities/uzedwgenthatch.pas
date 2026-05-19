@@ -176,21 +176,13 @@ procedure AppendArc(var Path: GDBPolyline2DArray;
   IsCCW: Boolean);
 var
   k, Segments: Integer;
-  Sweep, A: Double;
+  A: Double;
 begin
   if Radius <= 0 then
     Exit;
-  Sweep := EndAngle - StartAngle;
-  if IsCCW then begin
-    if Sweep < 0 then
-      Sweep := Sweep + 2 * Pi;
-  end else begin
-    if Sweep > 0 then
-      Sweep := Sweep - 2 * Pi;
-  end;
   Segments := 16;
-  for k := 0 to Segments do begin
-    A := StartAngle + Sweep * k / Segments;
+  for k := 1 to Segments do begin
+    A := DWGHatchArcSampleAngle(StartAngle, EndAngle, IsCCW, k, Segments);
     PushPoint(Path, Point2D(Center.x + Cos(A) * Radius,
       Center.y + Sin(A) * Radius));
   end;

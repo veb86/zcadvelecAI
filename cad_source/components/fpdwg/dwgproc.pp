@@ -384,6 +384,8 @@ interface
     Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps); overload;
   procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
     Version:DWG_VERSION_TYPE;Codepage:Integer;out Props:TDWGHatchProps); overload;
+  function DWGHatchArcSampleAngle(StartAngle,EndAngle:Double;
+    IsCounterClockwise:Boolean;SampleIndex,SampleCount:Integer):Double;
   procedure DWGCopyPolyline2DRefProps(const Polyline:Dwg_Entity_POLYLINE_2D;
     out Props:TDWGPolylineRefProps);
   procedure DWGCopyPolyline3DRefProps(const Polyline:Dwg_Entity_POLYLINE_3D;
@@ -1168,6 +1170,21 @@ implementation
     Version:DWG_VERSION_TYPE;out Props:TDWGHatchProps);
   begin
     DWGCopyHatchProps(Hatch,Version,-1,Props);
+  end;
+
+  function DWGHatchArcSampleAngle(StartAngle,EndAngle:Double;
+    IsCounterClockwise:Boolean;SampleIndex,SampleCount:Integer):Double;
+  var
+    Sweep:Double;
+  begin
+    if SampleCount<=0 then
+      Exit(StartAngle);
+    Sweep:=EndAngle-StartAngle;
+    if not IsCounterClockwise then begin
+      StartAngle:=2*Pi-StartAngle;
+      Sweep:=-Sweep;
+    end;
+    Result:=StartAngle+Sweep*SampleIndex/SampleCount;
   end;
 
   procedure DWGCopyHatchProps(const Hatch:Dwg_Entity_HATCH;
