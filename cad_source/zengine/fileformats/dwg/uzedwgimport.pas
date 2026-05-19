@@ -49,6 +49,7 @@ uses
   uzedwgentityregistry,
   uzedwgtargetedlog,
   uzedwglog,
+  uzedwgtimerlog,
   uzedwgfinalize;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
@@ -116,7 +117,7 @@ var
 procedure DWGFinishTimer(var Timer: TTimeMeter; const Phase, Detail: String);
 begin
   Timer.EndMeasure;
-  DWGLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
+  DWGTimerLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
 end;
 
 function DWGDefaultTextStyleProp: GDBTextStyleProp;

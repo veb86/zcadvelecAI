@@ -41,8 +41,6 @@ function DWGHandleCandidatesLogText(
 procedure DWGLogInfoFormatStr(const Fmt: String; const Args: array of const);
 procedure DWGLogWarningFormatStr(const Fmt: String; const Args: array of const);
 procedure DWGLogErrorFormatStr(const Fmt: String; const Args: array of const);
-procedure DWGLogTiming(const Phase: String; ElapsedMsec: Integer;
-  const Detail: String = '');
 
 implementation
 
@@ -186,17 +184,6 @@ end;
 procedure DWGLogErrorFormatStr(const Fmt: String; const Args: array of const);
 begin
   programlog.LogOutFormatStr(Fmt, Args, LM_Error, DWGLogModuleId);
-end;
-
-procedure DWGLogTiming(const Phase: String; ElapsedMsec: Integer;
-  const Detail: String);
-begin
-  if Detail = '' then
-    DWGLogInfoFormatStr('DWG timing: phase=%s elapsed_ms=%d',
-      [Phase, ElapsedMsec])
-  else
-    DWGLogInfoFormatStr('DWG timing: phase=%s elapsed_ms=%d %s',
-      [Phase, ElapsedMsec, Detail]);
 end;
 
 initialization
