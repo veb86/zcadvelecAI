@@ -69,8 +69,6 @@ uses
   uzeffdxfsupport,
   uzMVReader,
   uzCtnrVectorpBaseEntity,
-  uzbLogIntf,
-  uzclog,
   uzestyleslayers,
   uzecamera,
   SysUtils,
@@ -282,7 +280,8 @@ procedure ConvertProxyEntitiesToBlocks(var drawing: TSimpleDrawing);
 implementation
 
 uses
-  uzeutils;
+  uzeutils,
+  uzeentproxylog;
 
 { --- Вспомогательные функции --- }
 
@@ -399,16 +398,16 @@ begin
   if Length(HexAccum) > 0 then
   begin
     FProxyDataBytes := HexStringToBytes(HexAccum);
-    programlog.LogOutFormatStr(
+    ProxyLogInfoFormatStr(
       'uzeentacdproxy: LoadFromDXF loaded %d bytes',
-      [Length(FProxyDataBytes)], LM_Info);
+      [Length(FProxyDataBytes)]);
   end
   else
   begin
     SetLength(FProxyDataBytes, 0);
-    programlog.LogOutFormatStr(
+    ProxyLogInfoFormatStr(
       'uzeentacdproxy: LoadFromDXF no proxy data',
-      [], LM_Info);
+      []);
   end;
 
   FSubEntitiesBuilt := False;
@@ -468,9 +467,9 @@ begin
   dxfDoubleout(outStream, 50, rotate * 180 / pi);
   SaveToDXFObjPostfix(outStream);
 
-  programlog.LogOutFormatStr(
+  ProxyLogInfoFormatStr(
     'uzeentacdproxy: SaveToDXF wrote INSERT of block "%s"',
-    [BlockName], LM_Info);
+    [BlockName]);
 end;
 
 { Строит контекст для передачи в Builder-процедуру примитива.
@@ -538,9 +537,9 @@ begin
     DXF 2000/2004 (AC1015/AC1018)         — ANSI.
     Если версия неизвестна (0), считаем формат DXF 2007+. }
   UnicodeText := (FDXFFileVersion = 0) or (FDXFFileVersion >= 1021);
-  programlog.LogOutFormatStr(
+  ProxyLogInfoFormatStr(
     'uzeentacdproxy: BuildSubEntities dxfVersion=%d unicodeText=%s',
-    [FDXFFileVersion, BoolToStr(UnicodeText, True)], LM_Info);
+    [FDXFFileVersion, BoolToStr(UnicodeText, True)]);
 
   Parser := TProxyGraphicParser.Create(FProxyDataBytes, UnicodeText);
   try
@@ -561,11 +560,11 @@ begin
       vp.BoundingBox.LBN := FProxyBBoxMin;
       vp.BoundingBox.RTF := FProxyBBoxMax;
 
-      programlog.LogOutFormatStr(
+      ProxyLogInfoFormatStr(
         'uzeentacdproxy: BuildSubEntities gripOffset='
         + '(%.3f,%.3f,%.3f)',
         [FProxyGripOffset.x, FProxyGripOffset.y,
-         FProxyGripOffset.z], LM_Info);
+         FProxyGripOffset.z]);
     end;
 
     { Формируем контекст построителей только один раз — указатели на
@@ -598,12 +597,12 @@ begin
         только ByBlock — унаследовать цвет контейнера. См. ResolveColor
         в uzeentproxysubentitybuilder. }
       Context.PrimitiveColor := ParseResult.Primitives[I].Color;
-      programlog.LogOutFormatStr(
+      ProxyLogInfoFormatStr(
         'uzeentacdproxy: BuildSubEntities[%d] OpCode=%d lineweight=%d ltScale=%.3f color=%d',
         [I, ParseResult.Primitives[I].OpCode,
          ParseResult.Primitives[I].LineWeight,
          ParseResult.Primitives[I].LtScale,
-         ParseResult.Primitives[I].Color], LM_Info);
+         ParseResult.Primitives[I].Color]);
       if TProxyOpCodeDispatcher.BuildSubEntities(
         ParseResult.Primitives[I].OpCode,
         ParseResult.Primitives[I].HandlerResult,
@@ -611,9 +610,9 @@ begin
         Inc(BuiltCount);
     end;
 
-    programlog.LogOutFormatStr(
+    ProxyLogInfoFormatStr(
       'uzeentacdproxy: BuildSubEntities built %d/%d primitives',
-      [BuiltCount, Length(ParseResult.Primitives)], LM_Info);
+      [BuiltCount, Length(ParseResult.Primitives)]);
 
   finally
     { Освобождаем вершины всех примитивов результата и сам парсер }
@@ -650,12 +649,12 @@ begin
 
   if FProxyBBoxLoaded then
     { Выводим в лог координаты BBox и ручки (grip) для диагностики }
-    programlog.LogOutFormatStr(
+    ProxyLogInfoFormatStr(
       'uzeentacdproxy: FormatEntity bbox min=(%.3f,%.3f,%.3f)'
       + ' max=(%.3f,%.3f,%.3f) grip=(%.3f,%.3f,%.3f)',
       [vp.BoundingBox.LBN.x, vp.BoundingBox.LBN.y, vp.BoundingBox.LBN.z,
        vp.BoundingBox.RTF.x, vp.BoundingBox.RTF.y, vp.BoundingBox.RTF.z,
-       GetCenterPoint.x, GetCenterPoint.y, GetCenterPoint.z], LM_Info);
+       GetCenterPoint.x, GetCenterPoint.y, GetCenterPoint.z]);
 
   if Assigned(EntExtensions) then
     EntExtensions.RunOnAfterEntityFormat(@self, drawing, DC);
@@ -773,9 +772,9 @@ begin
   pdesc.worldcoord := GripCenter;
   PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(pdesc);
 
-  programlog.LogOutFormatStr(
+  ProxyLogInfoFormatStr(
     'uzeentacdproxy: addcontrolpoints grip=(%.3f,%.3f,%.3f)',
-    [GripCenter.x, GripCenter.y, GripCenter.z], LM_Info);
+    [GripCenter.x, GripCenter.y, GripCenter.z]);
 end;
 
 { Пересчитывает экранные координаты ручки из геометрического центра BBox.
@@ -940,9 +939,9 @@ begin
       SubEnt := ConstObjArray.iterate(IR);
     until SubEnt = nil;
 
-  programlog.LogOutFormatStr(
+  ProxyLogInfoFormatStr(
     'uzeentacdproxy: EnsureConvertedBlockDef created "%s" with %d entities',
-    [FConvertedBlockName, BlockDef^.ObjArray.Count], LM_Info);
+    [FConvertedBlockName, BlockDef^.ObjArray.Count]);
 
   Result := FConvertedBlockName;
 end;
@@ -1053,8 +1052,8 @@ initialization
     Используется для генерации имён PE<N>. }
   Randomize;
 
-  programlog.LogOutFormatStr(
+  ProxyLogInfoFormatStr(
     'uzeentacdproxy: Registered ACAD_PROXY_ENTITY, handlers: %d',
-    [TProxyOpCodeDispatcher.GetRegisteredCount], LM_Info);
+    [TProxyOpCodeDispatcher.GetRegisteredCount]);
 
 end.
