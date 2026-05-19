@@ -113,6 +113,12 @@ var
     Empty string means "no path was supplied" (legacy callers, unit tests). }
   LoadSourcePath: String = '';
 
+procedure DWGFinishTimer(var Timer: TTimeMeter; const Phase, Detail: String);
+begin
+  Timer.EndMeasure;
+  DWGLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
+end;
+
 function DWGDefaultTextStyleProp: GDBTextStyleProp;
 begin
   Result.size := 0;
@@ -764,58 +770,65 @@ var
   SysLayer: PGDBLayerProp;
   StdStyle: PGDBTextStyle;
   StdDimStyle: PGDBDimStyle;
+  Timer: TTimeMeter;
 begin
-  if LoadCtx <> nil then begin
-    DWGLogWarningFormatStr('DWG load context already active; force-resetting',
-      []);
-    FreeAndNil(LoadCtx);
+  Timer := TTimeMeter.StartMeasure;
+  try
+    if LoadCtx <> nil then begin
+      DWGLogWarningFormatStr('DWG load context already active; force-resetting',
+        []);
+      FreeAndNil(LoadCtx);
+    end;
+    // Issue #1203: перечитываем список целевых handle'ов из константы
+    // в самом начале импорта. Если DWG_TARGET_HANDLE_LIST пуста — последующие
+    // вызовы TargetedLogXxx будут no-op'ами; если задана — каждое прохождение
+    // целевого handle через ключевые точки конвейера будет залогировано.
+    TargetedLogRefresh;
+    LoadCtx := TDWGZCADLoadContext.Create;
+    LoadDrawing := ZContext.PDrawing;
+    LoadSourcePath := ASourcePath;
+    LoadHasCurrentLayerHandle := False;
+    LoadCurrentLayerHandle := 0;
+    LoadHasCurrentLineTypeHandle := False;
+    LoadCurrentLineTypeHandle := 0;
+    LoadHasCurrentTextStyleHandle := False;
+    LoadCurrentTextStyleHandle := 0;
+    LoadHasCurrentDimStyleHandle := False;
+    LoadCurrentDimStyleHandle := 0;
+    LoadHasHeaderEntityProps := False;
+    LoadHasHeaderViewProps := False;
+    LoadHasActiveVPortViewProps := False;
+    // Register pObjRoot under handle 0 so any LINE with a missing owner falls
+    // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
+    LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
+    LoadCtx.SetAttachProc(@DWGAttachEntity, nil);
+    LoadCtx.SetRefAttachProc(@DWGAttachRef, nil);
+
+    // Stage 3 fallbacks (TZ §12.3): mirror the DXF loader's behaviour
+    // (uzeffdxf.pas:412-427). A LINE with a missing/broken layer ref drops onto
+    // the system layer; a missing/broken linetype ref drops onto the ByLayer
+    // entry. These tables are pre-populated when the drawing is initialised so
+    // the lookups always succeed.
+    SysLayer := ZContext.PDrawing^.LayerTable.GetSystemLayer;
+    ByLayerLT := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.getAddres('ByLayer'));
+    if ByLayerLT = nil then
+      ByLayerLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(TLTByLayer);
+    LoadCtx.SetFallbackLayer(SysLayer);
+    LoadCtx.SetFallbackLineType(ByLayerLT);
+    // Ensure the DXF-compatible Standard style exists before table and entity
+    // mappers start resolving text-style handles.
+    StdStyle := DWGEnsureTextStyle(ZContext.PDrawing^);
+    LoadCtx.SetFallbackTextStyle(StdStyle);
+    StdDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
+    LoadCtx.SetFallbackDimStyle(StdDimStyle);
+
+    LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
+    DWGLogInfoFormatStr('DWG [begin] source=%s drawing=%p root=%p',
+      [ASourcePath, ZContext.PDrawing, ZContext.PDrawing^.pObjRoot]);
+  finally
+    DWGFinishTimer(Timer, 'dwg-import.begin',
+      Format('source="%s"', [ASourcePath]));
   end;
-  // Issue #1203: перечитываем список целевых handle'ов из константы
-  // в самом начале импорта. Если DWG_TARGET_HANDLE_LIST пуста — последующие
-  // вызовы TargetedLogXxx будут no-op'ами; если задана — каждое прохождение
-  // целевого handle через ключевые точки конвейера будет залогировано.
-  TargetedLogRefresh;
-  LoadCtx := TDWGZCADLoadContext.Create;
-  LoadDrawing := ZContext.PDrawing;
-  LoadSourcePath := ASourcePath;
-  LoadHasCurrentLayerHandle := False;
-  LoadCurrentLayerHandle := 0;
-  LoadHasCurrentLineTypeHandle := False;
-  LoadCurrentLineTypeHandle := 0;
-  LoadHasCurrentTextStyleHandle := False;
-  LoadCurrentTextStyleHandle := 0;
-  LoadHasCurrentDimStyleHandle := False;
-  LoadCurrentDimStyleHandle := 0;
-  LoadHasHeaderEntityProps := False;
-  LoadHasHeaderViewProps := False;
-  LoadHasActiveVPortViewProps := False;
-  // Register pObjRoot under handle 0 so any LINE with a missing owner falls
-  // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
-  LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
-  LoadCtx.SetAttachProc(@DWGAttachEntity, nil);
-  LoadCtx.SetRefAttachProc(@DWGAttachRef, nil);
-
-  // Stage 3 fallbacks (TZ §12.3): mirror the DXF loader's behaviour
-  // (uzeffdxf.pas:412-427). A LINE with a missing/broken layer ref drops onto
-  // the system layer; a missing/broken linetype ref drops onto the ByLayer
-  // entry. These tables are pre-populated when the drawing is initialised so
-  // the lookups always succeed.
-  SysLayer := ZContext.PDrawing^.LayerTable.GetSystemLayer;
-  ByLayerLT := PGDBLtypeProp(ZContext.PDrawing^.LTypeStyleTable.getAddres('ByLayer'));
-  if ByLayerLT = nil then
-    ByLayerLT := ZContext.PDrawing^.LTypeStyleTable.GetSystemLT(TLTByLayer);
-  LoadCtx.SetFallbackLayer(SysLayer);
-  LoadCtx.SetFallbackLineType(ByLayerLT);
-  // Ensure the DXF-compatible Standard style exists before table and entity
-  // mappers start resolving text-style handles.
-  StdStyle := DWGEnsureTextStyle(ZContext.PDrawing^);
-  LoadCtx.SetFallbackTextStyle(StdStyle);
-  StdDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
-  LoadCtx.SetFallbackDimStyle(StdDimStyle);
-
-  LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
-  DWGLogInfoFormatStr('DWG [begin] source=%s drawing=%p root=%p',
-    [ASourcePath, ZContext.PDrawing, ZContext.PDrawing^.pObjRoot]);
 end;
 
 function DWGHeaderHandleForLog(HasHandle: Boolean; Handle: QWord): string;
@@ -829,50 +842,75 @@ end;
 procedure ScanDWGImport(var Raw: Dwg_Data);
 var
   HandlesBefore: Integer;
+  TotalTimer, PhaseTimer: TTimeMeter;
 begin
   // R4 (TZ §3.4): Phase 1 raw scan runs between BeginDWGImport and
   // parseDwg_Data. No-op when the loader is inactive (legacy callers that
   // skipped the lifecycle hooks).
   if LoadCtx = nil then
     Exit;
-  LoadHasCurrentLayerHandle :=
-    DWGHeaderCurrentLayerHandleValue(Raw, LoadCurrentLayerHandle);
-  LoadHasCurrentLineTypeHandle :=
-    DWGHeaderCurrentLineTypeHandleValue(Raw, LoadCurrentLineTypeHandle);
-  LoadHasCurrentTextStyleHandle :=
-    DWGHeaderCurrentTextStyleHandleValue(Raw, LoadCurrentTextStyleHandle);
-  LoadHasCurrentDimStyleHandle :=
-    DWGHeaderCurrentDimStyleHandleValue(Raw, LoadCurrentDimStyleHandle);
-  LoadHasHeaderEntityProps :=
-    DWGHeaderCurrentEntityPropsValue(Raw, LoadHeaderEntityProps);
-  LoadHasHeaderViewProps :=
-    DWGHeaderViewPropsValue(Raw, LoadHeaderViewProps);
-  if LoadHasHeaderEntityProps then
+  TotalTimer := TTimeMeter.StartMeasure;
+  try
+    PhaseTimer := TTimeMeter.StartMeasure;
+    LoadHasCurrentLayerHandle :=
+      DWGHeaderCurrentLayerHandleValue(Raw, LoadCurrentLayerHandle);
+    LoadHasCurrentLineTypeHandle :=
+      DWGHeaderCurrentLineTypeHandleValue(Raw, LoadCurrentLineTypeHandle);
+    LoadHasCurrentTextStyleHandle :=
+      DWGHeaderCurrentTextStyleHandleValue(Raw, LoadCurrentTextStyleHandle);
+    LoadHasCurrentDimStyleHandle :=
+      DWGHeaderCurrentDimStyleHandleValue(Raw, LoadCurrentDimStyleHandle);
+    LoadHasHeaderEntityProps :=
+      DWGHeaderCurrentEntityPropsValue(Raw, LoadHeaderEntityProps);
+    LoadHasHeaderViewProps :=
+      DWGHeaderViewPropsValue(Raw, LoadHeaderViewProps);
+    if LoadHasHeaderEntityProps then
+      DWGLogInfoFormatStr(
+        'DWG header defaults: CLAYER=%s, CELTYPE=%s, TEXTSTYLE=%s, DIMSTYLE=%s, CECOLOR=%d, CELWEIGHT=%d, CELTSCALE=%s, LTSCALE=%s, LWDISPLAY=%s',
+        [DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
+         DWGHeaderHandleForLog(LoadHasCurrentLineTypeHandle, LoadCurrentLineTypeHandle),
+         DWGHeaderHandleForLog(LoadHasCurrentTextStyleHandle, LoadCurrentTextStyleHandle),
+         DWGHeaderHandleForLog(LoadHasCurrentDimStyleHandle, LoadCurrentDimStyleHandle),
+         LoadHeaderEntityProps.ColorIndex, LoadHeaderEntityProps.LineWeight,
+         FloatToStr(LoadHeaderEntityProps.LineTypeScale),
+         FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
+         BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
+    if LoadHasHeaderViewProps then
+      DWGLogInfoFormatStr('DWG header view: center=(%s, %s), height=%s, space=%s',
+        [FloatToStr(LoadHeaderViewProps.CenterX),
+         FloatToStr(LoadHeaderViewProps.CenterY),
+         FloatToStr(LoadHeaderViewProps.Height),
+         DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
+    DWGFinishTimer(PhaseTimer, 'dwg-import.scan.header',
+      Format('objects=%d has_entity_defaults=%s has_view=%s',
+        [Integer(Raw.num_objects),
+         BoolToStr(LoadHasHeaderEntityProps, True),
+         BoolToStr(LoadHasHeaderViewProps, True)]));
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    if LoadDrawing <> nil then
+      DWGReserveBlockDefCapacity(Raw, LoadDrawing^.BlockDefArray);
+    DWGFinishTimer(PhaseTimer, 'dwg-import.scan.reserve-blocks',
+      Format('drawing=%s objects=%d',
+        [BoolToStr(LoadDrawing <> nil, True), Integer(Raw.num_objects)]));
+
+    HandlesBefore := LoadCtx.Handles.Count;
+    PhaseTimer := TTimeMeter.StartMeasure;
+    ScanRawObjects(Raw, LoadCtx);
+    DWGFinishTimer(PhaseTimer, 'dwg-import.scan.raw-objects',
+      Format('objects=%d handles_registered=%d handles_total=%d',
+        [Integer(Raw.num_objects), LoadCtx.Handles.Count - HandlesBefore,
+         LoadCtx.Handles.Count]));
     DWGLogInfoFormatStr(
-      'DWG header defaults: CLAYER=%s, CELTYPE=%s, TEXTSTYLE=%s, DIMSTYLE=%s, CECOLOR=%d, CELWEIGHT=%d, CELTSCALE=%s, LTSCALE=%s, LWDISPLAY=%s',
-      [DWGHeaderHandleForLog(LoadHasCurrentLayerHandle, LoadCurrentLayerHandle),
-       DWGHeaderHandleForLog(LoadHasCurrentLineTypeHandle, LoadCurrentLineTypeHandle),
-       DWGHeaderHandleForLog(LoadHasCurrentTextStyleHandle, LoadCurrentTextStyleHandle),
-       DWGHeaderHandleForLog(LoadHasCurrentDimStyleHandle, LoadCurrentDimStyleHandle),
-       LoadHeaderEntityProps.ColorIndex, LoadHeaderEntityProps.LineWeight,
-       FloatToStr(LoadHeaderEntityProps.LineTypeScale),
-       FloatToStr(LoadHeaderEntityProps.GlobalLineTypeScale),
-       BoolToStr(LoadHeaderEntityProps.LineWeightDisplay, True)]);
-  if LoadHasHeaderViewProps then
-    DWGLogInfoFormatStr('DWG header view: center=(%s, %s), height=%s, space=%s',
-      [FloatToStr(LoadHeaderViewProps.CenterX),
-       FloatToStr(LoadHeaderViewProps.CenterY),
-       FloatToStr(LoadHeaderViewProps.Height),
-       DWGViewSpaceToText(LoadHeaderViewProps.Space)]);
-  if LoadDrawing <> nil then
-    DWGReserveBlockDefCapacity(Raw, LoadDrawing^.BlockDefArray);
-  HandlesBefore := LoadCtx.Handles.Count;
-  ScanRawObjects(Raw, LoadCtx);
-  DWGLogInfoFormatStr(
-    'DWG [scan-summary] classes=%d objects=%d alloced_objects=%d entities=%d object_refs=%d handles_registered=%d handles_total=%d',
-    [Raw.num_classes, Raw.num_objects, Raw.num_alloced_objects,
-     Raw.num_entities, Raw.num_object_refs, LoadCtx.Handles.Count - HandlesBefore,
-     LoadCtx.Handles.Count]);
+      'DWG [scan-summary] classes=%d objects=%d alloced_objects=%d entities=%d object_refs=%d handles_registered=%d handles_total=%d',
+      [Raw.num_classes, Raw.num_objects, Raw.num_alloced_objects,
+       Raw.num_entities, Raw.num_object_refs, LoadCtx.Handles.Count - HandlesBefore,
+       LoadCtx.Handles.Count]);
+  finally
+    DWGFinishTimer(TotalTimer, 'dwg-import.scan.total',
+      Format('objects=%d handles_total=%d',
+        [Integer(Raw.num_objects), LoadCtx.Handles.Count]));
+  end;
 end;
 
 { Issue #1198 P4: emit one summary line per diagnostic code observed
@@ -974,50 +1012,112 @@ begin
 end;
 
 procedure EndDWGImport(var ZContext: TZDrawingContext);
+var
+  TotalTimer, PhaseTimer: TTimeMeter;
+  SourceForTiming: String;
 begin
   if LoadCtx = nil then
     Exit;
+  TotalTimer := TTimeMeter.StartMeasure;
+  SourceForTiming := LoadSourcePath;
   try
     // Phase 3: resolve refs then owners. Attach callbacks fire during
     // ResolveOwners but only do the AddMi step now — geometry builds in
     // Phase 4 below.
-    LoadCtx.ResolveRefs;
-    ApplyDWGCurrentLayer(ZContext);
-    ApplyDWGCurrentLineType(ZContext);
-    ApplyDWGCurrentTextStyle(ZContext);
-    ApplyDWGCurrentDimStyle(ZContext);
-    ApplyDWGHeaderEntityProps(ZContext);
-    ApplyDWGViewState(ZContext);
-    LoadCtx.ResolveOwners;
-    DWGLogInfoFormatStr(
-      'DWG [resolve-summary] handles=%d pending_owners=%d pending_refs=%d attached=%d fallback=%d cycles=%d refs_attached=%d refs_fallback=%d proxy_loaded=%d proxy_failed=%d unknown_entities=%d unknown_objects=%d freed_raw_drops=%d warnings=%d',
-      [LoadCtx.Handles.Count, LoadCtx.PendingOwners.Count,
-       LoadCtx.PendingRefs.Count, LoadCtx.AttachCount, LoadCtx.FallbackCount,
-       LoadCtx.CycleCount, LoadCtx.RefAttachCount, LoadCtx.RefFallbackCount,
-       LoadCtx.ProxiesLoaded, LoadCtx.ProxiesFailed, LoadCtx.UnknownEntities,
-       LoadCtx.UnknownObjects, LoadCtx.DroppedDueToFreedRaw,
-       LoadCtx.WarningCount]);
-    DWGEmitWarningSummary(LoadCtx);
-    DWGEmitFixedTypeHistogram(LoadCtx);
-    DWGEmitSideFiles(LoadCtx, LoadSourcePath);
-    // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
-    // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
-    FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      LoadCtx.ResolveRefs;
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.resolve-refs',
+        Format('pending_refs=%d refs_attached=%d refs_fallback=%d',
+          [LoadCtx.PendingRefs.Count, LoadCtx.RefAttachCount,
+           LoadCtx.RefFallbackCount]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      ApplyDWGCurrentLayer(ZContext);
+      ApplyDWGCurrentLineType(ZContext);
+      ApplyDWGCurrentTextStyle(ZContext);
+      ApplyDWGCurrentDimStyle(ZContext);
+      ApplyDWGHeaderEntityProps(ZContext);
+      ApplyDWGViewState(ZContext);
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.apply-current-state',
+        Format('has_entity_defaults=%s has_view=%s',
+          [BoolToStr(LoadHasHeaderEntityProps, True),
+           BoolToStr(LoadHasHeaderViewProps or LoadHasActiveVPortViewProps,
+             True)]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      LoadCtx.ResolveOwners;
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.resolve-owners',
+        Format('pending_owners=%d attached=%d fallback=%d cycles=%d',
+          [LoadCtx.PendingOwners.Count, LoadCtx.AttachCount,
+           LoadCtx.FallbackCount, LoadCtx.CycleCount]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      DWGLogInfoFormatStr(
+        'DWG [resolve-summary] handles=%d pending_owners=%d pending_refs=%d attached=%d fallback=%d cycles=%d refs_attached=%d refs_fallback=%d proxy_loaded=%d proxy_failed=%d unknown_entities=%d unknown_objects=%d freed_raw_drops=%d warnings=%d',
+        [LoadCtx.Handles.Count, LoadCtx.PendingOwners.Count,
+         LoadCtx.PendingRefs.Count, LoadCtx.AttachCount, LoadCtx.FallbackCount,
+         LoadCtx.CycleCount, LoadCtx.RefAttachCount, LoadCtx.RefFallbackCount,
+         LoadCtx.ProxiesLoaded, LoadCtx.ProxiesFailed, LoadCtx.UnknownEntities,
+         LoadCtx.UnknownObjects, LoadCtx.DroppedDueToFreedRaw,
+         LoadCtx.WarningCount]);
+      DWGEmitWarningSummary(LoadCtx);
+      DWGEmitFixedTypeHistogram(LoadCtx);
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.diagnostics',
+        Format('handles=%d warnings=%d',
+          [LoadCtx.Handles.Count, LoadCtx.WarningCount]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      DWGEmitSideFiles(LoadCtx, LoadSourcePath);
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.sidefiles',
+        Format('source="%s"', [LoadSourcePath]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      // R7 (TZ §3.7): Phase 4 mirrors the DXF post-processing chain
+      // (BuildGeometry / FormatAfterDXFLoad / FromDXFPostProcessAfterAdd).
+      FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.finalize',
+        Format('handles=%d', [LoadCtx.Handles.Count]));
+    end;
   finally
-    FreeAndNil(LoadCtx);
-    LoadDrawing := nil;
-    LoadSourcePath := '';
-    LoadHasCurrentLayerHandle := False;
-    LoadCurrentLayerHandle := 0;
-    LoadHasCurrentLineTypeHandle := False;
-    LoadCurrentLineTypeHandle := 0;
-    LoadHasCurrentTextStyleHandle := False;
-    LoadCurrentTextStyleHandle := 0;
-    LoadHasCurrentDimStyleHandle := False;
-    LoadCurrentDimStyleHandle := 0;
-    LoadHasHeaderEntityProps := False;
-    LoadHasHeaderViewProps := False;
-    LoadHasActiveVPortViewProps := False;
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      FreeAndNil(LoadCtx);
+      LoadDrawing := nil;
+      LoadSourcePath := '';
+      LoadHasCurrentLayerHandle := False;
+      LoadCurrentLayerHandle := 0;
+      LoadHasCurrentLineTypeHandle := False;
+      LoadCurrentLineTypeHandle := 0;
+      LoadHasCurrentTextStyleHandle := False;
+      LoadCurrentTextStyleHandle := 0;
+      LoadHasCurrentDimStyleHandle := False;
+      LoadCurrentDimStyleHandle := 0;
+      LoadHasHeaderEntityProps := False;
+      LoadHasHeaderViewProps := False;
+      LoadHasActiveVPortViewProps := False;
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.cleanup',
+        Format('source="%s"', [SourceForTiming]));
+      DWGFinishTimer(TotalTimer, 'dwg-import.end-total',
+        Format('source="%s"', [SourceForTiming]));
+    end;
   end;
 end;
 

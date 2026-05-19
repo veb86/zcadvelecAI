@@ -45,7 +45,8 @@ implementation
 
 uses
   uzeffLibreDWG2Ents,
-  uzedwglog;
+  uzedwglog,
+  uzeTypes;
 
 procedure DebugDWG(dwg:PDwg_Data);
 begin
@@ -79,35 +80,63 @@ begin
  lps.ProgressLongProcess(TLPSHandle(Data),Counter);
 end;
 
+procedure DWGLogTimerDone(var Timer: TTimeMeter; const Phase, Detail: String);
+begin
+  Timer.EndMeasure;
+  DWGLogTiming(Phase, Timer.ElapsedMiliSec, Detail);
+end;
+
 procedure addfromdwg(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
   dwg:Dwg_Data;
   Success:integer;
+  ObjectsRead: Integer;
   lph:TLPSHandle;
   Loaded:Boolean;
+  TotalTimer, PhaseTimer: TTimeMeter;
 begin
-  DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
-  try
-    LoadLibreDWG;
-  except
-    on E : Exception do begin
-      DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
-      exit;
-    end;
-  end;
+  TotalTimer := TTimeMeter.StartMeasure;
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
+  Success:=0;
+  ObjectsRead:=0;
   Loaded:=False;
-  DWGLogInfoFormatStr('try load file: %s', [filename]);
-  lph:=lps.StartLongProcess('LibreDWG.dwg_read_file',nil);
   try
-    {$IFDEF WINDOWS}
-    Success:=dwg_read_file(pchar(UTF8ToWinCP(filename)),@dwg);
-    {$ELSE WINDOWS}
-    Success:=dwg_read_file(pchar(ansistring(filename)),@dwg);
-    {$ENDIF}
-    Loaded:=True;
-    lps.EndLongProcess(lph);
+    DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      try
+        LoadLibreDWG;
+      except
+        on E : Exception do begin
+          DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
+          exit;
+        end;
+      end;
+    finally
+      DWGLogTimerDone(PhaseTimer, 'addfromdwg.load-libredwg',
+        Format('filename="%s"', [filename]));
+    end;
+
+    DWGLogInfoFormatStr('try load file: %s', [filename]);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    lph:=LPSHEmpty;
+    lph:=lps.StartLongProcess('LibreDWG.dwg_read_file',nil);
+    try
+      {$IFDEF WINDOWS}
+      Success:=dwg_read_file(pchar(UTF8ToWinCP(filename)),@dwg);
+      {$ELSE WINDOWS}
+      Success:=dwg_read_file(pchar(ansistring(filename)),@dwg);
+      {$ENDIF}
+      ObjectsRead:=Integer(dwg.num_objects);
+      Loaded:=True;
+    finally
+      if lph<>LPSHEmpty then
+        lps.EndLongProcess(lph);
+      DWGLogTimerDone(PhaseTimer, 'addfromdwg.read-file',
+        Format('filename="%s" loaded=%s code=%d objects=%d',
+          [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
+    end;
     DWGLogInfoFormatStr('LibreDWG read code: %d (%s)',
       [Success, DWGReadCodeToText(Success)]);
     DebugDWG(@dwg);
@@ -117,6 +146,8 @@ begin
         [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
+    PhaseTimer := TTimeMeter.StartMeasure;
+    lph:=LPSHEmpty;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
       // Stage 2 (TZ §12.2): wrap parseDwg_Data with the load context so the
@@ -135,38 +166,75 @@ begin
         EndDWGImport(ZCDCtx);
       end;
     finally
-      lps.EndLongProcess(lph);
+      if lph<>LPSHEmpty then
+        lps.EndLongProcess(lph);
+      DWGLogTimerDone(PhaseTimer, 'addfromdwg.parse-data',
+        Format('filename="%s" objects=%d',
+          [filename, ObjectsRead]));
     end;
   finally
-    if Loaded and Assigned(dwg_free) then
-      dwg_free(@dwg);
+    if Loaded and Assigned(dwg_free) then begin
+      PhaseTimer := TTimeMeter.StartMeasure;
+      try
+        dwg_free(@dwg);
+      finally
+        DWGLogTimerDone(PhaseTimer, 'addfromdwg.free-data',
+          Format('filename="%s" objects=%d',
+            [filename, ObjectsRead]));
+      end;
+    end;
+    DWGLogTimerDone(TotalTimer, 'addfromdwg.total',
+      Format('filename="%s" loaded=%s code=%d objects=%d',
+        [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
   end;
 end;
 procedure addfromdxf(const filename:String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
   dwg:Dwg_Data;
   Success:integer;
+  ObjectsRead: Integer;
   lph:TLPSHandle;
   Loaded:Boolean;
+  TotalTimer, PhaseTimer: TTimeMeter;
 begin
-  DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
-  try
-    LoadLibreDWG;
-  except
-    on E : Exception do begin
-      DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
-      exit;
-    end;
-  end;
+  TotalTimer := TTimeMeter.StartMeasure;
   dwg:=default(Dwg_Data);
   dwg.opts:=0;
+  Success:=0;
+  ObjectsRead:=0;
   Loaded:=False;
-  DWGLogInfoFormatStr('try load file: %s', [filename]);
-  lph:=lps.StartLongProcess('LibreDWG.dxf_read_file',nil);
   try
-    Success:=dxf_read_file(pchar(ansistring(filename)),@dwg);
-    Loaded:=True;
-    lps.EndLongProcess(lph);
+    DWGLogInfoFormatStr('%s', [rsNotYetImplemented]);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      try
+        LoadLibreDWG;
+      except
+        on E : Exception do begin
+          DWGLogErrorFormatStr('LibreDWG: %s', [E.Message]);
+          exit;
+        end;
+      end;
+    finally
+      DWGLogTimerDone(PhaseTimer, 'addfromdxf.load-libredwg',
+        Format('filename="%s"', [filename]));
+    end;
+
+    DWGLogInfoFormatStr('try load file: %s', [filename]);
+    PhaseTimer := TTimeMeter.StartMeasure;
+    lph:=LPSHEmpty;
+    lph:=lps.StartLongProcess('LibreDWG.dxf_read_file',nil);
+    try
+      Success:=dxf_read_file(pchar(ansistring(filename)),@dwg);
+      ObjectsRead:=Integer(dwg.num_objects);
+      Loaded:=True;
+    finally
+      if lph<>LPSHEmpty then
+        lps.EndLongProcess(lph);
+      DWGLogTimerDone(PhaseTimer, 'addfromdxf.read-file',
+        Format('filename="%s" loaded=%s code=%d objects=%d',
+          [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
+    end;
     DWGLogInfoFormatStr('LibreDWG read code: %d (%s)',
       [Success, DWGReadCodeToText(Success)]);
     DebugDWG(@dwg);
@@ -176,6 +244,8 @@ begin
         [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
+    PhaseTimer := TTimeMeter.StartMeasure;
+    lph:=LPSHEmpty;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
     try
       // Issue #1198 P3: forward the source path so EndDWGImport can emit
@@ -188,11 +258,26 @@ begin
         EndDWGImport(ZCDCtx);
       end;
     finally
-      lps.EndLongProcess(lph);
+      if lph<>LPSHEmpty then
+        lps.EndLongProcess(lph);
+      DWGLogTimerDone(PhaseTimer, 'addfromdxf.parse-data',
+        Format('filename="%s" objects=%d',
+          [filename, ObjectsRead]));
     end;
   finally
-    if Loaded and Assigned(dwg_free) then
-      dwg_free(@dwg);
+    if Loaded and Assigned(dwg_free) then begin
+      PhaseTimer := TTimeMeter.StartMeasure;
+      try
+        dwg_free(@dwg);
+      finally
+        DWGLogTimerDone(PhaseTimer, 'addfromdxf.free-data',
+          Format('filename="%s" objects=%d',
+            [filename, ObjectsRead]));
+      end;
+    end;
+    DWGLogTimerDone(TotalTimer, 'addfromdxf.total',
+      Format('filename="%s" loaded=%s code=%d objects=%d',
+        [filename, BoolToStr(Loaded, True), Success, ObjectsRead]));
   end;
 end;
 
