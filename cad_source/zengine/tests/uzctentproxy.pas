@@ -42,6 +42,7 @@ uses
   uzeentline,
   uzeentproxygraphicparser,
   uzeentproxymanager,
+  uzeentproxylog,
   uzegeometry,
   uzegeometrytypes,
   UGDBPoint3DArray,
@@ -85,6 +86,9 @@ type
     procedure ProxyLineCloneToRootRequiresProxyMatrix;
     { Проверяет сохранение атрибутов отрисовки в логируемых контурах }
     procedure ProxyGraphicContourStoresDrawingAttributesForLog;
+    { Issue #1227: диагностика ProxyEntity должна идти через отдельный
+      module desk programlog с именем PROXY. }
+    procedure ProxyLogUsesDedicatedModule;
     { Проверяет, что OpCode=38 UnicodeText2 сохраняет TypeFace, FontName
       и BigFont в HandlerResult.TextItem. }
     procedure ProxyGraphicUnicodeText2StoresFontFields;
@@ -753,6 +757,15 @@ begin
     'Примитив должен хранить масштаб типа линии');
   CheckEquals(1.25, ParseResult.Primitives[0].Thickness, 1e-9,
     'Примитив должен хранить толщину');
+end;
+
+procedure TProxyEntityLoadTest.ProxyLogUsesDedicatedModule;
+begin
+  CheckEquals('PROXY', PROXY_LOG_MODULE_NAME,
+    'ProxyEntity diagnostics must use the dedicated PROXY log module');
+  ProxyLogInfoFormatStr(
+    'uzeentproxylog: dedicated module helper smoke test: %s',
+    ['ok']);
 end;
 
 procedure TProxyEntityLoadTest.ProxyGraphicDefaultLineweightIsByLayer;
