@@ -34,6 +34,21 @@ DWG timing: phase=dwg-import.resolve-owners elapsed_ms=39425 pending_owners=6808
 
 Для 68081 owner-записи это примерно `4 635 090 642` проверок в среднем.
 
+## Статус после issue #1234
+
+Ветка `issue-1234-9fb03804d45b` продолжает этот план после уже внесенного
+контекстного attach-callback пути:
+
+- P3 реализован для ссылок: `TDWGZCADResolver` хранит per-import cache по
+  `(Slot, ExpectedKind, InlineRef, Fallback, RefCandidates)` и повторно
+  использует найденный pointer/resolved handle для следующих entity refs.
+- P2 частично закрыт для горячего attach-пути: массовые успешные
+  `DWG [attach]`, `DWG [attach-ref]` и layer-linetype info строки теперь
+  выключены быстрым флагом `DWG_VERBOSE_ATTACH_LOG`; targeted и fallback
+  diagnostics остаются включенными.
+- P6 расширен счетчиками `ref_cache_hits`, `ref_cache_misses`,
+  `unique_ref_keys` в timing detail, resolve-summary и diagnostic side-files.
+
 ## Что происходит внутри `dwg-import.resolve-refs`
 
 1. `EndDWGImport` запускает таймер `dwg-import.resolve-refs` и вызывает

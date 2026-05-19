@@ -261,6 +261,9 @@ type
     property CycleCount: Integer read FStats.CycleCount;
     property RefAttachCount: Integer read FStats.RefAttachCount;
     property RefFallbackCount: Integer read FStats.RefFallbackCount;
+    property RefCacheHits: Integer read FStats.RefCacheHits;
+    property RefCacheMisses: Integer read FStats.RefCacheMisses;
+    property RefCacheKeys: Integer read FStats.RefCacheKeys;
     property UnknownEntities: Integer read FStats.UnknownEntities;
     property UnknownObjects: Integer read FStats.UnknownObjects;
     property ProxiesLoaded: Integer read FStats.ProxiesLoaded;

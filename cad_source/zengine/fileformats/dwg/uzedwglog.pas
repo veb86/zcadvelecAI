@@ -20,6 +20,13 @@ uses
   uzbLogTypes,
   uzedwgtypes;
 
+const
+  { High-volume resolved attach traces are diagnostic-only. Keep disabled for
+    normal imports so resolving 100k+ refs/owners does not spend time
+    formatting per-entity info lines. Targeted and fallback diagnostics remain
+    active through their dedicated gates. }
+  DWG_VERBOSE_ATTACH_LOG = False;
+
 var
   { Dedicated DWG loader diagnostics module. It is registered without
     EEnable, so normal imports stay quiet unless the user enables it with
