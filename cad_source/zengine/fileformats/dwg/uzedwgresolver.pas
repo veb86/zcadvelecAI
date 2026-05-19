@@ -42,9 +42,9 @@ type
       virtual; abstract;
 
     procedure InvokeOwnerAttach(Entity, Owner: Pointer;
-      Reason: TDWGAttachReason); virtual; abstract;
-    procedure InvokeRefAttach(Entity, Ref: Pointer; Slot: TDWGZCADRefSlot;
-      Reason: TDWGAttachReason); virtual; abstract;
+      const Context: TDWGAttachContext); virtual; abstract;
+    procedure InvokeRefAttach(Entity, Ref: Pointer;
+      const Context: TDWGAttachContext); virtual; abstract;
 
     procedure RaiseWarning(Severity: TDWGImportSeverity; Code: Integer;
       Handle: TDWGZCADHandle; const Text: String); virtual; abstract;
@@ -112,6 +112,7 @@ procedure TDWGZCADResolver.FinishOwner(Pending: PDWGZCADPendingOwner;
   Owner: Pointer; State: TDWGAttachState; Reason: TDWGAttachReason);
 var
   Stats: PDWGImportStats;
+  Context: TDWGAttachContext;
 begin
   Pending^.AttachState := State;
   Pending^.AttachedOwner := Owner;
@@ -124,7 +125,13 @@ begin
   if Reason in [arSelfOwnerCycle, arOwnerChainCycle] then
     Inc(Stats^.CycleCount);
   if Owner <> nil then
-    FHost.InvokeOwnerAttach(Pending^.Entity, Owner, Reason);
+  begin
+    Context.EntityHandle := Pending^.EntityHandle;
+    Context.TargetHandle := Pending^.OwnerHandle;
+    Context.Slot := Low(TDWGZCADRefSlot);
+    Context.Reason := Reason;
+    FHost.InvokeOwnerAttach(Pending^.Entity, Owner, Context);
+  end;
 end;
 
 procedure TDWGZCADResolver.ResolvePending(Pending: PDWGZCADPendingOwner);
@@ -315,6 +322,7 @@ procedure TDWGZCADResolver.FinishRef(Pending: PDWGZCADPendingRef;
   Ref: Pointer; State: TDWGAttachState; Reason: TDWGAttachReason);
 var
   Stats: PDWGImportStats;
+  Context: TDWGAttachContext;
 begin
   Pending^.AttachState := State;
   Pending^.AttachedRef := Ref;
@@ -324,7 +332,11 @@ begin
     Inc(Stats^.RefAttachCount)
   else if State = asFallback then
     Inc(Stats^.RefFallbackCount);
-  FHost.InvokeRefAttach(Pending^.Entity, Ref, Pending^.Slot, Reason);
+  Context.EntityHandle := Pending^.EntityHandle;
+  Context.TargetHandle := Pending^.RefHandle;
+  Context.Slot := Pending^.Slot;
+  Context.Reason := Reason;
+  FHost.InvokeRefAttach(Pending^.Entity, Ref, Context);
 end;
 
 procedure TDWGZCADResolver.ResolveRef(Pending: PDWGZCADPendingRef);

@@ -425,11 +425,11 @@ begin
      FloatToStr(ZContext.PDrawing^.pcamera^.prop.zoom)]);
 end;
 
-{ Issue #1198 P4: locate the DWG handle for an entity pointer by walking
-  the pending-owner list. Used by the attach callbacks to feed
-  LoadCtx.ShouldEmitDetail so the dedup key matches what the resolver
-  put into the warning aggregate. Returns 0 if the entity isn't
-  queued (legacy callers and Stage 2 fallback paths). }
+{ Issue #1198 P4 legacy fallback: locate DWG handles for an entity pointer by
+  walking the pending owner/ref lists. Production import uses the Ex callbacks
+  below, where the resolver passes this context directly from the pending item.
+  These helpers remain for legacy callbacks and return 0 if the entity is not
+  queued. }
 function DWGOwnerEntityHandleForLog(Entity: Pointer): QWord;
 var
   I: Integer;
@@ -512,13 +512,14 @@ begin
   Result := LoadCtx.ShouldEmitDetail(Code, EntityHandle);
 end;
 
-procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
-  Reason: TDWGAttachReason; Data: Pointer);
+procedure DWGAttachEntityWithContext(Entity: Pointer; Owner: Pointer;
+  const Context: TDWGAttachContext);
 var
   pobj: PGDBObjEntity;
   newowner: PGDBObjGenericSubEntry;
   EntityHandle: QWord;
   OwnerHandle: QWord;
+  Reason: TDWGAttachReason;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -526,8 +527,9 @@ begin
   if (pobj = nil) or (Owner = nil) then
     Exit;
 
-  EntityHandle := DWGOwnerEntityHandleForLog(Entity);
-  OwnerHandle := DWGOwnerHandleForLog(Entity);
+  EntityHandle := Context.EntityHandle;
+  OwnerHandle := Context.TargetHandle;
+  Reason := Context.Reason;
   DWGLogInfoFormatStr(
     'DWG [attach] entity=%s owner=%s entity_ptr=%p owner_ptr=%p reason=%s fallback=%s owner_is_insert=%s',
     [DWGHandleLogText(EntityHandle), DWGHandleLogText(OwnerHandle), Entity,
@@ -573,6 +575,24 @@ begin
   // post-processing chain (TDrawContext threaded through addfromdwg).
 end;
 
+procedure DWGAttachEntity(Entity: Pointer; Owner: Pointer;
+  Reason: TDWGAttachReason; Data: Pointer);
+var
+  Context: TDWGAttachContext;
+begin
+  Context.EntityHandle := DWGOwnerEntityHandleForLog(Entity);
+  Context.TargetHandle := DWGOwnerHandleForLog(Entity);
+  Context.Slot := Low(TDWGZCADRefSlot);
+  Context.Reason := Reason;
+  DWGAttachEntityWithContext(Entity, Owner, Context);
+end;
+
+procedure DWGAttachEntityEx(Entity: Pointer; Owner: Pointer;
+  const Context: TDWGAttachContext; Data: Pointer);
+begin
+  DWGAttachEntityWithContext(Entity, Owner, Context);
+end;
+
 function DWGLayerNameForLog(Layer: PGDBLayerProp): string;
 begin
   if Layer = nil then
@@ -591,22 +611,10 @@ begin
     Result := '(unnamed linetype)';
 end;
 
-function DWGRefHandlesForLog(Entity: Pointer; Slot: TDWGZCADRefSlot): string;
-var
-  I: Integer;
-  Pending: PDWGZCADPendingRef;
+function DWGRefContextForLog(const Context: TDWGAttachContext): string;
 begin
-  Result := '';
-  if LoadCtx = nil then
-    Exit;
-  for I := 0 to LoadCtx.PendingRefs.Count - 1 do begin
-    Pending := LoadCtx.PendingRefs.ItemAt(I);
-    if (Pending^.Entity = Entity) and (Pending^.Slot = Slot) then begin
-      Result := 'handle=' + IntToHex(Pending^.EntityHandle, 1) +
-        ' ref=' + IntToHex(Pending^.RefHandle, 1);
-      Exit;
-    end;
-  end;
+  Result := 'handle=' + IntToHex(Context.EntityHandle, 1) +
+    ' ref=' + IntToHex(Context.TargetHandle, 1);
 end;
 
 { Stage 3 (TZ §12.3): write a resolved visual-property pointer back into the
@@ -615,19 +623,23 @@ end;
   vp slot. BuildGeometry runs later from DWGAttachEntity once the owner is
   known. Reason is logged on fallback so a reviewer can spot which slot took
   the system-layer / ByLayer branch. }
-procedure DWGAttachRef(Entity: Pointer; Ref: Pointer; Slot: TDWGZCADRefSlot;
-  Reason: TDWGAttachReason; Data: Pointer);
+procedure DWGAttachRefWithContext(Entity: Pointer; Ref: Pointer;
+  const Context: TDWGAttachContext);
 var
   pobj: PGDBObjEntity;
   player: PGDBLayerProp;
   pDimStyle: PGDBDimStyle;
   pBlockDef: PGDBObjBlockdef;
   pInsert: PGDBObjBlockInsert;
+  Slot: TDWGZCADRefSlot;
   EntityHandle: QWord;
   RefHandle: QWord;
+  Reason: TDWGAttachReason;
 begin
-  EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
-  RefHandle := DWGRefHandleForLog(Entity, Slot);
+  Slot := Context.Slot;
+  EntityHandle := Context.EntityHandle;
+  RefHandle := Context.TargetHandle;
+  Reason := Context.Reason;
   DWGLogInfoFormatStr(
     'DWG [attach-ref] entity=%s ref=%s slot=%s entity_ptr=%p ref_ptr=%p reason=%s fallback=%s',
     [DWGHandleLogText(EntityHandle), DWGHandleLogText(RefHandle),
@@ -652,7 +664,7 @@ begin
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           DWGLogWarningFormatStr(
             'entity %s %s layer fallback (%s) -> %s',
-            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+            [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
              DWGAttachReasonToText(Reason),
              DWGLayerNameForLog(PGDBLayerProp(Ref))]);
       end;
@@ -666,7 +678,7 @@ begin
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           DWGLogWarningFormatStr(
             'entity %s %s linetype fallback (%s, layer=%s) -> %s',
-            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+            [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
              DWGAttachReasonToText(Reason), DWGLayerNameForLog(pobj^.vp.Layer),
              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
       end;
@@ -680,13 +692,13 @@ begin
           if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
             DWGLogWarningFormatStr(
               'layer %s %s linetype fallback (%s) -> %s',
-              [DWGLayerNameForLog(player), DWGRefHandlesForLog(Entity, Slot),
+              [DWGLayerNameForLog(player), DWGRefContextForLog(Context),
                DWGAttachReasonToText(Reason),
                DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
         end
         else
           DWGLogInfoFormatStr('layer %s %s linetype -> %s',
-            [DWGLayerNameForLog(player), DWGRefHandlesForLog(Entity, Slot),
+            [DWGLayerNameForLog(player), DWGRefContextForLog(Context),
              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
       end;
     rsTextStyle:
@@ -705,7 +717,7 @@ begin
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           DWGLogWarningFormatStr(
             'entity %s %s textstyle fallback (%s)',
-            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+            [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
              DWGAttachReasonToText(Reason)]);
       end;
     rsDimStyle:
@@ -728,7 +740,7 @@ begin
            DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
           DWGLogWarningFormatStr(
             'entity %s %s dimstyle fallback (%s)',
-            [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+            [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
              DWGAttachReasonToText(Reason)]);
       end;
     rsBlockDef:
@@ -746,10 +758,10 @@ begin
             DWGLogWarningFormatStr(
               'entity %s %s block ref resolves to model/paper space; using empty block',
               [HexStr(PtrUInt(pobj), 16),
-               DWGRefHandlesForLog(Entity, Slot)])
+               DWGRefContextForLog(Context)])
           else if DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
             DWGLogWarningFormatStr('entity %s %s block fallback (%s)',
-              [HexStr(PtrUInt(pobj), 16), DWGRefHandlesForLog(Entity, Slot),
+              [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
                DWGAttachReasonToText(Reason)]);
         end;
         if pBlockDef <> nil then begin
@@ -762,6 +774,24 @@ begin
         end;
       end;
   end;
+end;
+
+procedure DWGAttachRef(Entity: Pointer; Ref: Pointer; Slot: TDWGZCADRefSlot;
+  Reason: TDWGAttachReason; Data: Pointer);
+var
+  Context: TDWGAttachContext;
+begin
+  Context.EntityHandle := DWGRefEntityHandleForLog(Entity, Slot);
+  Context.TargetHandle := DWGRefHandleForLog(Entity, Slot);
+  Context.Slot := Slot;
+  Context.Reason := Reason;
+  DWGAttachRefWithContext(Entity, Ref, Context);
+end;
+
+procedure DWGAttachRefEx(Entity: Pointer; Ref: Pointer;
+  const Context: TDWGAttachContext; Data: Pointer);
+begin
+  DWGAttachRefWithContext(Entity, Ref, Context);
 end;
 
 procedure BeginDWGImport(var ZContext: TZDrawingContext;
@@ -802,8 +832,8 @@ begin
     // Register pObjRoot under handle 0 so any LINE with a missing owner falls
     // back into the model-space root (TZ §5.5: "broken owner -> fallback root").
     LoadCtx.SetFallbackOwner(ZContext.PDrawing^.pObjRoot);
-    LoadCtx.SetAttachProc(@DWGAttachEntity, nil);
-    LoadCtx.SetRefAttachProc(@DWGAttachRef, nil);
+    LoadCtx.SetAttachProcEx(@DWGAttachEntityEx, nil);
+    LoadCtx.SetRefAttachProcEx(@DWGAttachRefEx, nil);
 
     // Stage 3 fallbacks (TZ §12.3): mirror the DXF loader's behaviour
     // (uzeffdxf.pas:412-427). A LINE with a missing/broken layer ref drops onto

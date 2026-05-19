@@ -150,8 +150,12 @@ type
     FResolver: TDWGZCADResolver;
     FAttachProc: TDWGAttachProc;
     FAttachData: Pointer;
+    FAttachProcEx: TDWGAttachProcEx;
+    FAttachExData: Pointer;
     FRefAttachProc: TDWGRefAttachProc;
     FRefAttachData: Pointer;
+    FRefAttachProcEx: TDWGRefAttachProcEx;
+    FRefAttachExData: Pointer;
     FFallbackOwner: Pointer;
     FFallbackLayer: Pointer;
     FFallbackLineType: Pointer;
@@ -169,9 +173,9 @@ type
     function GetFallbackOwner: Pointer; override;
     function FallbackForSlot(ASlot: TDWGZCADRefSlot): Pointer; override;
     procedure InvokeOwnerAttach(Entity, Owner: Pointer;
-      Reason: TDWGAttachReason); override;
-    procedure InvokeRefAttach(Entity, Ref: Pointer; Slot: TDWGZCADRefSlot;
-      Reason: TDWGAttachReason); override;
+      const Context: TDWGAttachContext); override;
+    procedure InvokeRefAttach(Entity, Ref: Pointer;
+      const Context: TDWGAttachContext); override;
     procedure RaiseWarning(Severity: TDWGImportSeverity; Code: Integer;
       Handle: TDWGZCADHandle; const Text: String); override;
     function GetStatsRef: PDWGImportStats; override;
@@ -181,7 +185,11 @@ type
 
     { Configuration }
     procedure SetAttachProc(AProc: TDWGAttachProc; AData: Pointer = nil);
+    procedure SetAttachProcEx(AProc: TDWGAttachProcEx;
+      AData: Pointer = nil);
     procedure SetRefAttachProc(AProc: TDWGRefAttachProc;
+      AData: Pointer = nil);
+    procedure SetRefAttachProcEx(AProc: TDWGRefAttachProcEx;
       AData: Pointer = nil);
     procedure SetFallbackOwner(AOwner: Pointer);
     procedure SetFallbackLayer(ALayer: Pointer);
@@ -731,11 +739,25 @@ begin
   FAttachData := AData;
 end;
 
+procedure TDWGZCADLoadContext.SetAttachProcEx(AProc: TDWGAttachProcEx;
+  AData: Pointer);
+begin
+  FAttachProcEx := AProc;
+  FAttachExData := AData;
+end;
+
 procedure TDWGZCADLoadContext.SetRefAttachProc(AProc: TDWGRefAttachProc;
   AData: Pointer);
 begin
   FRefAttachProc := AProc;
   FRefAttachData := AData;
+end;
+
+procedure TDWGZCADLoadContext.SetRefAttachProcEx(AProc: TDWGRefAttachProcEx;
+  AData: Pointer);
+begin
+  FRefAttachProcEx := AProc;
+  FRefAttachExData := AData;
 end;
 
 procedure TDWGZCADLoadContext.SetFallbackOwner(AOwner: Pointer);
@@ -892,17 +914,21 @@ begin
 end;
 
 procedure TDWGZCADLoadContext.InvokeOwnerAttach(Entity, Owner: Pointer;
-  Reason: TDWGAttachReason);
+  const Context: TDWGAttachContext);
 begin
-  if Assigned(FAttachProc) then
-    FAttachProc(Entity, Owner, Reason, FAttachData);
+  if Assigned(FAttachProcEx) then
+    FAttachProcEx(Entity, Owner, Context, FAttachExData)
+  else if Assigned(FAttachProc) then
+    FAttachProc(Entity, Owner, Context.Reason, FAttachData);
 end;
 
 procedure TDWGZCADLoadContext.InvokeRefAttach(Entity, Ref: Pointer;
-  Slot: TDWGZCADRefSlot; Reason: TDWGAttachReason);
+  const Context: TDWGAttachContext);
 begin
-  if Assigned(FRefAttachProc) then
-    FRefAttachProc(Entity, Ref, Slot, Reason, FRefAttachData);
+  if Assigned(FRefAttachProcEx) then
+    FRefAttachProcEx(Entity, Ref, Context, FRefAttachExData)
+  else if Assigned(FRefAttachProc) then
+    FRefAttachProc(Entity, Ref, Context.Slot, Context.Reason, FRefAttachData);
 end;
 
 function TDWGZCADLoadContext.GetFallbackOwner: Pointer;
