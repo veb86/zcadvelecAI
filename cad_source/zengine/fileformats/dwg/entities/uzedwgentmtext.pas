@@ -74,7 +74,8 @@ begin
     pobj^.linespacef := Props.LineSpaceFactor
   else
     pobj^.linespacef := 1;
-  pobj^.Content := DWGDecodedTextToZCADString(Props.Value);
+  pobj^.Template := DWGDecodedTextToZCADTemplate(Props.Value);
+  pobj^.Content := pobj^.Template;
   ApplyMTextRotation(pobj, Props.Rotation);
   if GetLoadCtx <> nil then
     DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(pobj), DWGObject,

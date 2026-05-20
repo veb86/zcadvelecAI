@@ -72,7 +72,8 @@ begin
     Props.VertAlignment);
   pobj^.textprop.backward := (Props.Generation and 2) <> 0;
   pobj^.textprop.upsidedown := (Props.Generation and 4) <> 0;
-  pobj^.Content := DWGDecodedTextToZCADString(Props.Value);
+  pobj^.Template := DWGDecodedTextToZCADTemplate(Props.Value);
+  pobj^.Content := pobj^.Template;
   ApplyTextRotation(pobj, Props.Rotation);
   if GetLoadCtx <> nil then
     DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(pobj), DWGObject,
