@@ -51,11 +51,13 @@ interface
 
 uses
   SysUtils,
+  Math,
   uzcLog,
   uzccommandsabstract,
   uzccommandsimpl,
   uzeentity,
   uzeconsts,
+  uzeentarc,
   uzeentblockinsert,
   uzeentacdproxy,
   uzeentcomplex,
@@ -84,6 +86,36 @@ resourcestring
     Точный текст согласно требованиям issue. }
   RSExplodeSelectOnlyBlocksOrProxy =
     'перед запуском команды выделите только Блоки или Proxy объекты';
+
+function NormalizeArcAngle(Angle: Double): Double;
+begin
+  Result := Angle;
+  while Result < 0 do
+    Result := Result + 2 * Pi;
+  while Result >= 2 * Pi do
+    Result := Result - 2 * Pi;
+end;
+
+function Matrix3x3Determinant(const Matrix: TzeTypedMatrix4d): Double;
+begin
+  Result :=
+    Matrix.mtr.v[0].v[0]
+    * (Matrix.mtr.v[1].v[1] * Matrix.mtr.v[2].v[2]
+      - Matrix.mtr.v[1].v[2] * Matrix.mtr.v[2].v[1])
+    - Matrix.mtr.v[0].v[1]
+    * (Matrix.mtr.v[1].v[0] * Matrix.mtr.v[2].v[2]
+      - Matrix.mtr.v[1].v[2] * Matrix.mtr.v[2].v[0])
+    + Matrix.mtr.v[0].v[2]
+    * (Matrix.mtr.v[1].v[0] * Matrix.mtr.v[2].v[1]
+      - Matrix.mtr.v[1].v[1] * Matrix.mtr.v[2].v[0]);
+end;
+
+function AngleInArcOCS(const Direction, AxisX, AxisY: TzePoint3d): Double;
+begin
+  Result := NormalizeArcAngle(ArcTan2(
+    ScalarDot(Direction, AxisY),
+    ScalarDot(Direction, AxisX)));
+end;
 
 { Проверяет, является ли объект вставкой блока или прокси-объектом.
   Такие объекты поддерживают расчленение через текущую команду.
@@ -167,6 +199,48 @@ begin
   Result := BlockArr^.getDataMutable(Idx);
 end;
 
+{ После TransformAt ARC-клон получает правильную objmatrix, но при переносе
+  в корень последующий FormatEntity снова строит матрицу дуги из Local и
+  канонической OCS-оси X. Поворот вокруг нормали при этом теряется, поэтому
+  start/end нужно пересчитать по уже трансформированным WCS-точкам дуги. }
+procedure FlattenArcAnglesToRoot(SourceArc, ClonedArc: PGDBObjArc;
+  const ATransform: TzeTypedMatrix4d);
+var
+  AxisX, AxisY, Center, StartPoint, EndPoint: TzePoint3d;
+  StartDir, EndDir: TzePoint3d;
+begin
+  if (SourceArc = nil) or (ClonedArc = nil) then
+    Exit;
+
+  if Matrix3x3Determinant(ClonedArc^.objMatrix) < 0 then
+  begin
+    StartPoint := VectorTransform3D(SourceArc^.q2, ATransform);
+    EndPoint := VectorTransform3D(SourceArc^.q0, ATransform);
+  end
+  else
+  begin
+    StartPoint := VectorTransform3D(SourceArc^.q0, ATransform);
+    EndPoint := VectorTransform3D(SourceArc^.q2, ATransform);
+  end;
+
+  Center := ClonedArc^.Local.P_insert;
+  AxisX := NormalizeVertex(GetXfFromZ(ClonedArc^.Local.basis.oz));
+  AxisY := NormalizeVertex(VectorDot(ClonedArc^.Local.basis.oz, AxisX));
+
+  StartDir := VertexSub(StartPoint, Center);
+  EndDir := VertexSub(EndPoint, Center);
+  if IsVectorNul(StartDir) or IsVectorNul(EndDir) then
+    Exit;
+
+  StartDir := NormalizeVertex(StartDir);
+  EndDir := NormalizeVertex(EndDir);
+
+  ClonedArc^.Local.basis.ox := AxisX;
+  ClonedArc^.Local.basis.oy := AxisY;
+  ClonedArc^.StartAngle := AngleInArcOCS(StartDir, AxisX, AxisY);
+  ClonedArc^.EndAngle := AngleInArcOCS(EndDir, AxisX, AxisY);
+end;
+
 { Клонирует одну подсущность из массива ObjArray определения блока
   в корень чертежа с применением трансформации. Возвращает указатель
   на клон или nil, если клонировать не удалось.
@@ -213,6 +287,9 @@ begin
     содержит OneMatrix или мусор). }
   LocalTransform := ATransform;
   Cloned^.TransformAt(SubEntity, @LocalTransform);
+  if SubEntity^.GetObjType = GDBArcID then
+    FlattenArcAnglesToRoot(PGDBObjArc(SubEntity), PGDBObjArc(Cloned),
+      ATransform);
   { Переносим клон в корень чертежа. После TransformAt его Local
     уже содержит мировые координаты, так что повторные вызовы
     CalcObjMatrix при новом владельце дадут корректную матрицу. }
