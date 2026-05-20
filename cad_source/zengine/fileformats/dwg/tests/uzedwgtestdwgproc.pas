@@ -136,6 +136,7 @@ type
     procedure BITCODET2TextUsesHeaderCodepage;
     procedure BITCODET2TextKeepsR2010UnicodeTableName;
     procedure BITCODET2TextDecodesR2013SingleByteCP1251;
+    procedure CopyTextToZCADStringKeepsR2010ChineseValue;
     procedure CopyTextCopiesGeometry;
     procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
@@ -1653,6 +1654,26 @@ begin
   BITCODE_T2Text(PChar(RawText), DWGContext, Decoded);
 
   AssertEquals(Expected, Decoded);
+end;
+
+procedure TFPDWGProcTextTest.CopyTextToZCADStringKeepsR2010ChineseValue;
+var
+  Text: Dwg_Entity_TEXT;
+  Props: TDWGTextProps;
+  RawText: UnicodeString;
+  Expected: AnsiString;
+  Stored: UnicodeString;
+begin
+  FillChar(Text, SizeOf(Text), 0);
+  Expected := #$E4#$BA#$A7#$E5#$93#$81#$E5#$BA#$94#$E7#$94#$A8 +
+    ' (SUBJECT) : PIC30';
+  RawText := UTF8Decode(Expected);
+  Text.text_value := PAnsiChar(PUnicodeChar(RawText));
+
+  DWGCopyTextProps(Text, R_2010, 29, Props);
+  Stored := DWGDecodedTextToZCADString(Props.Value);
+
+  AssertEquals(Expected, string(UTF8Encode(Stored)));
 end;
 
 procedure TFPDWGProcTextTest.CopyTextCopiesGeometry;
