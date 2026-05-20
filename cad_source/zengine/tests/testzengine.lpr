@@ -7,7 +7,8 @@ uses
   Classes, consoletestrunner,
   Logtest,BoundaryPathSimpletest,
   uzctEntityArc, uzctmtextwrap, uzctenttextjustify, uzctacadtable, uzctentproxy,
-  uzctentpolyfacemesh, uzctdwgblockreserve, uzctenttextnilstyle;
+  uzctentpolyfacemesh, uzctdwgblockreserve, uzctenttextnilstyle,
+  uzctenttransformscalars;
 
 var
   Application: TTestRunner;
