@@ -119,7 +119,7 @@ begin
   DWGSafeDecodeText(PCommon^.user_text, DWGContext.DWGVer,
     DWGContext.DWGCodePage, Value);
   if Value <> '' then
-    PGDBObjDimension(PObj)^.dimtext := UnicodeString(Value);
+    PGDBObjDimension(PObj)^.dimtext := DWGDecodedTextToZCADString(Value);
 end;
 
 procedure RegisterDimensionShell(PObj: PGDBObjEntity;

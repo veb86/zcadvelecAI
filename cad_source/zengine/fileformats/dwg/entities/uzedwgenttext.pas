@@ -18,7 +18,7 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,uzedwghandle,
+  dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
   uzegeometry,
   uzeenttext, uzeentabstracttext, uzeentity,
@@ -54,7 +54,6 @@ var
   pobj: PGDBObjText;
   Props: TDWGTextProps;
   TextX, TextY, TextZ: Double;
-  uniValue: UnicodeString;
 begin
   pobj := AllocAndInitText(nil);
   DWGCopyTextProps(PText^, DWGContext.DWGVer, DWGContext.DWGCodePage, Props);
@@ -73,12 +72,7 @@ begin
     Props.VertAlignment);
   pobj^.textprop.backward := (Props.Generation and 2) <> 0;
   pobj^.textprop.upsidedown := (Props.Generation and 4) <> 0;
-  // Stage 5 (TZ §12.5): DWGSafeDecodeText already returns the payload as a
-  // RTL string (UTF-16 path goes through punicodechar -> system codepage).
-  // Assigning to a UnicodeString-typed Content lets FPC promote it back via
-  // the default conversion.
-  uniValue := UnicodeString(Props.Value);
-  pobj^.Content := uniValue;
+  pobj^.Content := DWGDecodedTextToZCADString(Props.Value);
   ApplyTextRotation(pobj, Props.Rotation);
   if GetLoadCtx <> nil then
     DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(pobj), DWGObject,

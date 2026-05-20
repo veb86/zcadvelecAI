@@ -18,7 +18,7 @@ interface
 
 uses
   SysUtils,
-  dwg, dwgproc,uzedwghandle,
+  dwg, dwgproc, uzedwghandle, uzedwgtext,
   uzedrawingsimple,
   uzeentmtext, uzeentabstracttext, uzeentity,
   uzegeometry,
@@ -55,7 +55,6 @@ procedure AddMTextEntity(var ZContext: TZDrawingContext;
 var
   pobj: PGDBObjMText;
   Props: TDWGMTextProps;
-  uniValue: UnicodeString;
 begin
   // Issue #1203: точечный лог входа в mapper MTEXT. Если этого сообщения
   // нет в логе для интересующего handle — значит, parseDwg_Data не дошёл
@@ -75,10 +74,7 @@ begin
     pobj^.linespacef := Props.LineSpaceFactor
   else
     pobj^.linespacef := 1;
-  // Same widening contract as AddTextEntity — DWGSafeDecodeText already
-  // returned the payload as RTL string; the FPC compiler promotes it.
-  uniValue := UnicodeString(Props.Value);
-  pobj^.Content := uniValue;
+  pobj^.Content := DWGDecodedTextToZCADString(Props.Value);
   ApplyMTextRotation(pobj, Props.Rotation);
   if GetLoadCtx <> nil then
     DWGRegisterEntityShellWithTextStyleRef(PGDBObjEntity(pobj), DWGObject,

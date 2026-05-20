@@ -29,15 +29,16 @@ interface
 uses
   SysUtils, dwg;
 
-{ Decode a LibreDWG-allocated BITCODE_T payload into a Pascal string. The
-  binding exposes BITCODE_T as a C string pointer, so callers get codepage
-  text unless the payload itself looks like UTF-16LE. Tolerates a nil pointer:
-  the caller gets an empty string instead of an AV. }
+{ Decode a LibreDWG-allocated BITCODE_T payload into UTF-8 bytes stored in a
+  Pascal string. The binding exposes BITCODE_T as a C string pointer, so the
+  decoder applies the DWG header codepage or the UTF-16LE path explicitly.
+  Tolerates a nil pointer: the caller gets an empty string instead of an AV. }
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   out text: string); overload;
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   Codepage: Integer; out text: string); overload;
 function DWGDecodedTextForZCAD(const Text: string): string;
+function DWGDecodedTextToZCADString(const Text: string): UnicodeString;
 
 implementation
 
@@ -239,6 +240,11 @@ begin
   Result := (Pairs > 0) and (Score >= 2);
 end;
 
+function DWGDecodeUTF16Text(const p: BITCODE_T): string;
+begin
+  Result := string(UTF8Encode(UnicodeString(PUnicodeChar(p))));
+end;
+
 procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   out text: string);
 begin
@@ -246,7 +252,7 @@ begin
   if p = nil then
     Exit;
   if (Version > R_2004) and DWGTextLooksLikeUTF16LE(p) then
-    text := punicodechar(p)
+    text := DWGDecodeUTF16Text(p)
   else
     text := pchar(p);
 end;
@@ -261,7 +267,7 @@ begin
   if (Codepage = DWG_CP_UTF16) or
     ((Version > R_2004) and DWGTextLooksLikeUTF16LE(p)) then
   begin
-    text := punicodechar(p);
+    text := DWGDecodeUTF16Text(p);
     Exit;
   end;
 
@@ -272,10 +278,18 @@ end;
 
 function DWGDecodedTextForZCAD(const Text: string): string;
 begin
-  { DWGSafeDecodeText already returns the byte string ZCAD stores for both
-    codepage-based and UTF-16 DWGs. Keep this post-decode step explicit so
-    table/block mappers do not apply another locale conversion. }
+  { DWGSafeDecodeText already returns the UTF-8 byte string table/block mappers
+    expect. Keep this post-decode step explicit so those mappers do not apply
+    another locale conversion. }
   Result := Text;
+end;
+
+function DWGDecodedTextToZCADString(const Text: string): UnicodeString;
+begin
+  { TEXT/MTEXT entity fields are TDXFEntsInternalStringType = UnicodeString.
+    DWGSafeDecodeText returns UTF-8 bytes, so decode UTF-8 explicitly instead
+    of letting a plain UnicodeString cast use the process default code page. }
+  Result := UTF8Decode(Text);
 end;
 
 end.

@@ -78,7 +78,7 @@ begin
   PObj^.textprop.upsidedown := (Generation and 4) <> 0;
   DWGSafeDecodeText(TextValue, DWGContext.DWGVer, DWGContext.DWGCodePage,
     Value);
-  PObj^.Content := UnicodeString(Value);
+  PObj^.Content := DWGDecodedTextToZCADString(Value);
   ApplyTextRotation(PObj, Rotation);
 end;
 
