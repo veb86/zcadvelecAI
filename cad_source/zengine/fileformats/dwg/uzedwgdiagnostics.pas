@@ -116,6 +116,9 @@ type
     CycleCount: Integer;
     RefAttachCount: Integer;
     RefFallbackCount: Integer;
+    RefCacheHits: Integer;
+    RefCacheMisses: Integer;
+    RefCacheKeys: Integer;
     UnknownEntities: Integer;
     UnknownObjects: Integer;
     ProxiesLoaded: Integer;
@@ -396,6 +399,9 @@ begin
   CycleCount := 0;
   RefAttachCount := 0;
   RefFallbackCount := 0;
+  RefCacheHits := 0;
+  RefCacheMisses := 0;
+  RefCacheKeys := 0;
   UnknownEntities := 0;
   UnknownObjects := 0;
   ProxiesLoaded := 0;

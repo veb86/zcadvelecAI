@@ -51,6 +51,30 @@ type
     function GetStatsRef: PDWGImportStats; virtual; abstract;
   end;
 
+  TDWGRefResolveCacheKey = record
+    Slot: TDWGZCADRefSlot;
+    ExpectedKind: TDWGZCADObjectKind;
+    InlineRef: Boolean;
+    Fallback: Pointer;
+    RefCount: Integer;
+    RefHandles: array[0..DWG_ZCAD_MAX_REF_HANDLE_CANDIDATES - 1]
+      of TDWGZCADHandle;
+  end;
+
+  TDWGRefResolveCacheValue = record
+    Ref: Pointer;
+    RefHandle: TDWGZCADHandle;
+    State: TDWGAttachState;
+    Reason: TDWGAttachReason;
+  end;
+
+  TDWGRefResolveCacheEntry = record
+    Used: Boolean;
+    Hash: QWord;
+    Key: TDWGRefResolveCacheKey;
+    Value: TDWGRefResolveCacheValue;
+  end;
+
   { Stand-alone resolver state. Holds only the cycle-detection stack so a
     second concurrent resolver (e.g. a future raw-scan pre-resolver) can
     coexist with the main load context. The host supplies pending lookup
@@ -59,9 +83,20 @@ type
   private
     FHost: TDWGResolverHost;
     FResolveStack: array of TDWGZCADHandle;
+    FRefCache: array of TDWGRefResolveCacheEntry;
+    FRefCacheCount: Integer;
     procedure PushStack(Handle: TDWGZCADHandle);
     procedure PopStack;
     function StackContains(Handle: TDWGZCADHandle): Boolean;
+    function RefCacheHash(const Key: TDWGRefResolveCacheKey): QWord;
+    function RefCacheKeysEqual(const A, B: TDWGRefResolveCacheKey): Boolean;
+    procedure EnsureRefCacheCapacity;
+    procedure InsertRefCacheEntry(const Key: TDWGRefResolveCacheKey;
+      Hash: QWord; const Value: TDWGRefResolveCacheValue);
+    function TryGetRefCache(const Key: TDWGRefResolveCacheKey;
+      out Value: TDWGRefResolveCacheValue): Boolean;
+    procedure StoreRefCache(const Key: TDWGRefResolveCacheKey;
+      const Value: TDWGRefResolveCacheValue);
     procedure FinishOwner(Pending: PDWGZCADPendingOwner; Owner: Pointer;
       State: TDWGAttachState; Reason: TDWGAttachReason);
     procedure FinishRef(Pending: PDWGZCADPendingRef; Ref: Pointer;
@@ -106,6 +141,145 @@ end;
 procedure TDWGZCADResolver.ResetStack;
 begin
   SetLength(FResolveStack, 0);
+end;
+
+function TDWGZCADResolver.RefCacheHash(
+  const Key: TDWGRefResolveCacheKey): QWord;
+var
+  I: Integer;
+
+  procedure Mix(Value: QWord);
+  begin
+    Result := ((Result shl 7) or (Result shr 57)) xor Value
+      xor QWord($9E3779B9);
+  end;
+begin
+  Result := QWord(Ord(Key.Slot)) + 1;
+  Mix(QWord(Ord(Key.ExpectedKind)));
+  if Key.InlineRef then
+    Mix(1)
+  else
+    Mix(0);
+  Mix(QWord(PtrUInt(Key.Fallback)));
+  Mix(QWord(Key.RefCount));
+  for I := 0 to High(Key.RefHandles) do
+    Mix(Key.RefHandles[I]);
+  if Result = 0 then
+    Result := 1;
+end;
+
+function TDWGZCADResolver.RefCacheKeysEqual(
+  const A, B: TDWGRefResolveCacheKey): Boolean;
+var
+  I: Integer;
+begin
+  Result := (A.Slot = B.Slot)
+    and (A.ExpectedKind = B.ExpectedKind)
+    and (A.InlineRef = B.InlineRef)
+    and (A.Fallback = B.Fallback)
+    and (A.RefCount = B.RefCount);
+  if not Result then
+    Exit;
+  for I := 0 to High(A.RefHandles) do
+    if A.RefHandles[I] <> B.RefHandles[I] then
+      Exit(False);
+end;
+
+procedure TDWGZCADResolver.EnsureRefCacheCapacity;
+var
+  OldCache: array of TDWGRefResolveCacheEntry;
+  I, NewCapacity: Integer;
+begin
+  if Length(FRefCache) = 0 then
+  begin
+    SetLength(FRefCache, 256);
+    Exit;
+  end;
+  if (FRefCacheCount + 1) * 10 < Length(FRefCache) * 7 then
+    Exit;
+
+  OldCache := FRefCache;
+  NewCapacity := Length(FRefCache) * 2;
+  SetLength(FRefCache, 0);
+  SetLength(FRefCache, NewCapacity);
+  FRefCacheCount := 0;
+  for I := 0 to High(OldCache) do
+    if OldCache[I].Used then
+      InsertRefCacheEntry(OldCache[I].Key, OldCache[I].Hash,
+        OldCache[I].Value);
+end;
+
+procedure TDWGZCADResolver.InsertRefCacheEntry(
+  const Key: TDWGRefResolveCacheKey; Hash: QWord;
+  const Value: TDWGRefResolveCacheValue);
+var
+  Index, Mask: Integer;
+begin
+  Mask := Length(FRefCache) - 1;
+  Index := Integer(Hash and QWord(Mask));
+  while FRefCache[Index].Used do
+    Index := (Index + 1) and Mask;
+  FRefCache[Index].Used := True;
+  FRefCache[Index].Hash := Hash;
+  FRefCache[Index].Key := Key;
+  FRefCache[Index].Value := Value;
+  Inc(FRefCacheCount);
+end;
+
+function TDWGZCADResolver.TryGetRefCache(
+  const Key: TDWGRefResolveCacheKey;
+  out Value: TDWGRefResolveCacheValue): Boolean;
+var
+  Hash: QWord;
+  Index, Mask: Integer;
+begin
+  Result := False;
+  if Length(FRefCache) = 0 then
+    Exit;
+  Hash := RefCacheHash(Key);
+  Mask := Length(FRefCache) - 1;
+  Index := Integer(Hash and QWord(Mask));
+  while FRefCache[Index].Used do
+  begin
+    if (FRefCache[Index].Hash = Hash)
+      and RefCacheKeysEqual(FRefCache[Index].Key, Key) then
+    begin
+      Value := FRefCache[Index].Value;
+      Exit(True);
+    end;
+    Index := (Index + 1) and Mask;
+  end;
+end;
+
+procedure TDWGZCADResolver.StoreRefCache(
+  const Key: TDWGRefResolveCacheKey;
+  const Value: TDWGRefResolveCacheValue);
+var
+  Hash: QWord;
+  Index, Mask: Integer;
+  Stats: PDWGImportStats;
+begin
+  EnsureRefCacheCapacity;
+  Hash := RefCacheHash(Key);
+  Mask := Length(FRefCache) - 1;
+  Index := Integer(Hash and QWord(Mask));
+  while FRefCache[Index].Used do
+  begin
+    if (FRefCache[Index].Hash = Hash)
+      and RefCacheKeysEqual(FRefCache[Index].Key, Key) then
+    begin
+      FRefCache[Index].Value := Value;
+      Exit;
+    end;
+    Index := (Index + 1) and Mask;
+  end;
+  FRefCache[Index].Used := True;
+  FRefCache[Index].Hash := Hash;
+  FRefCache[Index].Key := Key;
+  FRefCache[Index].Value := Value;
+  Inc(FRefCacheCount);
+  Stats := FHost.GetStatsRef;
+  Inc(Stats^.RefCacheKeys);
 end;
 
 procedure TDWGZCADResolver.FinishOwner(Pending: PDWGZCADPendingOwner;
@@ -351,6 +525,9 @@ var
   FailureHandle: TDWGZCADHandle;
   FailureText: String;
   HaveFailure: Boolean;
+  CacheKey: TDWGRefResolveCacheKey;
+  CacheValue: TDWGRefResolveCacheValue;
+  Stats: PDWGImportStats;
 
   procedure AddLocalCandidate(AHandle: TDWGZCADHandle);
   var
@@ -380,6 +557,29 @@ var
     FailureHandle := AHandle;
     FailureText := AText;
   end;
+
+  procedure BuildCacheKey;
+  var
+    J: Integer;
+  begin
+    FillChar(CacheKey, SizeOf(CacheKey), 0);
+    CacheKey.Slot := Pending^.Slot;
+    CacheKey.ExpectedKind := Pending^.ExpectedKind;
+    CacheKey.InlineRef := Pending^.InlineRef;
+    CacheKey.Fallback := Fallback;
+    CacheKey.RefCount := Candidates.Count;
+    for J := 0 to Candidates.Count - 1 do
+      CacheKey.RefHandles[J] := Candidates.Values[J];
+  end;
+
+  procedure StoreResolvedRef(ARef: Pointer; ARefHandle: TDWGZCADHandle);
+  begin
+    CacheValue.Ref := ARef;
+    CacheValue.RefHandle := ARefHandle;
+    CacheValue.State := asAttached;
+    CacheValue.Reason := arResolved;
+    StoreRefCache(CacheKey, CacheValue);
+  end;
 begin
   if Pending = nil then
     Exit;
@@ -392,17 +592,30 @@ begin
   if Fallback = nil then
     Fallback := FHost.FallbackForSlot(Pending^.Slot);
 
-  if Pending^.InlineRef and (Fallback <> nil) then
-  begin
-    FinishRef(Pending, Fallback, asAttached, arResolved);
-    Exit;
-  end;
-
   Candidates := Pending^.RefCandidates;
   if Candidates.Count > High(Candidates.Values) + 1 then
     Candidates.Count := High(Candidates.Values) + 1;
   if (Candidates.Count = 0) and (Pending^.RefHandle <> 0) then
     AddLocalCandidate(Pending^.RefHandle);
+  BuildCacheKey;
+
+  Stats := FHost.GetStatsRef;
+  if TryGetRefCache(CacheKey, CacheValue) then
+  begin
+    Inc(Stats^.RefCacheHits);
+    Pending^.RefHandle := CacheValue.RefHandle;
+    FinishRef(Pending, CacheValue.Ref, CacheValue.State,
+      CacheValue.Reason);
+    Exit;
+  end;
+  Inc(Stats^.RefCacheMisses);
+
+  if Pending^.InlineRef and (Fallback <> nil) then
+  begin
+    StoreResolvedRef(Fallback, Pending^.RefHandle);
+    FinishRef(Pending, Fallback, asAttached, arResolved);
+    Exit;
+  end;
 
   if Candidates.Count = 0 then
   begin
@@ -440,6 +653,7 @@ begin
              IntToHex(Pending^.EntityHandle, 1)]));
         Continue;
       end;
+      StoreResolvedRef(Entry.Ptr, Pending^.RefHandle);
       FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
       Exit;
     end;
@@ -467,6 +681,7 @@ begin
       Continue;
     end;
 
+    StoreResolvedRef(Entry.Ptr, Pending^.RefHandle);
     FinishRef(Pending, Entry.Ptr, asAttached, arResolved);
     Exit;
   end;

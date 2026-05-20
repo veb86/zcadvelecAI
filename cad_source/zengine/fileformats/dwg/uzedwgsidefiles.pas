@@ -578,6 +578,9 @@ begin
     Sink.WriteLine('cycles: ' + IntToStr(Ctx.CycleCount));
     Sink.WriteLine('refs_attached: ' + IntToStr(Ctx.RefAttachCount));
     Sink.WriteLine('refs_fallback: ' + IntToStr(Ctx.RefFallbackCount));
+    Sink.WriteLine('ref_cache_hits: ' + IntToStr(Ctx.RefCacheHits));
+    Sink.WriteLine('ref_cache_misses: ' + IntToStr(Ctx.RefCacheMisses));
+    Sink.WriteLine('unique_ref_keys: ' + IntToStr(Ctx.RefCacheKeys));
     Sink.WriteLine('unknown_entities: ' + IntToStr(Ctx.UnknownEntities));
     Sink.WriteLine('unknown_objects: ' + IntToStr(Ctx.UnknownObjects));
     Sink.WriteLine('proxies_loaded: ' + IntToStr(Ctx.ProxiesLoaded));
@@ -673,6 +676,9 @@ begin
     Sink.WriteRaw('  "cycles": ' + IntToStr(Ctx.CycleCount) + ',' + LineEnding);
     Sink.WriteRaw('  "refs_attached": ' + IntToStr(Ctx.RefAttachCount) + ',' + LineEnding);
     Sink.WriteRaw('  "refs_fallback": ' + IntToStr(Ctx.RefFallbackCount) + ',' + LineEnding);
+    Sink.WriteRaw('  "ref_cache_hits": ' + IntToStr(Ctx.RefCacheHits) + ',' + LineEnding);
+    Sink.WriteRaw('  "ref_cache_misses": ' + IntToStr(Ctx.RefCacheMisses) + ',' + LineEnding);
+    Sink.WriteRaw('  "unique_ref_keys": ' + IntToStr(Ctx.RefCacheKeys) + ',' + LineEnding);
     Sink.WriteRaw('  "unknown_entities": ' + IntToStr(Ctx.UnknownEntities) + ',' + LineEnding);
     Sink.WriteRaw('  "unknown_objects": ' + IntToStr(Ctx.UnknownObjects) + ',' + LineEnding);
     Sink.WriteRaw('  "warnings_total": ' + IntToStr(Ctx.WarningCount) + ',' + LineEnding);

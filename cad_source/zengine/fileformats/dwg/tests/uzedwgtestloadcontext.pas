@@ -56,6 +56,7 @@ type
     procedure MissingLayerHandleFallsBackToSystemLayer;
     procedure LineTypeKindMismatchFallsBackToByLayer;
     procedure AlternateLayerHandleResolvesAfterPrimaryKindMismatch;
+    procedure RepeatedAlternateLayerRefsUseResolverCache;
     procedure ResolveRefsIsIdempotent;
     procedure SecondQueueForSameSlotReplacesFirst;
     procedure LayerLineTypeUsesLayerSlot;
@@ -1143,6 +1144,63 @@ begin
     AssertEquals(PtrInt(Layer), PtrInt(Pending^.AttachedRef));
     AssertEquals(1, Ctx.RefAttachCount);
     AssertEquals(0, Ctx.RefFallbackCount);
+    AssertEquals(0, Ctx.WarningCount);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextRefTest.RepeatedAlternateLayerRefsUseResolverCache;
+var
+  Ctx: TDWGZCADLoadContext;
+  PendingA, PendingB: PDWGZCADPendingRef;
+  Recorder: TFakeRefRecorder;
+  EntityA, EntityB, WrongLineType, Layer, SysLayer: Pointer;
+  Handles: array[0..1] of TDWGZCADHandle;
+begin
+  // Issue #1234 / P3: large drawings repeat the same layer/linetype/style
+  // targets thousands of times. Resolve the first unique candidate set once,
+  // then reuse the pointer and the alternate handle selected after the primary
+  // kind mismatch for subsequent entities.
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    EntityA := MakePtr($E41);
+    EntityB := MakePtr($E42);
+    WrongLineType := MakePtr($A42);
+    Layer := MakePtr($A43);
+    SysLayer := MakePtr($5A);
+    Handles[0] := $100B;
+    Handles[1] := $9D67;
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetRefAttachProc(@FakeRefAttach, @Recorder);
+    Ctx.SetFallbackLayer(SysLayer);
+    Ctx.RegisterShell($1041, dokEntity, EntityA, 0);
+    Ctx.RegisterShell($1042, dokEntity, EntityB, 1);
+    Ctx.RegisterShell($100B, dokLineType, WrongLineType, 2);
+    Ctx.RegisterShell($9D67, dokLayer, Layer, 3);
+    Ctx.QueueRefResolveCandidates(EntityA, $1041, Handles, 2,
+      dokLayer, rsLayer, nil);
+    Ctx.QueueRefResolveCandidates(EntityB, $1042, Handles, 2,
+      dokLayer, rsLayer, nil);
+
+    Ctx.ResolveRefs;
+
+    PendingA := Ctx.FindPendingRef($1041, rsLayer);
+    PendingB := Ctx.FindPendingRef($1042, rsLayer);
+    AssertNotNull(PendingA);
+    AssertNotNull(PendingB);
+    AssertEquals(Ord(asAttached), Ord(PendingA^.AttachState));
+    AssertEquals(Ord(asAttached), Ord(PendingB^.AttachState));
+    AssertEquals(Int64($9D67), Int64(PendingA^.RefHandle));
+    AssertEquals(Int64($9D67), Int64(PendingB^.RefHandle));
+    AssertEquals(PtrInt(Layer), PtrInt(PendingA^.AttachedRef));
+    AssertEquals(PtrInt(Layer), PtrInt(PendingB^.AttachedRef));
+    AssertEquals(2, Length(Recorder.Calls));
+    AssertEquals(2, Ctx.RefAttachCount);
+    AssertEquals(0, Ctx.RefFallbackCount);
+    AssertEquals(1, Ctx.RefCacheMisses);
+    AssertEquals(1, Ctx.RefCacheHits);
+    AssertEquals(1, Ctx.RefCacheKeys);
     AssertEquals(0, Ctx.WarningCount);
   finally
     Ctx.Free;
@@ -2286,6 +2344,8 @@ begin
     DWGWriteSummaryTxt(Ctx, TempPath('.dwg'), Path);
     Text := ReadAllText(Path);
     AssertTrue('handles_total line', Pos('handles_total: 1', Text) > 0);
+    AssertTrue('ref cache line', Pos('ref_cache_hits: 0', Text) > 0);
+    AssertTrue('unique refs line', Pos('unique_ref_keys: 0', Text) > 0);
     AssertTrue('1410 reported', Pos('1410 (ref kind mismatch)', Text) > 0);
     AssertTrue('1402 reported', Pos('1402 (owner not found)', Text) > 0);
     AssertTrue('kind histogram', Pos('dokEntity: 1', Text) > 0);
@@ -2311,6 +2371,8 @@ begin
       hooks exist so a downstream script can do its own structured read. }
     AssertTrue('top brace',  Pos('{', Text) > 0);
     AssertTrue('file key',   Pos('"file":', Text) > 0);
+    AssertTrue('cache hits', Pos('"ref_cache_hits": 0', Text) > 0);
+    AssertTrue('cache keys', Pos('"unique_ref_keys": 0', Text) > 0);
     AssertTrue('kinds key',  Pos('"kinds":', Text) > 0);
     AssertTrue('warnings',   Pos('"warnings":', Text) > 0);
     AssertTrue('1410 entry', Pos('"1410": 1', Text) > 0);
@@ -3419,6 +3481,8 @@ begin
   TargetedLogParseTargetList(DWG_TARGET_HANDLE_LIST, Target);
   AssertEquals('targeted handle constant is empty by default',
     0, Target.Count);
+  AssertFalse('verbose attach logging disabled by default',
+    DWG_VERBOSE_ATTACH_LOG);
 
   TargetedLogClear;
   TargetedLogRefresh;

@@ -530,11 +530,13 @@ begin
   EntityHandle := Context.EntityHandle;
   OwnerHandle := Context.TargetHandle;
   Reason := Context.Reason;
-  DWGLogInfoFormatStr(
-    'DWG [attach] entity=%s owner=%s entity_ptr=%p owner_ptr=%p reason=%s fallback=%s owner_is_insert=%s',
-    [DWGHandleLogText(EntityHandle), DWGHandleLogText(OwnerHandle), Entity,
-     Owner, DWGAttachReasonToText(Reason), BoolToStr(Reason <> arResolved, True),
-     BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]);
+  if DWG_VERBOSE_ATTACH_LOG then
+    DWGLogInfoFormatStr(
+      'DWG [attach] entity=%s owner=%s entity_ptr=%p owner_ptr=%p reason=%s fallback=%s owner_is_insert=%s',
+      [DWGHandleLogText(EntityHandle), DWGHandleLogText(OwnerHandle), Entity,
+       Owner, DWGAttachReasonToText(Reason),
+       BoolToStr(Reason <> arResolved, True),
+       BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]);
 
   // Issue #1203: точечный лог факта присоединения сущности к владельцу.
   // Срабатывает, когда целевой handle добрался до фазы attach (т.е. shell
@@ -640,11 +642,12 @@ begin
   EntityHandle := Context.EntityHandle;
   RefHandle := Context.TargetHandle;
   Reason := Context.Reason;
-  DWGLogInfoFormatStr(
-    'DWG [attach-ref] entity=%s ref=%s slot=%s entity_ptr=%p ref_ptr=%p reason=%s fallback=%s',
-    [DWGHandleLogText(EntityHandle), DWGHandleLogText(RefHandle),
-     DWGRefSlotToLogText(Slot), Entity, Ref, DWGAttachReasonToText(Reason),
-     BoolToStr(Reason <> arResolved, True)]);
+  if DWG_VERBOSE_ATTACH_LOG then
+    DWGLogInfoFormatStr(
+      'DWG [attach-ref] entity=%s ref=%s slot=%s entity_ptr=%p ref_ptr=%p reason=%s fallback=%s',
+      [DWGHandleLogText(EntityHandle), DWGHandleLogText(RefHandle),
+       DWGRefSlotToLogText(Slot), Entity, Ref, DWGAttachReasonToText(Reason),
+       BoolToStr(Reason <> arResolved, True)]);
   // Issue #1203: точечный лог разрешения ссылки. Полезен, чтобы понять,
   // на какой слот (layer/linetype/textstyle/dimstyle/blockdef) ушёл
   // fallback и в каком состоянии (Reason).
@@ -696,7 +699,7 @@ begin
                DWGAttachReasonToText(Reason),
                DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
         end
-        else
+        else if DWG_VERBOSE_ATTACH_LOG then
           DWGLogInfoFormatStr('layer %s %s linetype -> %s',
             [DWGLayerNameForLog(player), DWGRefContextForLog(Context),
              DWGLTypeNameForLog(PGDBLtypeProp(Ref))]);
@@ -1060,9 +1063,10 @@ begin
       LoadCtx.ResolveRefs;
     finally
       DWGFinishTimer(PhaseTimer, 'dwg-import.resolve-refs',
-        Format('pending_refs=%d refs_attached=%d refs_fallback=%d',
+        Format('pending_refs=%d refs_attached=%d refs_fallback=%d ref_cache_hits=%d ref_cache_misses=%d unique_ref_keys=%d',
           [LoadCtx.PendingRefs.Count, LoadCtx.RefAttachCount,
-           LoadCtx.RefFallbackCount]));
+           LoadCtx.RefFallbackCount, LoadCtx.RefCacheHits,
+           LoadCtx.RefCacheMisses, LoadCtx.RefCacheKeys]));
     end;
 
     PhaseTimer := TTimeMeter.StartMeasure;
@@ -1094,10 +1098,11 @@ begin
     PhaseTimer := TTimeMeter.StartMeasure;
     try
       DWGLogInfoFormatStr(
-        'DWG [resolve-summary] handles=%d pending_owners=%d pending_refs=%d attached=%d fallback=%d cycles=%d refs_attached=%d refs_fallback=%d proxy_loaded=%d proxy_failed=%d unknown_entities=%d unknown_objects=%d freed_raw_drops=%d warnings=%d',
+        'DWG [resolve-summary] handles=%d pending_owners=%d pending_refs=%d attached=%d fallback=%d cycles=%d refs_attached=%d refs_fallback=%d ref_cache_hits=%d ref_cache_misses=%d unique_ref_keys=%d proxy_loaded=%d proxy_failed=%d unknown_entities=%d unknown_objects=%d freed_raw_drops=%d warnings=%d',
         [LoadCtx.Handles.Count, LoadCtx.PendingOwners.Count,
          LoadCtx.PendingRefs.Count, LoadCtx.AttachCount, LoadCtx.FallbackCount,
          LoadCtx.CycleCount, LoadCtx.RefAttachCount, LoadCtx.RefFallbackCount,
+         LoadCtx.RefCacheHits, LoadCtx.RefCacheMisses, LoadCtx.RefCacheKeys,
          LoadCtx.ProxiesLoaded, LoadCtx.ProxiesFailed, LoadCtx.UnknownEntities,
          LoadCtx.UnknownObjects, LoadCtx.DroppedDueToFreedRaw,
          LoadCtx.WarningCount]);
