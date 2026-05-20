@@ -564,7 +564,10 @@ begin
 
   newowner := PGDBObjGenericSubEntry(Owner);
 
-  newowner^.AddMi(PGDBObjSubordinated(pobj));
+  // DWG owner resolution is a bulk-load phase. Keep the entity list and
+  // owner metadata current here, then rebuild spatial trees once after
+  // finalization instead of updating the tree for every pending owner.
+  newowner^.AddMiToArrayOnly(PGDBObjSubordinated(pobj));
   if (Reason <> arResolved) and
      DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
     DWGLogWarningFormatStr('entity %s attached via fallback (%s)',
@@ -1045,6 +1048,39 @@ begin
   end;
 end;
 
+procedure DWGRebuildOwnerTrees(Drawing: PTSimpleDrawing);
+var
+  I: Integer;
+  RootEntities, BlockDefEntities, RebuiltBlockDefs: Integer;
+  BlockDef: PGDBObjBlockdef;
+begin
+  if Drawing = nil then
+    Exit;
+
+  RootEntities := 0;
+  BlockDefEntities := 0;
+  RebuiltBlockDefs := 0;
+  if Drawing^.pObjRoot <> nil then begin
+    RootEntities := Drawing^.pObjRoot^.ObjArray.Count;
+    Drawing^.pObjRoot^.ObjArray.ObjTree.MakeTreeFrom(
+      Drawing^.pObjRoot^.ObjArray, Drawing^.pObjRoot^.vp.BoundingBox, nil);
+  end;
+
+  for I := 0 to Drawing^.BlockDefArray.Count - 1 do begin
+    BlockDef := PGDBObjBlockdef(Drawing^.BlockDefArray.getDataMutable(I));
+    if BlockDef = nil then
+      Continue;
+    Inc(RebuiltBlockDefs);
+    Inc(BlockDefEntities, BlockDef^.ObjArray.Count);
+    BlockDef^.ObjArray.ObjTree.MakeTreeFrom(
+      BlockDef^.ObjArray, BlockDef^.vp.BoundingBox, nil);
+  end;
+
+  DWGLogInfoFormatStr(
+    'DWG owner trees rebuilt: root_entities=%d blockdefs=%d blockdef_entities=%d',
+    [RootEntities, RebuiltBlockDefs, BlockDefEntities]);
+end;
+
 procedure EndDWGImport(var ZContext: TZDrawingContext);
 var
   TotalTimer, PhaseTimer: TTimeMeter;
@@ -1129,6 +1165,14 @@ begin
       FinalizeImport(LoadCtx, ZContext.PDrawing, ZContext.DC);
     finally
       DWGFinishTimer(PhaseTimer, 'dwg-import.finalize',
+        Format('handles=%d', [LoadCtx.Handles.Count]));
+    end;
+
+    PhaseTimer := TTimeMeter.StartMeasure;
+    try
+      DWGRebuildOwnerTrees(ZContext.PDrawing);
+    finally
+      DWGFinishTimer(PhaseTimer, 'dwg-import.rebuild-owner-trees',
         Format('handles=%d', [LoadCtx.Handles.Count]));
     end;
   finally

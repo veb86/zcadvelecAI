@@ -279,3 +279,25 @@ DWG timing: phase=dwg-import.resolve-owners elapsed_ms=... pending_owners=68081 
    реальные замеры после P1-P3 покажут заметный остаточный вклад.
 5. **P6**: оставить счетчики в timing summary, чтобы следующие оптимизации
    проверялись цифрами, а не только субъективным временем загрузки.
+
+## Статус после PR #1237
+
+После P1/P3/P5 `dwg-import.resolve-refs` перестал быть bottleneck'ом
+(`unique_ref_keys` показывает, что повторяющиеся ссылки обслуживаются cache).
+Оставшийся замер issue #1234 показал, что `dwg-import.resolve-owners`
+тратит основное время уже не на поиск owner-а, а на `AddMi`:
+каждая из десятков тысяч owner-attach операций сразу вставляла entity в
+`ObjTree`, хотя DWG load потом все равно выполняет отдельные tree rebuild
+фазы.
+
+PR #1237 переносит эту работу из hot path:
+
+1. `GDBObjEntityTreeArray.AddPEntityToArrayOnly` добавляет entity в `ObjArray`
+   и обновляет `ListPos`, но не делает `ObjTree.AddObjectToNodeTree`.
+2. `GDBObjGenericSubEntry.AddMiToArrayOnly` сохраняет семантику owner/root
+   metadata и `EntExtensions.RunSetRoot`.
+3. `DWGAttachEntityWithContext` использует array-only attach во время
+   `ResolveOwners`.
+4. `EndDWGImport` после `FinalizeImport` выполняет один
+   `dwg-import.rebuild-owner-trees` pass по root и block definitions, чтобы
+   standalone loader callers не оставались с пустыми spatial trees.
