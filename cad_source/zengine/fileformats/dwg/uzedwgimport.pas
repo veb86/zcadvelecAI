@@ -230,19 +230,17 @@ begin
     Result := LoadDrawing^.BlockDefArray.create(MissingBlockName);
 end;
 
-function DWGPointerHasKind(P: Pointer; Kind: TDWGZCADObjectKind): Boolean;
+function DWGContextTargetHasKind(P: Pointer;
+  const Context: TDWGAttachContext; Kind: TDWGZCADObjectKind): Boolean;
 var
-  I: Integer;
-  Entry: PDWGZCADHandleEntry;
+  Entry: TDWGZCADHandleEntry;
 begin
   Result := False;
   if (LoadCtx = nil) or (P = nil) then
     Exit;
-  for I := 0 to LoadCtx.Handles.Count - 1 do begin
-    Entry := LoadCtx.Handles.EntryAt(I);
-    if (Entry^.Ptr = P) and (Entry^.Kind = Kind) then
-      Exit(True);
-  end;
+  if not LoadCtx.Handles.TryGet(Context.TargetHandle, Entry) then
+    Exit;
+  Result := (Entry.Ptr = P) and (Entry.Kind = Kind);
 end;
 
 function DWGObjTypeIsDimension(ObjType: TObjID): Boolean;
@@ -520,6 +518,7 @@ var
   EntityHandle: QWord;
   OwnerHandle: QWord;
   Reason: TDWGAttachReason;
+  OwnerIsInsert: Boolean;
 begin
   // Reason is forwarded to the logger so unresolved fallbacks are visible to
   // human reviewers without a separate diagnostic pass.
@@ -530,13 +529,14 @@ begin
   EntityHandle := Context.EntityHandle;
   OwnerHandle := Context.TargetHandle;
   Reason := Context.Reason;
+  OwnerIsInsert := DWGContextTargetHasKind(Owner, Context, dokBlockInsert);
   if DWG_VERBOSE_ATTACH_LOG then
     DWGLogInfoFormatStr(
       'DWG [attach] entity=%s owner=%s entity_ptr=%p owner_ptr=%p reason=%s fallback=%s owner_is_insert=%s',
       [DWGHandleLogText(EntityHandle), DWGHandleLogText(OwnerHandle), Entity,
        Owner, DWGAttachReasonToText(Reason),
        BoolToStr(Reason <> arResolved, True),
-       BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]);
+       BoolToStr(OwnerIsInsert, True)]);
 
   // Issue #1203: точечный лог факта присоединения сущности к владельцу.
   // Срабатывает, когда целевой handle добрался до фазы attach (т.е. shell
@@ -547,12 +547,12 @@ begin
     TargetedLog('attach', EntityHandle,
       Format('reason=%s owner_is_insert=%s',
         [DWGAttachReasonToText(Reason),
-         BoolToStr(DWGPointerHasKind(Owner, dokBlockInsert), True)]));
+         BoolToStr(OwnerIsInsert, True)]));
 
   // INSERT-owned ATTRIB entities are appended after the INSERT has built its
   // block geometry. Adding them now would be undone by BuildGeometry clearing
   // ConstObjArray from the block definition.
-  if DWGPointerHasKind(Owner, dokBlockInsert) then begin
+  if OwnerIsInsert then begin
     pobj^.bp.ListPos.Owner := PGDBObjEntity(Owner);
     if (Reason <> arResolved) and
        DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
@@ -756,7 +756,8 @@ begin
           Exit;
         pInsert := PGDBObjBlockInsert(pobj);
         if (Ref <> nil) and
-          ((Reason <> arResolved) or DWGPointerHasKind(Ref, dokBlockDef)) then
+          ((Reason <> arResolved) or
+           DWGContextTargetHasKind(Ref, Context, dokBlockDef)) then
           pBlockDef := PGDBObjBlockdef(Ref)
         else begin
           pBlockDef := DWGEnsureFallbackBlockDef;

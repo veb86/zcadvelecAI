@@ -301,3 +301,27 @@ PR #1237 переносит эту работу из hot path:
 4. `EndDWGImport` после `FinalizeImport` выполняет один
    `dwg-import.rebuild-owner-trees` pass по root и block definitions, чтобы
    standalone loader callers не оставались с пустыми spatial trees.
+
+## Статус после PR #1238
+
+Новый замер из issue #1234 после PR #1237 всё ещё показывал
+`dwg-import.resolve-owners` около 9.5-10.4 s. Повторный анализ нашёл ещё один
+остаточный `O(N^2)` участок в самом attach callback:
+
+- `DWGAttachEntityWithContext` на каждый owner attach вызывал
+  `DWGPointerHasKind(Owner, dokBlockInsert)`;
+- `DWGPointerHasKind` линейно обходил весь `LoadCtx.Handles`;
+- для 68081 owner attach и ~70391 handles это снова давало миллиарды
+  сравнений, хотя resolver уже передаёт точный `TargetHandle`.
+
+PR #1238 заменяет эту проверку на `DWGContextTargetHasKind`: lookup идёт через
+`Context.TargetHandle` и `TDWGZCADHandleMap.TryGet`, то есть через уже
+отсортированную handle-map. `DWGAttachEntityWithContext` вычисляет
+`owner_is_insert` один раз и переиспользует значение для verbose/targeted log
+и ветки deferred INSERT children. Та же замена применена к `rsBlockDef` в
+`DWGAttachRefWithContext`, чтобы block-ref attach не возвращал pointer-scan
+паттерн.
+
+Ожидаемый эффект: `dwg-import.resolve-owners` больше не должен зависеть от
+`pending_owners * handles`; оставшаяся работа становится линейной по
+`pending_owners` плюс `O(log handles)` для классификации target handle.
