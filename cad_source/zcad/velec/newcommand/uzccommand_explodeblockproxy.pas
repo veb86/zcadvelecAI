@@ -58,6 +58,7 @@ uses
   uzeentity,
   uzeconsts,
   uzeentarc,
+  uzeenttransformscalars,
   uzeentblockinsert,
   uzeentacdproxy,
   uzeentcomplex,
@@ -290,6 +291,7 @@ begin
   if SubEntity^.GetObjType = GDBArcID then
     FlattenArcAnglesToRoot(PGDBObjArc(SubEntity), PGDBObjArc(Cloned),
       ATransform);
+  ApplyEntityScalarScale(Cloned, Cloned^.objMatrix);
   { Переносим клон в корень чертежа. После TransformAt его Local
     уже содержит мировые координаты, так что повторные вызовы
     CalcObjMatrix при новом владельце дадут корректную матрицу. }
