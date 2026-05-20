@@ -60,11 +60,11 @@ type
     procedure EntityLineTypeFlag3ReadsExplicitHandle;
     procedure EntityCommonPropsCopiesVisualFields;
     procedure EntityCommonPropsNormalizeByLayerColorAndLineWeight;
-    procedure LayerVisualPropsPositiveColorKeepsLayerOn;
+    procedure LayerVisualPropsExplicitFlagsDriveLayerStates;
     procedure LayerVisualPropsByLayerMethodKeepsRawACI;
     procedure LayerVisualPropsRawACIBeatsDecodedWhiteFallback;
     procedure LayerVisualPropsTruecolorPackedACIBeatsByLayerFallback;
-    procedure LayerVisualPropsNegativeColorTurnsLayerOff;
+    procedure LayerVisualPropsNegativeColorKeepsExplicitOnState;
     procedure HeaderCurrentLayerHandleReadsCLAYER;
     procedure HeaderCurrentLineTypeHandleReadsCELTYPE;
     procedure HeaderCurrentTextStyleHandleReadsTEXTSTYLE;
@@ -928,7 +928,7 @@ begin
   AssertFalse('visible by default', Props.Invisible);
 end;
 
-procedure TFPDWGProcHandleTest.LayerVisualPropsPositiveColorKeepsLayerOn;
+procedure TFPDWGProcHandleTest.LayerVisualPropsExplicitFlagsDriveLayerStates;
 var
   Layer: Dwg_Object_LAYER;
   Props: TDWGLayerVisualProps;
@@ -944,10 +944,19 @@ begin
   AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
   AssertEquals('ACI color copied', 7, Props.ColorIndex);
   AssertEquals('lineweight 31 is ByLwDefault', -3, Props.LineWeight);
-  AssertTrue('positive color keeps layer visible despite raw off flag',
+  AssertFalse('explicit off flag hides layer despite positive color',
     Props.On);
   AssertTrue('locked copied', Props.Locked);
   AssertTrue('plot flag copied', Props.Plot);
+
+  Layer.off := 0;
+  Layer.locked := 0;
+  Layer.plotflag := 0;
+
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertTrue('cleared off flag turns layer on', Props.On);
+  AssertFalse('cleared lock flag unlocks layer', Props.Locked);
+  AssertFalse('cleared plot flag disables plotting', Props.Plot);
 end;
 
 procedure TFPDWGProcHandleTest.LayerVisualPropsByLayerMethodKeepsRawACI;
@@ -1017,7 +1026,7 @@ begin
   AssertEquals('packed TRUECOLOR CMC keeps blue ACI', 5, Props.ColorIndex);
 end;
 
-procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorTurnsLayerOff;
+procedure TFPDWGProcHandleTest.LayerVisualPropsNegativeColorKeepsExplicitOnState;
 var
   Layer: Dwg_Object_LAYER;
   Props: TDWGLayerVisualProps;
@@ -1032,7 +1041,12 @@ begin
   AssertEquals('negative ACI color normalized for display', 3,
     Props.ColorIndex);
   AssertEquals('lineweight 29 is ByLayer', -1, Props.LineWeight);
-  AssertFalse('negative color means layer is off', Props.On);
+  AssertTrue('cleared off flag keeps layer visible despite negative color',
+    Props.On);
+
+  Layer.off := 1;
+  AssertTrue(DWGLayerVisualPropsValue(@Layer, Props));
+  AssertFalse('set off flag hides layer after color normalization', Props.On);
 end;
 
 procedure TFPDWGProcHandleTest.HeaderCurrentLayerHandleReadsCLAYER;
