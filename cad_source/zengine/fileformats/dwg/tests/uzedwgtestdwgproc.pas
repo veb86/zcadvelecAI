@@ -136,7 +136,9 @@ type
     procedure BITCODET2TextUsesHeaderCodepage;
     procedure BITCODET2TextKeepsR2010UnicodeTableName;
     procedure BITCODET2TextDecodesR2013SingleByteCP1251;
+    procedure BITCODET2TextKeepsR2013SingleByteASCII;
     procedure CopyTextToZCADStringKeepsR2010ChineseValue;
+    procedure CopyTextToZCADTemplateEscapesIssue1243R2010Value;
     procedure CopyTextCopiesGeometry;
     procedure CopyTextDecodesCP1251Value;
     procedure CopyTextPreservesAlignmentFlags;
@@ -1656,6 +1658,23 @@ begin
   AssertEquals(Expected, Decoded);
 end;
 
+procedure TFPDWGProcTextTest.BITCODET2TextKeepsR2013SingleByteASCII;
+var
+  RawDWG: Dwg_Data;
+  DWGContext: TDWGCtx;
+  RawText, Decoded: AnsiString;
+begin
+  FillChar(RawDWG, SizeOf(RawDWG), 0);
+  RawDWG.header.version := R_2013;
+  RawDWG.header.codepage := 29;
+  DWGContext.CreateRec(RawDWG);
+  RawText := 'Hello';
+
+  BITCODE_T2Text(PChar(RawText), DWGContext, Decoded);
+
+  AssertEquals(RawText, Decoded);
+end;
+
 procedure TFPDWGProcTextTest.CopyTextToZCADStringKeepsR2010ChineseValue;
 var
   Text: Dwg_Entity_TEXT;
@@ -1674,6 +1693,30 @@ begin
   Stored := DWGDecodedTextToZCADString(Props.Value);
 
   AssertEquals(Expected, string(UTF8Encode(Stored)));
+end;
+
+procedure TFPDWGProcTextTest.CopyTextToZCADTemplateEscapesIssue1243R2010Value;
+var
+  Text: Dwg_Entity_TEXT;
+  Props: TDWGTextProps;
+  RawText: UnicodeString;
+  Expected, ExpectedTemplate: AnsiString;
+  Stored: UnicodeString;
+begin
+  FillChar(Text, SizeOf(Text), 0);
+  Expected := #$E5#$B7#$A5#$E7#$A8#$8B#$E5#$90#$8D#$E7#$A7#$B0 +
+    #$EF#$BC#$88'SUBJECT'#$EF#$BC#$89#$EF#$BC#$9A;
+  ExpectedTemplate :=
+    '\U+5DE5\U+7A0B\U+540D\U+79F0\U+FF08SUBJECT\U+FF09\U+FF1A';
+  RawText := UTF8Decode(Expected);
+  Text.text_value := PAnsiChar(PUnicodeChar(RawText));
+
+  DWGCopyTextProps(Text, R_2010, 29, Props);
+  Stored := DWGDecodedTextToZCADString(Props.Value);
+
+  AssertEquals(Expected, string(UTF8Encode(Stored)));
+  AssertEquals(ExpectedTemplate,
+    string(DWGDecodedTextToZCADTemplate(Props.Value)));
 end;
 
 procedure TFPDWGProcTextTest.CopyTextCopiesGeometry;

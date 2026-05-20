@@ -39,6 +39,7 @@ procedure DWGSafeDecodeText(const p: BITCODE_T; Version: DWG_VERSION_TYPE;
   Codepage: Integer; out text: string); overload;
 function DWGDecodedTextForZCAD(const Text: string): string;
 function DWGDecodedTextToZCADString(const Text: string): UnicodeString;
+function DWGDecodedTextToZCADTemplate(const Text: string): UnicodeString;
 
 implementation
 
@@ -205,19 +206,72 @@ begin
   Result := True;
 end;
 
+function DWGByteIsPrintableASCII(B: Byte): Boolean;
+begin
+  Result := (B = 9) or (B = 10) or (B = 13) or ((B >= 32) and (B <= 126));
+end;
+
+function DWGCodeUnitLooksLikeUTF16Text(CodeUnit: Word): Boolean;
+begin
+  Result := ((CodeUnit >= $4E00) and (CodeUnit <= $9FFF)) or
+    ((CodeUnit >= $3040) and (CodeUnit <= $30FF)) or
+    ((CodeUnit >= $FF00) and (CodeUnit <= $FFEF));
+end;
+
+function DWGTextHasAnsiASCIIPrefix(const p: BITCODE_T): Boolean;
+const
+  MaxProbeBytes = 32;
+var
+  I, FirstNul: Integer;
+begin
+  Result := False;
+  FirstNul := -1;
+  for I := 0 to MaxProbeBytes - 1 do
+  begin
+    if PAnsiChar(p)[I] = #0 then
+    begin
+      FirstNul := I;
+      Break;
+    end;
+    if not DWGByteIsPrintableASCII(Ord(PAnsiChar(p)[I])) then
+      Exit;
+  end;
+
+  if FirstNul <= 1 then
+    Exit;
+
+  I := 1;
+  while I < FirstNul do
+  begin
+    if PAnsiChar(p)[I] <> #0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Inc(I, 2);
+  end;
+end;
+
 function DWGTextLooksLikeUTF16LE(const p: BITCODE_T): Boolean;
 const
-  MaxProbeChars = 8;
+  MaxProbeChars = 16;
 var
-  I, Pairs, Score: Integer;
+  I, Pairs, Score, StrongPairs: Integer;
   Lo, Hi: Byte;
+  CodeUnit: Word;
 begin
   Result := False;
   if (p = nil) or (PAnsiChar(p)[0] = #0) then
     Exit;
+  { LibreDWG exposes BITCODE_T as PAnsiChar even when the payload is UTF-16LE.
+    Score UTF-16 code units, but reject ordinary single-byte ASCII first so
+    R2007+ codepage strings such as "Hello" do not become CJK-looking pairs. }
+  if DWGTextHasAnsiASCIIPrefix(p) then
+    Exit;
 
   Pairs := 0;
   Score := 0;
+  StrongPairs := 0;
   for I := 0 to MaxProbeChars - 1 do
   begin
     Lo := Ord(PAnsiChar(p)[I * 2]);
@@ -226,18 +280,36 @@ begin
       Break;
 
     Inc(Pairs);
-    if Hi = 0 then
-      Inc(Score, 2)
+    CodeUnit := Word(Lo) or (Word(Hi) shl 8);
+    if (Hi = 0) and DWGByteIsPrintableASCII(Lo) then
+    begin
+      Inc(Score, 4);
+      Inc(StrongPairs);
+    end
     else if Hi in [$01..$06] then
-      Inc(Score, 2)
+    begin
+      Inc(Score, 3);
+      Inc(StrongPairs);
+    end
+    else if DWGCodeUnitLooksLikeUTF16Text(CodeUnit) then
+    begin
+      Inc(Score, 3);
+      Inc(StrongPairs);
+    end
+    else if (CodeUnit >= $D800) and (CodeUnit <= $DFFF) then
+      Dec(Score, 3)
+    else if (CodeUnit >= $E000) and (CodeUnit <= $F8FF) then
+      Dec(Score, 3)
+    else if CodeUnit < 32 then
+      Dec(Score, 2)
     else
-      Dec(Score, 2);
+      Inc(Score);
 
     if (Lo = 0) and (Hi <> 0) then
       Dec(Score, 2);
   end;
 
-  Result := (Pairs > 0) and (Score >= 2);
+  Result := (Pairs > 0) and (StrongPairs > 0) and (Score >= 4);
 end;
 
 function DWGDecodeUTF16Text(const p: BITCODE_T): string;
@@ -290,6 +362,20 @@ begin
     DWGSafeDecodeText returns UTF-8 bytes, so decode UTF-8 explicitly instead
     of letting a plain UnicodeString cast use the process default code page. }
   Result := UTF8Decode(Text);
+end;
+
+function DWGDecodedTextToZCADTemplate(const Text: string): UnicodeString;
+var
+  I: Integer;
+  Decoded: UnicodeString;
+begin
+  Decoded := DWGDecodedTextToZCADString(Text);
+  Result := '';
+  for I := 1 to Length(Decoded) do
+    if Ord(Decoded[I]) > 127 then
+      Result := Result + '\U+' + IntToHex(Ord(Decoded[I]), 4)
+    else
+      Result := Result + Decoded[I];
 end;
 
 end.
