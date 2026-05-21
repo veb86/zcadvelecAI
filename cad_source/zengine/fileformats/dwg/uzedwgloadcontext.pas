@@ -946,8 +946,10 @@ begin
     rsLineType,
     rsLayerLineType:
       Result := FFallbackLineType;
-    rsTextStyle: Result := FFallbackTextStyle;
-    rsDimStyle:  Result := FFallbackDimStyle;
+    rsTextStyle,
+    rsDimStyleTextStyle:
+      Result := FFallbackTextStyle;
+    rsDimStyle: Result := FFallbackDimStyle;
   else
     Result := nil;
   end;

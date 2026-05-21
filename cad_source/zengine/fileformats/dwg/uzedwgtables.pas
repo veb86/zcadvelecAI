@@ -408,6 +408,8 @@ var
   PDimStyle: PGDBDimStyle;
   Name: string;
   Handle: QWord;
+  TextStyleCandidates: TDWGRefHandleCandidates;
+  FallbackTextStyle: PGDBTextStyle;
   Ctx: TDWGZCADLoadContext;
 begin
   BITCODE_T2Text(PDWGDimStyle^.name, DWGContext, Name);
@@ -428,17 +430,28 @@ begin
   if PDimStyle = nil then
     PDimStyle := DWGEnsureDimStyle(ZContext.PDrawing^);
   ApplyDimStyleScalars(PDimStyle, PDWGDimStyle);
-  if (PDimStyle <> nil) and (PDimStyle^.Text.DIMTXSTY = nil) then
-    PDimStyle^.Text.DIMTXSTY := ZContext.PDrawing^.TextStyleTable.FindStyle(
-      'Standard', False);
+  FallbackTextStyle := nil;
+  if PDimStyle <> nil then begin
+    if PDimStyle^.Text.DIMTXSTY = nil then
+      PDimStyle^.Text.DIMTXSTY := ZContext.PDrawing^.TextStyleTable.FindStyle(
+        'Standard', False);
+    FallbackTextStyle := PDimStyle^.Text.DIMTXSTY;
+  end;
   if (PDimStyle <> nil) and (ZContext.PDrawing^.CurrentDimStyle = nil) then
     ZContext.PDrawing^.CurrentDimStyle := PDimStyle;
 
   Ctx := GetLoadCtx;
   if Ctx <> nil then begin
     Handle := DWGObjectHandleValue(DWGObject);
-    if Handle <> 0 then
+    if Handle <> 0 then begin
       Ctx.RegisterShell(Handle, dokDimStyle, PDimStyle, -1);
+      if (PDimStyle <> nil) and
+         DWGRefHandleCandidatesValue(PDWGDimStyle^.DIMTXSTY,
+           TextStyleCandidates) then
+        Ctx.QueueRefResolveCandidates(PDimStyle, Handle,
+          TextStyleCandidates.Values, TextStyleCandidates.Count, dokTextStyle,
+          rsDimStyleTextStyle, FallbackTextStyle);
+    end;
   end;
 end;
 

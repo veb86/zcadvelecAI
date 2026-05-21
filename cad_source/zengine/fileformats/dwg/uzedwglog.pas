@@ -80,9 +80,10 @@ begin
     rsLayer:         Result := 'layer';
     rsLineType:      Result := 'linetype';
     rsTextStyle:     Result := 'textstyle';
-    rsDimStyle:      Result := 'dimstyle';
-    rsBlockDef:      Result := 'block-def';
-    rsLayerLineType: Result := 'layer-linetype';
+    rsDimStyle:          Result := 'dimstyle';
+    rsBlockDef:          Result := 'block-def';
+    rsDimStyleTextStyle: Result := 'dimstyle-textstyle';
+    rsLayerLineType:     Result := 'layer-linetype';
   else
     Result := 'slot-' + IntToStr(Ord(Slot));
   end;

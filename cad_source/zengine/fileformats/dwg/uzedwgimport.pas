@@ -616,6 +616,15 @@ begin
     Result := '(unnamed linetype)';
 end;
 
+function DWGTextStyleNameForLog(TextStyle: PGDBTextStyle): string;
+begin
+  if TextStyle = nil then
+    Exit('(nil textstyle)');
+  Result := TextStyle^.Name;
+  if Result = '' then
+    Result := '(unnamed textstyle)';
+end;
+
 function DWGRefContextForLog(const Context: TDWGAttachContext): string;
 begin
   Result := 'handle=' + IntToHex(Context.EntityHandle, 1) +
@@ -634,6 +643,7 @@ var
   pobj: PGDBObjEntity;
   player: PGDBLayerProp;
   pDimStyle: PGDBDimStyle;
+  pTextStyle: PGDBTextStyle;
   pBlockDef: PGDBObjBlockdef;
   pInsert: PGDBObjBlockInsert;
   Slot: TDWGZCADRefSlot;
@@ -725,6 +735,24 @@ begin
             'entity %s %s textstyle fallback (%s)',
             [HexStr(PtrUInt(pobj), 16), DWGRefContextForLog(Context),
              DWGAttachReasonToText(Reason)]);
+      end;
+    rsDimStyleTextStyle:
+      begin
+        pDimStyle := PGDBDimStyle(Entity);
+        if pDimStyle = nil then
+          Exit;
+        pTextStyle := PGDBTextStyle(Ref);
+        if (pTextStyle = nil) and (LoadDrawing <> nil) then
+          pTextStyle := DWGEnsureTextStyle(LoadDrawing^);
+        if pTextStyle <> nil then
+          pDimStyle^.Text.DIMTXSTY := pTextStyle;
+        if (Reason <> arResolved) and
+           DWGShouldEmitFallbackDetail(Reason, EntityHandle) then
+          DWGLogWarningFormatStr(
+            'dimstyle %s %s textstyle fallback (%s) -> %s',
+            [pDimStyle^.Name, DWGRefContextForLog(Context),
+             DWGAttachReasonToText(Reason),
+             DWGTextStyleNameForLog(pTextStyle)]);
       end;
     rsDimStyle:
       begin

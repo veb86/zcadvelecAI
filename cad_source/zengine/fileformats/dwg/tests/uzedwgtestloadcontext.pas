@@ -109,6 +109,8 @@ type
     procedure BrokenBlockRefFallsBackWithWarning;
     procedure AttribOwnerInsertResolvesToInsertContainer;
     procedure DimStyleDeclaredAfterDimensionResolvesAtEnd;
+    procedure DimStyleTextStyleDeclaredAfterDimStyleResolvesAtEnd;
+    procedure NullDimStyleTextStyleFallsBackToStandard;
     procedure NullDimStyleFallsBackToDefault;
     procedure BlockDefRefAcceptsModelSpaceForInsert;
   end;
@@ -1843,6 +1845,69 @@ begin
   end;
 end;
 
+procedure TDWGLoadContextStage6Test.DimStyleTextStyleDeclaredAfterDimStyleResolvesAtEnd;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  Recorder: TFakeRefRecorder;
+  DimStyle, TextStyle, StdText: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DimStyle := MakePtr($622);
+    TextStyle := MakePtr($623);
+    StdText := MakePtr($6F4);
+    SetLength(Recorder.Calls, 0);
+    Ctx.SetRefAttachProc(@FakeRefAttach, @Recorder);
+    Ctx.SetFallbackTextStyle(StdText);
+    Ctx.RegisterShell($622, dokDimStyle, DimStyle, 0);
+    Ctx.QueueRefResolve(DimStyle, $622, $623, dokTextStyle,
+      rsDimStyleTextStyle, nil);
+    Ctx.RegisterShell($623, dokTextStyle, TextStyle, 1);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($622, rsDimStyleTextStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asAttached), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arResolved), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(TextStyle), PtrInt(Pending^.AttachedRef));
+    AssertEquals(1, Length(Recorder.Calls));
+    AssertEquals(Ord(rsDimStyleTextStyle), Ord(Recorder.Calls[0].Slot));
+    AssertEquals(PtrInt(DimStyle), PtrInt(Recorder.Calls[0].Entity));
+    AssertEquals(PtrInt(TextStyle), PtrInt(Recorder.Calls[0].Ref));
+  finally
+    Ctx.Free;
+  end;
+end;
+
+procedure TDWGLoadContextStage6Test.NullDimStyleTextStyleFallsBackToStandard;
+var
+  Ctx: TDWGZCADLoadContext;
+  Pending: PDWGZCADPendingRef;
+  DimStyle, StdText: Pointer;
+begin
+  Ctx := TDWGZCADLoadContext.Create;
+  try
+    DimStyle := MakePtr($624);
+    StdText := MakePtr($6F5);
+    Ctx.SetFallbackTextStyle(StdText);
+    Ctx.RegisterShell($624, dokDimStyle, DimStyle, 0);
+    Ctx.QueueRefResolve(DimStyle, $624, 0, dokTextStyle,
+      rsDimStyleTextStyle, nil);
+
+    Ctx.ResolveRefs;
+
+    Pending := Ctx.FindPendingRef($624, rsDimStyleTextStyle);
+    AssertNotNull(Pending);
+    AssertEquals(Ord(asFallback), Ord(Pending^.AttachState));
+    AssertEquals(Ord(arRefNull), Ord(Pending^.AttachReason));
+    AssertEquals(PtrInt(StdText), PtrInt(Pending^.AttachedRef));
+  finally
+    Ctx.Free;
+  end;
+end;
+
 procedure TDWGLoadContextStage6Test.NullDimStyleFallsBackToDefault;
 var
   Ctx: TDWGZCADLoadContext;
@@ -3430,6 +3495,8 @@ begin
     DWGObjectKindToLogText(dokBlockInsert));
   AssertEquals('layer linetype slot', 'layer-linetype',
     DWGRefSlotToLogText(rsLayerLineType));
+  AssertEquals('dimstyle textstyle slot', 'dimstyle-textstyle',
+    DWGRefSlotToLogText(rsDimStyleTextStyle));
   AssertEquals('created shell state', 'created',
     DWGShellStateToLogText(msCreated));
   AssertEquals('fallback attach state', 'fallback',

@@ -229,9 +229,10 @@ begin
     rsLayer:         Result := 'rsLayer';
     rsLineType:      Result := 'rsLineType';
     rsTextStyle:     Result := 'rsTextStyle';
-    rsDimStyle:      Result := 'rsDimStyle';
-    rsBlockDef:      Result := 'rsBlockDef';
-    rsLayerLineType: Result := 'rsLayerLineType';
+    rsDimStyle:          Result := 'rsDimStyle';
+    rsBlockDef:          Result := 'rsBlockDef';
+    rsDimStyleTextStyle: Result := 'rsDimStyleTextStyle';
+    rsLayerLineType:     Result := 'rsLayerLineType';
   else
     Result := 'rs?';
   end;
