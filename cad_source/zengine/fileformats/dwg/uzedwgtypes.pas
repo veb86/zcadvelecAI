@@ -143,7 +143,11 @@ type
     { Issue #1122: layer.LT refs target a PGDBLayerProp, not an entity vp
       record. Keep this as a distinct slot so the callback cannot write the
       resolved LTYPE pointer into entity memory when the target is a layer. }
-    rsLayerLineType
+    rsLayerLineType,
+    { Issue #1250: DIMSTYLE.DIMTXSTY refs target a PGDBDimStyle, not a
+      text entity. Resolve them through their own slot so dimension text can
+      honor a fixed-height text style before falling back to DIMTXT. }
+    rsDimStyleTextStyle
   );
 
   { Attach callback context supplied by the resolver from the exact pending
