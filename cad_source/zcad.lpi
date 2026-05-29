@@ -501,7 +501,7 @@
         <PackageName Value="LCL"/>
       </Item29>
     </RequiredPackages>
-    <Units Count="181">
+    <Units Count="182">
       <Unit0>
         <Filename Value="zcad.pas"/>
         <IsPartOfProject Value="True"/>
@@ -1297,6 +1297,10 @@
         <Filename Value="zcad/commands/uzccommand_dataexport.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit180>
+      <Unit181>
+        <Filename Value="zengine/core/entities/uzeentleader.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit181>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

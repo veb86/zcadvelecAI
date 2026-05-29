@@ -51,6 +51,7 @@ const {as_normal=0;
   GDBHatchID = 16;
   GDBPolyFaceMeshID = 17;
   GDBGenericPolylineID = 18;
+  GDBLeaderID = 19;
 
   GDBNetID = 100;
   GDBDeviceID = 101;
@@ -163,6 +164,7 @@ const {as_normal=0;
   ObjN_GDBObjElLeader='GDBObjElLeader';
   ObjN_GDBObjHatch='GDBObjHatch';
   ObjN_GDBObjPolyFaceMesh='GDBObjPolyFaceMesh';
+  ObjN_GDBObjLeader='GDBObjLeader';
   ObjN_GDBObjAcadTable='GDBObjAcadTable';
   { Наименование типа для прокси-объекта AutoCAD }
   ObjN_GDBObjAcdProxy='GDBObjAcdProxy';
