@@ -31,7 +31,6 @@ uses
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
   uzestylestablesdxf,uzclog;
-
 type
   { Callback, вызываемый перед началом записи DXF. Позволяет подпиться
     на pre-save обработку чертежа (например, конвертацию ProxyEntity
