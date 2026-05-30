@@ -6,12 +6,15 @@ interface
 
 uses
   SysUtils,
+  Math,
   Interfaces,
   fpcunit,
   testregistry,
   uzeconsts,
   uzeentity,
+  uzeentblockinsert,
   uzeentityfactory,
+  uzeentline,
   uzeentleader,
   uzeffdxf,
   uzeffmanager,
@@ -19,6 +22,8 @@ uses
   uzegeometrytypes,
   uzedrawingsimple,
   uzgldrawcontext,
+  uzestylesdim,
+  uzestyleslinetypes,
   uzeTypes;
 
 type
@@ -26,6 +31,7 @@ type
   published
     procedure RegistersDXFEntity;
     procedure MinimalDXFLoadsLeaderEntity;
+    procedure FormatBuildsLeaderPathAndArrowBlock;
     procedure LeaderTypeIndexCombinesPathAndArrowFlag;
     procedure LeaderTypeIndexAppliesInspectorSelection;
     procedure CloneCopiesVerticesAndMetadata;
@@ -142,6 +148,55 @@ begin
     CheckEquals(0.0,Vertex^.z,1e-9);
     CheckEquals(5.609187033556736,Leader^.AnnotationOffset.x,1e-9);
     CheckEquals(30.6637564603418,Leader^.AnnotationOffset.y,1e-9);
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.FormatBuildsLeaderPathAndArrowBlock;
+var
+  Drawing:TSimpleDrawing;
+  Entity:PGDBObjEntity;
+  EntityCount:integer;
+  Leader:PGDBObjLeader;
+  DimStyle:PGDBDimStyle;
+  DC:TDrawContext;
+  Child:PGDBObjEntity;
+  Arrow:PGDBObjBlockInsert;
+begin
+  EntityCount:=LoadLeaderDXFContent(DXF_LEADER_ENTITY_CONTENT,Drawing);
+  try
+    CheckEquals(1,EntityCount,'DXF LEADER must load as one entity');
+    Entity:=PGDBObjEntity(Drawing.pObjRoot^.ObjArray.GetData(0));
+    Leader:=PGDBObjLeader(Entity);
+
+    DimStyle:=PGDBDimStyle(Drawing.DimStyleTable.MergeItem('ISO-25',TLOLoad));
+    DimStyle^.init('ISO-25');
+    DimStyle^.Arrows.DIMLDRBLK:=TSOblique;
+    DimStyle^.Arrows.DIMASZ:=2.0;
+    DimStyle^.Units.DIMSCALE:=3.0;
+    DimStyle^.Lines.DIMLTYPE:=Drawing.LTypeStyleTable.GetSystemLT(TLTByBlock);
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(3,Leader^.ConstObjArray.Count,
+      'leader must be a complex object with 2 path segments and 1 arrow block');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
+    CheckEquals(GDBlineID,Child^.GetObjType,'first leader child must be a path line');
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(1));
+    CheckEquals(GDBlineID,Child^.GetObjType,'second leader child must be a path line');
+
+    Arrow:=PGDBObjBlockInsert(Leader^.ConstObjArray.GetData(2));
+    CheckEquals(GDBBlockInsertID,Arrow^.GetObjType,'leader head must be a block insert');
+    CheckEquals('_Oblique',Arrow^.Name);
+    CheckEquals(1.0,Arrow^.Local.P_insert.x,1e-9);
+    CheckEquals(2.0,Arrow^.Local.P_insert.y,1e-9);
+    CheckEquals(6.0,Arrow^.scale.x,1e-9);
+    CheckEquals(
+      VertexAngle(CreateVertex2D(1,2),CreateVertex2D(3,4))-pi,
+      Arrow^.rotate,1e-9);
   finally
     Drawing.done;
   end;

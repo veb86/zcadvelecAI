@@ -93,9 +93,14 @@ def test_leader_vertex_change_proc_uses_pointer_dereference() -> None:
         "pdata^.name=mp.MPName+'x'",
         "pdata^.name=mp.MPName+'y'",
         "pdata^.name=mp.MPName+'z'",
-        "mp.MPType.CopyValueToInstance(pdata^.data.Addr.Instance,@Vertex3DControl)",
     ):
         assert_contains(proc_source, expected, "leader vertex change proc")
+    if not re.search(
+        r"mp\.MPType\^?\.CopyValueToInstance"
+        r"\(pdata\^\.data\.Addr\.Instance,@Vertex3DControl\)",
+        proc_source,
+    ):
+        raise AssertionError("leader vertex change proc: missing MPType CopyValueToInstance")
 
 
 def test_leader_registration_is_wired() -> None:
