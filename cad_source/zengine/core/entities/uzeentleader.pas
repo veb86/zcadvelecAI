@@ -64,7 +64,15 @@ type
     class function CreateInstance:PGDBObjLeader;static;
   end;
 
+const
+  LeaderTypeIndexLinearNoArrow=0;
+  LeaderTypeIndexSplineNoArrow=1;
+  LeaderTypeIndexLinearWithArrow=2;
+  LeaderTypeIndexSplineWithArrow=3;
+
   function AllocAndInitLeader(owner:PGDBObjGenericWithSubordinated):PGDBObjLeader;
+  function LeaderTypeToEnumIndex(const Leader:GDBObjLeader):integer;
+  procedure ApplyLeaderTypeEnumIndex(var Leader:GDBObjLeader;EnumIndex:integer);
 
 implementation
 
@@ -93,6 +101,42 @@ end;
 function IsSameVertex(const Left,Right:TzePoint3d):boolean;
 begin
   Result:=(Left.x=Right.x)and(Left.y=Right.y)and(Left.z=Right.z);
+end;
+
+function LeaderTypeToEnumIndex(const Leader:GDBObjLeader):integer;
+begin
+  if Leader.PathType=1 then begin
+    if Leader.ArrowHeadFlag=0 then
+      Result:=LeaderTypeIndexSplineNoArrow
+    else
+      Result:=LeaderTypeIndexSplineWithArrow;
+  end else begin
+    if Leader.ArrowHeadFlag=0 then
+      Result:=LeaderTypeIndexLinearNoArrow
+    else
+      Result:=LeaderTypeIndexLinearWithArrow;
+  end;
+end;
+
+procedure ApplyLeaderTypeEnumIndex(var Leader:GDBObjLeader;EnumIndex:integer);
+begin
+  case EnumIndex of
+    LeaderTypeIndexLinearNoArrow:begin
+      Leader.ArrowHeadFlag:=0;
+      Leader.PathType:=0;
+    end;
+    LeaderTypeIndexSplineNoArrow:begin
+      Leader.ArrowHeadFlag:=0;
+      Leader.PathType:=1;
+    end;
+    LeaderTypeIndexSplineWithArrow:begin
+      Leader.ArrowHeadFlag:=1;
+      Leader.PathType:=1;
+    end;
+  else
+    Leader.ArrowHeadFlag:=1;
+    Leader.PathType:=0;
+  end;
 end;
 
 constructor GDBObjLeader.init(own:Pointer;layeraddres:PGDBLayerProp;LW:smallint);
