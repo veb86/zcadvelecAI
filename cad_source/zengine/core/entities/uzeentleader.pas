@@ -48,6 +48,10 @@ type
     HorizontalDirection:TzePoint3d;
     BlockOffset:TzePoint3d;
     AnnotationOffset:TzePoint3d;
+    ArrowStyleIndex:integer;        // индивидуальный индекс стрелки (-1 = из стиля)
+    ArrowSize:double;               // индивидуальный масштаб стрелки (0 = из стиля)
+    DimLineWeight:TGDBLineWeight;   // индивидуальная толщина линии (сентинел = из стиля)
+    DimLineColor:TGDBPaletteColor;  // индивидуальный цвет линии (сентинел = из стиля)
 
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;LW:smallint);
     constructor initnul(owner:PGDBObjGenericWithSubordinated);
@@ -96,9 +100,25 @@ const
   LeaderTypeIndexLinearWithArrow=2;
   LeaderTypeIndexSplineWithArrow=3;
 
+  // Сентинелы "наследовать значение из размерного стиля выноски"
+  LeaderArrowStyleInherit=-1;     // индекс стрелки берётся из размерного стиля
+  LeaderArrowSizeInherit=0;       // масштаб стрелки берётся из размерного стиля
+  LeaderLineWeightInherit=-1000;  // толщина линии берётся из размерного стиля
+  LeaderColorInherit=-1;          // цвет линии берётся из размерного стиля
+
   function AllocAndInitLeader(owner:PGDBObjGenericWithSubordinated):PGDBObjLeader;
   function LeaderTypeToEnumIndex(const Leader:GDBObjLeader):integer;
   procedure ApplyLeaderTypeEnumIndex(var Leader:GDBObjLeader;EnumIndex:integer);
+  function GetLeaderEffectiveDimStyle(const Leader:GDBObjLeader;
+    DimStyles:PGDBDimStyleArray):PGDBDimStyle;
+  function ResolveLeaderArrowStyleIndex(const Leader:GDBObjLeader;
+    PDimStyle:PGDBDimStyle):integer;
+  function ResolveLeaderArrowSize(const Leader:GDBObjLeader;
+    PDimStyle:PGDBDimStyle):double;
+  function ResolveLeaderDimLineWeight(const Leader:GDBObjLeader;
+    PDimStyle:PGDBDimStyle):TGDBLineWeight;
+  function ResolveLeaderDimLineColor(const Leader:GDBObjLeader;
+    PDimStyle:PGDBDimStyle):TGDBPaletteColor;
 
 implementation
 
@@ -117,21 +137,28 @@ begin
   Leader.HorizontalDirection:=CreateVertex(1,0,0);
   Leader.BlockOffset:=NulVertex;
   Leader.AnnotationOffset:=NulVertex;
+  Leader.ArrowStyleIndex:=LeaderArrowStyleInherit;
+  Leader.ArrowSize:=LeaderArrowSizeInherit;
+  Leader.DimLineWeight:=LeaderLineWeightInherit;
+  Leader.DimLineColor:=LeaderColorInherit;
 end;
 
-function ResolveLeaderDimStyle(const Leader:GDBObjLeader;
-  var drawing:TDrawingDef):PGDBDimStyle;
-var
-  DimStyles:PGDBDimStyleArray;
+function GetLeaderEffectiveDimStyle(const Leader:GDBObjLeader;
+  DimStyles:PGDBDimStyleArray):PGDBDimStyle;
 begin
   Result:=nil;
-  DimStyles:=drawing.GetDimStyleTable;
   if DimStyles=nil then
     exit;
   if Leader.DimStyleName<>'' then
     Result:=PGDBDimStyle(DimStyles^.getAddres(Leader.DimStyleName));
   if (Result=nil)and(DimStyles^.Count>0) then
     Result:=PGDBDimStyle(DimStyles^.getDataMutable(0));
+end;
+
+function ResolveLeaderDimStyle(const Leader:GDBObjLeader;
+  var drawing:TDrawingDef):PGDBDimStyle;
+begin
+  Result:=GetLeaderEffectiveDimStyle(Leader,drawing.GetDimStyleTable);
 end;
 
 function GetLeaderDimScale(PDimStyle:PGDBDimStyle):double;
@@ -142,19 +169,49 @@ begin
     Result:=1;
 end;
 
-function LeaderArrowLineWeight(const Leader:GDBObjLeader;
+// Возвращает индекс стрелки: индивидуальный либо из размерного стиля
+function ResolveLeaderArrowStyleIndex(const Leader:GDBObjLeader;
+  PDimStyle:PGDBDimStyle):integer;
+begin
+  if Leader.ArrowStyleIndex<>LeaderArrowStyleInherit then
+    Result:=Leader.ArrowStyleIndex
+  else if PDimStyle<>nil then
+    Result:=ord(PDimStyle^.Arrows.DIMLDRBLK)
+  else
+    Result:=ord(TSClosedFilled);
+end;
+
+// Возвращает масштаб блока стрелки: индивидуальный либо из размерного стиля
+function ResolveLeaderArrowSize(const Leader:GDBObjLeader;
+  PDimStyle:PGDBDimStyle):double;
+begin
+  if Leader.ArrowSize>LeaderArrowSizeInherit then
+    Result:=Leader.ArrowSize
+  else if PDimStyle<>nil then
+    Result:=PDimStyle^.Arrows.DIMASZ*GetLeaderDimScale(PDimStyle)
+  else
+    Result:=1;
+end;
+
+// Возвращает толщину размерной линии: индивидуальную либо из стиля
+function ResolveLeaderDimLineWeight(const Leader:GDBObjLeader;
   PDimStyle:PGDBDimStyle):TGDBLineWeight;
 begin
-  if PDimStyle<>nil then
+  if Leader.DimLineWeight<>LeaderLineWeightInherit then
+    Result:=Leader.DimLineWeight
+  else if PDimStyle<>nil then
     Result:=PDimStyle^.Lines.DIMLWD
   else
     Result:=Leader.vp.LineWeight;
 end;
 
-function LeaderArrowColor(const Leader:GDBObjLeader;
+// Возвращает цвет размерной линии: индивидуальный либо из стиля
+function ResolveLeaderDimLineColor(const Leader:GDBObjLeader;
   PDimStyle:PGDBDimStyle):TGDBPaletteColor;
 begin
-  if PDimStyle<>nil then
+  if Leader.DimLineColor<>LeaderColorInherit then
+    Result:=Leader.DimLineColor
+  else if PDimStyle<>nil then
     Result:=PDimStyle^.Lines.DIMCLRD
   else
     Result:=Leader.vp.Color;
@@ -398,25 +455,23 @@ begin
   if VertexArrayInOCS.Count<2 then
     exit;
 
+  PDimStyle:=ResolveLeaderDimStyle(self,drawing);
+
   for i:=0 to VertexArrayInOCS.Count-2 do begin
     p1:=VertexArrayInOCS.getDataMutable(i);
     p2:=VertexArrayInOCS.getDataMutable(i+1);
     pl:=pointer(ConstObjArray.CreateInitObj(GDBlineID,@self));
     CopyVPto(pl^);
+    pl^.vp.LineWeight:=ResolveLeaderDimLineWeight(self,PDimStyle);
+    pl^.vp.Color:=ResolveLeaderDimLineColor(self,PDimStyle);
     pl^.CoordInOCS.lBegin:=p1^;
     pl^.CoordInOCS.lEnd:=p2^;
     pl^.FormatEntity(drawing,DC);
   end;
 
   if ArrowHeadFlag<>0 then begin
-    PDimStyle:=ResolveLeaderDimStyle(self,drawing);
-    if PDimStyle<>nil then begin
-      ArrowParam:=PDimStyle^.GetDimBlockParam(-1);
-      ArrowScale:=PDimStyle^.Arrows.DIMASZ*GetLeaderDimScale(PDimStyle);
-    end else begin
-      ArrowParam:=DimArrows[TSClosedFilled];
-      ArrowScale:=1;
-    end;
+    ArrowParam:=DimArrows[TArrowStyle(ResolveLeaderArrowStyleIndex(self,PDimStyle))];
+    ArrowScale:=ResolveLeaderArrowSize(self,PDimStyle);
 
     if (ArrowParam.Name<>'')and(ArrowScale<>0) then begin
       p1:=VertexArrayInOCS.getDataMutable(0);
@@ -426,8 +481,8 @@ begin
         CreateVertex2D(p2^.x,p2^.y))-pi;
       pointer(pv):=ENTF_CreateBlockInsert(@self,@self.ConstObjArray,
         vp.Layer,LeaderArrowLineType(self,PDimStyle),
-        LeaderArrowLineWeight(self,PDimStyle),
-        LeaderArrowColor(self,PDimStyle),
+        ResolveLeaderDimLineWeight(self,PDimStyle),
+        ResolveLeaderDimLineColor(self,PDimStyle),
         ArrowParam.Name,p1^,ArrowScale,ArrowAngle);
       if pv<>nil then begin
         pv^.BuildGeometry(drawing);
@@ -461,6 +516,10 @@ begin
   Leader^.HorizontalDirection:=HorizontalDirection;
   Leader^.BlockOffset:=BlockOffset;
   Leader^.AnnotationOffset:=AnnotationOffset;
+  Leader^.ArrowStyleIndex:=ArrowStyleIndex;
+  Leader^.ArrowSize:=ArrowSize;
+  Leader^.DimLineWeight:=DimLineWeight;
+  Leader^.DimLineColor:=DimLineColor;
   Leader^.Local:=Local;
   Leader^.P_insert_in_WCS:=P_insert_in_WCS;
   CopyVPto(Leader^);
