@@ -103,6 +103,7 @@ uses
   uzeentpolylinegeneric,
   uzeentpolyline,
   uzeentpolyfacemesh,
+  uzeentleader,
   uzeEntSpline,
   uzeenttable,
 
