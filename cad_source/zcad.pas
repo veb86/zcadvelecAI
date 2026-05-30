@@ -366,6 +366,7 @@ uses
   uzcregisterenitiesfeatures,
   uzcregisterenitiesextenders,
   uzcoiregistermultiproperties,
+  uzcregleader,
   uzclibraryblocksregister,
   {$IF not((DEFINED(WINDOWS))and(DEFINED(LCLQT5)))}uzglviewareaogl,uzglviewareaoglmodern,{$ENDIF}
   uzglviewareagdi,uzglviewareacanvas,
