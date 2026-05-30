@@ -29,6 +29,9 @@ uses
   uzsbVarmanDef,Varman,uzbUnits,gzctnrVectorTypes,
   UGDBPoint3DArray,uzcLog;
 
+var
+   Vertex3DControl:TArrayIndex=0;
+
 procedure LeaderLengthEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -60,21 +63,21 @@ var
   PGDBDTypeDesc:PUserTypeDescriptor;
 begin
   if pdata^.name=mp.MPName then
-    mp.MPType.CopyValueToInstance(pdata^.data.Addr.Instance,@Vertex3DControl)
+    mp.MPType^.CopyValueToInstance(pdata^.data.Addr.Instance,@Vertex3DControl)
   else begin
-    PGDBDTypeDesc:=SysUnit.TypeName2PTD('Double');
-    pindex:=pu^.FindValue(mp.MPName).data.Addr.Instance;
-    tv:=PGDBObjLeader(ChangedData.pentity).VertexArrayInWCS.getDataMutable(pindex^);
+    PGDBDTypeDesc:=SysUnit^.TypeName2PTD('Double');
+    pindex:=pu^.FindValue(mp.MPName)^.data.Addr.Instance;
+    tv:=PGDBObjLeader(ChangedData.pentity)^.VertexArrayInWCS.getDataMutable(pindex^);
     v:=tv^;
 
     if pdata^.name=mp.MPName+'x' then
-      PGDBDTypeDesc.CopyValueToInstance(pdata^.data.Addr.Instance,@v.x);
+      PGDBDTypeDesc^.CopyValueToInstance(pdata^.data.Addr.Instance,@v.x);
     if pdata^.name=mp.MPName+'y' then
-      PGDBDTypeDesc.CopyValueToInstance(pdata^.data.Addr.Instance,@v.y);
+      PGDBDTypeDesc^.CopyValueToInstance(pdata^.data.Addr.Instance,@v.y);
     if pdata^.name=mp.MPName+'z' then
-      PGDBDTypeDesc.CopyValueToInstance(pdata^.data.Addr.Instance,@v.z);
+      PGDBDTypeDesc^.CopyValueToInstance(pdata^.data.Addr.Instance,@v.z);
 
-    tv:=PGDBPoint3dArray(ChangedData.PSetDataInEtity).getDataMutable(pindex^);
+    tv:=PGDBPoint3dArray(ChangedData.PSetDataInEtity)^.getDataMutable(pindex^);
     tv^:=v;
   end;
 end;
