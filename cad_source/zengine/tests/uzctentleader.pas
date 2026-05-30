@@ -26,6 +26,8 @@ type
   published
     procedure RegistersDXFEntity;
     procedure MinimalDXFLoadsLeaderEntity;
+    procedure LeaderTypeIndexCombinesPathAndArrowFlag;
+    procedure LeaderTypeIndexAppliesInspectorSelection;
     procedure CloneCopiesVerticesAndMetadata;
   end;
 
@@ -125,6 +127,7 @@ begin
 
     Leader:=PGDBObjLeader(Entity);
     CheckEquals('ISO-25',Leader^.DimStyleName);
+    CheckEquals(LeaderTypeIndexLinearWithArrow,LeaderTypeToEnumIndex(Leader^));
     CheckEquals(0,Leader^.AnnotationType);
     CheckEquals(0,Leader^.HookLineDirectionFlag);
     CheckEquals(1,Leader^.HookLineFlag);
@@ -141,6 +144,64 @@ begin
     CheckEquals(30.6637564603418,Leader^.AnnotationOffset.y,1e-9);
   finally
     Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.LeaderTypeIndexCombinesPathAndArrowFlag;
+var
+  Leader:PGDBObjLeader;
+begin
+  Leader:=AllocAndInitLeader(nil);
+  try
+    Leader^.ArrowHeadFlag:=0;
+    Leader^.PathType:=0;
+    CheckEquals(LeaderTypeIndexLinearNoArrow,LeaderTypeToEnumIndex(Leader^));
+
+    Leader^.ArrowHeadFlag:=0;
+    Leader^.PathType:=1;
+    CheckEquals(LeaderTypeIndexSplineNoArrow,LeaderTypeToEnumIndex(Leader^));
+
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=0;
+    CheckEquals(LeaderTypeIndexLinearWithArrow,LeaderTypeToEnumIndex(Leader^));
+
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=1;
+    CheckEquals(LeaderTypeIndexSplineWithArrow,LeaderTypeToEnumIndex(Leader^));
+
+    Leader^.ArrowHeadFlag:=2;
+    Leader^.PathType:=2;
+    CheckEquals(LeaderTypeIndexLinearWithArrow,LeaderTypeToEnumIndex(Leader^));
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+  end;
+end;
+
+procedure TLeaderEntityTest.LeaderTypeIndexAppliesInspectorSelection;
+var
+  Leader:PGDBObjLeader;
+begin
+  Leader:=AllocAndInitLeader(nil);
+  try
+    ApplyLeaderTypeEnumIndex(Leader^,LeaderTypeIndexLinearNoArrow);
+    CheckEquals(0,Leader^.ArrowHeadFlag);
+    CheckEquals(0,Leader^.PathType);
+
+    ApplyLeaderTypeEnumIndex(Leader^,LeaderTypeIndexSplineNoArrow);
+    CheckEquals(0,Leader^.ArrowHeadFlag);
+    CheckEquals(1,Leader^.PathType);
+
+    ApplyLeaderTypeEnumIndex(Leader^,LeaderTypeIndexLinearWithArrow);
+    CheckEquals(1,Leader^.ArrowHeadFlag);
+    CheckEquals(0,Leader^.PathType);
+
+    ApplyLeaderTypeEnumIndex(Leader^,LeaderTypeIndexSplineWithArrow);
+    CheckEquals(1,Leader^.ArrowHeadFlag);
+    CheckEquals(1,Leader^.PathType);
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
   end;
 end;
 

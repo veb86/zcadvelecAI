@@ -25,9 +25,14 @@ implementation
 
 uses
   uzcoimultiproperties,uzcoimultipropertiesutil,
-  uzeentleader,uzeconsts,uzegeometrytypes,
+  uzeentleader,uzeconsts,uzegeometrytypes,uzestylesdim,
   uzsbVarmanDef,Varman,uzbUnits,gzctnrVectorTypes,
-  UGDBPoint3DArray,uzcLog;
+  UGDBPoint3DArray,uzcLog,uzcdrawing,uzcdrawings,
+  zUndoCmdChgTypes,zUndoCmdChgVariable;
+
+var
+  ptdInteger:PUserTypeDescriptor=nil;
+  ptdString:PUserTypeDescriptor=nil;
 
 var
    Vertex3DControl:TArrayIndex=0;
@@ -100,6 +105,184 @@ begin
     OneVarDataMIPD,OneVarDataEIPD);
 end;
 
+function GetLeaderTypeData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+const
+  LeaderTypeNames:array[0..3] of string=(
+    'Линейная без стрелки',
+    'Сплайн без стрелки',
+    'Линейная со стрелкой',
+    'Сплайн со стрелкой');
+var
+  PVD:pvardesk;
+  t:PTEnumData;
+  i:integer;
+begin
+  result:=GetTEnumData(mp,pu);
+  PVD:=PTOneVarData(result).VDAddr.Instance;
+  if PVD<>nil then begin
+    t:=PVD^.data.Addr.Instance;
+    for i:=low(LeaderTypeNames) to high(LeaderTypeNames) do
+      t^.Enums.PushBackData(LeaderTypeNames[i]);
+    t^.Selected:=LeaderTypeIndexLinearWithArrow;
+  end;
+end;
+
+procedure LeaderTypeEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  enumindex:integer;
+begin
+  PVD:=PTOneVarData(pdata).VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD.attrib,vda_RO,0);
+  enumindex:=LeaderTypeToEnumIndex(PGDBObjLeader(ChangedData.PEntity)^);
+  if fistrun then
+    PTEnumData(PVD.data.Addr.Instance)^.Selected:=enumindex
+  else
+    if PTEnumData(PVD.data.Addr.Instance)^.Selected<>enumindex then
+      ProcessVariableAttributes(PVD.attrib,vda_different,0);
+end;
+
+procedure LeaderTypeEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;
+  pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  cp:UCmdChgField;
+  NewArrowHeadFlag,NewPathType:integer;
+  OldTypeIndex,NewTypeIndex:integer;
+begin
+  OldTypeIndex:=LeaderTypeToEnumIndex(PGDBObjLeader(ChangedData.PEntity)^);
+  NewTypeIndex:=PTEnumData(pvardesk(pdata)^.data.Addr.Instance)^.Selected;
+  if OldTypeIndex=NewTypeIndex then
+    exit;
+
+  NewArrowHeadFlag:=PGDBObjLeader(ChangedData.PEntity)^.ArrowHeadFlag;
+  NewPathType:=PGDBObjLeader(ChangedData.PEntity)^.PathType;
+  case NewTypeIndex of
+    LeaderTypeIndexLinearNoArrow:begin
+      NewArrowHeadFlag:=0;
+      NewPathType:=0;
+    end;
+    LeaderTypeIndexSplineNoArrow:begin
+      NewArrowHeadFlag:=0;
+      NewPathType:=1;
+    end;
+    LeaderTypeIndexSplineWithArrow:begin
+      NewArrowHeadFlag:=1;
+      NewPathType:=1;
+    end;
+  else
+    NewArrowHeadFlag:=1;
+    NewPathType:=0;
+  end;
+
+  if ptdInteger=nil then
+    ptdInteger:=SysUnit^.TypeName2PTD('Integer');
+  if ptdInteger=nil then
+    exit;
+
+  if PGDBObjLeader(ChangedData.PEntity)^.ArrowHeadFlag<>NewArrowHeadFlag then begin
+    PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+    cp:=UCmdChgField.CreateAndPush(
+      PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
+      TChangedFieldDesc.CreateRec(
+        ptdInteger,
+        @PGDBObjLeader(ChangedData.PEntity)^.ArrowHeadFlag,
+        @PGDBObjLeader(ChangedData.PEntity)^.ArrowHeadFlag),
+      TSharedPEntityData.CreateRec(ChangedData.PEntity),
+      TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
+    ptdInteger^.CopyValueToInstance(
+      @NewArrowHeadFlag,@PGDBObjLeader(ChangedData.PEntity)^.ArrowHeadFlag);
+  end;
+
+  if PGDBObjLeader(ChangedData.PEntity)^.PathType<>NewPathType then begin
+    PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+    cp:=UCmdChgField.CreateAndPush(
+      PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
+      TChangedFieldDesc.CreateRec(
+        ptdInteger,
+        @PGDBObjLeader(ChangedData.PEntity)^.PathType,
+        @PGDBObjLeader(ChangedData.PEntity)^.PathType),
+      TSharedPEntityData.CreateRec(ChangedData.PEntity),
+      TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
+    ptdInteger^.CopyValueToInstance(
+      @NewPathType,@PGDBObjLeader(ChangedData.PEntity)^.PathType);
+  end;
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+end;
+
+function GetLeaderDimStyle(const Leader:PGDBObjLeader):PGDBDimStyle;
+begin
+  result:=nil;
+  if drawings.GetCurrentDWG=nil then
+    exit;
+  if (Leader<>nil)and(Leader^.DimStyleName<>'') then
+    result:=PGDBDimStyle(
+      drawings.GetCurrentDWG.DimStyleTable.getAddres(Leader^.DimStyleName));
+end;
+
+procedure LeaderDimStyleEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  CurrentStyle:PGDBDimStyle;
+  Leader:PGDBObjLeader;
+begin
+  PVD:=PTOneVarData(pdata).VDAddr.Instance;
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  CurrentStyle:=GetLeaderDimStyle(Leader);
+
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD.attrib,vda_RO,0);
+  if fistrun then begin
+    PTOneVarData(pdata)^.StrValue:=Leader^.DimStyleName;
+    PPGDBDimStyleObjInsp(PVD.data.Addr.Instance)^:=CurrentStyle;
+  end else
+    if (PTOneVarData(pdata)^.StrValue<>Leader^.DimStyleName)or
+       (PPGDBDimStyleObjInsp(PVD.data.Addr.Instance)^<>CurrentStyle) then
+      ProcessVariableAttributes(PVD.attrib,vda_different,0);
+end;
+
+procedure LeaderDimStyleEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;
+  pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  cp:UCmdChgField;
+  NewDimStyle:PGDBDimStyle;
+  NewDimStyleName:string;
+begin
+  NewDimStyle:=PGDBDimStyle(
+    PPGDBDimStyleObjInsp(pvardesk(pdata)^.data.Addr.Instance)^);
+  if NewDimStyle=nil then
+    exit;
+
+  NewDimStyleName:=NewDimStyle^.Name;
+  if PGDBObjLeader(ChangedData.PEntity)^.DimStyleName=NewDimStyleName then
+    exit;
+
+  if ptdString=nil then
+    ptdString:=SysUnit^.TypeName2PTD('String');
+  if ptdString=nil then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  cp:=UCmdChgField.CreateAndPush(
+    PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
+    TChangedFieldDesc.CreateRec(
+      ptdString,
+      @PGDBObjLeader(ChangedData.PEntity)^.DimStyleName,
+      @PGDBObjLeader(ChangedData.PEntity)^.DimStyleName),
+    TSharedPEntityData.CreateRec(ChangedData.PEntity),
+    TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
+  ptdString^.CopyValueToInstance(
+    @NewDimStyleName,@PGDBObjLeader(ChangedData.PEntity)^.DimStyleName);
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+end;
+
 procedure RegisterLeaderProperties;
 const
   pleader:PGDBObjLeader=nil;
@@ -169,16 +352,18 @@ begin
     PtrInt(@pleader^.AnnotationOffset.z),PtrInt(@pleader^.AnnotationOffset.z));
 
   MultiPropertiesManager.RegisterPhysMultiproperty(
-    'LeaderDimStyleName','Style',sysunit^.TypeName2PTD('String'),
-    MPCMisc,GDBLeaderID,nil,
-    PtrInt(@pleader^.DimStyleName),PtrInt(@pleader^.DimStyleName),
-    OneVarDataMIPD,OneVarDataEIPD);
-  RegisterLeaderIntegerProperty(
-    'LeaderArrowHeadFlag','Arrow head flag',
-    PtrInt(@pleader^.ArrowHeadFlag),PtrInt(@pleader^.ArrowHeadFlag));
-  RegisterLeaderIntegerProperty(
-    'LeaderPathType','Path type',
-    PtrInt(@pleader^.PathType),PtrInt(@pleader^.PathType));
+    'LeaderDimStyle','Style',sysunit^.TypeName2PTD('PGDBDimStyleObjInsp'),
+    MPCMisc,GDBLeaderID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(
+      nil,@LeaderDimStyleEntIterateProc,@LeaderDimStyleEntChangeProc));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'LeaderType','Type',sysunit^.TypeName2PTD('TEnumData'),
+    MPCMisc,GDBLeaderID,nil,0,0,
+    TMainIterateProcsData.Create(@GetLeaderTypeData,@FreeTEnumData),
+    TEntIterateProcsData.Create(
+      nil,@LeaderTypeEntIterateProc,@LeaderTypeEntChangeProc),
+    MPUM_AtLeastOneEntMatched);
   RegisterLeaderIntegerProperty(
     'LeaderAnnotationType','Annotation type',
     PtrInt(@pleader^.AnnotationType),PtrInt(@pleader^.AnnotationType));
