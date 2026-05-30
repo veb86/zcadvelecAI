@@ -26,9 +26,8 @@ def test_leader_registration_unit() -> None:
         "VertexCount",
         "Vertex3DControl_",
         "Length",
-        "LeaderDimStyleName",
-        "LeaderArrowHeadFlag",
-        "LeaderPathType",
+        "LeaderDimStyle",
+        "LeaderType",
         "LeaderAnnotationType",
         "LeaderHookLineDirectionFlag",
         "LeaderHookLineFlag",
@@ -48,6 +47,32 @@ def test_leader_registration_unit() -> None:
         raise AssertionError("expected leader misc properties")
     if len(re.findall(r"MPCSummary,GDBLeaderID", source)) < 2:
         raise AssertionError("expected leader summary properties")
+    for raw_property_name in (
+        "LeaderDimStyleName",
+        "LeaderArrowHeadFlag",
+        "LeaderPathType",
+    ):
+        if f"'{raw_property_name}'" in source:
+            raise AssertionError(
+                f"leader registration should expose editor-backed property instead of {raw_property_name}"
+            )
+    assert_contains(
+        source,
+        "sysunit^.TypeName2PTD('PGDBDimStyleObjInsp')",
+        "leader dim style editor",
+    )
+    assert_contains(
+        source,
+        "sysunit^.TypeName2PTD('TEnumData')",
+        "leader type editor",
+    )
+    for enum_label in (
+        "Линейная без стрелки",
+        "Сплайн без стрелки",
+        "Линейная со стрелкой",
+        "Сплайн со стрелкой",
+    ):
+        assert_contains(source, enum_label, "leader type enum")
 
 
 def test_leader_vertex_change_proc_uses_pointer_dereference() -> None:
