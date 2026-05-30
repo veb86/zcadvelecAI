@@ -50,6 +50,29 @@ def test_leader_registration_unit() -> None:
         raise AssertionError("expected leader summary properties")
 
 
+def test_leader_vertex_change_proc_uses_pointer_dereference() -> None:
+    source = read(LEADER_UNIT)
+    proc_match = re.search(
+        r"procedure LeaderVertex3DControlFromVarEntChangeProc.*?^end;",
+        source,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not proc_match:
+        raise AssertionError("missing LeaderVertex3DControlFromVarEntChangeProc")
+
+    proc_source = proc_match.group(0)
+    if "pvardesk(pdata).name" in proc_source:
+        raise AssertionError("PVarDesk fields must be accessed through pdata^")
+    for expected in (
+        "pdata^.name=mp.MPName",
+        "pdata^.name=mp.MPName+'x'",
+        "pdata^.name=mp.MPName+'y'",
+        "pdata^.name=mp.MPName+'z'",
+        "mp.MPType.CopyValueToInstance(pdata^.data.Addr.Instance,@Vertex3DControl)",
+    ):
+        assert_contains(proc_source, expected, "leader vertex change proc")
+
+
 def test_leader_registration_is_wired() -> None:
     assert_contains(read(ZCAD_MAIN), "uzcregleader", "zcad.pas uses")
 
@@ -73,4 +96,5 @@ def test_leader_registration_is_wired() -> None:
 
 if __name__ == "__main__":
     test_leader_registration_unit()
+    test_leader_vertex_change_proc_uses_pointer_dereference()
     test_leader_registration_is_wired()
