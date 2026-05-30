@@ -25,7 +25,7 @@ uses
   uzeentcomplex,uzeentline,uzeentblockinsert,uzeentitiesmanager,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,Math,uzesnap,
-  uzepalette,uzestylesdim,uzestyleslinetypes,uzedimblocksregister,UGDBPoint3DArray,
+  uzepalette,uzestylesdim,uzestyleslinetypes,uzedimblocksregister,UGDBPoint3DArray,gzctnrVectorTypes,
   uzMVReader,uzCtnrVectorpBaseEntity;
 
 type

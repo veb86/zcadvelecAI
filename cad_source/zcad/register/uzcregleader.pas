@@ -28,7 +28,7 @@ uses
   uzeentleader,uzeconsts,uzegeometrytypes,uzestylesdim,
   uzsbVarmanDef,Varman,uzbUnits,gzctnrVectorTypes,
   UGDBPoint3DArray,uzcLog,uzcdrawing,uzcdrawings,
-  zUndoCmdChgTypes,zUndoCmdChgVariable;
+  zUndoCmdChgTypes,zUndoCmdChgVariable,uzctnrVectorStrings;
 
 var
   ptdInteger:PUserTypeDescriptor=nil;
@@ -118,7 +118,7 @@ var
   i:integer;
 begin
   result:=GetTEnumData(mp,pu);
-  PVD:=PTOneVarData(result).VDAddr.Instance;
+  PVD:=PTOneVarData(result)^.VDAddr.Instance;
   if PVD<>nil then begin
     t:=PVD^.data.Addr.Instance;
     for i:=low(LeaderTypeNames) to high(LeaderTypeNames) do
@@ -134,15 +134,15 @@ var
   PVD:pvardesk;
   enumindex:integer;
 begin
-  PVD:=PTOneVarData(pdata).VDAddr.Instance;
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD.attrib,vda_RO,0);
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
   enumindex:=LeaderTypeToEnumIndex(PGDBObjLeader(ChangedData.PEntity)^);
   if fistrun then
-    PTEnumData(PVD.data.Addr.Instance)^.Selected:=enumindex
+    PTEnumData(PVD^.data.Addr.Instance)^.Selected:=enumindex
   else
-    if PTEnumData(PVD.data.Addr.Instance)^.Selected<>enumindex then
-      ProcessVariableAttributes(PVD.attrib,vda_different,0);
+    if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>enumindex then
+      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
 end;
 
 procedure LeaderTypeEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;
@@ -221,7 +221,7 @@ begin
     exit;
   if (Leader<>nil)and(Leader^.DimStyleName<>'') then
     result:=PGDBDimStyle(
-      drawings.GetCurrentDWG.DimStyleTable.getAddres(Leader^.DimStyleName));
+      drawings.GetCurrentDWG^.DimStyleTable.getAddres(Leader^.DimStyleName));
 end;
 
 procedure LeaderDimStyleEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
@@ -232,19 +232,19 @@ var
   CurrentStyle:PGDBDimStyle;
   Leader:PGDBObjLeader;
 begin
-  PVD:=PTOneVarData(pdata).VDAddr.Instance;
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   Leader:=PGDBObjLeader(ChangedData.PEntity);
   CurrentStyle:=GetLeaderDimStyle(Leader);
 
   if @ecp=nil then
-    ProcessVariableAttributes(PVD.attrib,vda_RO,0);
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
   if fistrun then begin
     PTOneVarData(pdata)^.StrValue:=Leader^.DimStyleName;
-    PPGDBDimStyleObjInsp(PVD.data.Addr.Instance)^:=CurrentStyle;
+    PPGDBDimStyleObjInsp(PVD^.data.Addr.Instance)^:=CurrentStyle;
   end else
     if (PTOneVarData(pdata)^.StrValue<>Leader^.DimStyleName)or
-       (PPGDBDimStyleObjInsp(PVD.data.Addr.Instance)^<>CurrentStyle) then
-      ProcessVariableAttributes(PVD.attrib,vda_different,0);
+       (PPGDBDimStyleObjInsp(PVD^.data.Addr.Instance)^<>CurrentStyle) then
+      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
 end;
 
 procedure LeaderDimStyleEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;
