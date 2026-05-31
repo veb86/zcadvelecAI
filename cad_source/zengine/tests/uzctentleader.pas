@@ -16,6 +16,7 @@ uses
   uzeentityfactory,
   uzeentline,
   uzeentleader,
+  uzeentspline,
   uzeffdxf,
   uzeffmanager,
   uzegeometry,
@@ -32,6 +33,8 @@ type
     procedure RegistersDXFEntity;
     procedure MinimalDXFLoadsLeaderEntity;
     procedure FormatBuildsLeaderPathAndArrowBlock;
+    procedure FormatBuildsSplinePathAndStraightLastSegment;
+    procedure FormatBuildsSplinePathWithoutArrow;
     procedure LeaderTypeIndexCombinesPathAndArrowFlag;
     procedure LeaderTypeIndexAppliesInspectorSelection;
     procedure CloneCopiesVerticesAndMetadata;
@@ -204,6 +207,91 @@ begin
       VertexAngle(CreateVertex2D(1,2),CreateVertex2D(3,4))-pi,
       Arrow^.rotate,1e-9);
   finally
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.FormatBuildsSplinePathAndStraightLastSegment;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  DC:TDrawContext;
+  Child:PGDBObjEntity;
+  LastSegment:PGDBObjLine;
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  try
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=1;
+    Leader^.AddVertex(CreateVertex(0,0,0));
+    Leader^.AddVertex(CreateVertex(2,3,0));
+    Leader^.AddVertex(CreateVertex(4,1,0));
+    Leader^.AddVertex(CreateVertex(6,1,0));
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(3,Leader^.ConstObjArray.Count,
+      'spline leader must build a spline path, final line segment and arrow');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
+    CheckEquals(GDBSplineID,Child^.GetObjType,
+      'first spline leader child must be a spline');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(1));
+    CheckEquals(GDBlineID,Child^.GetObjType,
+      'last spline leader segment must remain straight');
+
+    LastSegment:=PGDBObjLine(Child);
+    CheckEquals(4.0,LastSegment^.CoordInOCS.lBegin.x,1e-9);
+    CheckEquals(1.0,LastSegment^.CoordInOCS.lBegin.y,1e-9);
+    CheckEquals(6.0,LastSegment^.CoordInOCS.lEnd.x,1e-9);
+    CheckEquals(1.0,LastSegment^.CoordInOCS.lEnd.y,1e-9);
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(2));
+    CheckEquals(GDBBlockInsertID,Child^.GetObjType,
+      'arrow head must still be created for spline leaders with arrow');
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.FormatBuildsSplinePathWithoutArrow;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  DC:TDrawContext;
+  Child:PGDBObjEntity;
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  try
+    Leader^.ArrowHeadFlag:=0;
+    Leader^.PathType:=1;
+    Leader^.AddVertex(CreateVertex(0,0,0));
+    Leader^.AddVertex(CreateVertex(2,3,0));
+    Leader^.AddVertex(CreateVertex(4,1,0));
+    Leader^.AddVertex(CreateVertex(6,1,0));
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(2,Leader^.ConstObjArray.Count,
+      'spline leader without arrow must build only a spline and final line');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
+    CheckEquals(GDBSplineID,Child^.GetObjType,
+      'first spline leader child must be a spline');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(1));
+    CheckEquals(GDBlineID,Child^.GetObjType,
+      'last spline leader segment must remain straight');
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
     Drawing.done;
   end;
 end;
