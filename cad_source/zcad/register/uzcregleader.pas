@@ -27,8 +27,32 @@ uses
   uzcoimultiproperties,uzcoimultipropertiesutil,
   uzeentleader,uzeconsts,uzegeometrytypes,uzestylesdim,
   uzsbVarmanDef,Varman,uzbUnits,gzctnrVectorTypes,
-  UGDBPoint3DArray,uzcLog,uzcdrawing,uzcdrawings,
+  UGDBPoint3DArray,uzcLog,uzcdrawing,uzcdrawings,uzetypes,uzepalette,
   zUndoCmdChgTypes,zUndoCmdChgVariable,uzctnrVectorStrings;
+
+const
+  // Названия стрелок выноски (соответствуют порядку TArrowStyle)
+  CArrowLeaderNames:array[TArrowStyle] of string=(
+    'Заполненная замкнутая',
+    'Замкнутая незаполненная',
+    'Замкнутая',
+    'Точка',
+    'Архитектурная засечка',
+    'Наклонная',
+    'Открытая',
+    'Указатель начала координат',
+    'Указатель начала координат 2',
+    'Прямой угол',
+    'Открытая 30',
+    'Точка малая',
+    'Точка незаполненная',
+    'Точка малая незаполненная',
+    'Прямоугольник',
+    'Прямоугольник заполненный',
+    'Треугольник базы',
+    'Треугольник базы заполненный',
+    'Интеграл',
+    'Пользовательский');
 
 var
   ptdInteger:PUserTypeDescriptor=nil;
@@ -283,6 +307,125 @@ begin
     pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
+// Возвращает действующий размерный стиль выноски (или nil)
+function GetLeaderEffectiveStyle(const Leader:PGDBObjLeader):PGDBDimStyle;
+begin
+  result:=nil;
+  if drawings.GetCurrentDWG=nil then
+    exit;
+  if Leader=nil then
+    exit;
+  result:=GetLeaderEffectiveDimStyle(
+    Leader^,drawings.GetCurrentDWG^.GetDimStyleTable);
+end;
+
+function GetLeaderArrowStyleData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+var
+  PVD:pvardesk;
+  t:PTEnumData;
+  ias:TArrowStyle;
+begin
+  result:=GetTEnumData(mp,pu);
+  PVD:=PTOneVarData(result)^.VDAddr.Instance;
+  if PVD<>nil then begin
+    t:=PVD^.data.Addr.Instance;
+    for ias:=low(TArrowStyle) to high(TArrowStyle) do
+      t^.Enums.PushBackData(CArrowLeaderNames[ias]);
+    t^.Selected:=0;
+  end;
+end;
+
+procedure LeaderArrowStyleEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  arrowindex:integer;
+  Leader:PGDBObjLeader;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  arrowindex:=ResolveLeaderArrowStyleIndex(
+    Leader^,GetLeaderEffectiveStyle(Leader));
+  if fistrun then
+    PTEnumData(PVD^.data.Addr.Instance)^.Selected:=arrowindex
+  else
+    if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>arrowindex then
+      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+end;
+
+procedure LeaderArrowStyleEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;
+  pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  cp:UCmdChgField;
+  NewIndex:integer;
+  Leader:PGDBObjLeader;
+begin
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  NewIndex:=PTEnumData(pvardesk(pdata)^.data.Addr.Instance)^.Selected;
+  if Leader^.ArrowStyleIndex=NewIndex then
+    exit;
+
+  if ptdInteger=nil then
+    ptdInteger:=SysUnit^.TypeName2PTD('Integer');
+  if ptdInteger=nil then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  cp:=UCmdChgField.CreateAndPush(
+    PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
+    TChangedFieldDesc.CreateRec(
+      ptdInteger,
+      @Leader^.ArrowStyleIndex,
+      @Leader^.ArrowStyleIndex),
+    TSharedPEntityData.CreateRec(ChangedData.PEntity),
+    TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
+  ptdInteger^.CopyValueToInstance(@NewIndex,@Leader^.ArrowStyleIndex);
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+end;
+
+procedure LeaderArrowSizeEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  v:Double;
+  Leader:PGDBObjLeader;
+begin
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  v:=ResolveLeaderArrowSize(Leader^,GetLeaderEffectiveStyle(Leader));
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+procedure LeaderDimLineWeightEntIterateProc(pdata:Pointer;
+  ChangedData:TChangedData;mp:TMultiProperty;fistrun:boolean;
+  ecp:TEntChangeProc;const f:TzeUnitsFormat);
+var
+  v:TGDBLineWeight;
+  Leader:PGDBObjLeader;
+begin
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  v:=ResolveLeaderDimLineWeight(Leader^,GetLeaderEffectiveStyle(Leader));
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+procedure LeaderDimLineColorEntIterateProc(pdata:Pointer;
+  ChangedData:TChangedData;mp:TMultiProperty;fistrun:boolean;
+  ecp:TEntChangeProc;const f:TzeUnitsFormat);
+var
+  v:TGDBPaletteColor;
+  Leader:PGDBObjLeader;
+begin
+  Leader:=PGDBObjLeader(ChangedData.PEntity);
+  v:=ResolveLeaderDimLineColor(Leader^,GetLeaderEffectiveStyle(Leader));
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
 procedure RegisterLeaderProperties;
 const
   pleader:PGDBObjLeader=nil;
@@ -364,6 +507,35 @@ begin
     TEntIterateProcsData.Create(
       nil,@LeaderTypeEntIterateProc,@LeaderTypeEntChangeProc),
     MPUM_AtLeastOneEntMatched);
+
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'LeaderArrowStyle','Arrow style',sysunit^.TypeName2PTD('TEnumData'),
+    MPCMisc,GDBLeaderID,nil,0,0,
+    TMainIterateProcsData.Create(@GetLeaderArrowStyleData,@FreeTEnumData),
+    TEntIterateProcsData.Create(
+      nil,@LeaderArrowStyleEntIterateProc,@LeaderArrowStyleEntChangeProc),
+    MPUM_AtLeastOneEntMatched);
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'LeaderArrowSize','Arrow size',sysunit^.TypeName2PTD('Double'),
+    MPCMisc,GDBLeaderID,nil,0,PtrInt(@pleader^.ArrowSize),
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(
+      nil,@LeaderArrowSizeEntIterateProc,@GeneralFromVarEntChangeProc));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'LeaderDimLineWeight','Dim line weight',
+    sysunit^.TypeName2PTD('TGDBLineWeight'),
+    MPCMisc,GDBLeaderID,nil,0,PtrInt(@pleader^.DimLineWeight),
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(
+      nil,@LeaderDimLineWeightEntIterateProc,@GeneralFromVarEntChangeProc));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'LeaderDimLineColor','Dim line color',
+    sysunit^.TypeName2PTD('TGDBPaletteColor'),
+    MPCMisc,GDBLeaderID,nil,0,PtrInt(@pleader^.DimLineColor),
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(
+      nil,@LeaderDimLineColorEntIterateProc,@GeneralFromVarEntChangeProc));
+
   RegisterLeaderIntegerProperty(
     'LeaderAnnotationType','Annotation type',
     PtrInt(@pleader^.AnnotationType),PtrInt(@pleader^.AnnotationType));
