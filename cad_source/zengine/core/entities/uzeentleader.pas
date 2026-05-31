@@ -22,11 +22,11 @@ interface
 uses
   uzeentityfactory,uzgldrawcontext,uzedrawingdef,uzecamera,UGDBVectorSnapArray,
   uzestyleslayers,uzeentsubordinated,uzeentcurve,UGDBSelectedObjArray,
-  uzeentcomplex,uzeentline,uzeentblockinsert,uzeentitiesmanager,
+  uzeentcomplex,uzeentline,uzeentspline,uzeentblockinsert,uzeentitiesmanager,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,Math,uzesnap,
   uzepalette,uzestylesdim,uzestyleslinetypes,uzedimblocksregister,UGDBPoint3DArray,gzctnrVectorTypes,
-  uzMVReader,uzCtnrVectorpBaseEntity;
+  uzMVReader,uzCtnrVectorpBaseEntity,uzeNURBSTypes,uzeNURBSUtils;
 
 type
   PGDBObjLeader=^GDBObjLeader;
@@ -224,6 +224,132 @@ begin
     Result:=PDimStyle^.Lines.DIMLTYPE
   else
     Result:=Leader.vp.LineType;
+end;
+
+// Выбирает степень сплайна по числу точек участка.
+function ClampLeaderSplineDegree(PointCount:integer):integer;
+begin
+  if PointCount>=4 then
+    Result:=3
+  else if PointCount=3 then
+    Result:=2
+  else
+    Result:=1;
+end;
+
+// Возвращает среднюю контрольную точку квадратичного сплайна.
+function CreateQuadraticLeaderMiddleControl(const First,Middle,Last:TzePoint3d):
+  TzePoint3d;
+begin
+  Result.x:=2*Middle.x-(First.x+Last.x)/2;
+  Result.y:=2*Middle.y-(First.y+Last.y)/2;
+  Result.z:=2*Middle.z-(First.z+Last.z)/2;
+end;
+
+// Строит резервный открытый равномерный вектор узлов.
+procedure GenerateOpenUniformLeaderSplineKnots(Spline:PGDBObjSpline);
+var
+  i,KnotCount,Denom,ControlCount:integer;
+  Value:double;
+  Knot:single;
+begin
+  Spline^.Knots.Clear;
+  ControlCount:=Spline^.VertexArrayInOCS.Count;
+  if ControlCount<=0 then
+    exit;
+
+  KnotCount:=ControlCount+Spline^.Degree+1;
+  Denom:=ControlCount-Spline^.Degree;
+  if Denom<1 then
+    Denom:=1;
+
+  for i:=0 to KnotCount-1 do begin
+    if i<=Spline^.Degree then
+      Value:=0
+    else if i>=ControlCount then
+      Value:=1
+    else
+      Value:=(i-Spline^.Degree)/Denom;
+    Knot:=Value;
+    Spline^.Knots.PushBackData(Knot);
+  end;
+end;
+
+// Применяет к дочернему примитиву свойства линии выноски.
+procedure ApplyLeaderPathVP(Leader:PGDBObjLeader;Entity:PGDBObjEntity;
+  PDimStyle:PGDBDimStyle);
+begin
+  Leader^.CopyVPto(Entity^);
+  Entity^.vp.LineWeight:=ResolveLeaderDimLineWeight(Leader^,PDimStyle);
+  Entity^.vp.Color:=ResolveLeaderDimLineColor(Leader^,PDimStyle);
+end;
+
+// Создаёт прямой участок выноски.
+function CreateLeaderLineSegment(Leader:PGDBObjLeader;var drawing:TDrawingDef;
+  var DC:TDrawContext;PDimStyle:PGDBDimStyle;
+  const p1,p2:TzePoint3d):PGDBObjLine;
+begin
+  Result:=pointer(Leader^.ConstObjArray.CreateInitObj(GDBlineID,Leader));
+  if Result=nil then
+    exit;
+
+  ApplyLeaderPathVP(Leader,PGDBObjEntity(Result),PDimStyle);
+  Result^.CoordInOCS.lBegin:=p1;
+  Result^.CoordInOCS.lEnd:=p2;
+  Result^.FormatEntity(drawing,DC);
+end;
+
+// Создаёт сплайновую часть через заданные точки.
+function CreateLeaderSplinePath(Leader:PGDBObjLeader;var drawing:TDrawingDef;
+  var DC:TDrawContext;PDimStyle:PGDBDimStyle;
+  SplinePointCount:integer):PGDBObjSpline;
+var
+  i:integer;
+  FitPoints:array of TzePoint3d;
+  ControlPoints:TControlPointsArray;
+begin
+  Result:=nil;
+  if SplinePointCount<2 then
+    exit;
+
+  Result:=pointer(Leader^.ConstObjArray.CreateInitObj(GDBSplineID,Leader));
+  if Result=nil then
+    exit;
+
+  ApplyLeaderPathVP(Leader,PGDBObjEntity(Result),PDimStyle);
+  Result^.Closed:=False;
+  Result^.Opts:=[SOPlanar];
+  Result^.Degree:=ClampLeaderSplineDegree(SplinePointCount);
+
+  SetLength(FitPoints,SplinePointCount);
+  for i:=0 to SplinePointCount-1 do
+    FitPoints[i]:=Leader^.VertexArrayInOCS.getDataMutable(i)^;
+
+  if Result^.Degree=1 then begin
+    for i:=0 to High(FitPoints) do
+      Result^.AddVertex(FitPoints[i]);
+    Result^.Opts:=Result^.Opts+[SOLinear];
+  end else if (Result^.Degree=2)and(SplinePointCount=3) then begin
+    Result^.AddVertex(FitPoints[0]);
+    Result^.AddVertex(CreateQuadraticLeaderMiddleControl(
+      FitPoints[0],FitPoints[1],FitPoints[2]));
+    Result^.AddVertex(FitPoints[2]);
+    GenerateOpenUniformLeaderSplineKnots(Result);
+  end else begin
+    ControlPoints:=ConvertOnCurvePointsToControlPointsArray(
+      Result^.Degree,FitPoints,Result^.Knots);
+    if Length(ControlPoints)>0 then begin
+      for i:=0 to High(ControlPoints) do
+        Result^.AddVertex(ControlPoints[i]);
+    end else begin
+      for i:=0 to High(FitPoints) do
+        Result^.AddVertex(FitPoints[i]);
+    end;
+    if Result^.Knots.Count=0 then
+      GenerateOpenUniformLeaderSplineKnots(Result);
+  end;
+
+  Result^.FormatEntity(drawing,DC);
 end;
 
 function IsZeroVertex(const Vertex:TzePoint3d):boolean;
@@ -448,7 +574,6 @@ var
   ArrowParam:TDimArrowBlockParam;
   ArrowScale:double;
   ArrowAngle:double;
-  pl:PGDBObjLine;
   pv:PGDBObjBlockInsert;
 begin
   ConstObjArray.Free;
@@ -457,16 +582,17 @@ begin
 
   PDimStyle:=ResolveLeaderDimStyle(self,drawing);
 
-  for i:=0 to VertexArrayInOCS.Count-2 do begin
-    p1:=VertexArrayInOCS.getDataMutable(i);
-    p2:=VertexArrayInOCS.getDataMutable(i+1);
-    pl:=pointer(ConstObjArray.CreateInitObj(GDBlineID,@self));
-    CopyVPto(pl^);
-    pl^.vp.LineWeight:=ResolveLeaderDimLineWeight(self,PDimStyle);
-    pl^.vp.Color:=ResolveLeaderDimLineColor(self,PDimStyle);
-    pl^.CoordInOCS.lBegin:=p1^;
-    pl^.CoordInOCS.lEnd:=p2^;
-    pl^.FormatEntity(drawing,DC);
+  if (PathType=1)and(VertexArrayInOCS.Count>2) then begin
+    CreateLeaderSplinePath(@self,drawing,DC,PDimStyle,VertexArrayInOCS.Count-1);
+    p1:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-2);
+    p2:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-1);
+    CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
+  end else begin
+    for i:=0 to VertexArrayInOCS.Count-2 do begin
+      p1:=VertexArrayInOCS.getDataMutable(i);
+      p2:=VertexArrayInOCS.getDataMutable(i+1);
+      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
+    end;
   end;
 
   if ArrowHeadFlag<>0 then begin
