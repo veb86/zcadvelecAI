@@ -122,6 +122,9 @@ const
 
 implementation
 
+const
+  LeaderGeometryEpsilon=1e-9;
+
 procedure InitLeaderDefaults(var Leader:GDBObjLeader);
 begin
   Leader.DimStyleName:='';
@@ -226,6 +229,96 @@ begin
     Result:=Leader.vp.LineType;
 end;
 
+function LeaderDistancesEqual(Left,Right:double):boolean;
+var
+  Scale:double;
+begin
+  Scale:=Max(1.0,Max(Abs(Left),Abs(Right)));
+  Result:=Abs(Left-Right)<=LeaderGeometryEpsilon*Scale;
+end;
+
+function LeaderSegmentLength(const Leader:GDBObjLeader;
+  SegmentIndex:integer):double;
+var
+  p1,p2:PzePoint3d;
+begin
+  Result:=0;
+  if (SegmentIndex<0)or(SegmentIndex>=Leader.VertexArrayInOCS.Count-1) then
+    exit;
+  p1:=Leader.VertexArrayInOCS.getDataMutable(SegmentIndex);
+  p2:=Leader.VertexArrayInOCS.getDataMutable(SegmentIndex+1);
+  Result:=uzegeometry.Vertexlength(p1^,p2^);
+end;
+
+function LeaderHasTextTailSegment(const Leader:GDBObjLeader;
+  LeaderArrowSize:double):boolean;
+begin
+  Result:=False;
+  if (Leader.VertexArrayInOCS.Count<3)or(LeaderArrowSize<=0) then
+    exit;
+  Result:=LeaderDistancesEqual(LeaderSegmentLength(Leader,
+    Leader.VertexArrayInOCS.Count-2),LeaderArrowSize);
+end;
+
+function LeaderPathStartPoint(const Leader:GDBObjLeader;LeaderArrowSize:double;
+  ArrowEnabled:boolean):TzePoint3d;
+var
+  p1,p2:PzePoint3d;
+  FirstSegmentLength,Offset:double;
+  Direction:TzePoint3d;
+begin
+  Result:=NulVertex;
+  if Leader.VertexArrayInOCS.Count=0 then
+    exit;
+  p1:=Leader.VertexArrayInOCS.getDataMutable(0);
+  Result:=p1^;
+
+  if (not ArrowEnabled)or(LeaderArrowSize<=0)or(Leader.VertexArrayInOCS.Count<2) then
+    exit;
+
+  FirstSegmentLength:=LeaderSegmentLength(Leader,0);
+  if (FirstSegmentLength<=LeaderGeometryEpsilon)or
+     (FirstSegmentLength>=LeaderArrowSize*2) then
+    exit;
+
+  p2:=Leader.VertexArrayInOCS.getDataMutable(1);
+  Offset:=FirstSegmentLength/2;
+  Direction:=NormalizeVertex(VertexSub(p2^,p1^));
+  Result:=VertexAdd(p1^,VertexMulOnSc(Direction,Offset));
+end;
+
+function LeaderArrowAngleFromDirection(const Direction,FallbackStart,
+  FallbackEnd:TzePoint3d):double;
+begin
+  if uzegeometry.oneVertexlength(Direction)>LeaderGeometryEpsilon then
+    Result:=VertexAngle(CreateVertex2D(0,0),
+      CreateVertex2D(Direction.x,Direction.y))-pi
+  else
+    Result:=VertexAngle(CreateVertex2D(FallbackStart.x,FallbackStart.y),
+      CreateVertex2D(FallbackEnd.x,FallbackEnd.y))-pi;
+end;
+
+function LeaderSplineStartDirection(Spline:PGDBObjSpline;
+  const FallbackStart,FallbackEnd:TzePoint3d):TzePoint3d;
+var
+  i:integer;
+  pFirst,pNext:PzePoint3d;
+begin
+  Result:=VertexSub(FallbackEnd,FallbackStart);
+  if (Spline=nil)or(Spline^.VertexArrayInOCS.Count<2) then
+    exit;
+
+  pFirst:=Spline^.VertexArrayInOCS.getDataMutable(0);
+  for i:=1 to Spline^.VertexArrayInOCS.Count-1 do begin
+    pNext:=Spline^.VertexArrayInOCS.getDataMutable(i);
+    Result:=VertexSub(pNext^,pFirst^);
+    if uzegeometry.oneVertexlength(Result)>LeaderGeometryEpsilon then
+      exit;
+  end;
+
+  Result:=VertexSub(FallbackEnd,FallbackStart);
+end;
+
 // Выбирает степень сплайна по числу точек участка.
 function ClampLeaderSplineDegree(PointCount:integer):integer;
 begin
@@ -302,7 +395,7 @@ end;
 // Создаёт сплайновую часть через заданные точки.
 function CreateLeaderSplinePath(Leader:PGDBObjLeader;var drawing:TDrawingDef;
   var DC:TDrawContext;PDimStyle:PGDBDimStyle;
-  SplinePointCount:integer):PGDBObjSpline;
+  const FirstPathPoint:TzePoint3d;SplinePointCount:integer):PGDBObjSpline;
 var
   i:integer;
   FitPoints:array of TzePoint3d;
@@ -322,7 +415,8 @@ begin
   Result^.Degree:=ClampLeaderSplineDegree(SplinePointCount);
 
   SetLength(FitPoints,SplinePointCount);
-  for i:=0 to SplinePointCount-1 do
+  FitPoints[0]:=FirstPathPoint;
+  for i:=1 to SplinePointCount-1 do
     FitPoints[i]:=Leader^.VertexArrayInOCS.getDataMutable(i)^;
 
   if Result^.Degree=1 then begin
@@ -572,8 +666,13 @@ var
   p1,p2:PzePoint3d;
   PDimStyle:PGDBDimStyle;
   ArrowParam:TDimArrowBlockParam;
-  ArrowScale:double;
+  LeaderArrowSize:double;
   ArrowAngle:double;
+  ArrowDirection:TzePoint3d;
+  PathStartPoint,SegmentStart:TzePoint3d;
+  SplinePath:PGDBObjSpline;
+  SplinePointCount:integer;
+  HasTextTail,ArrowEnabled:boolean;
   pv:PGDBObjBlockInsert;
 begin
   ConstObjArray.Free;
@@ -581,39 +680,55 @@ begin
     exit;
 
   PDimStyle:=ResolveLeaderDimStyle(self,drawing);
+  LeaderArrowSize:=ResolveLeaderArrowSize(self,PDimStyle);
+  ArrowParam:=DimArrows[TArrowStyle(ResolveLeaderArrowStyleIndex(self,PDimStyle))];
+  ArrowEnabled:=(ArrowHeadFlag<>0)and(ArrowParam.Name<>'')and
+    (LeaderArrowSize<>0);
+  PathStartPoint:=LeaderPathStartPoint(self,LeaderArrowSize,ArrowEnabled);
+  SplinePath:=nil;
 
   if (PathType=1)and(VertexArrayInOCS.Count>2) then begin
-    CreateLeaderSplinePath(@self,drawing,DC,PDimStyle,VertexArrayInOCS.Count-1);
-    p1:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-2);
-    p2:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-1);
-    CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
+    HasTextTail:=LeaderHasTextTailSegment(self,LeaderArrowSize);
+    SplinePointCount:=VertexArrayInOCS.Count;
+    if HasTextTail then
+      Dec(SplinePointCount);
+
+    SplinePath:=CreateLeaderSplinePath(@self,drawing,DC,PDimStyle,
+      PathStartPoint,SplinePointCount);
+    if HasTextTail then begin
+      p1:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-2);
+      p2:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-1);
+      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
+    end;
   end else begin
     for i:=0 to VertexArrayInOCS.Count-2 do begin
       p1:=VertexArrayInOCS.getDataMutable(i);
       p2:=VertexArrayInOCS.getDataMutable(i+1);
-      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
+      if i=0 then
+        SegmentStart:=PathStartPoint
+      else
+        SegmentStart:=p1^;
+      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,SegmentStart,p2^);
     end;
   end;
 
-  if ArrowHeadFlag<>0 then begin
-    ArrowParam:=DimArrows[TArrowStyle(ResolveLeaderArrowStyleIndex(self,PDimStyle))];
-    ArrowScale:=ResolveLeaderArrowSize(self,PDimStyle);
-
-    if (ArrowParam.Name<>'')and(ArrowScale<>0) then begin
-      p1:=VertexArrayInOCS.getDataMutable(0);
-      p2:=VertexArrayInOCS.getDataMutable(1);
-      drawing.CreateBlockDef(ArrowParam.Name);
-      ArrowAngle:=VertexAngle(CreateVertex2D(p1^.x,p1^.y),
-        CreateVertex2D(p2^.x,p2^.y))-pi;
-      pointer(pv):=ENTF_CreateBlockInsert(@self,@self.ConstObjArray,
-        vp.Layer,LeaderArrowLineType(self,PDimStyle),
-        ResolveLeaderDimLineWeight(self,PDimStyle),
-        ResolveLeaderDimLineColor(self,PDimStyle),
-        ArrowParam.Name,p1^,ArrowScale,ArrowAngle);
-      if pv<>nil then begin
-        pv^.BuildGeometry(drawing);
-        pv^.FormatEntity(drawing,DC);
-      end;
+  if ArrowEnabled then begin
+    p1:=VertexArrayInOCS.getDataMutable(0);
+    p2:=VertexArrayInOCS.getDataMutable(1);
+    drawing.CreateBlockDef(ArrowParam.Name);
+    if (PathType=1)and(SplinePath<>nil) then
+      ArrowDirection:=LeaderSplineStartDirection(SplinePath,p1^,p2^)
+    else
+      ArrowDirection:=VertexSub(p2^,p1^);
+    ArrowAngle:=LeaderArrowAngleFromDirection(ArrowDirection,p1^,p2^);
+    pointer(pv):=ENTF_CreateBlockInsert(@self,@self.ConstObjArray,
+      vp.Layer,LeaderArrowLineType(self,PDimStyle),
+      ResolveLeaderDimLineWeight(self,PDimStyle),
+      ResolveLeaderDimLineColor(self,PDimStyle),
+      ArrowParam.Name,p1^,LeaderArrowSize,ArrowAngle);
+    if pv<>nil then begin
+      pv^.BuildGeometry(drawing);
+      pv^.FormatEntity(drawing,DC);
     end;
   end;
 end;
