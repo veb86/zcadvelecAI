@@ -34,7 +34,9 @@ type
     procedure MinimalDXFLoadsLeaderEntity;
     procedure FormatBuildsLeaderPathAndArrowBlock;
     procedure FormatBuildsSplinePathAndStraightLastSegment;
-    procedure FormatBuildsSplinePathWithoutArrow;
+    procedure FormatBuildsWholeSplinePathWithoutTextTail;
+    procedure FormatKeepsLeaderArrowVisibleOnShortFirstSegment;
+    procedure SplineLeaderArrowUsesSplineTangent;
     procedure LeaderTypeIndexCombinesPathAndArrowFlag;
     procedure LeaderTypeIndexAppliesInspectorSelection;
     procedure CloneCopiesVerticesAndMetadata;
@@ -224,6 +226,7 @@ begin
   try
     Leader^.ArrowHeadFlag:=1;
     Leader^.PathType:=1;
+    Leader^.ArrowSize:=2.0;
     Leader^.AddVertex(CreateVertex(0,0,0));
     Leader^.AddVertex(CreateVertex(2,3,0));
     Leader^.AddVertex(CreateVertex(4,1,0));
@@ -233,7 +236,7 @@ begin
     Leader^.FormatEntity(Drawing,DC);
 
     CheckEquals(3,Leader^.ConstObjArray.Count,
-      'spline leader must build a spline path, final line segment and arrow');
+      'spline leader with text tail must build a spline, final line and arrow');
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
     CheckEquals(GDBSplineID,Child^.GetObjType,
@@ -241,7 +244,7 @@ begin
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(1));
     CheckEquals(GDBlineID,Child^.GetObjType,
-      'last spline leader segment must remain straight');
+      'text tail segment length equal to arrow size must remain straight');
 
     LastSegment:=PGDBObjLine(Child);
     CheckEquals(4.0,LastSegment^.CoordInOCS.lBegin.x,1e-9);
@@ -259,36 +262,128 @@ begin
   end;
 end;
 
-procedure TLeaderEntityTest.FormatBuildsSplinePathWithoutArrow;
+procedure TLeaderEntityTest.FormatBuildsWholeSplinePathWithoutTextTail;
 var
   Drawing:TSimpleDrawing;
   Leader:PGDBObjLeader;
   DC:TDrawContext;
   Child:PGDBObjEntity;
+  Spline:PGDBObjSpline;
+  Vertex:PzePoint3d;
 begin
   Drawing.init(nil);
   Leader:=AllocAndInitLeader(nil);
   try
-    Leader^.ArrowHeadFlag:=0;
+    Leader^.ArrowHeadFlag:=1;
     Leader^.PathType:=1;
+    Leader^.ArrowSize:=1.0;
     Leader^.AddVertex(CreateVertex(0,0,0));
     Leader^.AddVertex(CreateVertex(2,3,0));
-    Leader^.AddVertex(CreateVertex(4,1,0));
-    Leader^.AddVertex(CreateVertex(6,1,0));
+    Leader^.AddVertex(CreateVertex(5,1,0));
 
     DC:=Drawing.CreateDrawingRC;
     Leader^.FormatEntity(Drawing,DC);
 
     CheckEquals(2,Leader^.ConstObjArray.Count,
-      'spline leader without arrow must build only a spline and final line');
+      'spline leader without text tail must build one spline and one arrow');
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
     CheckEquals(GDBSplineID,Child^.GetObjType,
-      'first spline leader child must be a spline');
+      'first spline leader child must be a spline through all points');
+    Spline:=PGDBObjSpline(Child);
+    CheckEquals(3,Spline^.VertexArrayInOCS.Count,
+      'quadratic spline must include the last leader point as a control point');
+    Vertex:=Spline^.VertexArrayInOCS.getDataMutable(2);
+    CheckEquals(5.0,Vertex^.x,1e-9);
+    CheckEquals(1.0,Vertex^.y,1e-9);
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(1));
+    CheckEquals(GDBBlockInsertID,Child^.GetObjType,
+      'arrow head must still be created when the last segment is spline');
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.FormatKeepsLeaderArrowVisibleOnShortFirstSegment;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  DC:TDrawContext;
+  Child:PGDBObjEntity;
+  FirstSegment:PGDBObjLine;
+  Arrow:PGDBObjBlockInsert;
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  try
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=0;
+    Leader^.ArrowSize:=4.0;
+    Leader^.AddVertex(CreateVertex(0,0,0));
+    Leader^.AddVertex(CreateVertex(6,0,0));
+    Leader^.AddVertex(CreateVertex(10,0,0));
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(3,Leader^.ConstObjArray.Count,
+      'short first segment leader must keep path segments and arrow');
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
     CheckEquals(GDBlineID,Child^.GetObjType,
-      'last spline leader segment must remain straight');
+      'first leader child must remain a line segment');
+    FirstSegment:=PGDBObjLine(Child);
+    CheckEquals(3.0,FirstSegment^.CoordInOCS.lBegin.x,1e-9);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lBegin.y,1e-9);
+    CheckEquals(6.0,FirstSegment^.CoordInOCS.lEnd.x,1e-9);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lEnd.y,1e-9);
+
+    Arrow:=PGDBObjBlockInsert(Leader^.ConstObjArray.GetData(2));
+    CheckEquals(GDBBlockInsertID,Arrow^.GetObjType,
+      'arrow head must be present when first segment is shorter than 2 arrow sizes');
+    CheckEquals('_ClosedFilled',Arrow^.Name);
+    CheckEquals(4.0,Arrow^.scale.x,1e-9);
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.SplineLeaderArrowUsesSplineTangent;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  DC:TDrawContext;
+  Arrow:PGDBObjBlockInsert;
+  ExpectedAngle:double;
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  try
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=1;
+    Leader^.ArrowSize:=1.0;
+    Leader^.AddVertex(CreateVertex(0,0,0));
+    Leader^.AddVertex(CreateVertex(2,3,0));
+    Leader^.AddVertex(CreateVertex(4,0,0));
+    Leader^.AddVertex(CreateVertex(5,0,0));
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(3,Leader^.ConstObjArray.Count,
+      'spline leader with text tail must build spline, tail and arrow');
+
+    Arrow:=PGDBObjBlockInsert(Leader^.ConstObjArray.GetData(2));
+    CheckEquals(GDBBlockInsertID,Arrow^.GetObjType,
+      'spline leader arrow must be a block insert');
+    ExpectedAngle:=VertexAngle(CreateVertex2D(0,0),CreateVertex2D(2,6))-pi;
+    CheckEquals(ExpectedAngle,Arrow^.rotate,1e-9,
+      'spline leader arrow must follow the spline start tangent');
   finally
     Leader^.done;
     FreeMem(Pointer(Leader));
