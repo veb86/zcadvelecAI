@@ -35,7 +35,8 @@ type
     procedure FormatBuildsLeaderPathAndArrowBlock;
     procedure FormatBuildsSplinePathAndStraightLastSegment;
     procedure FormatBuildsWholeSplinePathWithoutTextTail;
-    procedure FormatKeepsLeaderArrowVisibleOnShortFirstSegment;
+    procedure FormatHidesLeaderArrowOnShortFirstSegment;
+    procedure FormatShowsLeaderArrowOnLongFirstSegment;
     procedure SplineLeaderArrowUsesSplineTangent;
     procedure LeaderTypeIndexCombinesPathAndArrowFlag;
     procedure LeaderTypeIndexAppliesInspectorSelection;
@@ -181,11 +182,14 @@ begin
     Entity:=PGDBObjEntity(Drawing.pObjRoot^.ObjArray.GetData(0));
     Leader:=PGDBObjLeader(Entity);
 
+    // Первый участок выноски (1,2)->(3,4) имеет длину ~2.83, поэтому размер
+    // стрелки выбран так, чтобы её удвоенное значение (2*1=2) не превышало
+    // длину участка и стрелка отображалась (пункт 2 задачи).
     DimStyle:=PGDBDimStyle(Drawing.DimStyleTable.MergeItem('ISO-25',TLOLoad));
     DimStyle^.init('ISO-25');
     DimStyle^.Arrows.DIMLDRBLK:=TSOblique;
-    DimStyle^.Arrows.DIMASZ:=2.0;
-    DimStyle^.Units.DIMSCALE:=3.0;
+    DimStyle^.Arrows.DIMASZ:=0.5;
+    DimStyle^.Units.DIMSCALE:=2.0;
     DimStyle^.Lines.DIMLTYPE:=Drawing.LTypeStyleTable.GetSystemLT(TLTByBlock);
 
     DC:=Drawing.CreateDrawingRC;
@@ -204,7 +208,7 @@ begin
     CheckEquals('_Oblique',Arrow^.Name);
     CheckEquals(1.0,Arrow^.Local.P_insert.x,1e-9);
     CheckEquals(2.0,Arrow^.Local.P_insert.y,1e-9);
-    CheckEquals(6.0,Arrow^.scale.x,1e-9);
+    CheckEquals(1.0,Arrow^.scale.x,1e-9);
     CheckEquals(
       VertexAngle(CreateVertex2D(1,2),CreateVertex2D(3,4))-pi,
       Arrow^.rotate,1e-9);
@@ -224,13 +228,16 @@ begin
   Drawing.init(nil);
   Leader:=AllocAndInitLeader(nil);
   try
+    // Первый участок (0,0)->(4,3) длиной 5 не короче 2*ArrowSize(=4),
+    // поэтому стрелка отображается. Последний участок (6,1)->(8,1) длиной 2
+    // равен ArrowSize, значит он считается участком текста и остаётся прямым.
     Leader^.ArrowHeadFlag:=1;
     Leader^.PathType:=1;
     Leader^.ArrowSize:=2.0;
     Leader^.AddVertex(CreateVertex(0,0,0));
-    Leader^.AddVertex(CreateVertex(2,3,0));
-    Leader^.AddVertex(CreateVertex(4,1,0));
+    Leader^.AddVertex(CreateVertex(4,3,0));
     Leader^.AddVertex(CreateVertex(6,1,0));
+    Leader^.AddVertex(CreateVertex(8,1,0));
 
     DC:=Drawing.CreateDrawingRC;
     Leader^.FormatEntity(Drawing,DC);
@@ -247,9 +254,9 @@ begin
       'text tail segment length equal to arrow size must remain straight');
 
     LastSegment:=PGDBObjLine(Child);
-    CheckEquals(4.0,LastSegment^.CoordInOCS.lBegin.x,1e-9);
+    CheckEquals(6.0,LastSegment^.CoordInOCS.lBegin.x,1e-9);
     CheckEquals(1.0,LastSegment^.CoordInOCS.lBegin.y,1e-9);
-    CheckEquals(6.0,LastSegment^.CoordInOCS.lEnd.x,1e-9);
+    CheckEquals(8.0,LastSegment^.CoordInOCS.lEnd.x,1e-9);
     CheckEquals(1.0,LastSegment^.CoordInOCS.lEnd.y,1e-9);
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(2));
@@ -307,7 +314,53 @@ begin
   end;
 end;
 
-procedure TLeaderEntityTest.FormatKeepsLeaderArrowVisibleOnShortFirstSegment;
+procedure TLeaderEntityTest.FormatHidesLeaderArrowOnShortFirstSegment;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  DC:TDrawContext;
+  Child:PGDBObjEntity;
+  FirstSegment:PGDBObjLine;
+  i:integer;
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  try
+    // Первый участок (0,0)->(6,0) длиной 6 короче 2*ArrowSize(=8),
+    // поэтому стрелка не строится (пункт 2 задачи).
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=0;
+    Leader^.ArrowSize:=4.0;
+    Leader^.AddVertex(CreateVertex(0,0,0));
+    Leader^.AddVertex(CreateVertex(6,0,0));
+    Leader^.AddVertex(CreateVertex(10,0,0));
+
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+
+    CheckEquals(2,Leader^.ConstObjArray.Count,
+      'short first segment leader must keep path segments without an arrow');
+
+    for i:=0 to Leader^.ConstObjArray.Count-1 do begin
+      Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(i));
+      CheckEquals(GDBlineID,Child^.GetObjType,
+        'short first segment leader must not contain an arrow block');
+    end;
+
+    Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
+    FirstSegment:=PGDBObjLine(Child);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lBegin.x,1e-9);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lBegin.y,1e-9);
+    CheckEquals(6.0,FirstSegment^.CoordInOCS.lEnd.x,1e-9);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lEnd.y,1e-9);
+  finally
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+    Drawing.done;
+  end;
+end;
+
+procedure TLeaderEntityTest.FormatShowsLeaderArrowOnLongFirstSegment;
 var
   Drawing:TSimpleDrawing;
   Leader:PGDBObjLeader;
@@ -319,31 +372,33 @@ begin
   Drawing.init(nil);
   Leader:=AllocAndInitLeader(nil);
   try
+    // Первый участок (0,0)->(10,0) длиной 10 не короче 2*ArrowSize(=8),
+    // поэтому стрелка отображается (пункт 2 задачи).
     Leader^.ArrowHeadFlag:=1;
     Leader^.PathType:=0;
     Leader^.ArrowSize:=4.0;
     Leader^.AddVertex(CreateVertex(0,0,0));
-    Leader^.AddVertex(CreateVertex(6,0,0));
     Leader^.AddVertex(CreateVertex(10,0,0));
+    Leader^.AddVertex(CreateVertex(14,0,0));
 
     DC:=Drawing.CreateDrawingRC;
     Leader^.FormatEntity(Drawing,DC);
 
     CheckEquals(3,Leader^.ConstObjArray.Count,
-      'short first segment leader must keep path segments and arrow');
+      'long first segment leader must keep path segments and arrow');
 
     Child:=PGDBObjEntity(Leader^.ConstObjArray.GetData(0));
     CheckEquals(GDBlineID,Child^.GetObjType,
       'first leader child must remain a line segment');
     FirstSegment:=PGDBObjLine(Child);
-    CheckEquals(3.0,FirstSegment^.CoordInOCS.lBegin.x,1e-9);
+    CheckEquals(0.0,FirstSegment^.CoordInOCS.lBegin.x,1e-9);
     CheckEquals(0.0,FirstSegment^.CoordInOCS.lBegin.y,1e-9);
-    CheckEquals(6.0,FirstSegment^.CoordInOCS.lEnd.x,1e-9);
+    CheckEquals(10.0,FirstSegment^.CoordInOCS.lEnd.x,1e-9);
     CheckEquals(0.0,FirstSegment^.CoordInOCS.lEnd.y,1e-9);
 
     Arrow:=PGDBObjBlockInsert(Leader^.ConstObjArray.GetData(2));
     CheckEquals(GDBBlockInsertID,Arrow^.GetObjType,
-      'arrow head must be present when first segment is shorter than 2 arrow sizes');
+      'arrow head must be present when first segment is at least 2 arrow sizes');
     CheckEquals('_ClosedFilled',Arrow^.Name);
     CheckEquals(4.0,Arrow^.scale.x,1e-9);
   finally
