@@ -25,6 +25,7 @@ uses
   uzgldrawcontext,
   uzestylesdim,
   uzestyleslinetypes,
+  UGDBPoint3DArray,
   uzeTypes;
 
 type
@@ -47,6 +48,7 @@ type
     procedure ResolveDimLineWeightUsesOverrideThenStyle;
     procedure ResolveDimLineColorUsesOverrideThenStyle;
     procedure CloneCopiesIndividualOverrides;
+    procedure CommandPreviewCommitAndUndoManageVertices;
   end;
 
 implementation
@@ -715,6 +717,92 @@ begin
   finally
     Leader^.done;
     FreeMem(Pointer(Leader));
+  end;
+end;
+
+{
+  Воспроизводит ключевую логику команды LEADER (uzccommand_leader.pas):
+  предпросмотр (точки пользователя + временная точка курсора), фиксация без
+  preview-точки и отмена последней точки (Undo). Команда строит вершины
+  выноски тем же набором вызовов: VertexArrayInOCS.Clear + AddVertex для
+  каждой точки, поэтому здесь проверяется именно этот цикл.
+}
+procedure TLeaderEntityTest.CommandPreviewCommitAndUndoManageVertices;
+var
+  Drawing:TSimpleDrawing;
+  Leader:PGDBObjLeader;
+  UserPoints:GDBPoint3dArray;
+  DC:TDrawContext;
+  Vertex:PzePoint3d;
+
+  // Точная копия uzccommand_leader.RebuildLeaderVertices
+  procedure RebuildLeaderVertices(AddPreview:boolean;const PreviewPoint:TzePoint3d);
+  var
+    i:integer;
+  begin
+    Leader^.VertexArrayInOCS.Clear;
+    for i:=0 to UserPoints.Count-1 do
+      Leader^.AddVertex(UserPoints.getDataMutable(i)^);
+    if AddPreview then
+      Leader^.AddVertex(PreviewPoint);
+  end;
+
+begin
+  Drawing.init(nil);
+  Leader:=AllocAndInitLeader(nil);
+  UserPoints.init(100);
+  try
+    Leader^.ArrowHeadFlag:=1;
+    Leader^.PathType:=0;
+    Leader^.ArrowSize:=4.0;
+
+    // Две исходные точки введены пользователем
+    UserPoints.PushBackData(CreateVertex(0,0,0));
+    UserPoints.PushBackData(CreateVertex(10,0,0));
+
+    // Предпросмотр: курсор в (5,5) добавляет временную третью вершину
+    RebuildLeaderVertices(True,CreateVertex(5,5,0));
+    CheckEquals(3,Leader^.VertexArrayInOCS.Count,
+      'предпросмотр добавляет временную точку курсора');
+    Vertex:=Leader^.VertexArrayInOCS.getDataMutable(2);
+    CheckEquals(5.0,Vertex^.x,1e-9,'последняя вершина — точка курсора');
+    CheckEquals(5.0,Vertex^.y,1e-9,'последняя вершина — точка курсора');
+
+    // Пользователь кликнул третью точку (14,0)
+    UserPoints.PushBackData(CreateVertex(14,0,0));
+    RebuildLeaderVertices(True,CreateVertex(20,20,0));
+    CheckEquals(4,Leader^.VertexArrayInOCS.Count,
+      'после клика накоплено 3 точки + предпросмотр');
+
+    // Undo: удаляем последнюю введённую точку (как пункт Undo меню)
+    UserPoints.DeleteElement(UserPoints.Count-1);
+    CheckEquals(2,UserPoints.Count,'Undo удаляет последнюю точку пользователя');
+
+    // Фиксация выноски без preview-точки (как при завершении команды)
+    RebuildLeaderVertices(False,NulVertex);
+    CheckEquals(2,Leader^.VertexArrayInOCS.Count,
+      'итоговая выноска строится только из точек пользователя');
+
+    Vertex:=Leader^.VertexArrayInOCS.getDataMutable(1);
+    CheckEquals(10.0,Vertex^.x,1e-9,'последняя вершина после Undo — (10,0)');
+    CheckEquals(0.0,Vertex^.y,1e-9,'последняя вершина после Undo — (10,0)');
+
+    // Геометрия: первый участок длиной 10 не короче 2*ArrowSize(=8) — со стрелкой
+    DC:=Drawing.CreateDrawingRC;
+    Leader^.FormatEntity(Drawing,DC);
+    CheckEquals(2,Leader^.ConstObjArray.Count,
+      'линейная выноска из 2 точек со стрелкой = 1 отрезок + 1 блок стрелки');
+    CheckEquals(GDBlineID,
+      PGDBObjEntity(Leader^.ConstObjArray.GetData(0))^.GetObjType,
+      'первый дочерний примитив — отрезок выноски');
+    CheckEquals(GDBBlockInsertID,
+      PGDBObjEntity(Leader^.ConstObjArray.GetData(1))^.GetObjType,
+      'второй дочерний примитив — блок стрелки');
+  finally
+    UserPoints.done;
+    Leader^.done;
+    FreeMem(Pointer(Leader));
+    Drawing.done;
   end;
 end;
 

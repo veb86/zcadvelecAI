@@ -1,0 +1,52 @@
+Free Pascal Compiler version 3.2.2+dfsg-32 [2024/01/05] for x86_64
+Copyright (c) 1993-2021 by Florian Klaempfl and others
+Target OS: Linux for x86-64
+Compiling /tmp/gh-issue-solver-1780380414607/experiments/leader_vertex_logic_test.pas
+Compiling ./cad_source/components/zmath/src/uzegeometrytypes.pas
+Compiling ./cad_source/components/zmath/src/uzegeometry.pas
+Compiling ./cad_source/components/zbaseutils/src/uzblogintf.pas
+gvector.pp(101,22) Note: Call to subroutine "function TVector<uzbLogIntf.TLoggerRec>.Size:QWord;" marked as inline is not inlined
+gvector.pp(104,34) Note: Call to subroutine "function TVector<uzbLogIntf.TLoggerRec>.Size:QWord;" marked as inline is not inlined
+uzblogintf.pas(172,36) Warning: Implicit string type conversion from "AnsiString" to "WideString"
+uzblogintf.pas(172,48) Warning: Implicit string type conversion with potential data loss from "WideString" to "AnsiString"
+uzegeometry.pas(287,12) Note: Call to subroutine "function oneVertexlength(const Vector1:GVector3$2$crcAAAF3BE9):Double;" marked as inline is not inlined
+uzegeometry.pas(288,12) Note: Call to subroutine "function oneVertexlength(const Vector1:GVector3$2$crcAAAF3BE9):Double;" marked as inline is not inlined
+uzegeometry.pas(289,12) Note: Call to subroutine "function oneVertexlength(const Vector1:GVector3$2$crcAAAF3BE9):Double;" marked as inline is not inlined
+uzegeometry.pas(297,8) Note: Call to subroutine "function scalardot(const v1:GVector3$2$crcAAAF3BE9;const v2:GVector3$2$crcAAAF3BE9):Double;" marked as inline is not inlined
+uzegeometry.pas(297,37) Note: Call to subroutine "function VectorDot(const v1:GVector3$2$crcAAAF3BE9;const v2:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(304,9) Note: Call to subroutine "function NormalizeVertex(const Vector1:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(304,39) Note: Call to subroutine "function GetXfFromZ(const oz:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(305,9) Note: Call to subroutine "function NormalizeVertex(const Vector1:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(305,41) Note: Call to subroutine "function VectorDot(const v1:GVector3$2$crcAAAF3BE9;const v2:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(476,13) Note: Call to subroutine "function VectorDot(const v1:GVector3$2$crcAAAF3BE9;const v2:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(478,13) Note: Call to subroutine "function VectorDot(const v1:GVector3$2$crcAAAF3BE9;const v2:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(479,11) Note: Call to subroutine "function NormalizeVertex(const Vector1:GVector3$2$crcAAAF3BE9):<record type>;" marked as inline is not inlined
+uzegeometry.pas(2556,57) Note: Call to subroutine "function VectorTransform(const V:GVector4$2$crcAAAF3BE9;const M:GMatrix4$1$crcA3877768):<record type>;" marked as inline is not inlined
+uzegeometry.pas(2576,3) Note: Call to subroutine "function VectorTransform(const V:GVector4$2$crcAAAF3BE9;const M:GMatrix4$1$crcA3877768):<record type>;" marked as inline is not inlined
+uzegeometry.pas(2576,3) Note: Call to subroutine "function VectorTransform(const V:GVector4$2$crcAAAF3BE9;const M:GMatrix4$1$crcA3877768):<record type>;" marked as inline is not inlined
+uzegeometry.pas(2796,10) Note: Call to subroutine "function CreateDoubleFromArray(var counter:LongInt;const args:Array Of Const):Double;" marked as inline is not inlined
+uzegeometry.pas(2797,10) Note: Call to subroutine "function CreateDoubleFromArray(var counter:LongInt;const args:Array Of Const):Double;" marked as inline is not inlined
+uzegeometry.pas(2808,10) Note: Call to subroutine "function CreateDoubleFromArray(var counter:LongInt;const args:Array Of Const):Double;" marked as inline is not inlined
+uzegeometry.pas(2809,10) Note: Call to subroutine "function CreateDoubleFromArray(var counter:LongInt;const args:Array Of Const):Double;" marked as inline is not inlined
+uzegeometry.pas(2810,10) Note: Call to subroutine "function CreateDoubleFromArray(var counter:LongInt;const args:Array Of Const):Double;" marked as inline is not inlined
+Writing Resource String Table file: uzegeometry.rsj
+Compiling ./cad_source/zengine/containers/UGDBPoint3DArray.pas
+Compiling ./cad_source/components/zcontainers/src/gzctnrvector.pas
+Compiling ./cad_source/components/zcontainers/src/gzctnrvectortypes.pas
+UGDBPoint3DArray.pas(160,17) Note: Call to subroutine "function CalcTrueInFrustum(const lbegin:GVector3$2$crcAAAF3BE9;const lend:GVector3$2$crcAAAF3BE9;const frustum:TzeFrustum):<enumeration type>;" marked as inline is not inlined
+UGDBPoint3DArray.pas(185,19) Note: Call to subroutine "function CalcTrueInFrustum(const lbegin:GVector3$2$crcAAAF3BE9;const lend:GVector3$2$crcAAAF3BE9;const frustum:TzeFrustum):<enumeration type>;" marked as inline is not inlined
+UGDBPoint3DArray.pas(211,9) Note: Call to subroutine "function CalcTrueInFrustum(const lbegin:GVector3$2$crcAAAF3BE9;const lend:GVector3$2$crcAAAF3BE9;const frustum:TzeFrustum):<enumeration type>;" marked as inline is not inlined
+UGDBPoint3DArray.pas(229,7) Note: Call to subroutine "function CalcTrueInFrustum(const lbegin:GVector3$2$crcAAAF3BE9;const lend:GVector3$2$crcAAAF3BE9;const frustum:TzeFrustum):<enumeration type>;" marked as inline is not inlined
+UGDBPoint3DArray.pas(255,9) Note: Call to subroutine "function VertexMulOnSc(const Vector1:GVector3$2$crcAAAF3BE9;sc:Double):<record type>;" marked as inline is not inlined
+Linking /tmp/claude-1001/tmp.sHNpvTsaZB/leader_vertex_logic_test
+5302 lines compiled, 0.2 sec
+2 warning(s) issued
+27 note(s) issued
+  ok   - preview adds a temporary cursor vertex (2+1)
+  ok   - last vertex is the cursor point
+  ok   - after a click: 3 user points + preview
+  ok   - Undo removes the last user point
+  ok   - final leader is built from user points only
+  ok   - last vertex after Undo is (10,0)
+
+PASS: leader vertex/undo logic
