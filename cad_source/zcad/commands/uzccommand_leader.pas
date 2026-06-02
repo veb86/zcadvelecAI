@@ -45,10 +45,14 @@
        - Format (F) — подменю настройки формата выноски:
            Specify parameter for leader format
              [Spline Segments Arrow Nothing] <Exit>:
-           Spline   (S) — сплайновая выноска (PathType=1);
-           Segments (G) — выноска отрезками (PathType=0);
-           Arrow    (A) — со стрелкой (ArrowHeadFlag=1);
-           Nothing  (N) — без стрелки  (ArrowHeadFlag=0);
+           Spline   (S) — сплайновая выноска (PathType=1), затем возврат
+                          в предыдущее меню;
+           Segments (G) — выноска отрезками (PathType=0), затем возврат
+                          в предыдущее меню;
+           Arrow    (A) — со стрелкой (ArrowHeadFlag=1), затем возврат
+                          в предыдущее меню;
+           Nothing  (N) — без стрелки  (ArrowHeadFlag=0), затем возврат
+                          в предыдущее меню;
            Exit     (X) / пустой Enter — вернуться в предыдущее меню;
        - Undo (U) — отменить последнюю введённую точку.
     5. ESC отменяет команду без каких-либо изменений в чертеже.
@@ -309,18 +313,26 @@ begin
                   LeaderIdSpline:begin
                     interactiveData.PLeader^.PathType:=1;
                     RefreshLeaderPreview(interactiveData);
+                    // После выбора формата возвращаемся в предыдущее меню
+                    SetLeaderCmdMode(LCMWaitNext);
                   end;
                   LeaderIdSegments:begin
                     interactiveData.PLeader^.PathType:=0;
                     RefreshLeaderPreview(interactiveData);
+                    // После выбора формата возвращаемся в предыдущее меню
+                    SetLeaderCmdMode(LCMWaitNext);
                   end;
                   LeaderIdArrow:begin
                     interactiveData.PLeader^.ArrowHeadFlag:=1;
                     RefreshLeaderPreview(interactiveData);
+                    // После выбора формата возвращаемся в предыдущее меню
+                    SetLeaderCmdMode(LCMWaitNext);
                   end;
                   LeaderIdNothing:begin
                     interactiveData.PLeader^.ArrowHeadFlag:=0;
                     RefreshLeaderPreview(interactiveData);
+                    // После выбора формата возвращаемся в предыдущее меню
+                    SetLeaderCmdMode(LCMWaitNext);
                   end;
                   LeaderIdExit:
                     SetLeaderCmdMode(LCMWaitNext);
