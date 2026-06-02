@@ -260,33 +260,6 @@ begin
     Leader.VertexArrayInOCS.Count-2),LeaderArrowSize);
 end;
 
-function LeaderPathStartPoint(const Leader:GDBObjLeader;LeaderArrowSize:double;
-  ArrowEnabled:boolean):TzePoint3d;
-var
-  p1,p2:PzePoint3d;
-  FirstSegmentLength,Offset:double;
-  Direction:TzePoint3d;
-begin
-  Result:=NulVertex;
-  if Leader.VertexArrayInOCS.Count=0 then
-    exit;
-  p1:=Leader.VertexArrayInOCS.getDataMutable(0);
-  Result:=p1^;
-
-  if (not ArrowEnabled)or(LeaderArrowSize<=0)or(Leader.VertexArrayInOCS.Count<2) then
-    exit;
-
-  FirstSegmentLength:=LeaderSegmentLength(Leader,0);
-  if (FirstSegmentLength<=LeaderGeometryEpsilon)or
-     (FirstSegmentLength>=LeaderArrowSize*2) then
-    exit;
-
-  p2:=Leader.VertexArrayInOCS.getDataMutable(1);
-  Offset:=FirstSegmentLength/2;
-  Direction:=NormalizeVertex(VertexSub(p2^,p1^));
-  Result:=VertexAdd(p1^,VertexMulOnSc(Direction,Offset));
-end;
-
 function LeaderArrowAngleFromDirection(const Direction,FallbackStart,
   FallbackEnd:TzePoint3d):double;
 begin
@@ -395,7 +368,7 @@ end;
 // Создаёт сплайновую часть через заданные точки.
 function CreateLeaderSplinePath(Leader:PGDBObjLeader;var drawing:TDrawingDef;
   var DC:TDrawContext;PDimStyle:PGDBDimStyle;
-  const FirstPathPoint:TzePoint3d;SplinePointCount:integer):PGDBObjSpline;
+  SplinePointCount:integer):PGDBObjSpline;
 var
   i:integer;
   FitPoints:array of TzePoint3d;
@@ -415,8 +388,7 @@ begin
   Result^.Degree:=ClampLeaderSplineDegree(SplinePointCount);
 
   SetLength(FitPoints,SplinePointCount);
-  FitPoints[0]:=FirstPathPoint;
-  for i:=1 to SplinePointCount-1 do
+  for i:=0 to SplinePointCount-1 do
     FitPoints[i]:=Leader^.VertexArrayInOCS.getDataMutable(i)^;
 
   if Result^.Degree=1 then begin
@@ -669,7 +641,6 @@ var
   LeaderArrowSize:double;
   ArrowAngle:double;
   ArrowDirection:TzePoint3d;
-  PathStartPoint,SegmentStart:TzePoint3d;
   SplinePath:PGDBObjSpline;
   SplinePointCount:integer;
   HasTextTail,ArrowEnabled:boolean;
@@ -682,9 +653,12 @@ begin
   PDimStyle:=ResolveLeaderDimStyle(self,drawing);
   LeaderArrowSize:=ResolveLeaderArrowSize(self,PDimStyle);
   ArrowParam:=DimArrows[TArrowStyle(ResolveLeaderArrowStyleIndex(self,PDimStyle))];
+  // Стрелка (ArrowStyle) отображается только тогда, когда длина первого
+  // участка выноски не меньше удвоенного размера стрелки (пункт 2 задачи):
+  // на более коротком участке стрелка не помещается и не строится.
   ArrowEnabled:=(ArrowHeadFlag<>0)and(ArrowParam.Name<>'')and
-    (LeaderArrowSize<>0);
-  PathStartPoint:=LeaderPathStartPoint(self,LeaderArrowSize,ArrowEnabled);
+    (LeaderArrowSize<>0)and
+    (LeaderSegmentLength(self,0)>=LeaderArrowSize*2);
   SplinePath:=nil;
 
   if (PathType=1)and(VertexArrayInOCS.Count>2) then begin
@@ -694,7 +668,7 @@ begin
       Dec(SplinePointCount);
 
     SplinePath:=CreateLeaderSplinePath(@self,drawing,DC,PDimStyle,
-      PathStartPoint,SplinePointCount);
+      SplinePointCount);
     if HasTextTail then begin
       p1:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-2);
       p2:=VertexArrayInOCS.getDataMutable(VertexArrayInOCS.Count-1);
@@ -704,11 +678,7 @@ begin
     for i:=0 to VertexArrayInOCS.Count-2 do begin
       p1:=VertexArrayInOCS.getDataMutable(i);
       p2:=VertexArrayInOCS.getDataMutable(i+1);
-      if i=0 then
-        SegmentStart:=PathStartPoint
-      else
-        SegmentStart:=p1^;
-      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,SegmentStart,p2^);
+      CreateLeaderLineSegment(@self,drawing,DC,PDimStyle,p1^,p2^);
     end;
   end;
 
