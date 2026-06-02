@@ -1,0 +1,7 @@
+# compiled artifacts
+test_drawarrow
+gen_beforeafter
+*.o
+*.or
+*.ppu
+*.png
