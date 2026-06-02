@@ -19,6 +19,7 @@ uses
 
   uzcinterface,uzcstrconsts,uzbstrproc,
   uzepalette,uzcflineweights,uzestyleslinetypes,uzestylestexts,
+  uzcgui2arrows,
   gzctnrVectorTypes;
 
 type
@@ -345,6 +346,9 @@ var
     for i := D^.MinValue to D^.MaxValue do
       arrowsBox.AddItem(GetEnumName(TypeInfo(TArrowStyle), i),Sender);
     arrowsBox.ItemIndex := Ord(arrowsIndex);
+    {Items are added in TArrowStyle enum order, so owner-draw can map each
+     item index directly to its arrow style and draw a mini preview.}
+    TSupportArrowStyleCombo.Setup(arrowsBox);
 end;
 
 
