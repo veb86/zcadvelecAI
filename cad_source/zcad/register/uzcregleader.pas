@@ -457,42 +457,42 @@ begin
     OneVarDataMIPD,
     TEntIterateProcsData.Create(nil,@LeaderLengthEntIterateProc,nil));
 
-  RegisterLeaderDoubleProperty(
-    'LeaderNormalX','Normal X',MPCGeometry,
-    PtrInt(@pleader^.NormalVector.x),PtrInt(@pleader^.NormalVector.x));
-  RegisterLeaderDoubleProperty(
-    'LeaderNormalY','Normal Y',MPCGeometry,
-    PtrInt(@pleader^.NormalVector.y),PtrInt(@pleader^.NormalVector.y));
-  RegisterLeaderDoubleProperty(
-    'LeaderNormalZ','Normal Z',MPCGeometry,
-    PtrInt(@pleader^.NormalVector.z),PtrInt(@pleader^.NormalVector.z));
-  RegisterLeaderDoubleProperty(
-    'LeaderHorizontalDirectionX','Horizontal direction X',MPCGeometry,
-    PtrInt(@pleader^.HorizontalDirection.x),PtrInt(@pleader^.HorizontalDirection.x));
-  RegisterLeaderDoubleProperty(
-    'LeaderHorizontalDirectionY','Horizontal direction Y',MPCGeometry,
-    PtrInt(@pleader^.HorizontalDirection.y),PtrInt(@pleader^.HorizontalDirection.y));
-  RegisterLeaderDoubleProperty(
-    'LeaderHorizontalDirectionZ','Horizontal direction Z',MPCGeometry,
-    PtrInt(@pleader^.HorizontalDirection.z),PtrInt(@pleader^.HorizontalDirection.z));
-  RegisterLeaderDoubleProperty(
-    'LeaderBlockOffsetX','Block offset X',MPCGeometry,
-    PtrInt(@pleader^.BlockOffset.x),PtrInt(@pleader^.BlockOffset.x));
-  RegisterLeaderDoubleProperty(
-    'LeaderBlockOffsetY','Block offset Y',MPCGeometry,
-    PtrInt(@pleader^.BlockOffset.y),PtrInt(@pleader^.BlockOffset.y));
-  RegisterLeaderDoubleProperty(
-    'LeaderBlockOffsetZ','Block offset Z',MPCGeometry,
-    PtrInt(@pleader^.BlockOffset.z),PtrInt(@pleader^.BlockOffset.z));
-  RegisterLeaderDoubleProperty(
-    'LeaderAnnotationOffsetX','Annotation offset X',MPCGeometry,
-    PtrInt(@pleader^.AnnotationOffset.x),PtrInt(@pleader^.AnnotationOffset.x));
-  RegisterLeaderDoubleProperty(
-    'LeaderAnnotationOffsetY','Annotation offset Y',MPCGeometry,
-    PtrInt(@pleader^.AnnotationOffset.y),PtrInt(@pleader^.AnnotationOffset.y));
-  RegisterLeaderDoubleProperty(
-    'LeaderAnnotationOffsetZ','Annotation offset Z',MPCGeometry,
-    PtrInt(@pleader^.AnnotationOffset.z),PtrInt(@pleader^.AnnotationOffset.z));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderNormalX','Normal X',MPCGeometry,
+  //  PtrInt(@pleader^.NormalVector.x),PtrInt(@pleader^.NormalVector.x));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderNormalY','Normal Y',MPCGeometry,
+  //  PtrInt(@pleader^.NormalVector.y),PtrInt(@pleader^.NormalVector.y));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderNormalZ','Normal Z',MPCGeometry,
+  //  PtrInt(@pleader^.NormalVector.z),PtrInt(@pleader^.NormalVector.z));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderHorizontalDirectionX','Horizontal direction X',MPCGeometry,
+  //  PtrInt(@pleader^.HorizontalDirection.x),PtrInt(@pleader^.HorizontalDirection.x));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderHorizontalDirectionY','Horizontal direction Y',MPCGeometry,
+  //  PtrInt(@pleader^.HorizontalDirection.y),PtrInt(@pleader^.HorizontalDirection.y));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderHorizontalDirectionZ','Horizontal direction Z',MPCGeometry,
+  //  PtrInt(@pleader^.HorizontalDirection.z),PtrInt(@pleader^.HorizontalDirection.z));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderBlockOffsetX','Block offset X',MPCGeometry,
+  //  PtrInt(@pleader^.BlockOffset.x),PtrInt(@pleader^.BlockOffset.x));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderBlockOffsetY','Block offset Y',MPCGeometry,
+  //  PtrInt(@pleader^.BlockOffset.y),PtrInt(@pleader^.BlockOffset.y));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderBlockOffsetZ','Block offset Z',MPCGeometry,
+  //  PtrInt(@pleader^.BlockOffset.z),PtrInt(@pleader^.BlockOffset.z));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderAnnotationOffsetX','Annotation offset X',MPCGeometry,
+  //  PtrInt(@pleader^.AnnotationOffset.x),PtrInt(@pleader^.AnnotationOffset.x));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderAnnotationOffsetY','Annotation offset Y',MPCGeometry,
+  //  PtrInt(@pleader^.AnnotationOffset.y),PtrInt(@pleader^.AnnotationOffset.y));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderAnnotationOffsetZ','Annotation offset Z',MPCGeometry,
+  //  PtrInt(@pleader^.AnnotationOffset.z),PtrInt(@pleader^.AnnotationOffset.z));
 
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'LeaderDimStyle','Style',sysunit^.TypeName2PTD('PGDBDimStyleObjInsp'),
@@ -536,27 +536,27 @@ begin
     TEntIterateProcsData.Create(
       nil,@LeaderDimLineColorEntIterateProc,@GeneralFromVarEntChangeProc));
 
-  RegisterLeaderIntegerProperty(
-    'LeaderAnnotationType','Annotation type',
-    PtrInt(@pleader^.AnnotationType),PtrInt(@pleader^.AnnotationType));
-  RegisterLeaderIntegerProperty(
-    'LeaderHookLineDirectionFlag','Hook line direction flag',
-    PtrInt(@pleader^.HookLineDirectionFlag),
-    PtrInt(@pleader^.HookLineDirectionFlag));
-  RegisterLeaderIntegerProperty(
-    'LeaderHookLineFlag','Hook line flag',
-    PtrInt(@pleader^.HookLineFlag),PtrInt(@pleader^.HookLineFlag));
-  RegisterLeaderDoubleProperty(
-    'LeaderTextHeight','Text height',MPCMisc,
-    PtrInt(@pleader^.TextHeight),PtrInt(@pleader^.TextHeight));
-  RegisterLeaderDoubleProperty(
-    'LeaderTextWidth','Text width',MPCMisc,
-    PtrInt(@pleader^.TextWidth),PtrInt(@pleader^.TextWidth));
-  MultiPropertiesManager.RegisterPhysMultiproperty(
-    'LeaderAnnotationHandle','Annotation handle',sysunit^.TypeName2PTD('QWord'),
-    MPCMisc,GDBLeaderID,nil,
-    PtrInt(@pleader^.AnnotationHandle),PtrInt(@pleader^.AnnotationHandle),
-    OneVarDataMIPD,OneVarRODataEIPD);
+  //RegisterLeaderIntegerProperty(
+  //  'LeaderAnnotationType','Annotation type',
+  //  PtrInt(@pleader^.AnnotationType),PtrInt(@pleader^.AnnotationType));
+  //RegisterLeaderIntegerProperty(
+  //  'LeaderHookLineDirectionFlag','Hook line direction flag',
+  //  PtrInt(@pleader^.HookLineDirectionFlag),
+  //  PtrInt(@pleader^.HookLineDirectionFlag));
+  //RegisterLeaderIntegerProperty(
+  //  'LeaderHookLineFlag','Hook line flag',
+  //  PtrInt(@pleader^.HookLineFlag),PtrInt(@pleader^.HookLineFlag));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderTextHeight','Text height',MPCMisc,
+  //  PtrInt(@pleader^.TextHeight),PtrInt(@pleader^.TextHeight));
+  //RegisterLeaderDoubleProperty(
+  //  'LeaderTextWidth','Text width',MPCMisc,
+  //  PtrInt(@pleader^.TextWidth),PtrInt(@pleader^.TextWidth));
+  //MultiPropertiesManager.RegisterPhysMultiproperty(
+  //  'LeaderAnnotationHandle','Annotation handle',sysunit^.TypeName2PTD('QWord'),
+  //  MPCMisc,GDBLeaderID,nil,
+  //  PtrInt(@pleader^.AnnotationHandle),PtrInt(@pleader^.AnnotationHandle),
+  //  OneVarDataMIPD,OneVarRODataEIPD);
 
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),
