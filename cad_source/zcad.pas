@@ -262,6 +262,7 @@ uses
   uzccommand_scale2,  //Created using AI
   uzccommand_align,   //Created using AI
   uzccommand_createblockinsert,   //Created using AI
+  uzccommand_leader,   //Created using AI
 
   {$IFDEF ELECTROTECH}
   uzcExtdrReport,uzccommand_ReportsUpdate,uzcCommand_FlattenZEnts,
