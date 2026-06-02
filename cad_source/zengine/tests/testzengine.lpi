@@ -44,7 +44,7 @@
         </Mode0>
       </Modes>
     </RunParams>
-    <RequiredPackages Count="5">
+    <RequiredPackages Count="11">
       <Item1>
         <PackageName Value="zunits"/>
       </Item1>
@@ -58,8 +58,26 @@
         <PackageName Value="zcontainers"/>
       </Item4>
       <Item5>
-        <PackageName Value="FCL"/>
+        <PackageName Value="zbaseutils"/>
       </Item5>
+      <Item6>
+        <PackageName Value="fpdwg"/>
+      </Item6>
+      <Item7>
+        <PackageName Value="zobjectinspector"/>
+      </Item7>
+      <Item8>
+        <PackageName Value="zscriptbase"/>
+      </Item8>
+      <Item9>
+        <PackageName Value="zbaseutilsgui"/>
+      </Item9>
+      <Item10>
+        <PackageName Value="LCL"/>
+      </Item10>
+      <Item11>
+        <PackageName Value="FCL"/>
+      </Item11>
     </RequiredPackages>
     <Units Count="1">
       <Unit0>
@@ -75,10 +93,11 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);.."/>
-      <OtherUnitFiles Value="..;../containers;../fileformats;../fileformats/dwg;../../components/fpdwg;../misc;../core/entities;../core;../zgl/common;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
+      <OtherUnitFiles Value="..;../containers;../fileformats;../fileformats/dwg;../fileformats/dwg/entities;../../zcad;../misc;../core/entities;../core;../core/utils;../zgl/common;../zgl/gdi;../zgl/canvas;../zgl/opengl;../zgl/openglmodern;../zgl/dx;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>
+        <SyntaxMode Value="Delphi"/>
         <AllowLabel Value="False"/>
       </SyntaxOptions>
     </Parsing>
