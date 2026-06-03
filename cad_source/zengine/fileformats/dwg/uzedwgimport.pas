@@ -1147,6 +1147,8 @@ begin
       ApplyDWGCurrentLineType(ZContext);
       ApplyDWGCurrentTextStyle(ZContext);
       ApplyDWGCurrentDimStyle(ZContext);
+      ZContext.PDrawing^.DimStyleTable.ResolveLineTypes(
+        ZContext.PDrawing^.LTypeStyleTable);
       ApplyDWGHeaderEntityProps(ZContext);
       ApplyDWGViewState(ZContext);
     finally
