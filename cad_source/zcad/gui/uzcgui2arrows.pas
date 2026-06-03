@@ -40,17 +40,91 @@ type
                                 TArrowStyle enum order (Index=Ord(style)). }
                               class procedure ArrowBoxDrawItem(Control: TWinControl; Index: Integer; ARect: TRect;
                                                                State: StdCtrls.TOwnerDrawState);
+                              { Fills cb with localized arrow style names in
+                                TArrowStyle enum order. }
+                              class procedure FillItems(cb: TComboBox; ItemObject: TObject);
                               { Turns cb into an owner-draw arrow picker. }
                               class procedure Setup(cb: TComboBox);
                             end;
 
 { Draws the arrow preview followed by the text s inside ARect. }
 procedure drawArrow(canvas: TCanvas; ARect: TRect; const s: string; arrowStyle: TArrowStyle);
+function GetArrowStyleName(arrowStyle: TArrowStyle): string;
 
 implementation
 
 const
   COneSixth = 1.0/6.0;
+
+resourcestring
+  rsArrowStyleClosedFilled = 'Closed filled';
+  rsArrowStyleClosedBlank = 'Closed blank';
+  rsArrowStyleClosed = 'Closed';
+  rsArrowStyleDot = 'Dot';
+  rsArrowStyleArchitecturalTick = 'Architectural tick';
+  rsArrowStyleOblique = 'Oblique';
+  rsArrowStyleOpen = 'Open';
+  rsArrowStyleOriginIndicator = 'Origin indicator';
+  rsArrowStyleOriginIndicator2 = 'Origin indicator 2';
+  rsArrowStyleRightAngle = 'Right angle';
+  rsArrowStyleOpen30 = 'Open 30';
+  rsArrowStyleDotSmall = 'Dot small';
+  rsArrowStyleDotBlank = 'Dot blank';
+  rsArrowStyleDotSmallBlank = 'Dot small blank';
+  rsArrowStyleBox = 'Box';
+  rsArrowStyleBoxFilled = 'Box filled';
+  rsArrowStyleDatumTriangle = 'Datum triangle';
+  rsArrowStyleDatumTriangleFilled = 'Datum triangle filled';
+  rsArrowStyleIntegral = 'Integral';
+  rsArrowStyleUserArrow = 'User Arrow...';
+
+function GetArrowStyleName(arrowStyle: TArrowStyle): string;
+begin
+  case arrowStyle of
+    TSClosedFilled:
+      Result := rsArrowStyleClosedFilled;
+    TSClosedBlank:
+      Result := rsArrowStyleClosedBlank;
+    TSClosed:
+      Result := rsArrowStyleClosed;
+    TSDot:
+      Result := rsArrowStyleDot;
+    TSArchitecturalTick:
+      Result := rsArrowStyleArchitecturalTick;
+    TSOblique:
+      Result := rsArrowStyleOblique;
+    TSOpen:
+      Result := rsArrowStyleOpen;
+    TSOriginIndicator:
+      Result := rsArrowStyleOriginIndicator;
+    TSOriginIndicator2:
+      Result := rsArrowStyleOriginIndicator2;
+    TSRightAngle:
+      Result := rsArrowStyleRightAngle;
+    TSOpen30:
+      Result := rsArrowStyleOpen30;
+    TSDotSmall:
+      Result := rsArrowStyleDotSmall;
+    TSDotBlank:
+      Result := rsArrowStyleDotBlank;
+    TSDotSmallBlank:
+      Result := rsArrowStyleDotSmallBlank;
+    TSBox:
+      Result := rsArrowStyleBox;
+    TSBoxFilled:
+      Result := rsArrowStyleBoxFilled;
+    TSDatumTriangle:
+      Result := rsArrowStyleDatumTriangle;
+    TSDatumtTriangleFilled:
+      Result := rsArrowStyleDatumTriangleFilled;
+    TSIntegral:
+      Result := rsArrowStyleIntegral;
+    TSUserDef:
+      Result := rsArrowStyleUserArrow;
+  else
+    Result := '';
+  end;
+end;
 
 { Draws a mini representation of arrowStyle in the left part of ARect and
   the text s in the remaining space. The block coordinate system has the
@@ -248,6 +322,15 @@ begin
   s := TComboBox(Control).Items[Index];
   ARect.Left := ARect.Left + 2;
   drawArrow(TComboBox(Control).Canvas, ARect, s, TArrowStyle(Index));
+end;
+
+class procedure TSupportArrowStyleCombo.FillItems(cb: TComboBox; ItemObject: TObject);
+var
+  arrowStyle: TArrowStyle;
+begin
+  cb.Clear;
+  for arrowStyle := Low(TArrowStyle) to High(TArrowStyle) do
+    cb.AddItem(GetArrowStyleName(arrowStyle), ItemObject);
 end;
 
 class procedure TSupportArrowStyleCombo.Setup(cb: TComboBox);
