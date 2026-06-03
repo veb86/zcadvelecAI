@@ -486,7 +486,7 @@ begin
     MPUM_AtLeastOneEntMatched);
 
   MultiPropertiesManager.RegisterPhysMultiproperty(
-    'LeaderArrowStyle','Arrow style',sysunit^.TypeName2PTD('TEnumData'),
+    'LeaderArrowStyle','Arrow style',sysunit^.TypeName2PTD('TArrowStyleData'),
     MPCMisc,GDBLeaderID,nil,0,0,
     TMainIterateProcsData.Create(@GetLeaderArrowStyleData,@FreeTEnumData),
     TEntIterateProcsData.Create(
