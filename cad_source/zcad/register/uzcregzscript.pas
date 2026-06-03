@@ -642,6 +642,9 @@ begin
   utd:=ptsu^.RegisterType(TypeInfo(PTEnumDataWithOtherPointers),
                                   'PTEnumDataWithOtherPointers');
 
+  utd:=ptsu^.RegisterType(TypeInfo(TArrowStyleData),'TArrowStyleData');
+  if utd<>nil then
+    registerRecTypeDescriptorOverrider(utd,@GDBEnumDataDescriptorObj);
 
   utd:=ptsu^.RegisterType(TypeInfo(TMSPrimitiveDetector),
                                   'TMSPrimitiveDetector');

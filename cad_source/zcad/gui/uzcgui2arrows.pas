@@ -32,9 +32,12 @@ interface
 
 uses
   Classes, Controls, StdCtrls, Graphics, Types,
-  usupportgui, uzestylesdim;
+  usupportgui, uzestylesdim, uzsbVarmanDef;
 
 type
+  PTArrowStyle=^TArrowStyle;
+  TArrowStyleData=type TEnumData;
+
   TSupportArrowStyleCombo = class
                               { OnDrawItem handler. Items must be in
                                 TArrowStyle enum order (Index=Ord(style)). }
