@@ -10,7 +10,6 @@ var
   GroupArrows: TGroupBox;
   GroupCenter: TGroupBox;
   Preview: TPaintBox;
-  ArrowIdx: TArrowStyle;
   RowTop: Integer;
   LeftCol, RightCol: Integer;
 begin
@@ -41,24 +40,24 @@ begin
   CreateLabel(GroupArrows, 'Первая:', LeftCol, RowTop);
   FComboArrow1 := CreateCombo(
     GroupArrows, LeftCol, RowTop + 18, 250);
-  for ArrowIdx := Low(TArrowStyle) to High(TArrowStyle) do
-    FComboArrow1.Items.Add(CArrowNames[ArrowIdx]);
+  TSupportArrowStyleCombo.FillItems(FComboArrow1, Self);
+  TSupportArrowStyleCombo.Setup(FComboArrow1);
   RowTop := RowTop + CControlStep + 18;
 
   { Вторая стрелка }
   CreateLabel(GroupArrows, 'Вторая:', LeftCol, RowTop);
   FComboArrow2 := CreateCombo(
     GroupArrows, LeftCol, RowTop + 18, 250);
-  for ArrowIdx := Low(TArrowStyle) to High(TArrowStyle) do
-    FComboArrow2.Items.Add(CArrowNames[ArrowIdx]);
+  TSupportArrowStyleCombo.FillItems(FComboArrow2, Self);
+  TSupportArrowStyleCombo.Setup(FComboArrow2);
   RowTop := RowTop + CControlStep + 18;
 
   { Выноска }
   CreateLabel(GroupArrows, 'Выноска:', LeftCol, RowTop);
   FComboArrowLeader := CreateCombo(
     GroupArrows, LeftCol, RowTop + 18, 250);
-  for ArrowIdx := Low(TArrowStyle) to High(TArrowStyle) do
-    FComboArrowLeader.Items.Add(CArrowNames[ArrowIdx]);
+  TSupportArrowStyleCombo.FillItems(FComboArrowLeader, Self);
+  TSupportArrowStyleCombo.Setup(FComboArrowLeader);
   RowTop := RowTop + CControlStep + 18;
 
   { Размер стрелки }

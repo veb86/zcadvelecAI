@@ -28,31 +28,8 @@ uses
   uzeentleader,uzeconsts,uzegeometrytypes,uzestylesdim,
   uzsbVarmanDef,Varman,uzbUnits,gzctnrVectorTypes,
   UGDBPoint3DArray,uzcLog,uzcdrawing,uzcdrawings,uzetypes,uzepalette,
-  zUndoCmdChgTypes,zUndoCmdChgVariable,uzctnrVectorStrings;
-
-const
-  // Названия стрелок выноски (соответствуют порядку TArrowStyle)
-  CArrowLeaderNames:array[TArrowStyle] of string=(
-    'Заполненная замкнутая',
-    'Замкнутая незаполненная',
-    'Замкнутая',
-    'Точка',
-    'Архитектурная засечка',
-    'Наклонная',
-    'Открытая',
-    'Указатель начала координат',
-    'Указатель начала координат 2',
-    'Прямой угол',
-    'Открытая 30',
-    'Точка малая',
-    'Точка незаполненная',
-    'Точка малая незаполненная',
-    'Прямоугольник',
-    'Прямоугольник заполненный',
-    'Треугольник базы',
-    'Треугольник базы заполненный',
-    'Интеграл',
-    'Пользовательский');
+  zUndoCmdChgTypes,zUndoCmdChgVariable,uzctnrVectorStrings,
+  uzcgui2arrows;
 
 var
   ptdInteger:PUserTypeDescriptor=nil;
@@ -330,7 +307,7 @@ begin
   if PVD<>nil then begin
     t:=PVD^.data.Addr.Instance;
     for ias:=low(TArrowStyle) to high(TArrowStyle) do
-      t^.Enums.PushBackData(CArrowLeaderNames[ias]);
+      t^.Enums.PushBackData(GetArrowStyleName(ias));
     t^.Selected:=0;
   end;
 end;

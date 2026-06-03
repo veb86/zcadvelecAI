@@ -39,6 +39,7 @@ uses
   uzedrawingsimple,
   uzcsysvars,
   uzcinterface,
+  uzcgui2arrows,
   uzepalette,
   uzestylestexts,
   uzeTypes,
@@ -77,30 +78,6 @@ const
   { Текст заглушки предпросмотра }
   CPreviewStubText = 'Предпросмотр недоступен';
   CPreviewFontSize = 10;
-
-  { Отображаемые имена стилей стрелок }
-  CArrowNames: array[TArrowStyle] of string = (
-    'Заполненная замкнутая',
-    'Замкнутая незаполненная',
-    'Замкнутая',
-    'Точка',
-    'Архитектурная засечка',
-    'Наклонная',
-    'Открытая',
-    'Указатель начала координат',
-    'Указатель начала координат 2',
-    'Прямой угол',
-    'Открытая 30',
-    'Точка малая',
-    'Точка незаполненная',
-    'Точка малая незаполненная',
-    'Прямоугольник',
-    'Прямоугольник заполненный',
-    'Треугольник базы',
-    'Треугольник базы заполненный',
-    'Интеграл',
-    'Пользовательский'
-  );
 
   { Отображаемые имена вертикального размещения текста }
   CTextVertNames: array[TDimTextVertPosition] of string = (
@@ -609,7 +586,6 @@ end;
 { Загружает значения из структуры стиля в элементы управления }
 procedure TDimStyleEditDialog.LoadFromStyle;
 var
-  ArrowIdx: TArrowStyle;
   VertIdx: TDimTextVertPosition;
   UnitIdx: TDimUnit;
   SepIdx: TDimDSep;

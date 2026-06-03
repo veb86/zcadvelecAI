@@ -336,19 +336,12 @@ begin
 end;
 
 procedure TDimStyleEditForm.ArrowsComboBoxCreate(Sender: TObject;var arrowsBox:TComboBox;arrowsIndex:TArrowStyle);
-var
-    i:integer;
-    D: PTypeData;
-    //i : integer;
-  begin
-    arrowsBox.Clear;
-    D := GetTypeData(TypeInfo(TArrowStyle));
-    for i := D^.MinValue to D^.MaxValue do
-      arrowsBox.AddItem(GetEnumName(TypeInfo(TArrowStyle), i),Sender);
-    arrowsBox.ItemIndex := Ord(arrowsIndex);
-    {Items are added in TArrowStyle enum order, so owner-draw can map each
-     item index directly to its arrow style and draw a mini preview.}
-    TSupportArrowStyleCombo.Setup(arrowsBox);
+begin
+  TSupportArrowStyleCombo.FillItems(arrowsBox, Sender);
+  arrowsBox.ItemIndex := Ord(arrowsIndex);
+  {Items are added in TArrowStyle enum order, so owner-draw can map each
+   item index directly to its arrow style and draw a mini preview.}
+  TSupportArrowStyleCombo.Setup(arrowsBox);
 end;
 
 
