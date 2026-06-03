@@ -32,7 +32,7 @@ interface
 
 uses
   Classes, Controls, StdCtrls, Graphics, Types,
-  usupportgui, uzestylesdim, uzsbVarmanDef;
+  usupportgui, uzestylesdim, uzsbVarmanDef, uzctnrVectorStrings;
 
 type
   PTArrowStyle=^TArrowStyle;

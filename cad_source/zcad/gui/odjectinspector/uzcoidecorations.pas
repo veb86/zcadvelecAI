@@ -25,7 +25,7 @@ uses
   SysUtils,Graphics,LCLType,Themes,Forms,ColorBox,
   uzOIUI,uzOIDecorations,uzccommandsabstract,uzepalette,
   uzOIEditors,UEnumDescriptor,uzObjectInspector,uzcinfoform,
-  uzestyleslinetypes,uzctreenode,uzcfsnapeditor,
+  uzestyleslinetypes,uzestylesdim,uzctreenode,uzcfsnapeditor,
   uzeconsts,UGDBNamedObjectsArray,uzctnrvectorstrings,
   uzsbVarmanDef,Varman,uzcfcolors,uzestyleslayers,uzeTypes,uzcflineweights,
   usupportgui,uzccommandsmanager,
