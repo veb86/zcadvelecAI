@@ -1,0 +1,109 @@
+object SpellCheckerForm: TSpellCheckerForm
+  Left = 300
+  Height = 600
+  Top = 150
+  Width = 900
+  Caption = 'Проверка орфографии'
+  ClientHeight = 600
+  ClientWidth = 900
+  Position = poScreenCenter
+  LCLVersion = '2.0.12.0'
+  object MainToolBar: TToolBar
+    Left = 0
+    Height = 36
+    Top = 0
+    Width = 900
+    Align = alTop
+    AutoSize = True
+    ButtonHeight = 32
+    ButtonWidth = 32
+    ShowCaptions = True
+    TabOrder = 0
+    object RefreshButton: TToolButton
+      Left = 1
+      Top = 2
+      Action = RefreshAction
+      Caption = 'Обновить'
+      ImageIndex = 0
+    end
+  end
+  object SentenceLabel: TLabel
+    Left = 0
+    Height = 80
+    Top = 520
+    Width = 900
+    Align = alBottom
+    Alignment = taCenter
+    AutoSize = False
+    Caption = 'Выберите слово из списка ошибок'
+    Layout = tlCenter
+    WordWrap = True
+  end
+  object MainPanel: TPanel
+    Left = 0
+    Height = 484
+    Top = 36
+    Width = 900
+    Align = alClient
+    BevelOuter = bvNone
+    ClientHeight = 484
+    ClientWidth = 900
+    TabOrder = 1
+    object ErrorsTree: TVirtualStringTree
+      Left = 0
+      Height = 484
+      Top = 0
+      Width = 450
+      Align = alLeft
+      DefaultNodeHeight = 20
+      Header.AutoSizeIndex = 0
+      Header.Columns = <
+        item
+          Position = 0
+          Width = 350
+          Text = 'Слово с ошибкой'
+        end
+        item
+          Position = 1
+          Width = 100
+          Text = 'Количество'
+        end>
+      Header.Options = [hoAutoResize, hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
+      TabOrder = 0
+      TreeOptions.MiscOptions = [toFullRepaintOnResize, toInitOnSave, toToggleOnDblClick, toWheelPanning]
+      TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toThemeAware, toUseBlendedImages]
+      TreeOptions.SelectionOptions = [toFullRowSelect]
+      OnFocusChanged = ErrorsTreeFocusChanged
+      OnGetText = ErrorsTreeGetText
+    end
+    object SuggestionsTree: TVirtualStringTree
+      Left = 450
+      Height = 484
+      Top = 0
+      Width = 450
+      Align = alClient
+      DefaultNodeHeight = 20
+      Header.AutoSizeIndex = 0
+      Header.Columns = <
+        item
+          Position = 0
+          Width = 446
+          Text = 'Варианты исправления'
+        end>
+      Header.Options = [hoAutoResize, hoColumnResize, hoDrag, hoVisible]
+      TabOrder = 1
+      TreeOptions.MiscOptions = [toFullRepaintOnResize, toInitOnSave, toToggleOnDblClick, toWheelPanning]
+      TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toThemeAware, toUseBlendedImages]
+      TreeOptions.SelectionOptions = [toFullRowSelect]
+      OnGetText = SuggestionsTreeGetText
+    end
+  end
+  object ActionList: TActionList
+    Left = 40
+    Top = 80
+    object RefreshAction: TAction
+      Caption = 'Обновить'
+      OnExecute = RefreshActionExecute
+    end
+  end
+end
