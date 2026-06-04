@@ -49,7 +49,7 @@ object SpellCheckerForm: TSpellCheckerForm
     ClientHeight = 484
     ClientWidth = 900
     TabOrder = 1
-    object ErrorsTree: TVirtualStringTree
+    object ErrorsTree: TLazVirtualStringTree
       Left = 0
       Height = 484
       Top = 0
@@ -76,7 +76,7 @@ object SpellCheckerForm: TSpellCheckerForm
       OnFocusChanged = ErrorsTreeFocusChanged
       OnGetText = ErrorsTreeGetText
     end
-    object SuggestionsTree: TVirtualStringTree
+    object SuggestionsTree: TLazVirtualStringTree
       Left = 450
       Height = 484
       Top = 0

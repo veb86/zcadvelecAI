@@ -24,7 +24,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, ComCtrls, ActnList,
-  StdCtrls, ExtCtrls, VirtualTrees,
+  StdCtrls, ExtCtrls, laz.VirtualTrees,
   uzclog,
   uzvfspelldata, uzvfspelllogic;
 
@@ -44,13 +44,13 @@ type
   { TSpellCheckerForm }
   TSpellCheckerForm = class(TForm)
     ActionList: TActionList;
-    ErrorsTree: TVirtualStringTree;
+    ErrorsTree: TLazVirtualStringTree;
     MainPanel: TPanel;
     MainToolBar: TToolBar;
     RefreshAction: TAction;
     RefreshButton: TToolButton;
     SentenceLabel: TLabel;
-    SuggestionsTree: TVirtualStringTree;
+    SuggestionsTree: TLazVirtualStringTree;
 
     procedure ErrorsTreeFocusChanged(Sender: TBaseVirtualTree;
       Node: PVirtualNode; Column: TColumnIndex);

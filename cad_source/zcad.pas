@@ -339,6 +339,7 @@ uses
   {$ENDIF}
   //contolelschema_main,
   uzcregconnectmanager,
+  uzcregspellchecker,
   {$ENDIF}
 
   //uzccomexample2,
@@ -472,5 +473,4 @@ begin
   end;
   programlog.logoutstr('<<<<<<<<<<<<<<<Start units finalization',0,LM_Debug);
 end.
-
 

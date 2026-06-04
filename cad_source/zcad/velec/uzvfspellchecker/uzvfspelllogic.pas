@@ -23,7 +23,7 @@ unit uzvfspelllogic;
 interface
 
 uses
-  Classes, SysUtils,
+  Classes, SysUtils, Math,
   uzcSpeller, uSpeller, uzclog,
   uzvfspelldata;
 
