@@ -43,7 +43,7 @@
 - Кнопка "Обновить" - повторный поиск ошибок в текущем тексте
 - Связь с TActionList для управления действиями
 
-**Левая панель (TVirtualStringTree):**
+**Левая панель (TLazVirtualStringTree):**
 - Отображает список всех найденных ошибок
 - Колонки:
   - Слово с ошибкой
@@ -53,7 +53,7 @@
   - Обновляется правая панель с вариантами исправления
   - Обновляется нижняя панель с предложением
 
-**Правая панель (TVirtualStringTree):**
+**Правая панель (TLazVirtualStringTree):**
 - Отображает варианты исправления для выбранной ошибки
 - Колонки:
   - Вариант исправления
@@ -73,7 +73,7 @@
 |  [TToolBar]                                       |
 |  [Обновить]                                       |
 +--------------------------------------------------+
-|  TVirtualStringTree  |  TVirtualStringTree       |
+|  TLazVirtualStringTree |  TLazVirtualStringTree   |
 |  (Ошибки)            |  (Варианты исправления)   |
 |                      |                            |
 |  - слово1            |  - вариант1                |
@@ -165,8 +165,8 @@ uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs,
   ComCtrls, ActnList, StdCtrls,
 
-  // VirtualTreeView
-  VirtualTrees,
+  // Lazarus VirtualTreeView
+  laz.VirtualTrees,
 
   // ZCAD модули
   uzcSpeller,     // Глобальный SpellChecker
