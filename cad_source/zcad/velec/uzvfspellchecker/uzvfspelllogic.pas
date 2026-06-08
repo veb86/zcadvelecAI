@@ -31,6 +31,11 @@ uses
 function FindAllErrors(const AText: string;
   ErrorManager: TSpellErrorManager): integer;
 
+// Добавить ошибки без очистки текущего списка
+function AppendErrorsFromText(const AText: string;
+  ErrorManager: TSpellErrorManager; ABasePosition: integer = 0;
+  AEntityPtr: Pointer = nil): integer;
+
 // Получить варианты исправления для слова
 function GetSuggestions(const AWord: string): TStringList;
 
@@ -45,10 +50,20 @@ const
   // Максимальная длина предложения для извлечения
   MAX_SENTENCE_LENGTH = 500;
 
-// Проверить, является ли символ разделителем предложения
+// Проверить разделитель предложения
 function IsSentenceDelimiter(AChar: char): boolean;
 begin
-  Result := Pos(AChar, SENTENCE_DELIMITERS) > 0;
+  Result := (Pos(AChar, SENTENCE_DELIMITERS) > 0) or
+    (AChar in [#10, #13]);
+end;
+
+// Проверить, является ли символ разделителем слова
+function IsWordDelimiter(AChar: char): boolean;
+begin
+  Result := (AChar <= ' ') or IsSentenceDelimiter(AChar) or
+    (AChar in [',', ';', ':', '(', ')', '[', ']', '{', '}', '<', '>',
+      '"', '''', '/', '\', '|', '+', '=', '*', '`', '~', '@', '#',
+      '$', '%', '^', '&']);
 end;
 
 // Извлечь одно слово из текста начиная с позиции
@@ -66,13 +81,11 @@ begin
     Exit;
 
   // Найти начало слова
-  while (WordStart > 1) and (AText[WordStart - 1] <> ' ') and
-        not IsSentenceDelimiter(AText[WordStart - 1]) do
+  while (WordStart > 1) and not IsWordDelimiter(AText[WordStart - 1]) do
     Dec(WordStart);
 
   // Найти конец слова
-  while (WordEnd <= textLen) and (AText[WordEnd] <> ' ') and
-        not IsSentenceDelimiter(AText[WordEnd]) do
+  while (WordEnd <= textLen) and not IsWordDelimiter(AText[WordEnd]) do
     Inc(WordEnd);
 
   Result := Copy(AText, WordStart, WordEnd - WordStart);
@@ -132,23 +145,22 @@ begin
 end;
 
 // Разбить текст на слова и проверить каждое
-function FindAllErrors(const AText: string;
-  ErrorManager: TSpellErrorManager): integer;
+function AppendErrorsFromText(const AText: string;
+  ErrorManager: TSpellErrorManager; ABasePosition: integer;
+  AEntityPtr: Pointer): integer;
 var
   currentPos: integer;
   wordStart, wordEnd: integer;
   currentWord: string;
   errorDetails: string;
   sentence: string;
-  errorPtr: PSpellError;
   textLen: integer;
+  absolutePosition: integer;
 begin
   Result := 0;
-  ErrorManager.ClearErrors;
-
   textLen := Length(AText);
   if textLen = 0 then begin
-    programlog.LogOutFormatStr('FindAllErrors: empty text', [], LM_Info);
+    programlog.LogOutFormatStr('AppendErrorsFromText: empty text', [], LM_Info);
     Exit;
   end;
 
@@ -156,10 +168,8 @@ begin
 
   // Проход по всему тексту
   while currentPos <= textLen do begin
-    // Пропустить пробелы и разделители
-    while (currentPos <= textLen) and
-          ((AText[currentPos] = ' ') or
-           IsSentenceDelimiter(AText[currentPos])) do
+    // Пропустить разделители
+    while (currentPos <= textLen) and IsWordDelimiter(AText[currentPos]) do
       Inc(currentPos);
 
     if currentPos > textLen then
@@ -171,25 +181,29 @@ begin
     if Length(currentWord) > 0 then begin
       // Проверить слово на ошибки
       if CheckWord(currentWord, errorDetails) then begin
-        // Проверить, не встречалось ли это слово ранее
-        errorPtr := ErrorManager.FindErrorByWord(currentWord);
-
-        if Assigned(errorPtr) then begin
-          // Увеличить счетчик вхождений
-          ErrorManager.IncrementOccurrence(errorPtr);
-        end else begin
-          // Добавить новую ошибку
-          sentence := ExtractSentence(AText, currentPos);
-          ErrorManager.AddError(currentWord, sentence, currentPos);
-          Inc(Result);
-        end;
+        sentence := ExtractSentence(AText, currentPos);
+        absolutePosition := ABasePosition + currentPos;
+        ErrorManager.AddError(currentWord, sentence, absolutePosition,
+          AEntityPtr, currentPos);
+        Inc(Result);
       end;
     end;
 
     currentPos := wordEnd;
   end;
 
-  programlog.LogOutFormatStr('FindAllErrors: found %d unique errors',
+  programlog.LogOutFormatStr('AppendErrorsFromText: found %d errors',
+    [Result], LM_Info);
+end;
+
+// Найти все ошибки в тексте
+function FindAllErrors(const AText: string;
+  ErrorManager: TSpellErrorManager): integer;
+begin
+  ErrorManager.ClearErrors;
+  Result := AppendErrorsFromText(AText, ErrorManager);
+
+  programlog.LogOutFormatStr('FindAllErrors: found %d errors',
     [Result], LM_Info);
 end;
 
