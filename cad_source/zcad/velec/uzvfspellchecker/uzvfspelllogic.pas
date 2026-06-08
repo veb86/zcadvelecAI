@@ -207,10 +207,37 @@ begin
     [Result], LM_Info);
 end;
 
+// Извлечь список вариантов из строки вида "слово[вариант1, вариант2]"
+function ExtractSuggestionListText(const ADetails: string): string;
+var
+  openBracketPos: integer;
+  closeBracketPos: integer;
+begin
+  Result := Trim(ADetails);
+  openBracketPos := Pos('[', ADetails);
+
+  if openBracketPos = 0 then
+    Exit;
+
+  closeBracketPos := Length(ADetails);
+  while (closeBracketPos > openBracketPos) and
+        (ADetails[closeBracketPos] <> ']') do
+    Dec(closeBracketPos);
+
+  if closeBracketPos <= openBracketPos then begin
+    Result := '';
+    Exit;
+  end;
+
+  Result := Trim(Copy(ADetails, openBracketPos + 1,
+    closeBracketPos - openBracketPos - 1));
+end;
+
 // Получить варианты исправления
 function GetSuggestions(const AWord: string): TStringList;
 var
   errorDetails: string;
+  suggestionDetails: string;
   i: integer;
 begin
   Result := TStringList.Create;
@@ -223,17 +250,19 @@ begin
     TSpeller.CSpellOptDetail);
 
   // Разобрать варианты из errorDetails
-  // Примечание: формат зависит от реализации TSpeller
-  // Здесь используется простой парсинг
-  if Length(errorDetails) > 0 then begin
+  suggestionDetails := ExtractSuggestionListText(errorDetails);
+  if Length(suggestionDetails) > 0 then begin
     // Попытка извлечь варианты, разделенные запятой
     Result.Delimiter := ',';
     Result.StrictDelimiter := True;
-    Result.DelimitedText := errorDetails;
+    Result.DelimitedText := suggestionDetails;
 
     // Очистить варианты от лишних пробелов
-    for i := 0 to Result.Count - 1 do
+    for i := Result.Count - 1 downto 0 do begin
       Result[i] := Trim(Result[i]);
+      if Length(Result[i]) = 0 then
+        Result.Delete(i);
+    end;
   end;
 
   programlog.LogOutFormatStr('GetSuggestions: word="%s", count=%d',
