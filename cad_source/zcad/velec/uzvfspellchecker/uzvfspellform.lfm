@@ -76,6 +76,7 @@ object SpellCheckerForm: TSpellCheckerForm
       TreeOptions.MiscOptions = [toFullRepaintOnResize, toInitOnSave, toToggleOnDblClick, toWheelPanning]
       TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toThemeAware, toUseBlendedImages]
       TreeOptions.SelectionOptions = [toFullRowSelect]
+      OnDblClick = ErrorsTreeDblClick
       OnFocusChanged = ErrorsTreeFocusChanged
       OnGetText = ErrorsTreeGetText
     end
