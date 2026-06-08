@@ -56,6 +56,7 @@ type
 
     procedure ErrorsTreeFocusChanged(Sender: TBaseVirtualTree;
       Node: PVirtualNode; Column: TColumnIndex);
+    procedure ErrorsTreeDblClick(Sender: TObject);
     procedure ErrorsTreeGetText(Sender: TBaseVirtualTree; Node: PVirtualNode;
       Column: TColumnIndex; TextType: TVSTTextType; var CellText: string);
     procedure ApplySuggestionActionExecute(Sender: TObject);
@@ -121,7 +122,7 @@ implementation
 uses
   gzctnrVectorTypes,
   uzcdrawing, uzcdrawings, uzcutils, uzeconsts, uzeentity, uzeenttext,
-  uzetypes, uzgldrawcontext, zUndoCmdSaveEntityState;
+  uzetypes, uzgldrawcontext, uzvfspellzoom, zUndoCmdSaveEntityState;
 
 {$R *.lfm}
 
@@ -677,6 +678,19 @@ begin
   programlog.LogOutFormatStr(
     'TSpellCheckerForm.ErrorsTreeFocusChanged: selected "%s"',
     [errorPtr^.ErrorWord], LM_Info);
+end;
+
+// Обработчик двойного щелчка по ошибке
+procedure TSpellCheckerForm.ErrorsTreeDblClick(Sender: TObject);
+begin
+  if ZoomToSpellError(GetFocusedError) then
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.ErrorsTreeDblClick: zoomed focused error',
+      [], LM_Info)
+  else
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.ErrorsTreeDblClick: no drawable error selected',
+      [], LM_Info);
 end;
 
 // Обработчик действия "Применить"
