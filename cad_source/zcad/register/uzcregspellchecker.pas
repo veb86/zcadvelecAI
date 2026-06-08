@@ -24,9 +24,26 @@ uses
 
 implementation
 
-procedure uzvfspellcheckerSetupProc({%H-}Form: TControl);
+uses
+  uzclog;
+
+procedure uzvfspellcheckerSetupProc(Form: TControl);
 begin
-  // Reserved for future spellchecker form setup.
+  programlog.LogOutFormatStr('uzvfspellcheckerSetupProc: setup started',
+    [], LM_Info);
+
+  if Form = nil then begin
+    programlog.LogOutFormatStr('uzvfspellcheckerSetupProc: nil form',
+      [], LM_Info);
+    Exit;
+  end;
+
+  if Form is TSpellCheckerForm then
+    TSpellCheckerForm(Form).CheckCurrentDrawing
+  else
+    programlog.LogOutFormatStr(
+      'uzvfspellcheckerSetupProc: unexpected form class "%s"',
+      [Form.ClassName], LM_Info);
 end;
 
 initialization
