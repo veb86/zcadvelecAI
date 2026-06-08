@@ -23,7 +23,7 @@ unit uzvfspellzoom;
 interface
 
 uses
-  uzvfspelldata, uzegeometrytypes;
+  uzvfspelldata,gzctnrVectorTypes, uzegeometrytypes;
 
 function TryGetSpellErrorWordVolume(ErrorPtr: PSpellError;
   out Volume: TBoundingBox): boolean;
@@ -118,7 +118,7 @@ begin
       symbolLength := 1;
 
     if symbol <> 1 then
-      Result := Result + font^.GetOrReplaceSymbolInfo(symbol).NextSymX;
+      Result := Result + font^.GetOrReplaceSymbolInfo(symbol)^.NextSymX;
 
     Inc(i, symbolLength);
   end;
