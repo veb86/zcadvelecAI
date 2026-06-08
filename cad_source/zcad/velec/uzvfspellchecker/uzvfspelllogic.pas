@@ -117,7 +117,7 @@ end;
 function CheckWord(const AWord: string; var ErrorDetails: string): boolean;
 var
   spellOpts: TSpeller.TSpellOpts;
-  spellResult: TSpeller.TSpellResult;
+  spellResult: TSpeller.TLangHandle;
 begin
   Result := False;
 

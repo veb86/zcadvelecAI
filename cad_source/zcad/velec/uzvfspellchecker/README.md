@@ -91,7 +91,7 @@
 - **SpellChecker** (из uzcSpeller.pas) - глобальный объект проверки орфографии
 - **TSpeller** (из uSpeller.pas) - класс для работы с Hunspell
 - **Методы TSpeller:**
-  - SpellTextSimple(Text: string; var Details: string; Opts: TSpellOpts): TSpellResult
+  - SpellTextSimple(Text: string; var Details: string; Opts: TSpellOpts): TLangHandle
   - SpellWord(Word: string): boolean
   - GetSuggestions(Word: string): TStringList (предполагаемый метод)
 
