@@ -44,6 +44,8 @@ type
   { TSpellCheckerForm }
   TSpellCheckerForm = class(TForm)
     ActionList: TActionList;
+    ApplySuggestionAction: TAction;
+    ApplySuggestionButton: TToolButton;
     ErrorsTree: TLazVirtualStringTree;
     MainPanel: TPanel;
     MainToolBar: TToolBar;
@@ -56,7 +58,10 @@ type
       Node: PVirtualNode; Column: TColumnIndex);
     procedure ErrorsTreeGetText(Sender: TBaseVirtualTree; Node: PVirtualNode;
       Column: TColumnIndex; TextType: TVSTTextType; var CellText: string);
+    procedure ApplySuggestionActionExecute(Sender: TObject);
+    procedure MainPanelResize(Sender: TObject);
     procedure RefreshActionExecute(Sender: TObject);
+    procedure SuggestionsTreeDblClick(Sender: TObject);
     procedure SuggestionsTreeGetText(Sender: TBaseVirtualTree;
       Node: PVirtualNode; Column: TColumnIndex; TextType: TVSTTextType;
       var CellText: string);
@@ -78,6 +83,25 @@ type
     // Очистить результаты и показать сообщение
     procedure ResetResultsWithMessage(const MessageText: string);
 
+    // Получить выбранную ошибку
+    function GetFocusedError: PSpellError;
+
+    // Получить выбранный вариант исправления
+    function GetFocusedSuggestion: string;
+
+    // Сформировать сообщение с ошибкой и контекстом
+    function FormatSentenceMessage(ErrorPtr: PSpellError): string;
+
+    // Применить исправление к тексту или примитиву
+    function ReplaceCurrentErrorWithSuggestion(ErrorPtr: PSpellError;
+      const SuggestionText: string): boolean;
+
+    // Применить выбранный вариант исправления
+    procedure ApplySelectedSuggestion;
+
+    // Обновить высоту списка ошибок в пропорции 70/30
+    procedure UpdateMainPanelLayout;
+
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -96,26 +120,31 @@ implementation
 
 uses
   gzctnrVectorTypes,
-  uzcdrawings, uzeconsts, uzeentity, uzeenttext;
+  uzcdrawing, uzcdrawings, uzcutils, uzeconsts, uzeentity, uzeenttext,
+  uzetypes, uzgldrawcontext, zUndoCmdSaveEntityState;
 
 {$R *.lfm}
 
 const
-  // Разделитель текста между разными примитивами чертежа
+  // Разделитель между текстами примитивов чертежа
   DRAWING_TEXT_SEPARATOR = #10;
+  // Высота списка ошибок в процентах от рабочей области
+  ERROR_TREE_HEIGHT_PERCENT = 70;
+  // Минимальная высота дерева при изменении размера
+  MIN_TREE_HEIGHT = 80;
   // Индекс колонки с текстом ошибки
   COL_ERROR_WORD = 0;
-  // Индекс колонки с количеством вхождений
-  COL_ERROR_COUNT = 1;
   // Индекс колонки с вариантом исправления
   COL_SUGGESTION = 0;
+  // Имя команды для undo
+  SPELLCHECKER_UNDO_COMMAND = 'SpellCheckerCorrection';
   // Сообщение по умолчанию для метки предложения
   STR_SELECT_ERROR = 'Выберите слово из списка ошибок';
   // Сообщение при отсутствии активного чертежа
   STR_NO_DRAWING = 'Нет активного чертежа';
   // Сообщение при отсутствии текстовых примитивов
   STR_NO_TEXT_ENTITIES = 'В чертеже нет примитивов TEXT/MTEXT';
-  // Сообщение при отсутствии текста в найденных примитивах
+  // Сообщение при пустом тексте в найденных примитивах
   STR_NO_TEXT_CONTENT = 'В текстовых примитивах нет текста';
 
 function IsSpellTextEntity(EntityPtr: PGDBObjEntity): boolean;
@@ -147,6 +176,32 @@ begin
   end;
 end;
 
+procedure SetSpellTextContent(EntityPtr: PGDBObjEntity;
+  const EntityText: string);
+begin
+  if not IsSpellTextEntity(EntityPtr) then
+    Exit;
+
+  PGDBObjText(EntityPtr)^.Template := TDXFEntsInternalStringType(EntityText);
+end;
+
+function ReplaceTextAtPosition(const AText: string; APosition: integer;
+  const AOldWord, ANewWord: string; out ANewText: string): boolean;
+begin
+  Result := False;
+  ANewText := AText;
+
+  if (APosition < 1) or (APosition > Length(AText)) then
+    Exit;
+
+  if Copy(AText, APosition, Length(AOldWord)) <> AOldWord then
+    Exit;
+
+  ANewText := Copy(AText, 1, APosition - 1) + ANewWord +
+    Copy(AText, APosition + Length(AOldWord), MaxInt);
+  Result := True;
+end;
+
 procedure AppendDrawingText(var DrawingText: string; const EntityText: string);
 begin
   if EntityText = '' then
@@ -158,17 +213,19 @@ begin
   DrawingText := DrawingText + EntityText;
 end;
 
-function LoadCurrentDrawingText(out TextEntityCount, SkippedTextCount,
-  EntityCount: integer): string;
+function LoadCurrentDrawingText(ErrorManager: TSpellErrorManager;
+  out TextEntityCount, SkippedTextCount, EntityCount, ErrorCount: integer): string;
 var
   EntityPtr: PGDBObjEntity;
   Iterator: itrec;
   EntityText: string;
+  BasePosition: integer;
 begin
   Result := '';
   TextEntityCount := 0;
   SkippedTextCount := 0;
   EntityCount := 0;
+  ErrorCount := 0;
 
   EntityPtr := drawings.GetCurrentDWG^.GetCurrentROOT^.ObjArray.beginiterate(
     Iterator);
@@ -177,12 +234,18 @@ begin
       Inc(EntityCount);
       if IsSpellTextEntity(EntityPtr) then begin
         Inc(TextEntityCount);
-        EntityText := Trim(GetSpellTextContent(EntityPtr));
+        EntityText := GetSpellTextContent(EntityPtr);
 
-        if EntityText = '' then
+        if Trim(EntityText) = '' then
           Inc(SkippedTextCount)
-        else
+        else begin
+          BasePosition := Length(Result);
+          if Result <> '' then
+            BasePosition := BasePosition + Length(DRAWING_TEXT_SEPARATOR);
           AppendDrawingText(Result, EntityText);
+          ErrorCount := ErrorCount + AppendErrorsFromText(EntityText,
+            ErrorManager, BasePosition, EntityPtr);
+        end;
 
         programlog.LogOutFormatStr(
           'TSpellCheckerForm.LoadCurrentDrawingText: text entity type=%d, ' +
@@ -211,6 +274,7 @@ begin
 
   // Настроить дерево вариантов
   SuggestionsTree.NodeDataSize := SizeOf(TSuggestionNodeData);
+  UpdateMainPanelLayout;
 
   programlog.LogOutFormatStr('TSpellCheckerForm.Create: initialized',
     [], LM_Info);
@@ -257,6 +321,7 @@ var
   TextEntityCount: integer;
   SkippedTextCount: integer;
   EntityCount: integer;
+  ErrorCount: integer;
 begin
   programlog.LogOutFormatStr('TSpellCheckerForm.CheckCurrentDrawing: start',
     [], LM_Info);
@@ -276,8 +341,9 @@ begin
     Exit;
   end;
 
-  DrawingText := LoadCurrentDrawingText(TextEntityCount, SkippedTextCount,
-    EntityCount);
+  FErrorManager.ClearErrors;
+  DrawingText := LoadCurrentDrawingText(FErrorManager, TextEntityCount,
+    SkippedTextCount, EntityCount, ErrorCount);
 
   programlog.LogOutFormatStr(
     'TSpellCheckerForm.CheckCurrentDrawing: scanned entities=%d, ' +
@@ -295,7 +361,14 @@ begin
     Exit;
   end;
 
-  CheckText(DrawingText);
+  FCurrentText := DrawingText;
+  UpdateErrorsTree;
+  ClearSuggestionsTree;
+  SentenceLabel.Caption := STR_SELECT_ERROR;
+
+  programlog.LogOutFormatStr(
+    'TSpellCheckerForm.CheckCurrentDrawing: found %d errors',
+    [ErrorCount], LM_Info);
 end;
 
 // Обновить дерево ошибок
@@ -382,6 +455,154 @@ begin
     LM_Info);
 end;
 
+// Получить выбранную ошибку
+function TSpellCheckerForm.GetFocusedError: PSpellError;
+var
+  node: PVirtualNode;
+  nodeData: PErrorNodeData;
+begin
+  Result := nil;
+  node := ErrorsTree.FocusedNode;
+
+  if not Assigned(node) then
+    Exit;
+
+  nodeData := ErrorsTree.GetNodeData(node);
+  if not Assigned(nodeData) then
+    Exit;
+
+  Result := FErrorManager.GetError(nodeData^.ErrorIndex);
+end;
+
+// Получить выбранный вариант исправления
+function TSpellCheckerForm.GetFocusedSuggestion: string;
+var
+  node: PVirtualNode;
+  nodeData: PSuggestionNodeData;
+begin
+  Result := '';
+  node := SuggestionsTree.FocusedNode;
+
+  if not Assigned(node) then
+    Exit;
+
+  nodeData := SuggestionsTree.GetNodeData(node);
+  if Assigned(nodeData) then
+    Result := nodeData^.SuggestionText;
+end;
+
+// Сформировать сообщение с ошибкой и контекстом
+function TSpellCheckerForm.FormatSentenceMessage(ErrorPtr: PSpellError): string;
+begin
+  Result := STR_SELECT_ERROR;
+  if Assigned(ErrorPtr) then
+    Result := Format('Ошибка: "%s". Контекст: %s',
+      [ErrorPtr^.ErrorWord, ErrorPtr^.Sentence]);
+end;
+
+// Обновить высоту списка ошибок в пропорции 70/30
+procedure TSpellCheckerForm.UpdateMainPanelLayout;
+var
+  newHeight: integer;
+begin
+  if MainPanel.ClientHeight <= 0 then
+    Exit;
+
+  newHeight := (MainPanel.ClientHeight * ERROR_TREE_HEIGHT_PERCENT) div 100;
+  if newHeight < MIN_TREE_HEIGHT then
+    newHeight := MIN_TREE_HEIGHT;
+  if newHeight > MainPanel.ClientHeight - MIN_TREE_HEIGHT then
+    newHeight := MainPanel.ClientHeight - MIN_TREE_HEIGHT;
+
+  if newHeight > 0 then
+    ErrorsTree.Height := newHeight;
+end;
+
+// Применить исправление к текстовому примитиву
+function ApplySuggestionToEntity(EntityPtr: PGDBObjEntity;
+  ErrorPtr: PSpellError; const SuggestionText: string): boolean;
+var
+  drawing: PTZCADDrawing;
+  drawContext: TDrawContext;
+  entityText: string;
+  newEntityText: string;
+begin
+  Result := False;
+
+  if not Assigned(EntityPtr) or not Assigned(ErrorPtr) then
+    Exit;
+  if drawings.GetCurrentDWG = nil then
+    Exit;
+
+  entityText := GetSpellTextContent(EntityPtr);
+  if not ReplaceTextAtPosition(entityText, ErrorPtr^.EntityPosition,
+    ErrorPtr^.ErrorWord, SuggestionText, newEntityText) then
+    Exit;
+
+  drawing := PTZCADDrawing(drawings.GetCurrentDWG);
+  zcStartUndoCommand(drawing^, SPELLCHECKER_UNDO_COMMAND, False);
+  try
+    TUndoCmdSaveEntityState.CreateAndPush(EntityPtr, drawing^.UndoStack);
+    SetSpellTextContent(EntityPtr, newEntityText);
+
+    drawContext := drawing^.CreateDrawingRC;
+    EntityPtr^.FormatEntity(drawing^, drawContext);
+    EntityPtr^.YouChanged(drawing^);
+    zcEndUndoCommand(drawing^);
+  except
+    zcEndUndoCommand(drawing^);
+    raise;
+  end;
+
+  zcRedrawCurrentDrawing;
+  Result := True;
+end;
+
+// Применить исправление к тексту или примитиву
+function TSpellCheckerForm.ReplaceCurrentErrorWithSuggestion(
+  ErrorPtr: PSpellError; const SuggestionText: string): boolean;
+var
+  newText: string;
+begin
+  Result := False;
+
+  if not Assigned(ErrorPtr) or (SuggestionText = '') then
+    Exit;
+
+  if Assigned(ErrorPtr^.EntityPtr) and
+     ApplySuggestionToEntity(PGDBObjEntity(ErrorPtr^.EntityPtr),
+       ErrorPtr, SuggestionText) then begin
+    CheckCurrentDrawing;
+    Result := True;
+    Exit;
+  end;
+
+  if ReplaceTextAtPosition(FCurrentText, ErrorPtr^.Position,
+    ErrorPtr^.ErrorWord, SuggestionText, newText) then begin
+    CheckText(newText);
+    Result := True;
+  end;
+end;
+
+// Применить выбранный вариант исправления
+procedure TSpellCheckerForm.ApplySelectedSuggestion;
+var
+  errorPtr: PSpellError;
+  suggestionText: string;
+begin
+  errorPtr := GetFocusedError;
+  suggestionText := GetFocusedSuggestion;
+
+  if ReplaceCurrentErrorWithSuggestion(errorPtr, suggestionText) then
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.ApplySelectedSuggestion: applied "%s"',
+      [suggestionText], LM_Info)
+  else
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.ApplySelectedSuggestion: nothing applied',
+      [], LM_Info);
+end;
+
 // Получить текст для ячейки дерева ошибок
 procedure TSpellCheckerForm.ErrorsTreeGetText(Sender: TBaseVirtualTree;
   Node: PVirtualNode; Column: TColumnIndex; TextType: TVSTTextType;
@@ -404,8 +625,6 @@ begin
   case Column of
     COL_ERROR_WORD:
       CellText := errorPtr^.ErrorWord;
-    COL_ERROR_COUNT:
-      CellText := IntToStr(errorPtr^.OccurrenceCount);
   end;
 end;
 
@@ -453,11 +672,23 @@ begin
   UpdateSuggestionsTree(errorPtr);
 
   // Обновить метку с предложением
-  SentenceLabel.Caption := errorPtr^.Sentence;
+  SentenceLabel.Caption := FormatSentenceMessage(errorPtr);
 
   programlog.LogOutFormatStr(
     'TSpellCheckerForm.ErrorsTreeFocusChanged: selected "%s"',
     [errorPtr^.ErrorWord], LM_Info);
+end;
+
+// Обработчик действия "Применить"
+procedure TSpellCheckerForm.ApplySuggestionActionExecute(Sender: TObject);
+begin
+  ApplySelectedSuggestion;
+end;
+
+// Обработчик изменения размера рабочей области
+procedure TSpellCheckerForm.MainPanelResize(Sender: TObject);
+begin
+  UpdateMainPanelLayout;
 end;
 
 // Обработчик действия "Обновить"
@@ -467,6 +698,12 @@ begin
     'TSpellCheckerForm.RefreshActionExecute: refresh requested', [],
     LM_Info);
   CheckCurrentDrawing;
+end;
+
+// Обработчик двойного щелчка по варианту исправления
+procedure TSpellCheckerForm.SuggestionsTreeDblClick(Sender: TObject);
+begin
+  ApplySelectedSuggestion;
 end;
 
 end.

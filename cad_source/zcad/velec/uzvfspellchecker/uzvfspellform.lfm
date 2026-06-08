@@ -26,6 +26,13 @@ object SpellCheckerForm: TSpellCheckerForm
       Caption = 'Обновить'
       ImageIndex = 0
     end
+    object ApplySuggestionButton: TToolButton
+      Left = 83
+      Top = 2
+      Action = ApplySuggestionAction
+      Caption = 'Применить'
+      ImageIndex = 1
+    end
   end
   object SentenceLabel: TLabel
     Left = 0
@@ -49,24 +56,20 @@ object SpellCheckerForm: TSpellCheckerForm
     ClientHeight = 484
     ClientWidth = 900
     TabOrder = 1
+    OnResize = MainPanelResize
     object ErrorsTree: TLazVirtualStringTree
       Left = 0
-      Height = 484
+      Height = 339
       Top = 0
-      Width = 450
-      Align = alLeft
+      Width = 900
+      Align = alTop
       DefaultNodeHeight = 20
       Header.AutoSizeIndex = 0
       Header.Columns = <
         item
           Position = 0
-          Width = 350
+          Width = 896
           Text = 'Слово с ошибкой'
-        end
-        item
-          Position = 1
-          Width = 100
-          Text = 'Количество'
         end>
       Header.Options = [hoAutoResize, hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
       TabOrder = 0
@@ -77,17 +80,17 @@ object SpellCheckerForm: TSpellCheckerForm
       OnGetText = ErrorsTreeGetText
     end
     object SuggestionsTree: TLazVirtualStringTree
-      Left = 450
-      Height = 484
-      Top = 0
-      Width = 450
+      Left = 0
+      Height = 145
+      Top = 339
+      Width = 900
       Align = alClient
       DefaultNodeHeight = 20
       Header.AutoSizeIndex = 0
       Header.Columns = <
         item
           Position = 0
-          Width = 446
+          Width = 896
           Text = 'Варианты исправления'
         end>
       Header.Options = [hoAutoResize, hoColumnResize, hoDrag, hoVisible]
@@ -95,6 +98,7 @@ object SpellCheckerForm: TSpellCheckerForm
       TreeOptions.MiscOptions = [toFullRepaintOnResize, toInitOnSave, toToggleOnDblClick, toWheelPanning]
       TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toThemeAware, toUseBlendedImages]
       TreeOptions.SelectionOptions = [toFullRowSelect]
+      OnDblClick = SuggestionsTreeDblClick
       OnGetText = SuggestionsTreeGetText
     end
   end
@@ -104,6 +108,10 @@ object SpellCheckerForm: TSpellCheckerForm
     object RefreshAction: TAction
       Caption = 'Обновить'
       OnExecute = RefreshActionExecute
+    end
+    object ApplySuggestionAction: TAction
+      Caption = 'Применить'
+      OnExecute = ApplySuggestionActionExecute
     end
   end
 end
