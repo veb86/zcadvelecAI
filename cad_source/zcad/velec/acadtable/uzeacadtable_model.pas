@@ -51,6 +51,33 @@ type
   // Тип указателя на GDBObjAcadTable
   PGDBObjAcadTable = ^GDBObjAcadTable;
 
+  // Данные одной части (фрагмента) разделённой по ширине таблицы.
+  // AutoCAD сохраняет разбитую таблицу в DXF как несколько ACAD_TABLE
+  // сущностей (ROUNDTRIP_2008). Первая часть — это сам объект, остальные
+  // хранятся здесь как данные и отображаются в одном составном объекте
+  // со смещением относительно точки вставки главной части (issue #1300).
+  TAcadTablePart = record
+    InsertPoint: TzePoint3d;
+    RowCount: Integer;
+    ColCount: Integer;
+    RowHeights: TZctnrVectorDouble;
+    ColWidths: TZctnrVectorDouble;
+    CellTexts: TTableTextArray;
+    TableFlags: Integer;
+    TableStyle: TTableStyle;
+    Rows: TTableRowArray;
+    Cols: TTableColumnArray;
+    Cells: TTableCellArray;
+    Merges: TMergeRangeArray;
+    BreakEnabled: Boolean;
+    BreakDirection: TAcadTableBreakDirection;
+    BreakRepeatTopLabels: Boolean;
+    BreakRepeatBottomLabels: Boolean;
+    BreakManualPosition: Boolean;
+    BreakManualHeight: Boolean;
+    BreakSpacing: Double;
+  end;
+
   // Сущность ACAD_TABLE — таблица AutoCAD из формата DXF.
   // Хранит геометрию таблицы и текстовое содержимое ячеек.
   // При форматировании строит визуальное представление из линий и текста.
@@ -67,7 +94,7 @@ type
     // Ширины столбцов (один элемент на столбец)
     FColWidths: TZctnrVectorDouble;
     // Тексты ячеек: индекс = строка * FColCount + столбец
-    FCellTexts: array of String;
+    FCellTexts: TTableTextArray;
     // Признак того, что геометрия уже была построена
     FGeometryBuilt: Boolean;
     // Хэндл DXF-стиля таблицы (group code 342)
@@ -85,10 +112,15 @@ type
     // Стиль таблицы
     FTableStyle: TTableStyle;
     // Строки, столбцы, ячейки и объединения
-    FRows: array of TTableRow;
-    FCols: array of TTableColumn;
-    FCells: array of array of TTableCell;
-    FMerges: array of TMergeRange;
+    FRows: TTableRowArray;
+    FCols: TTableColumnArray;
+    FCells: TTableCellArray;
+    FMerges: TMergeRangeArray;
+    // Части (фрагменты) разделённой по ширине таблицы, объединённые
+    // в один объект AcadTable. Главная часть — это сам объект, а
+    // продолжения хранятся здесь как данные и отображаются со смещением
+    // относительно точки вставки главной части (issue #1300).
+    FContinuationParts: array of TAcadTablePart;
 
     // Обёртки для делегирования к модулю layout
     function GetRowHeightLocal(RowIndex: Integer): Double;
@@ -97,13 +129,31 @@ type
     function GetTotalWidth: Double;
     function GetCellTextLocal(
       RowIdx, ColIdx: Integer): String;
-    // Строит визуальное представление в ConstObjArray
+    // Строит визуальное представление текущих полей таблицы в
+    // ConstObjArray со смещением (ABaseX, ABaseY) в OCS.
+    procedure RenderCurrentTable(
+      var ADrawing: TDrawingDef; var ADC: TDrawContext;
+      ABaseX, ABaseY: Double);
+    // Строит визуальное представление всей таблицы (главная часть и
+    // все продолжения) в ConstObjArray
     procedure BuildVisualRepresentation(
       var ADrawing: TDrawingDef; var ADC: TDrawContext);
+    // Обмен данными рендеринга между Self и частью-продолжением
+    procedure SwapTableData(var APart: TAcadTablePart);
+    // Глубокое копирование данных другой таблицы в часть-продолжение
+    procedure CaptureTableDataToPart(
+      var ASource: GDBObjAcadTable; var APart: TAcadTablePart);
+    // Освобождение ресурсов части-продолжения
+    procedure ClearPart(var APart: TAcadTablePart);
+    // Глубокое копирование части-продолжения (для Clone)
+    procedure CopyTablePart(
+      const ASource: TAcadTablePart; var ADest: TAcadTablePart);
     // Вычисляет bounding box таблицы
     procedure getoutbound(var DC: TDrawContext);
     // Возвращает имя стиля таблицы
     function GetTableStyleName: String;
+    // Возвращает количество частей-продолжений
+    function GetContinuationPartCount: Integer;
 
   public
     constructor initnul(
@@ -131,6 +181,11 @@ type
     function GetObjType: TObjID; virtual;
     function GetObjTypeName: String; virtual;
     function DXFDelayedBuildGeometry: Boolean; virtual;
+    // Поглощает продолжение разделённой таблицы как ещё одну часть
+    // этого же объекта AcadTable (issue #1300). Возвращает True, если
+    // AOther поглощён и вызывающая сторона может его освободить.
+    function TryMergeContinuation(
+      AOther: PGDBObjEntity): Boolean; virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -151,6 +206,9 @@ type
     property BreakManualHeight: Boolean
       read FBreakManualHeight;
     property BreakSpacing: Double read FBreakSpacing;
+    // Количество поглощённых частей-продолжений (issue #1300).
+    // Для неразделённой таблицы равно 0.
+    property ContinuationPartCount: Integer read GetContinuationPartCount;
   end;
 
 function AllocAcadTable: Pointer;
@@ -232,9 +290,12 @@ begin
   System.SetLength(FCols, 0);
   System.SetLength(FCells, 0, 0);
   System.SetLength(FMerges, 0);
+  System.SetLength(FContinuationParts, 0);
 end;
 
 destructor GDBObjAcadTable.done;
+var
+  PartIdx: Integer;
 begin
   FRowHeights.done;
   FColWidths.done;
@@ -243,6 +304,9 @@ begin
   System.SetLength(FCols, 0);
   System.SetLength(FCells, 0, 0);
   System.SetLength(FMerges, 0);
+  for PartIdx := 0 to High(FContinuationParts) do
+    ClearPart(FContinuationParts[PartIdx]);
+  System.SetLength(FContinuationParts, 0);
   inherited done;
 end;
 
@@ -462,8 +526,9 @@ end;
 
 // --- Построение визуального представления ---
 
-procedure GDBObjAcadTable.BuildVisualRepresentation(
-  var ADrawing: TDrawingDef; var ADC: TDrawContext);
+procedure GDBObjAcadTable.RenderCurrentTable(
+  var ADrawing: TDrawingDef; var ADC: TDrawContext;
+  ABaseX, ABaseY: Double);
 var
   RowIdx, ColIdx, SegmentIdx, SegmentCount: Integer;
   CurrentY, CurrentX: Double;
@@ -480,15 +545,14 @@ var
   MergeRootPt: TPoint;
 begin
   programlog.LogOutFormatStr(
-    'AcadTable: model: BuildVisualRepresentation START ' +
-    'rows=%d cols=%d',
-    [FRowCount, FColCount], LM_Info);
-  ConstObjArray.Free;
+    'AcadTable: model: RenderCurrentTable START ' +
+    'rows=%d cols=%d baseX=%g baseY=%g',
+    [FRowCount, FColCount, ABaseX, ABaseY], LM_Info);
 
   if (FRowCount <= 0) or (FColCount <= 0) then
   begin
     programlog.LogOutStr(
-      'AcadTable: model: BuildVisualRepresentation — ' +
+      'AcadTable: model: RenderCurrentTable — ' +
       'таблица пуста', LM_Info);
     Exit;
   end;
@@ -508,8 +572,8 @@ begin
   // --- Горизонтальные линии ---
   for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
-    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX + ABaseX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY + ABaseY;
     CurrentY := 0;
     for RowIdx := RenderSegments[SegmentIdx].StartRow to
                   RenderSegments[SegmentIdx].EndRow + 1 do
@@ -572,8 +636,8 @@ begin
   LineCount := 0;
   for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
-    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX + ABaseX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY + ABaseY;
     SegmentHeight := 0;
     for RowIdx := RenderSegments[SegmentIdx].StartRow to
                   RenderSegments[SegmentIdx].EndRow do
@@ -640,8 +704,8 @@ begin
   TextCount := 0;
   for SegmentIdx := 0 to SegmentCount - 1 do
   begin
-    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX;
-    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY;
+    SegmentOffsetX := RenderSegments[SegmentIdx].OffsetX + ABaseX;
+    SegmentOffsetY := RenderSegments[SegmentIdx].OffsetY + ABaseY;
     CurrentY := 0;
     for RowIdx := RenderSegments[SegmentIdx].StartRow to
                   RenderSegments[SegmentIdx].EndRow do
@@ -789,10 +853,235 @@ begin
   end;
 
   programlog.LogOutFormatStr(
-    'AcadTable: model: BuildVisualRepresentation OK ' +
+    'AcadTable: model: RenderCurrentTable OK ' +
     'rows=%d cols=%d texts=%d TotalObj=%d',
     [FRowCount, FColCount, TextCount,
      ConstObjArray.Count], LM_Info);
+end;
+
+// Обмен данными рендеринга между Self и частью-продолжением.
+// TZctnrVectorDouble и динамические массивы обмениваются целиком
+// (3-сторонний обмен), что переносит владение буферами без копирования.
+procedure GDBObjAcadTable.SwapTableData(var APart: TAcadTablePart);
+var
+  TmpVec: TZctnrVectorDouble;
+  TmpInt: Integer;
+  TmpStyle: TTableStyle;
+  TmpFlags: Integer;
+  TmpBreakEnabled, TmpRepeatTop, TmpRepeatBottom: Boolean;
+  TmpManualPos, TmpManualHeight: Boolean;
+  TmpDir: TAcadTableBreakDirection;
+  TmpSpacing: Double;
+  TmpTexts: TTableTextArray;
+  TmpRows: TTableRowArray;
+  TmpCols: TTableColumnArray;
+  TmpCells: TTableCellArray;
+  TmpMerges: TMergeRangeArray;
+begin
+  TmpInt := FRowCount; FRowCount := APart.RowCount; APart.RowCount := TmpInt;
+  TmpInt := FColCount; FColCount := APart.ColCount; APart.ColCount := TmpInt;
+
+  TmpVec := FRowHeights; FRowHeights := APart.RowHeights; APart.RowHeights := TmpVec;
+  TmpVec := FColWidths;  FColWidths := APart.ColWidths;   APart.ColWidths := TmpVec;
+
+  TmpTexts := FCellTexts; FCellTexts := APart.CellTexts; APart.CellTexts := TmpTexts;
+
+  TmpFlags := FTableFlags; FTableFlags := APart.TableFlags; APart.TableFlags := TmpFlags;
+  TmpStyle := FTableStyle; FTableStyle := APart.TableStyle; APart.TableStyle := TmpStyle;
+
+  TmpRows := FRows;   FRows := APart.Rows;     APart.Rows := TmpRows;
+  TmpCols := FCols;   FCols := APart.Cols;     APart.Cols := TmpCols;
+  TmpCells := FCells; FCells := APart.Cells;   APart.Cells := TmpCells;
+  TmpMerges := FMerges; FMerges := APart.Merges; APart.Merges := TmpMerges;
+
+  TmpBreakEnabled := FBreakEnabled; FBreakEnabled := APart.BreakEnabled; APart.BreakEnabled := TmpBreakEnabled;
+  TmpDir := FBreakDirection; FBreakDirection := APart.BreakDirection; APart.BreakDirection := TmpDir;
+  TmpRepeatTop := FBreakRepeatTopLabels; FBreakRepeatTopLabels := APart.BreakRepeatTopLabels; APart.BreakRepeatTopLabels := TmpRepeatTop;
+  TmpRepeatBottom := FBreakRepeatBottomLabels; FBreakRepeatBottomLabels := APart.BreakRepeatBottomLabels; APart.BreakRepeatBottomLabels := TmpRepeatBottom;
+  TmpManualPos := FBreakManualPosition; FBreakManualPosition := APart.BreakManualPosition; APart.BreakManualPosition := TmpManualPos;
+  TmpManualHeight := FBreakManualHeight; FBreakManualHeight := APart.BreakManualHeight; APart.BreakManualHeight := TmpManualHeight;
+  TmpSpacing := FBreakSpacing; FBreakSpacing := APart.BreakSpacing; APart.BreakSpacing := TmpSpacing;
+end;
+
+// Строит визуальное представление всей таблицы: сначала главная часть
+// в нулевом смещении, затем каждое продолжение со смещением, равным
+// разнице точек вставки (продолжение минус главная). Все части
+// помещаются в ConstObjArray одного объекта AcadTable (issue #1300).
+procedure GDBObjAcadTable.BuildVisualRepresentation(
+  var ADrawing: TDrawingDef; var ADC: TDrawContext);
+var
+  PartIdx: Integer;
+  BaseX, BaseY: Double;
+begin
+  programlog.LogOutFormatStr(
+    'AcadTable: model: BuildVisualRepresentation START ' +
+    'rows=%d cols=%d parts=%d',
+    [FRowCount, FColCount, Length(FContinuationParts)], LM_Info);
+  ConstObjArray.Free;
+
+  // Главная часть в собственной системе координат
+  RenderCurrentTable(ADrawing, ADC, 0, 0);
+
+  // Части-продолжения со смещением относительно главной точки вставки
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    BaseX := FContinuationParts[PartIdx].InsertPoint.x - FInsertPoint.x;
+    BaseY := FContinuationParts[PartIdx].InsertPoint.y - FInsertPoint.y;
+    SwapTableData(FContinuationParts[PartIdx]);
+    RenderCurrentTable(ADrawing, ADC, BaseX, BaseY);
+    SwapTableData(FContinuationParts[PartIdx]);
+  end;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: BuildVisualRepresentation OK ' +
+    'parts=%d TotalObj=%d',
+    [Length(FContinuationParts), ConstObjArray.Count], LM_Info);
+end;
+
+// Глубокое копирование данных рендеринга исходной таблицы в
+// часть-продолжение. Вызывается до освобождения исходного объекта,
+// поэтому все буферы копируются, а не разделяются.
+procedure GDBObjAcadTable.CaptureTableDataToPart(
+  var ASource: GDBObjAcadTable; var APart: TAcadTablePart);
+var
+  Idx, Idx2: Integer;
+begin
+  APart.InsertPoint := ASource.FInsertPoint;
+  APart.RowCount := ASource.FRowCount;
+  APart.ColCount := ASource.FColCount;
+  APart.TableFlags := ASource.FTableFlags;
+  APart.TableStyle := ASource.FTableStyle;
+  APart.BreakEnabled := ASource.FBreakEnabled;
+  APart.BreakDirection := ASource.FBreakDirection;
+  APart.BreakRepeatTopLabels := ASource.FBreakRepeatTopLabels;
+  APart.BreakRepeatBottomLabels := ASource.FBreakRepeatBottomLabels;
+  APart.BreakManualPosition := ASource.FBreakManualPosition;
+  APart.BreakManualHeight := ASource.FBreakManualHeight;
+  APart.BreakSpacing := ASource.FBreakSpacing;
+
+  APart.RowHeights.initnul;
+  for Idx := 0 to ASource.FRowHeights.Count - 1 do
+    APart.RowHeights.PushBackData(ASource.FRowHeights.parray^[Idx]);
+  APart.ColWidths.initnul;
+  for Idx := 0 to ASource.FColWidths.Count - 1 do
+    APart.ColWidths.PushBackData(ASource.FColWidths.parray^[Idx]);
+
+  System.SetLength(APart.CellTexts, Length(ASource.FCellTexts));
+  for Idx := 0 to High(ASource.FCellTexts) do
+    APart.CellTexts[Idx] := ASource.FCellTexts[Idx];
+
+  System.SetLength(APart.Rows, Length(ASource.FRows));
+  for Idx := 0 to High(ASource.FRows) do
+    APart.Rows[Idx] := ASource.FRows[Idx];
+
+  System.SetLength(APart.Cols, Length(ASource.FCols));
+  for Idx := 0 to High(ASource.FCols) do
+    APart.Cols[Idx] := ASource.FCols[Idx];
+
+  System.SetLength(APart.Cells, Length(ASource.FCells));
+  for Idx := 0 to High(ASource.FCells) do
+  begin
+    System.SetLength(APart.Cells[Idx], Length(ASource.FCells[Idx]));
+    for Idx2 := 0 to High(ASource.FCells[Idx]) do
+      APart.Cells[Idx][Idx2] := ASource.FCells[Idx][Idx2];
+  end;
+
+  System.SetLength(APart.Merges, Length(ASource.FMerges));
+  for Idx := 0 to High(ASource.FMerges) do
+    APart.Merges[Idx] := ASource.FMerges[Idx];
+end;
+
+// Глубокое копирование части-продолжения (часть -> часть), для Clone.
+procedure GDBObjAcadTable.CopyTablePart(
+  const ASource: TAcadTablePart; var ADest: TAcadTablePart);
+var
+  Idx, Idx2: Integer;
+begin
+  ADest.InsertPoint := ASource.InsertPoint;
+  ADest.RowCount := ASource.RowCount;
+  ADest.ColCount := ASource.ColCount;
+  ADest.TableFlags := ASource.TableFlags;
+  ADest.TableStyle := ASource.TableStyle;
+  ADest.BreakEnabled := ASource.BreakEnabled;
+  ADest.BreakDirection := ASource.BreakDirection;
+  ADest.BreakRepeatTopLabels := ASource.BreakRepeatTopLabels;
+  ADest.BreakRepeatBottomLabels := ASource.BreakRepeatBottomLabels;
+  ADest.BreakManualPosition := ASource.BreakManualPosition;
+  ADest.BreakManualHeight := ASource.BreakManualHeight;
+  ADest.BreakSpacing := ASource.BreakSpacing;
+
+  ADest.RowHeights.initnul;
+  for Idx := 0 to ASource.RowHeights.Count - 1 do
+    ADest.RowHeights.PushBackData(ASource.RowHeights.parray^[Idx]);
+  ADest.ColWidths.initnul;
+  for Idx := 0 to ASource.ColWidths.Count - 1 do
+    ADest.ColWidths.PushBackData(ASource.ColWidths.parray^[Idx]);
+
+  System.SetLength(ADest.CellTexts, Length(ASource.CellTexts));
+  for Idx := 0 to High(ASource.CellTexts) do
+    ADest.CellTexts[Idx] := ASource.CellTexts[Idx];
+
+  System.SetLength(ADest.Rows, Length(ASource.Rows));
+  for Idx := 0 to High(ASource.Rows) do
+    ADest.Rows[Idx] := ASource.Rows[Idx];
+
+  System.SetLength(ADest.Cols, Length(ASource.Cols));
+  for Idx := 0 to High(ASource.Cols) do
+    ADest.Cols[Idx] := ASource.Cols[Idx];
+
+  System.SetLength(ADest.Cells, Length(ASource.Cells));
+  for Idx := 0 to High(ASource.Cells) do
+  begin
+    System.SetLength(ADest.Cells[Idx], Length(ASource.Cells[Idx]));
+    for Idx2 := 0 to High(ASource.Cells[Idx]) do
+      ADest.Cells[Idx][Idx2] := ASource.Cells[Idx][Idx2];
+  end;
+
+  System.SetLength(ADest.Merges, Length(ASource.Merges));
+  for Idx := 0 to High(ASource.Merges) do
+    ADest.Merges[Idx] := ASource.Merges[Idx];
+end;
+
+// Освобождение ресурсов части-продолжения.
+procedure GDBObjAcadTable.ClearPart(var APart: TAcadTablePart);
+begin
+  APart.RowHeights.done;
+  APart.ColWidths.done;
+  System.SetLength(APart.CellTexts, 0);
+  System.SetLength(APart.Rows, 0);
+  System.SetLength(APart.Cols, 0);
+  System.SetLength(APart.Cells, 0, 0);
+  System.SetLength(APart.Merges, 0);
+end;
+
+function GDBObjAcadTable.GetContinuationPartCount: Integer;
+begin
+  Result := Length(FContinuationParts);
+end;
+
+// Поглощает продолжение разделённой таблицы как часть этого объекта.
+function GDBObjAcadTable.TryMergeContinuation(
+  AOther: PGDBObjEntity): Boolean;
+var
+  PartIdx: Integer;
+begin
+  Result := False;
+  if AOther = nil then Exit;
+  if AOther^.GetObjType <> GDBAcadTableID then Exit;
+
+  PartIdx := Length(FContinuationParts);
+  System.SetLength(FContinuationParts, PartIdx + 1);
+  CaptureTableDataToPart(
+    PGDBObjAcadTable(AOther)^, FContinuationParts[PartIdx]);
+  // Геометрию нужно перестроить с учётом новой части
+  FGeometryBuilt := False;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: TryMergeContinuation merged part %d ' +
+    '(rows=%d cols=%d)',
+    [PartIdx, FContinuationParts[PartIdx].RowCount,
+     FContinuationParts[PartIdx].ColCount], LM_Info);
+  Result := True;
 end;
 
 // Вычисляет bounding box
@@ -800,6 +1089,9 @@ procedure GDBObjAcadTable.getoutbound(var DC: TDrawContext);
 var
   TotalWidthVal, TotalHeightVal: Double;
   MinX, MinY, MaxX, MaxY: Double;
+  PartIdx: Integer;
+  BaseX, BaseY, PartW, PartH: Double;
+  PartMinX, PartMaxX, PartMinY, PartMaxY: Double;
 begin
   if (FRowCount <= 0) or (FColCount <= 0) then
   begin
@@ -818,6 +1110,28 @@ begin
   MaxX := Local.P_insert.x + TotalWidthVal;
   MinY := Local.P_insert.y - TotalHeightVal;
   MaxY := Local.P_insert.y;
+
+  // Расширяем bounding box на все части-продолжения (issue #1300)
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    BaseX := FContinuationParts[PartIdx].InsertPoint.x - FInsertPoint.x;
+    BaseY := FContinuationParts[PartIdx].InsertPoint.y - FInsertPoint.y;
+    PartW := uzeacadtable_layout.GetTotalWidth(
+      FContinuationParts[PartIdx].ColCount,
+      FContinuationParts[PartIdx].ColWidths);
+    PartH := uzeacadtable_layout.GetTotalHeight(
+      FContinuationParts[PartIdx].RowCount,
+      FContinuationParts[PartIdx].RowHeights);
+    PartMinX := Local.P_insert.x + BaseX;
+    PartMaxX := PartMinX + PartW;
+    PartMaxY := Local.P_insert.y + BaseY;
+    PartMinY := PartMaxY - PartH;
+    if PartMinX < MinX then MinX := PartMinX;
+    if PartMaxX > MaxX then MaxX := PartMaxX;
+    if PartMinY < MinY then MinY := PartMinY;
+    if PartMaxY > MaxY then MaxY := PartMaxY;
+  end;
+
   vp.BoundingBox.LBN :=
     CreateVertex(MinX, MinY, Local.P_insert.z);
   vp.BoundingBox.RTF :=
@@ -961,6 +1275,14 @@ begin
   System.SetLength(NewTable^.FMerges, Length(FMerges));
   for Idx := 0 to High(FMerges) do
     NewTable^.FMerges[Idx] := FMerges[Idx];
+
+  // Глубокое копирование частей-продолжений (issue #1300)
+  System.SetLength(NewTable^.FContinuationParts,
+    Length(FContinuationParts));
+  for Idx := 0 to High(FContinuationParts) do
+    NewTable^.CopyTablePart(
+      FContinuationParts[Idx],
+      NewTable^.FContinuationParts[Idx]);
 
   NewTable^.bp.ListPos.Owner := AOwn;
   Result := NewTable;
