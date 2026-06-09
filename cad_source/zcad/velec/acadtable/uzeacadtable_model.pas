@@ -264,10 +264,17 @@ begin
 
   GroupCode := ARdr.ParseInteger;
 
-  // Пропускаем до первого 100
+  // Обрабатываем общие коды (handle, слой, цвет и т.п.) до первого 100.
+  // Важно: handle сущности (группа 5) и владелец (330) идут ДО маркера
+  // подкласса AcDbEntity. Если их просто пропускать, PExtAttrib^.dwgHandle
+  // остаётся равным 0, и логика отбрасывания продолжений разделённой
+  // таблицы (TableContinuationHandles в uzeffdxf) не срабатывает — части
+  // одной таблицы загружаются как отдельные ACAD_TABLE (issue #1300).
   while (GroupCode <> 0) and (GroupCode <> 100) do
   begin
-    ARdr.SkipString;
+    if not LoadFromDXFObjShared(
+      ARdr, GroupCode, APtu, ADrawing, AContext) then
+      ARdr.SkipString;
     GroupCode := ARdr.ParseInteger;
   end;
 
