@@ -157,6 +157,89 @@ begin
   end;
 end;
 
+{ Нормализует DXF-handle к верхнему регистру без ведущих нулей.
+  Используется при сравнении handles из разных источников. }
+function NormalizeHandle(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := UpperCase(Trim(S));
+  I := 1;
+  while (I < Length(Result)) and (Result[I] = '0') do
+    Inc(I);
+  if I > 1 then
+    Result := Copy(Result, I, Length(Result) - I + 1);
+end;
+
+{ Сканирует секцию OBJECTS, находит XRECORD'ы с маркером
+  ACAD_ROUNDTRIP_2008_TABLE_ENTITY и собирает из них хэндлы
+  ACAD_TABLE-сущностей, являющихся продолжениями разделённой таблицы.
+
+  Структура в DXF (после группы 102 / ACAD_ROUNDTRIP_2008_TABLE_ENTITY
+  в XRECORD идут параметры разбиения, а затем хэндлы продолжений
+  в виде повторяющихся групп 330). Хэндлы собираются до первой
+  группы 361 (конец блока продолжений), либо до конца объекта (код 0).
+
+  Результат сохраняется в ContinuationHandles (TStringList, отсортированный,
+  без дубликатов, значения в верхнем регистре без ведущих нулей). }
+procedure ScanTableContinuationHandles(const RawObjectsSection: string;
+  ContinuationHandles: TStringList);
+var
+  Lines: TStringList;
+  I, Code: Integer;
+  Value: string;
+  InXRecord, InRoundtripBlock: Boolean;
+begin
+  if (RawObjectsSection = '') or (ContinuationHandles = nil) then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawObjectsSection;
+    InXRecord := False;
+    InRoundtripBlock := False;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if not TryStrToInt(Trim(Lines[I]), Code) then begin
+        Inc(I, 2);
+        Continue;
+      end;
+      Value := Trim(Lines[I + 1]);
+
+      if Code = 0 then
+      begin
+        InXRecord := (UpperCase(Value) = 'XRECORD');
+        InRoundtripBlock := False;
+      end
+      else if InXRecord then
+      begin
+        { Маркер начала блока продолжений: группа 102
+          со значением ACAD_ROUNDTRIP_2008_TABLE_ENTITY }
+        if (Code = 102) and
+           (UpperCase(Value) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY') then
+          InRoundtripBlock := True
+        else if InRoundtripBlock then
+        begin
+          if Code = 330 then
+            ContinuationHandles.Add(NormalizeHandle(Value))
+          else if Code = 361 then
+            InRoundtripBlock := False;
+        end;
+      end;
+
+      Inc(I, 2);
+    end;
+
+    if ContinuationHandles.Count > 0 then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanTableContinuationHandles: найдено %d handle(s) ACAD_TABLE-продолжений',
+        [ContinuationHandles.Count], LM_Info);
+  finally
+    Lines.Free;
+  end;
+end;
+
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
   byt: Byte;
@@ -427,6 +510,30 @@ begin
         PGDBObjEntity(pobj)^.vp.LineType:=bylayerlt;
       if assigned(PGDBObjEntity(pobj)^.EntExtensions) then
         PGDBObjEntity(pobj)^.EntExtensions.RunSupportOldVersions(pobj,drawing);
+
+      { Если ACAD_TABLE (или любая сущность, загруженная как proxy) имеет
+        handle из списка продолжений разделённой таблицы — её proxy graphic
+        уже включён в первую ACAD_TABLE, поэтому отдельный ProxyEntity
+        создавать не нужно. Освобождаем и переходим к следующей сущности.
+        Переменную group=0 не сбрасываем: LoadFromDXF остановился на коде 0
+        следующей сущности, и следующая итерация должна обрабатывать её имя. }
+      if (uppercase(s)='ACAD_TABLE') and
+         (context.TableContinuationHandles<>nil) and
+         (context.TableContinuationHandles.Count>0) and
+         (PGDBObjEntity(pobj)^.PExtAttrib<>nil) and
+         (PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle<>0) and
+         (context.TableContinuationHandles.IndexOf(
+            NormalizeHandle(inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)))>=0) then begin
+        programlog.LogOutFormatStr(
+          'uzeffdxf: skipping ACAD_TABLE continuation handle=%s (merged into first table''s proxy graphic)',
+          [inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)], LM_Info);
+        pobj^.done;
+        Freemem(pointer(pobj));
+        if Assigned(ClearExtLoadData) then
+          ClearExtLoadData(PExtLoadData);
+        continue;
+      end;
+
       pointer(postobj):=PGDBObjEntity(pobj)^.FromDXFPostProcessBeforeAdd(PExtLoadData,drawing);
       trash:=false;
       if postobj=nil  then begin
@@ -1387,6 +1494,24 @@ begin
           fileCtx.Header.iDWGCodePage:=1252;
           fileCtx.Header.iVersion:=1009;
         end;
+
+        { Извлекаем сырые секции CLASSES и OBJECTS до загрузки сущностей.
+          Секция OBJECTS в DXF идёт после ENTITIES, но нам нужны данные
+          из неё (XRECORD'ы ACAD_ROUNDTRIP_2008_TABLE_ENTITY) для определения
+          продолжений разделённых ACAD_TABLE до того, как они будут загружены
+          как отдельные ProxyEntity. }
+        dwgCtx.PDrawing^.RawClassesSection :=
+          ExtractDxfRawSection(AFileName, 'CLASSES');
+        dwgCtx.PDrawing^.RawObjectsSection :=
+          ExtractDxfRawSection(AFileName, 'OBJECTS');
+
+        { Сканируем OBJECTS, собираем handles ACAD_TABLE-продолжений.
+          Хранятся в fileCtx, используются в addentitiesfromdxf для отбрасывания
+          повторных продолжений (их proxy graphic уже включён в первую таблицу). }
+        ScanTableContinuationHandles(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          fileCtx.TableContinuationHandles);
+
         lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
         case fileCtx.Header.Version of
           AC1009:begin
@@ -1407,15 +1532,6 @@ begin
         dwgCtx.POwner^.calcbb(dwgCtx.DC);
         result:=fileCtx.Header;
         fileCtx.Done;
-
-        { Извлекаем сырые секции CLASSES и OBJECTS из исходного файла.
-          Эти секции ZCAD не обрабатывает при загрузке, но AutoCAD
-          требует их наличие при открытии — без них файл считается
-          повреждённым. Сохраняем их для записи обратно при сохранении. }
-        dwgCtx.PDrawing^.RawClassesSection :=
-          ExtractDxfRawSection(AFileName, 'CLASSES');
-        dwgCtx.PDrawing^.RawObjectsSection :=
-          ExtractDxfRawSection(AFileName, 'OBJECTS');
 
         { Загружаем стили таблиц из секции OBJECTS.
           TABLESTYLE объекты находятся в OBJECTS, а не в TABLES,

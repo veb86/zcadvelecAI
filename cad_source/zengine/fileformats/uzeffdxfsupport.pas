@@ -24,7 +24,7 @@ unit uzeffdxfsupport;
 interface
 uses
   uzegeometrytypes,sysutils,uzctnrVectorBytesStream,usimplegenerics,
-  uzMVReader,UGDBPoint3DArray,uzeTypes;
+  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes;
 
 const
   cDXFError_WrogGroupCode='DXF group code "%d" expected but "%d" found';
@@ -120,6 +120,13 @@ type
     Header:TDXFHeaderInfo;
 
     GDBVertexLoadCache:GDBPoint3dArray;
+
+    { Хэндлы ACAD_TABLE-сущностей, являющихся продолжениями
+      разделённой таблицы. Собираются pre-scan'ом секции OBJECTS
+      из XRECORD'ов с маркером ACAD_ROUNDTRIP_2008_TABLE_ENTITY
+      (группа 330). Такие продолжения не должны создавать отдельные
+      ProxyEntity: их proxy graphic уже включён в первую таблицу. }
+    TableContinuationHandles:TStringList;
 
     procedure InitRec;
     procedure Done;
@@ -346,6 +353,11 @@ begin
   Header.InitRec;
 
   GDBVertexLoadCache.init(1000);
+
+  TableContinuationHandles:=TStringList.Create;
+  TableContinuationHandles.CaseSensitive:=False;
+  TableContinuationHandles.Sorted:=True;
+  TableContinuationHandles.Duplicates:=dupIgnore;
 end;
 
 procedure TDXFHeaderInfo.InitRec;
@@ -361,6 +373,7 @@ begin
   h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
+  FreeAndNil(TableContinuationHandles);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;
