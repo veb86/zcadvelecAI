@@ -43,6 +43,7 @@ type
     procedure LoadsBreakSettingsFromDXF;
     procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
+    procedure LoadsSplitTableAsSingleMergedObject;
   end;
 
 implementation
@@ -58,6 +59,21 @@ begin
   begin
     if PEntity^.GetObjType = GDBAcadTableID then
       Exit(PGDBObjAcadTable(PEntity));
+    PEntity := ARoot^.ObjArray.iterate(IR);
+  end;
+end;
+
+function CountAcadTables(const ARoot: PGDBObjGenericSubEntry): Integer;
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+begin
+  Result := 0;
+  PEntity := ARoot^.ObjArray.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBAcadTableID then
+      Inc(Result);
     PEntity := ARoot^.ObjArray.iterate(IR);
   end;
 end;
@@ -259,6 +275,31 @@ begin
       'После применения правил разбиения у AcadTable должны быть разрывы между фрагментами');
     Check(MaxX - MinX > 20.0,
       'Ширина визуализации должна включать несколько разнесённых фрагментов таблицы');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// Разделённая по ширине таблица (tablerazdel.dxf) сохранена в DXF как три
+// отдельные ACAD_TABLE. Все три части должны быть объединены в один объект
+// AcadTable и отображаться вместе (issue #1300).
+procedure TAcadTableStyleTest.LoadsSplitTableAsSingleMergedObject;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  TableCount: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    TableCount := CountAcadTables(Drawing.pObjRoot);
+    CheckEquals(1, TableCount,
+      'Три части разделённой таблицы должны загружаться как один объект AcadTable');
+
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'В главную таблицу должны быть поглощены две части-продолжения');
   finally
     Drawing.done;
   end;
