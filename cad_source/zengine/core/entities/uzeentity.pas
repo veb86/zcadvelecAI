@@ -79,6 +79,14 @@ type
     function FromDXFPostProcessBeforeAdd(ptu:PExtensionData;
       const drawing:TDrawingDef):PGDBObjSubordinated;virtual;
     procedure FromDXFPostProcessAfterAdd;virtual;
+    { Пытается поглотить продолжение разделённой составной сущности
+      (например, очередную часть разбитой по ширине таблицы ACAD_TABLE,
+      сохранённой в DXF как несколько сущностей ради совместимости).
+      Базовая реализация ничего не делает и возвращает False. Специализированные
+      сущности переопределяют метод и при успехе копируют данные AOther в себя.
+      Возвращает True, если данные AOther поглощены и вызывающая сторона может
+      освободить AOther (issue #1300). }
+    function TryMergeContinuation(AOther:PGDBObjEntity):boolean;virtual;
     procedure postload(var context:TIODXFLoadContext);virtual;
     procedure createfield;virtual;
     function AddExtAttrib:PTExtAttrib;
@@ -438,6 +446,11 @@ end;
 
 procedure GDBObjEntity.FromDXFPostProcessAfterAdd;
 begin
+end;
+
+function GDBObjEntity.TryMergeContinuation(AOther:PGDBObjEntity):boolean;
+begin
+  Result:=false;
 end;
 
 procedure GDBObjEntity.postload(var context:TIODXFLoadContext);
