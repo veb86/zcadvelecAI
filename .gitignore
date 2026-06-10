@@ -49,5 +49,3 @@ cad_source/zengine/tests/*.or
 cad_source/zengine/tests/*.rsj
 cad_source/zengine/tests/*.compiled
 cad_source/zengine/tests/testacadtable_standalone
-cad_source/zengine/tests/testacadtable_standalone.lpi
-cad_source/zengine/tests/testacadtable_standalone.lpr
