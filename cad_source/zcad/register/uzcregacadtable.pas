@@ -43,7 +43,7 @@ uses
   uzcoimultiproperties,uzcoimultipropertiesutil,
   uzeacadtable_model,uzeacadtable_types,
   uzeconsts,uzegeometrytypes,
-  uzsbVarmanDef,Varman,uzbUnits,uzetypes,gzctnrVectorTypes,
+  uzsbVarmanDef,Varman,uzbUnits,uzetypes,gzctnrVectorTypes,uzctnrVectorStrings,
   uzclog,uzbLogIntf;
 
 // Чтение ширины таблицы (только чтение)
