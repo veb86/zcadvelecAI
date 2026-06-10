@@ -77,7 +77,7 @@ function GetRowHeight(
   const ARowHeights: TZctnrVectorDouble): Double;
 begin
   if (RowIndex >= 0) and (RowIndex < ARowHeights.Count) then
-    Result := ARowHeights.parray^[RowIndex]
+    Result := ARowHeights.getData(RowIndex)
   else
     Result := CAcadTableDefaultRowHeight;
 end;
@@ -87,7 +87,7 @@ function GetColWidth(
   const AColWidths: TZctnrVectorDouble): Double;
 begin
   if (ColIndex >= 0) and (ColIndex < AColWidths.Count) then
-    Result := AColWidths.parray^[ColIndex]
+    Result := AColWidths.getData(ColIndex)
   else
     Result := CAcadTableDefaultColWidth;
 end;

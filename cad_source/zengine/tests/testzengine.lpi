@@ -93,7 +93,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);.."/>
-      <OtherUnitFiles Value="..;../containers;../fileformats;../fileformats/dwg;../fileformats/dwg/entities;../../zcad;../misc;../core/entities;../core;../core/utils;../zgl/common;../zgl/gdi;../zgl/canvas;../zgl/opengl;../zgl/openglmodern;../zgl/dx;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
+      <OtherUnitFiles Value="..;../containers;../fileformats;../fileformats/dwg;../fileformats/dwg/entities;../../zcad;../../zcad/velec/acadtable;../misc;../core/entities;../core;../core/utils;../zgl/common;../zgl/gdi;../zgl/canvas;../zgl/opengl;../zgl/openglmodern;../zgl/dx;../core/drawings;../core/objects;../styles;../fonts;../geomlib"/>
     </SearchPaths>
     <Parsing>
       <SyntaxOptions>

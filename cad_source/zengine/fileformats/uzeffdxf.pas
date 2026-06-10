@@ -242,7 +242,7 @@ end;
 
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
-  byt: Byte;
+  byt: Integer;
   s: String;
   //error: Integer;
 begin
@@ -459,7 +459,7 @@ end;
 
 function GoToDXForENDTAB(var rdr:TZMemReader; fcode: Integer; const fname: String):boolean;
 var
-  byt:Byte;
+  byt:Integer;
   s:String;
 begin
   result:=false;
