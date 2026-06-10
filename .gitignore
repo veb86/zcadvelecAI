@@ -41,3 +41,13 @@ cad_source/components/fpdwg/**/*.o
 cad_source/components/fpdwg/**/*.ppu
 cad_source/components/fpdwg/**/*.rsj
 cad_source/components/fpdwg/inspector/tests/fpdwg_tests
+
+# Free Pascal build artifacts under zengine tests:
+cad_source/zengine/tests/*.o
+cad_source/zengine/tests/*.ppu
+cad_source/zengine/tests/*.or
+cad_source/zengine/tests/*.rsj
+cad_source/zengine/tests/*.compiled
+cad_source/zengine/tests/testacadtable_standalone
+cad_source/zengine/tests/testacadtable_standalone.lpi
+cad_source/zengine/tests/testacadtable_standalone.lpr
