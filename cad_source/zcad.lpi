@@ -501,7 +501,7 @@
         <PackageName Value="LCL"/>
       </Item29>
     </RequiredPackages>
-    <Units Count="183">
+    <Units Count="184">
       <Unit0>
         <Filename Value="zcad.pas"/>
         <IsPartOfProject Value="True"/>
@@ -1305,6 +1305,10 @@
         <Filename Value="zcad/register/uzcregleader.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit182>
+      <Unit183>
+        <Filename Value="zcad/register/uzcregacadtable.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit183>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
