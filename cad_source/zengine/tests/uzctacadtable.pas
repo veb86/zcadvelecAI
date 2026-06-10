@@ -57,6 +57,18 @@ type
     // issue #1305, часть 2b: снятие признака разрыва объединяет
     // части-продолжения в единую непрерывную таблицу.
     procedure ClearingBreakMergesContinuationParts;
+    // issue #1307, часть 1: интервал между частями (Break spacing)
+    // читается из round-trip данных DXF (≈0.99).
+    procedure LoadsBreakSpacingFromDXF;
+    // issue #1307, часть 2: высота разбиения (Break height) читается
+    // из round-trip данных DXF (≈2.0486).
+    procedure LoadsBreakHeightFromDXF;
+    // issue #1307, часть 2: изменение высоты разбиения пересегментирует
+    // таблицу с автоопределением числа частей.
+    procedure ChangingBreakHeightResegmentsTable;
+    // issue #1307, часть 1: изменение интервала смещает части-продолжения
+    // (меняется ширина отрисованного представления).
+    procedure ChangingBreakSpacingRepositionsParts;
   end;
 
 implementation
@@ -482,6 +494,133 @@ begin
     CheckTrue(AcadTable^.RowCount > RowsBefore,
       'Объединённая таблица должна содержать строки всех частей ' +
       '(issue #1305, часть 2b)');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1307, часть 1. Интервал между частями разорванной таблицы
+// (Break spacing) хранится в round-trip данных DXF (XRECORD
+// ACAD_ROUNDTRIP_2008_TABLE_ENTITY, первое значение группы 40). Для
+// tablerazdel.dxf он равен ≈0.99 и согласуется с геометрией: шаг между
+// точками вставки частей (13.49) минус ширина таблицы (12.5) = 0.99.
+// Раньше это свойство вычислялось неверно (issue #1307).
+procedure TAcadTableStyleTest.LoadsBreakSpacingFromDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckEquals(0.99, AcadTable^.BreakSpacing, 1e-4,
+      'Интервал между частями (Break spacing) должен читаться из DXF ≈0.99');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1307, часть 2. Высота разбиения (Break height) — порог суммарной
+// высоты строк, после которого строки переносятся в следующую часть. Она
+// хранится только в round-trip данных DXF (второе значение группы 40
+// XRECORD) и не выводится из геометрии. Для tablerazdel.dxf — ≈2.0486.
+// Раньше это свойство полностью отсутствовало (issue #1307).
+procedure TAcadTableStyleTest.LoadsBreakHeightFromDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckEquals(2.048584359034151, AcadTable^.BreakHeight, 1e-4,
+      'Высота разбиения (Break height) должна читаться из DXF ≈2.0486');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1307, часть 2. Изменение высоты разбиения должно пересегментировать
+// таблицу: число частей определяется автоматически так, чтобы суммарная
+// высота строк в каждой части не превышала заданного порога. tablerazdel.dxf
+// загружается как [5,5,4] строк (главная часть + 2 продолжения = 14 строк).
+//   • Очень большой порог → все строки помещаются в одну часть (0 продолжений,
+//     главная часть содержит все 14 строк).
+//   • Возврат к исходному порогу ≈2.0486 → снова 2 части-продолжения.
+//   • Очень малый порог → больше частей, чем исходно.
+procedure TAcadTableStyleTest.ChangingBreakHeightResegmentsTable;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  MainRowsBefore: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'Исходно таблица разбита на главную часть и 2 продолжения');
+    MainRowsBefore := AcadTable^.RowCount;
+
+    // Очень большой порог — все строки умещаются в одной части.
+    AcadTable^.BreakHeight := 1000.0;
+    CheckEquals(0, AcadTable^.ContinuationPartCount,
+      'При большом пороге все строки должны помещаться в одну часть');
+    CheckTrue(AcadTable^.RowCount > MainRowsBefore,
+      'Объединённая главная часть должна содержать строки всех частей');
+
+    // Возврат к исходному порогу — снова две части-продолжения.
+    AcadTable^.BreakHeight := 2.048584359034151;
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'При исходном пороге ≈2.0486 таблица снова разбивается на 3 части');
+
+    // Очень малый порог — каждая часть вмещает меньше строк, частей больше.
+    AcadTable^.BreakHeight := 0.5;
+    CheckTrue(AcadTable^.ContinuationPartCount > 2,
+      'При малом пороге число частей-продолжений должно вырасти');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1307, часть 1. Изменение интервала между частями должно смещать
+// части-продолжения относительно главной части. Таблица разбита по ширине
+// (части идут вправо), поэтому увеличение интервала раздвигает части и
+// увеличивает общую ширину отрисованного представления.
+procedure TAcadTableStyleTest.ChangingBreakSpacingRepositionsParts;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  MinX1, MaxX1, MinX2, MaxX2: Double;
+  HasGap: Boolean;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Таблица должна содержать части-продолжения');
+
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectLineBounds(AcadTable^.ConstObjArray, MinX1, MaxX1, HasGap);
+    Check(MaxX1 > MinX1, 'Таблица должна отрисовать линии в WCS');
+
+    // Увеличиваем интервал между частями — части должны раздвинуться.
+    AcadTable^.BreakSpacing := 10.0;
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectLineBounds(AcadTable^.ConstObjArray, MinX2, MaxX2, HasGap);
+
+    CheckTrue(MaxX2 > MaxX1 + 1e-6,
+      'Увеличение интервала должно раздвинуть части и увеличить общую ширину');
   finally
     Drawing.done;
   end;
