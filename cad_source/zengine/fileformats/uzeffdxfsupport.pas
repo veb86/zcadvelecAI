@@ -128,6 +128,15 @@ type
       ProxyEntity: их proxy graphic уже включён в первую таблицу. }
     TableContinuationHandles:TStringList;
 
+    { Параметры разбиения разделённой таблицы, прочитанные из XRECORD
+      ACAD_ROUNDTRIP_2008_TABLE_ENTITY (две группы 40: 1-я — интервал
+      между частями, 2-я — высота разбиения). Передаются в главную
+      ACAD_TABLE через SetTableBreakData, чтобы свойства Break spacing
+      и Break height отображались/редактировались в инспекторе (issue #1307). }
+    TableBreakSpacing:double;
+    TableBreakHeight:double;
+    TableBreakDataValid:boolean;
+
     procedure InitRec;
     procedure Done;
   end;
@@ -358,6 +367,10 @@ begin
   TableContinuationHandles.CaseSensitive:=False;
   TableContinuationHandles.Sorted:=True;
   TableContinuationHandles.Duplicates:=dupIgnore;
+
+  TableBreakSpacing:=0;
+  TableBreakHeight:=0;
+  TableBreakDataValid:=False;
 end;
 
 procedure TDXFHeaderInfo.InitRec;

@@ -81,6 +81,7 @@ type
     BreakManualPosition: Boolean;
     BreakManualHeight: Boolean;
     BreakSpacing: Double;
+    BreakHeight: Double;
   end;
 
   // Сущность ACAD_TABLE — таблица AutoCAD из формата DXF.
@@ -114,6 +115,10 @@ type
     FBreakManualPosition: Boolean;
     FBreakManualHeight: Boolean;
     FBreakSpacing: Double;
+    // Высота разбиения (break height): после какой суммарной высоты строк
+    // строки начинают переноситься в следующую часть разделённой таблицы.
+    // Читается из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY (issue #1307).
+    FBreakHeight: Double;
     // Масштаб и поворот объекта (как у вставки блока). Хранятся отдельно,
     // потому что базовый CalcObjMatrixWithoutOwner восстанавливает ось OX
     // из OZ и теряет поворот в плоскости и масштаб. Благодаря этим полям
@@ -173,6 +178,22 @@ type
     // Чтение/запись вычисляемого признака разрыва таблицы (issue #1305)
     function GetBreakEnabled: Boolean;
     procedure SetBreakEnabled(AValue: Boolean);
+    // Чтение/запись интервала между частями и высоты разбиения (issue #1307)
+    function GetBreakSpacing: Double;
+    procedure SetBreakSpacing(AValue: Double);
+    function GetBreakHeight: Double;
+    procedure SetBreakHeight(AValue: Double);
+    // Объединяет все части-продолжения в главную часть (строки сверху вниз).
+    procedure MergeAllContinuationPartsIntoMain;
+    // Пересегментирует объединённую главную часть по высоте разбиения,
+    // вынося хвостовые строки в новые части-продолжения (issue #1307).
+    procedure SplitMainTableByBreakHeight(AThreshold: Double);
+    // Копирует диапазон строк [AStart..AEnd] исходной части в целевую часть.
+    procedure SlicePartFromPart(const ASource: TAcadTablePart;
+      AStart, AEnd: Integer; var ADest: TAcadTablePart);
+    // Пересчитывает точки вставки частей-продолжений из текущего интервала
+    // и направления разрыва (issue #1307).
+    procedure RepositionContinuationParts;
 
   public
     constructor initnul(
@@ -211,6 +232,11 @@ type
     // AOther поглощён и вызывающая сторона может его освободить.
     function TryMergeContinuation(
       AOther: PGDBObjEntity): Boolean; virtual;
+    // Сохраняет параметры разбиения (интервал и высоту), прочитанные
+    // загрузчиком DXF из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY
+    // (issue #1307). Возвращает True.
+    function SetTableBreakData(
+      ASpacing, ABreakHeight: Double): Boolean; virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -233,7 +259,16 @@ type
       read FBreakManualPosition;
     property BreakManualHeight: Boolean
       read FBreakManualHeight;
-    property BreakSpacing: Double read FBreakSpacing;
+    // Интервал между частями разделённой таблицы (issue #1307). Чтение
+    // возвращает значение из XRECORD; запись перестраивает расстояние
+    // между всеми частями на чертеже.
+    property BreakSpacing: Double
+      read GetBreakSpacing write SetBreakSpacing;
+    // Высота разбиения (issue #1307). Чтение возвращает значение из
+    // XRECORD; запись пересчитывает число строк в каждой части
+    // (автоматически определяя необходимое число частей).
+    property BreakHeight: Double
+      read GetBreakHeight write SetBreakHeight;
     // Количество поглощённых частей-продолжений (issue #1300).
     // Для неразделённой таблицы равно 0.
     property ContinuationPartCount: Integer read GetContinuationPartCount;
@@ -313,6 +348,7 @@ begin
   FBreakManualPosition := False;
   FBreakManualHeight := False;
   FBreakSpacing := 0;
+  FBreakHeight := 0;
   // Трансформация по умолчанию: единичный масштаб, без поворота (issue #1305)
   FScale := ScaleOne;
   FRotate := 0;
@@ -902,7 +938,7 @@ var
   TmpBreakEnabled, TmpRepeatTop, TmpRepeatBottom: Boolean;
   TmpManualPos, TmpManualHeight: Boolean;
   TmpDir: TAcadTableBreakDirection;
-  TmpSpacing: Double;
+  TmpSpacing, TmpHeight: Double;
   TmpTexts: TTableTextArray;
   TmpRows: TTableRowArray;
   TmpCols: TTableColumnArray;
@@ -932,6 +968,7 @@ begin
   TmpManualPos := FBreakManualPosition; FBreakManualPosition := APart.BreakManualPosition; APart.BreakManualPosition := TmpManualPos;
   TmpManualHeight := FBreakManualHeight; FBreakManualHeight := APart.BreakManualHeight; APart.BreakManualHeight := TmpManualHeight;
   TmpSpacing := FBreakSpacing; FBreakSpacing := APart.BreakSpacing; APart.BreakSpacing := TmpSpacing;
+  TmpHeight := FBreakHeight; FBreakHeight := APart.BreakHeight; APart.BreakHeight := TmpHeight;
 end;
 
 // Строит визуальное представление всей таблицы: сначала главная часть
@@ -997,6 +1034,7 @@ begin
   APart.BreakManualPosition := ASource.FBreakManualPosition;
   APart.BreakManualHeight := ASource.FBreakManualHeight;
   APart.BreakSpacing := ASource.FBreakSpacing;
+  APart.BreakHeight := ASource.FBreakHeight;
 
   APart.RowHeights.initnul;
   for Idx := 0 to ASource.FRowHeights.Count - 1 do
@@ -1049,6 +1087,7 @@ begin
   ADest.BreakManualPosition := ASource.BreakManualPosition;
   ADest.BreakManualHeight := ASource.BreakManualHeight;
   ADest.BreakSpacing := ASource.BreakSpacing;
+  ADest.BreakHeight := ASource.BreakHeight;
 
   ADest.RowHeights.initnul;
   for Idx := 0 to ASource.RowHeights.Count - 1 do
@@ -1115,10 +1154,6 @@ end;
 // для разорванной таблицы объединяет все части-продолжения с главной
 // частью, выстраивая строки сверху вниз в единую непрерывную таблицу.
 procedure GDBObjAcadTable.SetBreakEnabled(AValue: Boolean);
-var
-  PartIdx, RowIdx, ColIdx, SrcCount: Integer;
-  RowOffset: Integer;
-  MergeBase: Integer;
 begin
   if AValue then
   begin
@@ -1130,7 +1165,26 @@ begin
 
   // Снять разрыв: объединяем части-продолжения в главную таблицу.
   FBreakEnabled := False;
+  MergeAllContinuationPartsIntoMain;
 
+  // Геометрию нужно перестроить
+  FGeometryBuilt := False;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakEnabled(False) merged into ' +
+    'single table rows=%d cols=%d', [FRowCount, FColCount], LM_Info);
+end;
+
+// Объединяет все части-продолжения в главную часть: строки выстраиваются
+// сверху вниз в единую непрерывную таблицу. Части-продолжения
+// освобождаются. Не трогает FBreakEnabled и FGeometryBuilt — это делает
+// вызывающая сторона (issue #1305 часть 2b, issue #1307).
+procedure GDBObjAcadTable.MergeAllContinuationPartsIntoMain;
+var
+  PartIdx, RowIdx, ColIdx, SrcCount: Integer;
+  RowOffset: Integer;
+  MergeBase: Integer;
+begin
   if Length(FContinuationParts) = 0 then
     Exit;
 
@@ -1196,13 +1250,258 @@ begin
   for PartIdx := 0 to High(FContinuationParts) do
     ClearPart(FContinuationParts[PartIdx]);
   System.SetLength(FContinuationParts, 0);
+end;
 
-  // Геометрию нужно перестроить
+// --- Параметры разбиения: интервал и высота (issue #1307) ---
+
+function GDBObjAcadTable.GetBreakSpacing: Double;
+begin
+  Result := FBreakSpacing;
+end;
+
+// Изменение интервала между частями (issue #1307, часть 1). Пересчитывает
+// точки вставки всех частей-продолжений так, чтобы расстояние между
+// соседними частями изменилось на чертеже.
+procedure GDBObjAcadTable.SetBreakSpacing(AValue: Double);
+begin
+  if AValue = FBreakSpacing then
+    Exit;
+  FBreakSpacing := AValue;
+  RepositionContinuationParts;
   FGeometryBuilt := False;
-
   programlog.LogOutFormatStr(
-    'AcadTable: model: SetBreakEnabled(False) merged into ' +
-    'single table rows=%d cols=%d', [FRowCount, FColCount], LM_Info);
+    'AcadTable: model: SetBreakSpacing=%g parts=%d',
+    [FBreakSpacing, Length(FContinuationParts)], LM_Info);
+end;
+
+function GDBObjAcadTable.GetBreakHeight: Double;
+begin
+  Result := FBreakHeight;
+end;
+
+// Изменение высоты разбиения (issue #1307, часть 2). Сначала объединяет
+// все части в единую таблицу, затем заново разбивает строки по новой
+// высоте — автоматически определяя необходимое число частей.
+procedure GDBObjAcadTable.SetBreakHeight(AValue: Double);
+begin
+  if AValue = FBreakHeight then
+    Exit;
+  FBreakHeight := AValue;
+  // Перебор строк имеет смысл только при положительной высоте.
+  if AValue > 0 then
+  begin
+    MergeAllContinuationPartsIntoMain;
+    SplitMainTableByBreakHeight(AValue);
+  end;
+  FGeometryBuilt := False;
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakHeight=%g rows=%d parts=%d',
+    [FBreakHeight, FRowCount, Length(FContinuationParts)], LM_Info);
+end;
+
+// Копирует диапазон строк [AStart..AEnd] исходной части в целевую часть.
+// Столбцы, стиль и флаги копируются целиком; строки/высоты/тексты/ячейки/
+// объединения вырезаются по диапазону. Точку вставки выставляет
+// RepositionContinuationParts (issue #1307).
+procedure GDBObjAcadTable.SlicePartFromPart(
+  const ASource: TAcadTablePart;
+  AStart, AEnd: Integer; var ADest: TAcadTablePart);
+var
+  RowIdx, ColIdx, ColCnt, SrcIdx, DstRows, TextBase: Integer;
+begin
+  DstRows := AEnd - AStart + 1;
+  if DstRows < 0 then DstRows := 0;
+  ColCnt := ASource.ColCount;
+
+  ADest.InsertPoint := ASource.InsertPoint;
+  ADest.RowCount := DstRows;
+  ADest.ColCount := ColCnt;
+  ADest.TableFlags := ASource.TableFlags;
+  ADest.TableStyle := ASource.TableStyle;
+  ADest.TableStyleHandle := ASource.TableStyleHandle;
+  ADest.BreakEnabled := ASource.BreakEnabled;
+  ADest.BreakDirection := ASource.BreakDirection;
+  ADest.BreakRepeatTopLabels := ASource.BreakRepeatTopLabels;
+  ADest.BreakRepeatBottomLabels := ASource.BreakRepeatBottomLabels;
+  ADest.BreakManualPosition := ASource.BreakManualPosition;
+  ADest.BreakManualHeight := ASource.BreakManualHeight;
+  ADest.BreakSpacing := ASource.BreakSpacing;
+  ADest.BreakHeight := ASource.BreakHeight;
+
+  // Высоты строк диапазона
+  ADest.RowHeights.initnul;
+  for RowIdx := AStart to AEnd do
+    if (RowIdx >= 0) and (RowIdx < ASource.RowHeights.Count) then
+      ADest.RowHeights.PushBackData(ASource.RowHeights.getData(RowIdx));
+
+  // Ширины столбцов — те же, что у источника
+  ADest.ColWidths.initnul;
+  for ColIdx := 0 to ASource.ColWidths.Count - 1 do
+    ADest.ColWidths.PushBackData(ASource.ColWidths.getData(ColIdx));
+
+  // Тексты ячеек (плоский массив, индекс = строка * ColCount + столбец)
+  System.SetLength(ADest.CellTexts, DstRows * ColCnt);
+  if ColCnt > 0 then
+    for RowIdx := 0 to DstRows - 1 do
+      for ColIdx := 0 to ColCnt - 1 do
+      begin
+        SrcIdx := (AStart + RowIdx) * ColCnt + ColIdx;
+        TextBase := RowIdx * ColCnt + ColIdx;
+        if (SrcIdx >= 0) and (SrcIdx <= High(ASource.CellTexts)) then
+          ADest.CellTexts[TextBase] := ASource.CellTexts[SrcIdx]
+        else
+          ADest.CellTexts[TextBase] := '';
+      end;
+
+  // Формат строк
+  System.SetLength(ADest.Rows, DstRows);
+  for RowIdx := 0 to DstRows - 1 do
+    if (AStart + RowIdx) <= High(ASource.Rows) then
+      ADest.Rows[RowIdx] := ASource.Rows[AStart + RowIdx];
+
+  // Столбцы — те же, что у источника
+  System.SetLength(ADest.Cols, Length(ASource.Cols));
+  for ColIdx := 0 to High(ASource.Cols) do
+    ADest.Cols[ColIdx] := ASource.Cols[ColIdx];
+
+  // Ячейки (двумерный массив [строка][столбец])
+  System.SetLength(ADest.Cells, DstRows);
+  for RowIdx := 0 to DstRows - 1 do
+    if (AStart + RowIdx) <= High(ASource.Cells) then
+    begin
+      System.SetLength(ADest.Cells[RowIdx],
+        Length(ASource.Cells[AStart + RowIdx]));
+      for ColIdx := 0 to High(ASource.Cells[AStart + RowIdx]) do
+        ADest.Cells[RowIdx][ColIdx] :=
+          ASource.Cells[AStart + RowIdx][ColIdx];
+    end;
+
+  // Объединения ячеек, попадающие целиком в диапазон, со сдвигом строк
+  System.SetLength(ADest.Merges, 0);
+  for RowIdx := 0 to High(ASource.Merges) do
+    if (ASource.Merges[RowIdx].Row1 >= AStart) and
+       (ASource.Merges[RowIdx].Row2 <= AEnd) then
+    begin
+      ColIdx := Length(ADest.Merges);
+      System.SetLength(ADest.Merges, ColIdx + 1);
+      ADest.Merges[ColIdx] := ASource.Merges[RowIdx];
+      Dec(ADest.Merges[ColIdx].Row1, AStart);
+      Dec(ADest.Merges[ColIdx].Row2, AStart);
+    end;
+end;
+
+// Пересегментирует объединённую главную часть по высоте разбиения:
+// строки набираются в сегмент, пока их суммарная высота не превысит
+// порог AThreshold; затем начинается новый сегмент. Первый сегмент
+// остаётся в главной части, остальные выносятся в части-продолжения.
+// Число частей определяется автоматически (issue #1307).
+procedure GDBObjAcadTable.SplitMainTableByBreakHeight(AThreshold: Double);
+var
+  FullData, TmpPart: TAcadTablePart;
+  SegStart, SegEnd: array of Integer;
+  SegCount, StartRow, EndRow, PartIdx: Integer;
+  CurHeight, NextHeight: Double;
+begin
+  if (FRowCount <= 0) or (AThreshold <= 0) then
+    Exit;
+
+  // Снимок текущей (объединённой) главной части
+  CaptureTableDataToPart(Self, FullData);
+  try
+    // Вычисляем границы сегментов по высоте строк
+    SegCount := 0;
+    StartRow := 0;
+    while StartRow < FullData.RowCount do
+    begin
+      EndRow := StartRow;
+      CurHeight := 0;
+      while EndRow < FullData.RowCount do
+      begin
+        NextHeight := CurHeight +
+          uzeacadtable_layout.GetRowHeight(EndRow, FullData.RowHeights);
+        if (EndRow > StartRow) and
+           (NextHeight > AThreshold + 1e-9) then
+          Break;
+        CurHeight := NextHeight;
+        Inc(EndRow);
+      end;
+      if EndRow = StartRow then
+        Inc(EndRow);
+
+      System.SetLength(SegStart, SegCount + 1);
+      System.SetLength(SegEnd, SegCount + 1);
+      SegStart[SegCount] := StartRow;
+      SegEnd[SegCount] := EndRow - 1;
+      Inc(SegCount);
+      StartRow := EndRow;
+    end;
+
+    // Части-продолжения для сегментов 1..SegCount-1
+    for PartIdx := 0 to High(FContinuationParts) do
+      ClearPart(FContinuationParts[PartIdx]);
+    System.SetLength(FContinuationParts, SegCount - 1);
+    for PartIdx := 1 to SegCount - 1 do
+      SlicePartFromPart(FullData, SegStart[PartIdx], SegEnd[PartIdx],
+        FContinuationParts[PartIdx - 1]);
+
+    // Сегмент 0 -> главная часть. Готовим временную часть и меняемся
+    // данными с собой (точка вставки главной части сохраняется).
+    SlicePartFromPart(FullData, SegStart[0], SegEnd[0], TmpPart);
+    SwapTableData(TmpPart);
+    ClearPart(TmpPart);
+
+    RepositionContinuationParts;
+  finally
+    ClearPart(FullData);
+  end;
+end;
+
+// Пересчитывает точки вставки частей-продолжений из текущего интервала
+// (FBreakSpacing) и направления разрыва (FBreakDirection). Расстояние
+// между соседними частями = (размер предыдущего сегмента вдоль оси
+// разрыва) + интервал (issue #1307).
+procedure GDBObjAcadTable.RepositionContinuationParts;
+var
+  PartIdx: Integer;
+  Horizontal: Boolean;
+  CumOffset, PrevExtent: Double;
+begin
+  if Length(FContinuationParts) = 0 then
+    Exit;
+
+  Horizontal := FBreakDirection in [atbdRight, atbdLeft];
+  if Horizontal then
+    PrevExtent := GetTotalWidth
+  else
+    PrevExtent := GetTotalHeight;
+
+  CumOffset := 0;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    CumOffset := CumOffset + PrevExtent + FBreakSpacing;
+
+    FContinuationParts[PartIdx].InsertPoint := FInsertPoint;
+    case FBreakDirection of
+      atbdDown:
+        FContinuationParts[PartIdx].InsertPoint.y :=
+          FInsertPoint.y - CumOffset;
+      atbdLeft:
+        FContinuationParts[PartIdx].InsertPoint.x :=
+          FInsertPoint.x - CumOffset;
+    else // atbdRight
+      FContinuationParts[PartIdx].InsertPoint.x :=
+        FInsertPoint.x + CumOffset;
+    end;
+
+    if Horizontal then
+      PrevExtent := uzeacadtable_layout.GetTotalWidth(
+        FContinuationParts[PartIdx].ColCount,
+        FContinuationParts[PartIdx].ColWidths)
+    else
+      PrevExtent := uzeacadtable_layout.GetTotalHeight(
+        FContinuationParts[PartIdx].RowCount,
+        FContinuationParts[PartIdx].RowHeights);
+  end;
 end;
 
 // Поглощает продолжение разделённой таблицы как часть этого объекта.
@@ -1227,6 +1526,21 @@ begin
     '(rows=%d cols=%d)',
     [PartIdx, FContinuationParts[PartIdx].RowCount,
      FContinuationParts[PartIdx].ColCount], LM_Info);
+  Result := True;
+end;
+
+// Сохраняет параметры разбиения, прочитанные загрузчиком DXF из XRECORD
+// ACAD_ROUNDTRIP_2008_TABLE_ENTITY (issue #1307). Значения только
+// сохраняются — геометрия частей уже расставлена по точкам вставки из DXF,
+// перестройка не требуется.
+function GDBObjAcadTable.SetTableBreakData(
+  ASpacing, ABreakHeight: Double): Boolean;
+begin
+  FBreakSpacing := ASpacing;
+  FBreakHeight := ABreakHeight;
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetTableBreakData spacing=%g breakheight=%g',
+    [FBreakSpacing, FBreakHeight], LM_Info);
   Result := True;
 end;
 
@@ -1475,6 +1789,7 @@ begin
   NewTable^.FBreakManualPosition := FBreakManualPosition;
   NewTable^.FBreakManualHeight := FBreakManualHeight;
   NewTable^.FBreakSpacing := FBreakSpacing;
+  NewTable^.FBreakHeight := FBreakHeight;
   // Трансформация объекта (issue #1305, часть 1)
   NewTable^.FScale := FScale;
   NewTable^.FRotate := FRotate;

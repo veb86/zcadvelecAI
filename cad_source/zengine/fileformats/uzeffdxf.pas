@@ -240,6 +240,89 @@ begin
   end;
 end;
 
+{ Сканирует секцию OBJECTS и извлекает из XRECORD'а с маркером
+  ACAD_ROUNDTRIP_2008_TABLE_ENTITY параметры разбиения разделённой
+  таблицы. Внутри roundtrip-блока идут две группы 40: первая —
+  интервал между частями (break spacing), вторая — высота разбиения
+  (break height). Эти значения не выводятся в современный DXF
+  отдельными группами, поэтому без чтения XRECORD они теряются
+  (issue #1307).
+
+  ASpacing/ABreakHeight получают найденные значения, AValid=True,
+  если в блоке найдено хотя бы две группы 40. }
+procedure ScanTableBreakData(const RawObjectsSection: string;
+  out ASpacing, ABreakHeight: Double; out AValid: Boolean);
+var
+  Lines: TStringList;
+  I, Code, Found: Integer;
+  Value: string;
+  V: Extended;
+  InXRecord, InRoundtripBlock: Boolean;
+begin
+  ASpacing := 0;
+  ABreakHeight := 0;
+  AValid := False;
+  if RawObjectsSection = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawObjectsSection;
+    InXRecord := False;
+    InRoundtripBlock := False;
+    Found := 0;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if not TryStrToInt(Trim(Lines[I]), Code) then begin
+        Inc(I, 2);
+        Continue;
+      end;
+      Value := Trim(Lines[I + 1]);
+
+      if Code = 0 then
+      begin
+        InXRecord := (UpperCase(Value) = 'XRECORD');
+        InRoundtripBlock := False;
+      end
+      else if InXRecord then
+      begin
+        if (Code = 102) and
+           (UpperCase(Value) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY') then
+          InRoundtripBlock := True
+        else if InRoundtripBlock then
+        begin
+          if Code = 361 then
+            InRoundtripBlock := False
+          else if (Code = 40) and (Found < 2) then
+          begin
+            { DXF использует точку как десятичный разделитель }
+            if TextToFloat(PChar(Value), V, fvExtended) then
+            begin
+              if Found = 0 then
+                ASpacing := V
+              else
+                ABreakHeight := V;
+              Inc(Found);
+              if Found >= 2 then
+                AValid := True;
+            end;
+          end;
+        end;
+      end;
+
+      Inc(I, 2);
+    end;
+
+    if AValid then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanTableBreakData: spacing=%g breakheight=%g',
+        [ASpacing, ABreakHeight], LM_Info);
+  finally
+    Lines.Free;
+  end;
+end;
+
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
   byt: Integer;
@@ -589,8 +672,16 @@ begin
           newowner^.DXFLoadAddMi(pobj);
         // Запоминаем главную ACAD_TABLE для поглощения её продолжений
         // (issue #1300). Продолжения идут после главной части в DXF.
-        if uppercase(s)='ACAD_TABLE' then
+        if uppercase(s)='ACAD_TABLE' then begin
           pLastMainTable:=pobj;
+          // Передаём параметры разбиения (интервал и высота), прочитанные
+          // из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY, в главную таблицу,
+          // чтобы свойства Break spacing/Break height были доступны в
+          // инспекторе объектов (issue #1307).
+          if context.TableBreakDataValid then
+            pLastMainTable^.SetTableBreakData(
+              context.TableBreakSpacing, context.TableBreakHeight);
+        end;
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
             {PGDBObjEntity(pobj)^.BuildGeometry(drawing);
@@ -1525,6 +1616,15 @@ begin
         ScanTableContinuationHandles(
           dwgCtx.PDrawing^.RawObjectsSection,
           fileCtx.TableContinuationHandles);
+
+        { Извлекаем параметры разбиения разделённой таблицы (интервал между
+          частями и высоту разбиения) из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY.
+          Передаются в главную ACAD_TABLE через SetTableBreakData (issue #1307). }
+        ScanTableBreakData(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          fileCtx.TableBreakSpacing,
+          fileCtx.TableBreakHeight,
+          fileCtx.TableBreakDataValid);
 
         lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
         case fileCtx.Header.Version of
