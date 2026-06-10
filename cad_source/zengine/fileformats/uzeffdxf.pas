@@ -484,8 +484,12 @@ var
   EntInfoData:TEntInfoData;
   bylayerlt:Pointer;
   lph:TLPSHandle;
+  // Последняя добавленная главная ACAD_TABLE — в неё поглощаются
+  // продолжения разделённой таблицы (issue #1300).
+  pLastMainTable:PGDBObjEntity;
 begin
   s:='';
+  pLastMainTable:=nil;
   lph:=lps.StartLongProcess('addentitiesfromdxf',@rdr,rdr.Size);
   if Assigned(CreateExtLoadData) then
     PExtLoadData:=CreateExtLoadData()
@@ -511,21 +515,27 @@ begin
       if assigned(PGDBObjEntity(pobj)^.EntExtensions) then
         PGDBObjEntity(pobj)^.EntExtensions.RunSupportOldVersions(pobj,drawing);
 
-      { Если ACAD_TABLE (или любая сущность, загруженная как proxy) имеет
-        handle из списка продолжений разделённой таблицы — её proxy graphic
-        уже включён в первую ACAD_TABLE, поэтому отдельный ProxyEntity
-        создавать не нужно. Освобождаем и переходим к следующей сущности.
-        Переменную group=0 не сбрасываем: LoadFromDXF остановился на коде 0
-        следующей сущности, и следующая итерация должна обрабатывать её имя. }
+      { Если ACAD_TABLE имеет handle из списка продолжений разделённой
+        таблицы — это часть, которую AutoCAD сохранил как отдельную
+        ACAD_TABLE. Поглощаем её данные в первую (главную) ACAD_TABLE,
+        чтобы все части отображались как один объект (issue #1300).
+        После поглощения освобождаем загруженную сущность и переходим
+        к следующей. Переменную group=0 не сбрасываем: LoadFromDXF
+        остановился на коде 0 следующей сущности. Если по какой-то
+        причине главной таблицы нет или поглощение не удалось — часть
+        обрабатывается обычным образом (добавляется как отдельный объект),
+        чтобы данные не были потеряны. }
       if (uppercase(s)='ACAD_TABLE') and
          (context.TableContinuationHandles<>nil) and
          (context.TableContinuationHandles.Count>0) and
          (PGDBObjEntity(pobj)^.PExtAttrib<>nil) and
          (PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle<>0) and
          (context.TableContinuationHandles.IndexOf(
-            NormalizeHandle(inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)))>=0) then begin
+            NormalizeHandle(inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)))>=0) and
+         (pLastMainTable<>nil) and
+         pLastMainTable^.TryMergeContinuation(pobj) then begin
         programlog.LogOutFormatStr(
-          'uzeffdxf: skipping ACAD_TABLE continuation handle=%s (merged into first table''s proxy graphic)',
+          'uzeffdxf: merging ACAD_TABLE continuation handle=%s into main table',
           [inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)], LM_Info);
         pobj^.done;
         Freemem(pointer(pobj));
@@ -577,6 +587,10 @@ begin
         end;
         if not trash then begin
           newowner^.DXFLoadAddMi(pobj);
+        // Запоминаем главную ACAD_TABLE для поглощения её продолжений
+        // (issue #1300). Продолжения идут после главной части в DXF.
+        if uppercase(s)='ACAD_TABLE' then
+          pLastMainTable:=pobj;
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
             {PGDBObjEntity(pobj)^.BuildGeometry(drawing);

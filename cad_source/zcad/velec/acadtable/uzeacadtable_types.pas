@@ -158,6 +158,15 @@ type
 
   TTableCellArray = array of array of TTableCell;
 
+  // Именованные псевдонимы динамических массивов. Нужны, чтобы данные
+  // таблицы можно было обменивать целиком (присваиванием) между объектом
+  // и его частями-продолжениями (issue #1300): для оператора := FPC
+  // требует идентичности типов, а не структурной совместимости.
+  TTableRowArray = array of TTableRow;
+  TTableColumnArray = array of TTableColumn;
+  TMergeRangeArray = array of TMergeRange;
+  TTableTextArray = array of String;
+
 implementation
 
 end.
