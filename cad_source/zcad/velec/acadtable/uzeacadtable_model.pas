@@ -40,7 +40,7 @@ uses
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
   uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
-  uzbLogIntf, uzclog, SysUtils, uzctnrvectordouble,
+  uzbLogIntf, uzclog, SysUtils, Math, uzctnrvectordouble,
   uzestylestablesdxf, gzctnrVectorTypes, Types, uzestylestexts,
   uzeacadtable_types, uzeacadtable_styles,
   uzeacadtable_cell, uzeacadtable_merge,
@@ -114,6 +114,13 @@ type
     FBreakManualPosition: Boolean;
     FBreakManualHeight: Boolean;
     FBreakSpacing: Double;
+    // Масштаб и поворот объекта (как у вставки блока). Хранятся отдельно,
+    // потому что базовый CalcObjMatrixWithoutOwner восстанавливает ось OX
+    // из OZ и теряет поворот в плоскости и масштаб. Благодаря этим полям
+    // перенос, поворот и масштабирование таблицы отображаются корректно
+    // (issue #1305).
+    FScale: TzePoint3d;
+    FRotate: Double;
     // Стиль таблицы
     FTableStyle: TTableStyle;
     // Строки, столбцы, ячейки и объединения
@@ -155,10 +162,17 @@ type
       const ASource: TAcadTablePart; var ADest: TAcadTablePart);
     // Вычисляет bounding box таблицы
     procedure getoutbound(var DC: TDrawContext);
+    // Раскладывает objmatrix на точку вставки, базис и масштаб (issue #1305)
+    procedure decomposite;
+    // Поворачивает objmatrix вокруг оси Z на угол r (issue #1305)
+    procedure setrot(r: Double);
     // Возвращает имя стиля таблицы
     function GetTableStyleName: String;
     // Возвращает количество частей-продолжений
     function GetContinuationPartCount: Integer;
+    // Чтение/запись вычисляемого признака разрыва таблицы (issue #1305)
+    function GetBreakEnabled: Boolean;
+    procedure SetBreakEnabled(AValue: Boolean);
 
   public
     constructor initnul(
@@ -182,6 +196,12 @@ type
       var ADC: TDrawContext;
       AStage: TEFStages = EFAllStages); virtual;
     function IsStagedFormatEntity: Boolean; virtual;
+    // Трансформация объекта: масштаб и поворот учитываются как у вставки
+    // блока, чтобы перенос/поворот/масштабирование перестраивали таблицу
+    // (issue #1305, часть 1).
+    procedure CalcObjMatrix(pdrawing: PTDrawingDef = nil); virtual;
+    procedure ReCalcFromObjMatrix; virtual;
+    procedure rtsave(refp: Pointer); virtual;
     function Clone(AOwn: Pointer): PGDBObjEntity; virtual;
     function GetObjType: TObjID; virtual;
     function GetObjTypeName: String; virtual;
@@ -199,7 +219,10 @@ type
     property Width: Double read GetTotalWidth;
     property Height: Double read GetTotalHeight;
     property TableStyleName: String read GetTableStyleName;
-    property BreakEnabled: Boolean read FBreakEnabled;
+    // Признак разрыва вычисляется: учитывает как DXF-флаг, так и
+    // поглощённые части-продолжения (issue #1305, часть 2a). Запись
+    // в False объединяет разорванную таблицу сверху вниз (часть 2b).
+    property BreakEnabled: Boolean read GetBreakEnabled write SetBreakEnabled;
     property BreakDirection: TAcadTableBreakDirection
       read FBreakDirection;
     property BreakRepeatTopLabels: Boolean
@@ -290,6 +313,9 @@ begin
   FBreakManualPosition := False;
   FBreakManualHeight := False;
   FBreakSpacing := 0;
+  // Трансформация по умолчанию: единичный масштаб, без поворота (issue #1305)
+  FScale := ScaleOne;
+  FRotate := 0;
   InitTableStyle(FTableStyle);
   System.SetLength(FRows, 0);
   System.SetLength(FCols, 0);
@@ -425,10 +451,10 @@ begin
   // Копируем высоты и ширины
   for RowIdx := 0 to DXFData.RowHeights.Count - 1 do
     FRowHeights.PushBackData(
-      DXFData.RowHeights.parray^[RowIdx]);
+      DXFData.RowHeights.getData(RowIdx));
   for ColIdx := 0 to DXFData.ColWidths.Count - 1 do
     FColWidths.PushBackData(
-      DXFData.ColWidths.parray^[ColIdx]);
+      DXFData.ColWidths.getData(ColIdx));
 
   // Копируем тексты ячеек
   System.SetLength(FCellTexts, Length(DXFData.CellTexts));
@@ -974,10 +1000,10 @@ begin
 
   APart.RowHeights.initnul;
   for Idx := 0 to ASource.FRowHeights.Count - 1 do
-    APart.RowHeights.PushBackData(ASource.FRowHeights.parray^[Idx]);
+    APart.RowHeights.PushBackData(ASource.FRowHeights.getData(Idx));
   APart.ColWidths.initnul;
   for Idx := 0 to ASource.FColWidths.Count - 1 do
-    APart.ColWidths.PushBackData(ASource.FColWidths.parray^[Idx]);
+    APart.ColWidths.PushBackData(ASource.FColWidths.getData(Idx));
 
   System.SetLength(APart.CellTexts, Length(ASource.FCellTexts));
   for Idx := 0 to High(ASource.FCellTexts) do
@@ -1026,10 +1052,10 @@ begin
 
   ADest.RowHeights.initnul;
   for Idx := 0 to ASource.RowHeights.Count - 1 do
-    ADest.RowHeights.PushBackData(ASource.RowHeights.parray^[Idx]);
+    ADest.RowHeights.PushBackData(ASource.RowHeights.getData(Idx));
   ADest.ColWidths.initnul;
   for Idx := 0 to ASource.ColWidths.Count - 1 do
-    ADest.ColWidths.PushBackData(ASource.ColWidths.parray^[Idx]);
+    ADest.ColWidths.PushBackData(ASource.ColWidths.getData(Idx));
 
   System.SetLength(ADest.CellTexts, Length(ASource.CellTexts));
   for Idx := 0 to High(ASource.CellTexts) do
@@ -1074,6 +1100,111 @@ begin
   Result := Length(FContinuationParts);
 end;
 
+// Признак разрыва вычисляется по двум источникам (issue #1305, часть 2a):
+//  - FBreakEnabled: флаг разрыва из одиночного DXF ACAD_TABLE;
+//  - поглощённые части-продолжения: таблица, разорванная на несколько
+//    ACAD_TABLE (ROUNDTRIP_2008), хранится как несколько частей одного
+//    объекта, и DXF-флаг разрыва у неё не выставлен. В этом случае факт
+//    разрыва определяется наличием частей-продолжений.
+function GDBObjAcadTable.GetBreakEnabled: Boolean;
+begin
+  Result := FBreakEnabled or (Length(FContinuationParts) > 0);
+end;
+
+// Изменение признака разрыва (issue #1305, часть 2b). Установка в False
+// для разорванной таблицы объединяет все части-продолжения с главной
+// частью, выстраивая строки сверху вниз в единую непрерывную таблицу.
+procedure GDBObjAcadTable.SetBreakEnabled(AValue: Boolean);
+var
+  PartIdx, RowIdx, ColIdx, SrcCount: Integer;
+  RowOffset: Integer;
+  MergeBase: Integer;
+begin
+  if AValue then
+  begin
+    // Включить разрыв программно нельзя без геометрии разбиения —
+    // сохраняем только DXF-флаг.
+    FBreakEnabled := True;
+    Exit;
+  end;
+
+  // Снять разрыв: объединяем части-продолжения в главную таблицу.
+  FBreakEnabled := False;
+
+  if Length(FContinuationParts) = 0 then
+    Exit;
+
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    RowOffset := FRowCount;
+
+    // Высоты строк добавляемой части
+    for RowIdx := 0 to FContinuationParts[PartIdx].RowHeights.Count - 1 do
+      FRowHeights.PushBackData(
+        FContinuationParts[PartIdx].RowHeights.getData(RowIdx));
+
+    // Тексты ячеек (тот же порядок строк, та же ширина по столбцам)
+    SrcCount := Length(FContinuationParts[PartIdx].CellTexts);
+    if SrcCount > 0 then
+    begin
+      MergeBase := Length(FCellTexts);
+      System.SetLength(FCellTexts, MergeBase + SrcCount);
+      for RowIdx := 0 to SrcCount - 1 do
+        FCellTexts[MergeBase + RowIdx] :=
+          FContinuationParts[PartIdx].CellTexts[RowIdx];
+    end;
+
+    // Формат строк
+    MergeBase := Length(FRows);
+    System.SetLength(FRows,
+      MergeBase + Length(FContinuationParts[PartIdx].Rows));
+    for RowIdx := 0 to High(FContinuationParts[PartIdx].Rows) do
+      FRows[MergeBase + RowIdx] :=
+        FContinuationParts[PartIdx].Rows[RowIdx];
+
+    // Ячейки (двумерный массив [строка][столбец])
+    MergeBase := Length(FCells);
+    System.SetLength(FCells,
+      MergeBase + Length(FContinuationParts[PartIdx].Cells));
+    for RowIdx := 0 to High(FContinuationParts[PartIdx].Cells) do
+    begin
+      System.SetLength(FCells[MergeBase + RowIdx],
+        Length(FContinuationParts[PartIdx].Cells[RowIdx]));
+      for ColIdx := 0 to
+          High(FContinuationParts[PartIdx].Cells[RowIdx]) do
+        FCells[MergeBase + RowIdx][ColIdx] :=
+          FContinuationParts[PartIdx].Cells[RowIdx][ColIdx];
+    end;
+
+    // Объединения ячеек со сдвигом номеров строк
+    MergeBase := Length(FMerges);
+    System.SetLength(FMerges,
+      MergeBase + Length(FContinuationParts[PartIdx].Merges));
+    for RowIdx := 0 to High(FContinuationParts[PartIdx].Merges) do
+    begin
+      FMerges[MergeBase + RowIdx] :=
+        FContinuationParts[PartIdx].Merges[RowIdx];
+      Inc(FMerges[MergeBase + RowIdx].Row1, RowOffset);
+      Inc(FMerges[MergeBase + RowIdx].Row2, RowOffset);
+    end;
+
+    // Учитываем добавленные строки
+    Inc(FRowCount, FContinuationParts[PartIdx].RowCount);
+  end;
+
+  // Освобождаем части-продолжения — таблица снова непрерывна
+  for PartIdx := 0 to High(FContinuationParts) do
+    ClearPart(FContinuationParts[PartIdx]);
+  System.SetLength(FContinuationParts, 0);
+
+  // Геометрию нужно перестроить
+  FGeometryBuilt := False;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakEnabled(False) merged into ' +
+    'single table rows=%d cols=%d', [FRowCount, FColCount], LM_Info);
+end;
+
 // Поглощает продолжение разделённой таблицы как часть этого объекта.
 function GDBObjAcadTable.TryMergeContinuation(
   AOther: PGDBObjEntity): Boolean;
@@ -1099,6 +1230,74 @@ begin
   Result := True;
 end;
 
+// --- Трансформация объекта (issue #1305, часть 1) ---
+// Таблица AcadTable реализует ту же модель трансформации, что и вставка
+// блока (uzeentblockinsert): масштаб и поворот хранятся отдельными полями
+// (FScale/FRotate) и восстанавливаются из objmatrix, чтобы перенос,
+// поворот и масштабирование объекта корректно отображались.
+
+// Раскладывает objmatrix на точку вставки, базис и масштаб.
+procedure GDBObjAcadTable.decomposite;
+var
+  BX, BY, BZ, T: TzePoint3d;
+  Mtr: TzeTypedMatrix4d;
+begin
+  Mtr := objMatrix;
+  BX := PzePoint3d(@Mtr.mtr.v[0])^;
+  BY := PzePoint3d(@Mtr.mtr.v[1])^;
+  BZ := PzePoint3d(@Mtr.mtr.v[2])^;
+  T := PzePoint3d(@Mtr.mtr.v[3])^;
+  Local := GetPointInOCSByBasis(BX, BY, BZ, T, FScale);
+end;
+
+// Поворачивает objmatrix вокруг оси Z на угол r.
+procedure GDBObjAcadTable.setrot(r: Double);
+var
+  m1: TzeTypedMatrix4d;
+begin
+  m1 := CreateRotationMatrixZ(r);
+  objMatrix := MatrixMultiply(m1, objMatrix);
+end;
+
+// Восстанавливает точку вставки, масштаб и угол поворота из objmatrix
+// после трансформации (перенос/поворот/масштабирование).
+procedure GDBObjAcadTable.ReCalcFromObjMatrix;
+var
+  ox: TzePoint3d;
+  tv: TzePoint3d;
+begin
+  inherited;
+  decomposite;
+  ox := GetXfFromZ(Local.basis.oz);
+  tv := Local.basis.ox;
+  if FScale.x < -eps then
+    tv := VertexMulOnSc(tv, -1);
+  FRotate := scalardot(tv, ox);
+  FRotate := arccos(FRotate);
+  if scalardot(tv, VectorDot(Local.basis.oz,
+       GetXfFromZ(Local.basis.oz))) < -eps then
+    FRotate := 2 * pi - FRotate;
+end;
+
+// Строит objmatrix с учётом точки вставки, поворота и масштаба.
+procedure GDBObjAcadTable.CalcObjMatrix(pdrawing: PTDrawingDef = nil);
+var
+  m1: TzeTypedMatrix4d;
+begin
+  inherited CalcObjMatrix(pdrawing);
+  setrot(FRotate);
+  m1 := CreateScaleMatrix(FScale);
+  objMatrix := MatrixMultiply(m1, objMatrix);
+end;
+
+// Сохраняет масштаб и поворот в опорный объект (real-time трансформация).
+procedure GDBObjAcadTable.rtsave(refp: Pointer);
+begin
+  inherited;
+  PGDBObjAcadTable(refp)^.FRotate := FRotate;
+  PGDBObjAcadTable(refp)^.FScale := FScale;
+end;
+
 // Вычисляет bounding box
 procedure GDBObjAcadTable.getoutbound(var DC: TDrawContext);
 var
@@ -1108,6 +1307,16 @@ var
   BaseX, BaseY, PartW, PartH: Double;
   PartMinX, PartMaxX, PartMinY, PartMaxY: Double;
 begin
+  // Если геометрия уже построена, берём bounding box из дочерних
+  // объектов: их WCS-координаты учитывают перенос/поворот/масштаб-
+  // ирование objmatrix, поэтому рамка следует за трансформацией
+  // (issue #1305, часть 1).
+  if ConstObjArray.Count > 0 then
+  begin
+    vp.BoundingBox := ConstObjArray.getoutbound(DC);
+    Exit;
+  end;
+
   if (FRowCount <= 0) or (FColCount <= 0) then
   begin
     vp.BoundingBox.LBN :=
@@ -1191,12 +1400,24 @@ begin
       EntExtensions.RunOnBeforeEntityFormat(
         @Self, ADrawing, ADC);
     CalcObjMatrix;
+  end;
+  // Раскладка таблицы в OCS строится один раз и защищена флагом
+  // FGeometryBuilt. Сами дочерние объекты (линии и тексты) каждый
+  // кадр переформатируются ниже, чтобы перенос/поворот/масштаб-
+  // ирование объекта отображались — дочерние объекты пересчитывают
+  // свои WCS-координаты из objmatrix владельца (issue #1305, часть 1).
+  BuildGeometry(ADrawing);
+  ConstObjArray.FormatEntity(ADrawing, ADC, AStage);
+  if EFCalcEntityCS in AStage then
+  begin
     getoutbound(ADC);
+    // Перестраиваем пространственное дерево по новым координатам
+    // дочерних объектов, иначе перерисовки на месте не происходит.
+    inherited BuildGeometry(ADrawing);
   end;
   CalcActualVisible(ADC.DrawingContext.VActuality);
   if EFDraw in AStage then
   begin
-    BuildGeometry(ADrawing);
     if Assigned(EntExtensions) then
       EntExtensions.RunOnAfterEntityFormat(
         @Self, ADrawing, ADC);
@@ -1254,13 +1475,16 @@ begin
   NewTable^.FBreakManualPosition := FBreakManualPosition;
   NewTable^.FBreakManualHeight := FBreakManualHeight;
   NewTable^.FBreakSpacing := FBreakSpacing;
+  // Трансформация объекта (issue #1305, часть 1)
+  NewTable^.FScale := FScale;
+  NewTable^.FRotate := FRotate;
 
   for Idx := 0 to FRowHeights.Count - 1 do
     NewTable^.FRowHeights.PushBackData(
-      FRowHeights.parray^[Idx]);
+      FRowHeights.getData(Idx));
   for Idx := 0 to FColWidths.Count - 1 do
     NewTable^.FColWidths.PushBackData(
-      FColWidths.parray^[Idx]);
+      FColWidths.getData(Idx));
 
   System.SetLength(NewTable^.FCellTexts,
     Length(FCellTexts));

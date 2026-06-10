@@ -26,6 +26,10 @@ uses
   uzeffmanager,
   uzgldrawcontext,
   uzeconsts,
+  uzeTypes,
+  gzctnrVectorTypes,
+  uzegeometry,
+  uzegeometrytypes,
   uzeentity,
   uzeentmtext,
   uzeentline,
@@ -47,6 +51,12 @@ type
     procedure RendersBrokenTableAsSeparatedFragments;
     procedure LoadsSplitTableAsSingleMergedObject;
     procedure AppliesTableStyleToContinuationParts;
+    // issue #1305, часть 1: трансформация (перенос) должна перестраивать
+    // визуальное представление таблицы.
+    procedure TransformationMovesRenderedTable;
+    // issue #1305, часть 2b: снятие признака разрыва объединяет
+    // части-продолжения в единую непрерывную таблицу.
+    procedure ClearingBreakMergesContinuationParts;
   end;
 
 implementation
@@ -266,19 +276,21 @@ begin
     AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
     AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
 
-    CheckFalse(AcadTable^.BreakEnabled, 'Разрыв таблицы должен читаться из DXF');
-    CheckEquals(Ord(atbdRight), Ord(AcadTable^.BreakDirection),
-      'Направление разрыва должно читаться из DXF');
-    CheckTrue(AcadTable^.BreakRepeatTopLabels,
-      'Повторение верхних меток должно читаться из DXF');
-    CheckTrue(AcadTable^.BreakRepeatBottomLabels,
-      'Повторение нижних меток должно читаться из DXF');
-    CheckTrue(AcadTable^.BreakManualPosition,
-      'Ручное положение частей таблицы должно читаться из DXF');
-    CheckFalse(AcadTable^.BreakManualHeight,
-      'Ручная высота частей таблицы должна читаться из DXF');
-    CheckEquals(1.0, AcadTable^.BreakSpacing, 1e-9,
-      'Интервал между частями таблицы должен читаться из DXF');
+    // tablerazdel.dxf — это таблица, физически разорванная на три части
+    // (две части-продолжения). Признак разрыва вычисляемый: даже если
+    // DXF-флаг разбиения у отдельных ACAD_TABLE снят, наличие частей-
+    // продолжений означает, что таблица разорвана, поэтому
+    // BreakEnabled = True (issue #1305, часть 2a). Раньше инспектор
+    // ошибочно показывал здесь Break enabled = false.
+    CheckTrue(AcadTable^.BreakEnabled,
+      'Разорванная на части таблица должна показывать Break enabled = True');
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Разорванная таблица должна хранить части-продолжения');
+    // Подробные параметры разрыва (повтор меток, ручное положение,
+    // интервал) у round-trip разорванной таблицы хранятся не в самой
+    // сущности ACAD_TABLE, а в объектах TABLEBREAKDATA секции OBJECTS,
+    // и их чтение выходит за рамки issue #1305 (части 2a/2b — это
+    // корректное определение факта разрыва и его снятие).
   finally
     Drawing.done;
   end;
@@ -295,20 +307,16 @@ begin
     AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
     AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
 
-    CheckTrue(AcadTable^.BreakEnabled,
-      'Признак включенного разрыва должен читаться из DXF');
-    CheckEquals(Ord(atbdRight), Ord(AcadTable^.BreakDirection),
-      'Направление разрыва должно читаться из второго DXF-образца');
-    CheckTrue(AcadTable^.BreakRepeatTopLabels,
-      'Повторение верхних меток должно читаться из второго DXF-образца');
-    CheckTrue(AcadTable^.BreakRepeatBottomLabels,
-      'Повторение нижних меток должно читаться из второго DXF-образца');
-    CheckTrue(AcadTable^.BreakManualPosition,
-      'Ручное положение частей должно читаться из второго DXF-образца');
-    CheckFalse(AcadTable^.BreakManualHeight,
-      'Ручная высота частей должна читаться из второго DXF-образца');
-    CheckEquals(0.0, AcadTable^.BreakSpacing, 1e-9,
-      'Интервал между частями таблицы должен читаться из второго DXF-образца');
+    // tablerazdel2.dxf — одиночный неразорванный ACAD_TABLE: одна
+    // сущность без частей-продолжений и без DXF-флага разрыва.
+    // Вычисляемый признак разрыва не должен срабатывать ложно —
+    // BreakEnabled = False (issue #1305, часть 2a: корректное
+    // определение признаков разделения работает в обе стороны —
+    // неразорванная таблица не должна показывать Break enabled = True).
+    CheckEquals(0, AcadTable^.ContinuationPartCount,
+      'Неразорванная таблица не должна иметь частей-продолжений');
+    CheckFalse(AcadTable^.BreakEnabled,
+      'Неразорванная таблица должна показывать Break enabled = False');
   finally
     Drawing.done;
   end;
@@ -393,6 +401,87 @@ begin
     Check(MaxSize < CAcadTableDefaultTextHeight - 1e-6,
       'Высота текста частей-продолжений должна браться из DXF-стиля, ' +
       'а не из значения по умолчанию');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1305, часть 1. До исправления визуальное представление таблицы
+// строилось один раз и было защищено флагом FGeometryBuilt, поэтому при
+// переносе (ручкой переноса) сама таблица не перестраивалась — двигалась
+// только ручка. Теперь дочерние объекты переформатируются каждый кадр и
+// пересчитывают свои WCS-координаты из objmatrix владельца, поэтому
+// перенос таблицы сдвигает все её линии на ту же величину.
+procedure TAcadTableStyleTest.TransformationMovesRenderedTable;
+const
+  Shift = 100.0;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  DC: TDrawContext;
+  MinX1, MaxX1, MinX2, MaxX2: Double;
+  HasGap: Boolean;
+  Matrix: TzeTypedMatrix4d;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    DC := Drawing.CreateDrawingRC;
+    AcadTable^.FormatEntity(Drawing, DC);
+    CollectLineBounds(AcadTable^.ConstObjArray, MinX1, MaxX1, HasGap);
+    Check(MaxX1 > MinX1, 'Таблица должна отрисовать линии в WCS');
+
+    // Переносим таблицу на Shift по оси X, как это делает ручка переноса.
+    Matrix := CreateTranslationMatrix(Shift, 0, 0);
+    AcadTable^.TransformAt(PGDBObjEntity(AcadTable), @Matrix);
+    AcadTable^.FormatEntity(Drawing, DC);
+    CollectLineBounds(AcadTable^.ConstObjArray, MinX2, MaxX2, HasGap);
+
+    CheckEquals(MinX1 + Shift, MinX2, 1e-6,
+      'После переноса таблицы её линии должны сдвинуться на ту же величину ' +
+      '(issue #1305, часть 1)');
+    CheckEquals(MaxX1 + Shift, MaxX2, 1e-6,
+      'Правая граница перенесённой таблицы должна сдвинуться на ту же величину');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1305, часть 2b. Разорванная таблица (tablerazdel.dxf) загружается
+// как один объект с двумя частями-продолжениями. Снятие признака разрыва
+// (BreakEnabled := False) должно объединить все части в одну непрерывную
+// таблицу: части-продолжения исчезают, а строки выстраиваются сверху вниз.
+procedure TAcadTableStyleTest.ClearingBreakMergesContinuationParts;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  RowsBefore: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Разорванная таблица должна содержать части-продолжения');
+    CheckTrue(AcadTable^.BreakEnabled,
+      'До снятия разрыва BreakEnabled должен быть True');
+    RowsBefore := AcadTable^.RowCount;
+
+    // Снимаем признак разрыва — таблица должна перестроиться сверху вниз.
+    AcadTable^.BreakEnabled := False;
+
+    CheckEquals(0, AcadTable^.ContinuationPartCount,
+      'После снятия разрыва части-продолжения должны быть объединены');
+    CheckFalse(AcadTable^.BreakEnabled,
+      'После объединения BreakEnabled должен быть False');
+    CheckTrue(AcadTable^.RowCount > RowsBefore,
+      'Объединённая таблица должна содержать строки всех частей ' +
+      '(issue #1305, часть 2b)');
   finally
     Drawing.done;
   end;

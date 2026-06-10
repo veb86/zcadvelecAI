@@ -81,7 +81,7 @@
     </RequiredPackages>
     <Units Count="1">
       <Unit0>
-        <Filename Value="testzengine.lpr"/>
+        <Filename Value="testacadtable_standalone.lpr"/>
         <IsPartOfProject Value="True"/>
       </Unit0>
     </Units>
@@ -89,7 +89,7 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="testzengine"/>
+      <Filename Value="testacadtable_standalone"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);.."/>

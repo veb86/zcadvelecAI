@@ -43,6 +43,7 @@ uses
   uzcoimultiproperties,uzcoimultipropertiesutil,
   uzeacadtable_model,uzeacadtable_types,
   uzeconsts,uzegeometrytypes,
+  uzcdrawings,
   uzsbVarmanDef,Varman,uzbUnits,uzetypes,gzctnrVectorTypes,uzctnrVectorStrings,
   uzclog,uzbLogIntf;
 
@@ -140,6 +141,34 @@ begin
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakEnabled;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись признака разбиения таблицы (issue #1305, часть 2b).
+// Снятие флага (Break enabled = False) у разорванной таблицы объединяет
+// сохранённые части-продолжения и перестраивает таблицу сверху вниз в один
+// сплошной объект (вся работа выполняется в GDBObjAcadTable.SetBreakEnabled).
+// Установка True самостоятельно таблицу по геометрии не разрывает — она лишь
+// сохраняет признак, поэтому здесь специальной обработки этого случая нет.
+// После изменения вызывается YouChanged, чтобы дерево чертежа пересчитало
+// геометрию таблицы (FormatEntity перестроит её по обновлённой модели).
+procedure AcadTableBreakEnabledEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Boolean;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PBoolean(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakEnabled=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakEnabled:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 // Чтение признака повтора верхних подписей (только чтение)
@@ -324,12 +353,16 @@ begin
     OneVarDataMIPD,
     TEntIterateProcsData.Create(nil,@AcadTableColCountEntIterateProc,nil));
 
-  {AcadTable — разбиение таблицы (только чтение)}
+  {AcadTable — разбиение таблицы}
+  {Break enabled редактируется: снятие флага объединяет части (issue #1305).
+   Остальные параметры разбиения — только чтение.}
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakEnabled','Break enabled',sysunit^.TypeName2PTD('Boolean'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableBreakEnabledEntIterateProc,nil));
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakEnabledEntIterateProc,
+      @AcadTableBreakEnabledEntChangeProc));
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakDirection','Break direction',sysunit^.TypeName2PTD('TEnumData'),
     MPCMisc,GDBAcadTableID,nil,0,0,
