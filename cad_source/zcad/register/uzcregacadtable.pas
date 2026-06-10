@@ -1,0 +1,379 @@
+{
+*****************************************************************************
+*                                                                           *
+*  This file is part of the ZCAD                                            *
+*                                                                           *
+*  See the file COPYING.txt, included in this distribution,                 *
+*  for details about the copyright.                                         *
+*                                                                           *
+*  This program is distributed in the hope that it will be useful,          *
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of           *
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                     *
+*                                                                           *
+*****************************************************************************
+}
+
+{
+@author(Vladimir Bobrov)
+}
+
+{
+  Модуль: uzcregacadtable
+  Назначение: регистрация свойств AcadTable в инспекторе объектов ZCAD.
+  Вынесено в отдельный модуль register по образцу uzcregleader,
+  чтобы не раздувать общие файлы инспектора. Свойства таблицы доступны
+  только для чтения и применяются исключительно к сущности AcadTable
+  (GDBAcadTableID), не затрагивая обычную сущность Table.
+
+  Зависимости: uzcoimultiproperties, uzcoimultipropertiesutil,
+               uzeacadtable_model, uzeacadtable_types, uzeconsts.
+}
+
+{$MODE OBJFPC}{$H+}
+unit uzcregacadtable;
+{$INCLUDE zengineconfig.inc}
+
+interface
+
+procedure RegisterAcadTableProperties;
+
+implementation
+
+uses
+  uzcoimultiproperties,uzcoimultipropertiesutil,
+  uzeacadtable_model,uzeacadtable_types,
+  uzeconsts,uzegeometrytypes,
+  uzsbVarmanDef,Varman,uzbUnits,uzetypes,gzctnrVectorTypes,
+  uzclog,uzbLogIntf;
+
+// Чтение ширины таблицы (только чтение)
+procedure AcadTableWidthEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Double;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.Width;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение высоты таблицы (только чтение)
+procedure AcadTableHeightEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Double;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.Height;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение имени стиля таблицы (только чтение)
+procedure AcadTableStyleNameEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:AnsiString;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.TableStyleName;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение количества строк (только чтение, не редактируется)
+procedure AcadTableRowCountEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:TArrayIndex;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.RowCount;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение количества столбцов (только чтение, не редактируется)
+procedure AcadTableColCountEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:TArrayIndex;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.ColCount;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение признака разбиения таблицы (только чтение)
+procedure AcadTableBreakEnabledEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Boolean;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakEnabled;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение признака повтора верхних подписей (только чтение)
+procedure AcadTableBreakRepeatTopEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Boolean;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakRepeatTopLabels;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение признака повтора нижних подписей (только чтение)
+procedure AcadTableBreakRepeatBottomEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Boolean;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakRepeatBottomLabels;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение признака ручного позиционирования разбиения (только чтение)
+procedure AcadTableBreakManualPosEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Boolean;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualPosition;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение признака ручной высоты разбиения (только чтение)
+procedure AcadTableBreakManualHeightEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Boolean;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualHeight;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Чтение интервала между частями разбиения (только чтение)
+procedure AcadTableBreakSpacingEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Double;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakSpacing;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Подготовка списка значений направления разбиения для комбобокса.
+// Enums.Clear обязателен: предотвращает повторное накопление строк
+// при повторном выборе сущности (иначе возможен сбой / двойное освобождение).
+function GetAcadTableBreakDirectionData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+const
+  BreakDirNames:array[0..2] of string=('Right','Down','Left');
+var
+  PVD:pvardesk;
+  t:PTEnumData;
+  i:integer;
+begin
+  result:=GetTEnumData(mp,pu);
+  PVD:=PTOneVarData(result)^.VDAddr.Instance;
+  if PVD<>nil then begin
+    t:=PVD^.data.Addr.Instance;
+    t^.Enums.Clear;
+    for i:=low(BreakDirNames) to high(BreakDirNames) do
+      t^.Enums.PushBackData(BreakDirNames[i]);
+    t^.Selected:=0;
+  end;
+end;
+
+// Чтение направления разбиения (только чтение, отображается комбобоксом)
+procedure AcadTableBreakDirectionEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  enumindex:integer;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  enumindex:=ord(PGDBObjAcadTable(ChangedData.PEntity)^.BreakDirection);
+  if fistrun then
+    PTEnumData(PVD^.data.Addr.Instance)^.Selected:=enumindex
+  else
+    if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>enumindex then
+      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+end;
+
+procedure RegisterAcadTableProperties;
+const
+  pacadtable:PGDBObjAcadTable=nil;
+begin
+  if sysunit=nil then
+    exit;
+
+  programlog.LogOutStr(
+    'AcadTable: uzcregacadtable: RegisterAcadTableProperties',LM_Info);
+
+  MultiPropertiesManager.RestartMultipropertySortID;
+
+  {AcadTable — геометрия (точка вставки)}
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'ACADTABLE_INSERT_X','X',sysunit^.TypeName2PTD('TzeXUnits'),
+    MPCGeometry,GDBAcadTableID,nil,
+    PtrInt(@pacadtable^.P_insert_in_WCS.x),
+    PtrInt(@pacadtable^.Local.P_insert.x),
+    OneVarDataMIPD,OneVarDataEIPD);
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'ACADTABLE_INSERT_Y','Y',sysunit^.TypeName2PTD('TzeYUnits'),
+    MPCGeometry,GDBAcadTableID,nil,
+    PtrInt(@pacadtable^.P_insert_in_WCS.y),
+    PtrInt(@pacadtable^.Local.P_insert.y),
+    OneVarDataMIPD,OneVarDataEIPD);
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'ACADTABLE_INSERT_Z','Z',sysunit^.TypeName2PTD('TzeZUnits'),
+    MPCGeometry,GDBAcadTableID,nil,
+    PtrInt(@pacadtable^.P_insert_in_WCS.z),
+    PtrInt(@pacadtable^.Local.P_insert.z),
+    OneVarDataMIPD,OneVarDataEIPD);
+
+  {AcadTable — размеры (только чтение)}
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableWidth','Width',sysunit^.TypeName2PTD('Double'),
+    MPCGeometry,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableWidthEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableHeight','Height',sysunit^.TypeName2PTD('Double'),
+    MPCGeometry,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableHeightEntIterateProc,nil));
+
+  {AcadTable — основные свойства (только чтение)}
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableStyleName','Table style',sysunit^.TypeName2PTD('AnsiString'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableStyleNameEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableRowCount','Rows',sysunit^.TypeName2PTD('TArrayIndex'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableRowCountEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableColCount','Columns',sysunit^.TypeName2PTD('TArrayIndex'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableColCountEntIterateProc,nil));
+
+  {AcadTable — разбиение таблицы (только чтение)}
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakEnabled','Break enabled',sysunit^.TypeName2PTD('Boolean'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakEnabledEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakDirection','Break direction',sysunit^.TypeName2PTD('TEnumData'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    TMainIterateProcsData.Create(
+      @GetAcadTableBreakDirectionData,@FreeTEnumData),
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakDirectionEntIterateProc,nil),
+    MPUM_AtLeastOneEntMatched);
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakRepeatTop','Repeat top labels',
+    sysunit^.TypeName2PTD('Boolean'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakRepeatTopEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakRepeatBottom','Repeat bottom labels',
+    sysunit^.TypeName2PTD('Boolean'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakRepeatBottomEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakManualPosition','Manual position',
+    sysunit^.TypeName2PTD('Boolean'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakManualPosEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakManualHeight','Manual height',
+    sysunit^.TypeName2PTD('Boolean'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakManualHeightEntIterateProc,nil));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakSpacing','Break spacing',sysunit^.TypeName2PTD('Double'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(nil,@AcadTableBreakSpacingEntIterateProc,nil));
+
+  MultiPropertiesManager.sort;
+end;
+
+initialization
+  RegisterAcadTableProperties;
+finalization
+  ProgramLog.LogOutFormatStr('Unit "%s" finalization',[{$INCLUDE %FILE%}],
+    LM_Info,UnitsFinalizeLMId);
+end.

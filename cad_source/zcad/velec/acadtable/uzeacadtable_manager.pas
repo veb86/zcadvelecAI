@@ -34,7 +34,10 @@
     uzeacadtable_dxf_read   — импорт из DXF
     uzeacadtable_dxf_write  — экспорт в DXF
     uzeacadtable_model      — основная сущность GDBObjAcadTable
-    uzeacadtable_inspector  — интеграция с Object Inspector
+
+  Примечание: интеграция с Object Inspector вынесена в отдельный модуль
+  register/uzcregacadtable (по образцу uzcregleader) и подключается
+  напрямую из zcad.pas.
 }
 
 unit uzeacadtable_manager;
@@ -58,9 +61,7 @@ uses
   uzeacadtable_dxf_read,
   uzeacadtable_dxf_write,
   // Сущность
-  uzeacadtable_model,
-  // UI
-  uzeacadtable_inspector;
+  uzeacadtable_model;
 
 // Реэкспорт основных типов для удобства подключения
 type
