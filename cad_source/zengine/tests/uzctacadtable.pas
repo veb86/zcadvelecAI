@@ -30,6 +30,8 @@ uses
   uzeentmtext,
   uzeentline,
   uzeentgenericsubentry,
+  uzeentcomplex,
+  UGDBVisibleTreeArray,
   uzeenttext,
   uzeentblockinsert,
   uzeenttable,
@@ -44,6 +46,7 @@ type
     procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
     procedure LoadsSplitTableAsSingleMergedObject;
+    procedure AppliesTableStyleToContinuationParts;
   end;
 
 implementation
@@ -90,14 +93,24 @@ begin
   Result := ADrawing.pObjRoot^.ObjArray.Count;
 end;
 
-procedure CollectMTextStyles(const ARoot: PGDBObjGenericSubEntry;
+// Геометрия AcadTable (линии и MText ячеек) генерируется в собственный
+// ConstObjArray объекта, а не в корень чертежа. Построение отложенное
+// (DXFDelayedBuildGeometry=True), поэтому тесты обязаны сначала вызвать
+// BuildGeometry на таблице, а затем обходить именно её ConstObjArray.
+procedure BuildTableGeometry(var ADrawing: TSimpleDrawing;
+  ATable: PGDBObjAcadTable);
+begin
+  ATable^.BuildGeometry(ADrawing);
+end;
+
+procedure CollectMTextStyles(var AArr: GDBObjEntityTreeArray;
   AStyles: TStrings);
 var
   IR: itrec;
   PEntity: PGDBObjEntity;
   PMText: PGDBObjMText;
 begin
-  PEntity := ARoot^.ObjArray.beginiterate(IR);
+  PEntity := AArr.beginiterate(IR);
   while PEntity <> nil do
   begin
     if PEntity^.GetObjType = GDBMTextID then
@@ -107,11 +120,11 @@ begin
         if AStyles.IndexOf(PMText^.TXTStyle^.Name) < 0 then
           AStyles.Add(PMText^.TXTStyle^.Name);
     end;
-    PEntity := ARoot^.ObjArray.iterate(IR);
+    PEntity := AArr.iterate(IR);
   end;
 end;
 
-procedure CollectLineBounds(const ARoot: PGDBObjGenericSubEntry;
+procedure CollectLineBounds(var AArr: GDBObjEntityTreeArray;
   out AMinX, AMaxX: Double; out AHasGap: Boolean);
 var
   IR: itrec;
@@ -130,7 +143,7 @@ begin
   AHasGap := False;
   SegCount := 0;
 
-  PEntity := ARoot^.ObjArray.beginiterate(IR);
+  PEntity := AArr.beginiterate(IR);
   while PEntity <> nil do
   begin
     if PEntity^.GetObjType = GDBLineID then
@@ -143,7 +156,7 @@ begin
       Segments[SegCount].MaxX := MaxSegX;
       Inc(SegCount);
     end;
-    PEntity := ARoot^.ObjArray.iterate(IR);
+    PEntity := AArr.iterate(IR);
   end;
 
   if SegCount = 0 then
@@ -172,9 +185,45 @@ begin
   end;
 end;
 
+// Собирает высоты текста (textprop.size) всех MText, отрисованных таблицей.
+procedure CollectMTextSizes(var AArr: GDBObjEntityTreeArray;
+  out AMinSize, AMaxSize: Double; out ACount: Integer);
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PMText: PGDBObjMText;
+  Sz: Double;
+begin
+  AMinSize := 0;
+  AMaxSize := 0;
+  ACount := 0;
+  PEntity := AArr.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBMTextID then
+    begin
+      PMText := PGDBObjMText(PEntity);
+      Sz := PMText^.textprop.size;
+      if ACount = 0 then
+      begin
+        AMinSize := Sz;
+        AMaxSize := Sz;
+      end
+      else
+      begin
+        if Sz < AMinSize then AMinSize := Sz;
+        if Sz > AMaxSize then AMaxSize := Sz;
+      end;
+      Inc(ACount);
+    end;
+    PEntity := AArr.iterate(IR);
+  end;
+end;
+
 procedure TAcadTableStyleTest.LoadsCellTextStylesFromDXFTableStyle;
 var
   Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
   StyleNames: TStringList;
   EntityCount: Integer;
 begin
@@ -183,11 +232,15 @@ begin
   try
     Check(EntityCount > 0, 'DXF должен загрузить сущности');
 
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    BuildTableGeometry(Drawing, AcadTable);
+
     StyleNames := TStringList.Create;
     try
       StyleNames.Sorted := False;
       StyleNames.Duplicates := dupIgnore;
-      CollectMTextStyles(Drawing.pObjRoot, StyleNames);
+      CollectMTextStyles(AcadTable^.ConstObjArray, StyleNames);
 
       Check(StyleNames.Count > 0, 'Ожидались текстовые сущности таблицы');
       Check(StyleNames.IndexOf('newtext') >= 0,
@@ -264,13 +317,18 @@ end;
 procedure TAcadTableStyleTest.RendersBrokenTableAsSeparatedFragments;
 var
   Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
   MinX, MaxX: Double;
   HasGap: Boolean;
 begin
   LoadDrawingFromDXF(
     ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
   try
-    CollectLineBounds(Drawing.pObjRoot, MinX, MaxX, HasGap);
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    BuildTableGeometry(Drawing, AcadTable);
+
+    CollectLineBounds(AcadTable^.ConstObjArray, MinX, MaxX, HasGap);
     Check(HasGap,
       'После применения правил разбиения у AcadTable должны быть разрывы между фрагментами');
     Check(MaxX - MinX > 20.0,
@@ -300,6 +358,41 @@ begin
     AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
     CheckEquals(2, AcadTable^.ContinuationPartCount,
       'В главную таблицу должны быть поглощены две части-продолжения');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// Все три части разделённой таблицы (tablerazdel.dxf) используют один и тот же
+// DXF-стиль таблицы (handle 342 = "87", высоты текста 0.18/0.25). Части-
+// продолжения поглощаются до вызова BuildGeometry, поэтому раньше их стиль
+// оставался по умолчанию и текст рендерился высотой CAcadTableDefaultTextHeight
+// (2.5) — намного крупнее ячеек, из-за чего «разъезжался». После исправления
+// табличный стиль применяется ко всем частям, и высота текста не превышает
+// высоту из DXF (issue #1300).
+procedure TAcadTableStyleTest.AppliesTableStyleToContinuationParts;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  MinSize, MaxSize: Double;
+  TextCount: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    Check(AcadTable^.ContinuationPartCount > 0,
+      'Таблица должна содержать части-продолжения');
+
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectMTextSizes(AcadTable^.ConstObjArray, MinSize, MaxSize, TextCount);
+    Check(TextCount > 0, 'Таблица должна отрисовать текст ячеек');
+    // Высоты текста стиля 0.18/0.25 — задаём порог заметно ниже значения
+    // по умолчанию 2.5, чтобы поймать неприменённый стиль у продолжений.
+    Check(MaxSize < CAcadTableDefaultTextHeight - 1e-6,
+      'Высота текста частей-продолжений должна браться из DXF-стиля, ' +
+      'а не из значения по умолчанию');
   finally
     Drawing.done;
   end;

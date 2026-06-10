@@ -65,6 +65,11 @@ type
     CellTexts: TTableTextArray;
     TableFlags: Integer;
     TableStyle: TTableStyle;
+    // Хэндл DXF-стиля таблицы этой части (group code 342). Нужен, чтобы
+    // применить тот же табличный стиль, что и к главной части: иначе у
+    // продолжений остаётся стиль по умолчанию и текст рендерится высотой
+    // CAcadTableDefaultTextHeight вместо высоты из DXF (issue #1300).
+    TableStyleHandle: String;
     Rows: TTableRowArray;
     Cols: TTableColumnArray;
     Cells: TTableCellArray;
@@ -928,6 +933,13 @@ begin
     BaseX := FContinuationParts[PartIdx].InsertPoint.x - FInsertPoint.x;
     BaseY := FContinuationParts[PartIdx].InsertPoint.y - FInsertPoint.y;
     SwapTableData(FContinuationParts[PartIdx]);
+    // Часть-продолжение поглощается до того, как для неё вызывается
+    // BuildGeometry, поэтому её FTableStyle остаётся стилем по умолчанию.
+    // Применяем DXF-стиль части (тот же handle 342, что и у главной части),
+    // иначе текст рендерится высотой CAcadTableDefaultTextHeight и
+    // «разъезжается» относительно ячеек (issue #1300).
+    uzeacadtable_stylemanager.ApplyDXFTableStyle(
+      FTableStyle, FContinuationParts[PartIdx].TableStyleHandle, ADrawing);
     RenderCurrentTable(ADrawing, ADC, BaseX, BaseY);
     SwapTableData(FContinuationParts[PartIdx]);
   end;
@@ -951,6 +963,7 @@ begin
   APart.ColCount := ASource.FColCount;
   APart.TableFlags := ASource.FTableFlags;
   APart.TableStyle := ASource.FTableStyle;
+  APart.TableStyleHandle := ASource.FTableStyleHandle;
   APart.BreakEnabled := ASource.FBreakEnabled;
   APart.BreakDirection := ASource.FBreakDirection;
   APart.BreakRepeatTopLabels := ASource.FBreakRepeatTopLabels;
@@ -1002,6 +1015,7 @@ begin
   ADest.ColCount := ASource.ColCount;
   ADest.TableFlags := ASource.TableFlags;
   ADest.TableStyle := ASource.TableStyle;
+  ADest.TableStyleHandle := ASource.TableStyleHandle;
   ADest.BreakEnabled := ASource.BreakEnabled;
   ADest.BreakDirection := ASource.BreakDirection;
   ADest.BreakRepeatTopLabels := ASource.BreakRepeatTopLabels;
@@ -1045,6 +1059,7 @@ end;
 // Освобождение ресурсов части-продолжения.
 procedure GDBObjAcadTable.ClearPart(var APart: TAcadTablePart);
 begin
+  APart.TableStyleHandle := '';
   APart.RowHeights.done;
   APart.ColWidths.done;
   System.SetLength(APart.CellTexts, 0);
