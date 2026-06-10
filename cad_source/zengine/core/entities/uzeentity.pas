@@ -87,6 +87,14 @@ type
       Возвращает True, если данные AOther поглощены и вызывающая сторона может
       освободить AOther (issue #1300). }
     function TryMergeContinuation(AOther:PGDBObjEntity):boolean;virtual;
+    { Передаёт сущности параметры разбиения разделённой таблицы
+      (интервал между частями и высоту разбиения), прочитанные из
+      XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY в секции OBJECTS.
+      Базовая реализация ничего не делает и возвращает False.
+      GDBObjAcadTable переопределяет метод и сохраняет значения в себя,
+      чтобы свойства Break spacing/Break height отображались и
+      редактировались в инспекторе объектов (issue #1307). }
+    function SetTableBreakData(ASpacing,ABreakHeight:double):boolean;virtual;
     procedure postload(var context:TIODXFLoadContext);virtual;
     procedure createfield;virtual;
     function AddExtAttrib:PTExtAttrib;
@@ -449,6 +457,11 @@ begin
 end;
 
 function GDBObjEntity.TryMergeContinuation(AOther:PGDBObjEntity):boolean;
+begin
+  Result:=false;
+end;
+
+function GDBObjEntity.SetTableBreakData(ASpacing,ABreakHeight:double):boolean;
 begin
   Result:=false;
 end;

@@ -235,7 +235,9 @@ begin
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
-// Чтение интервала между частями разбиения (только чтение)
+// Чтение интервала между частями разбиения (issue #1307, часть 1).
+// Свойство редактируемое: при наличии change-процедуры (@ecp<>nil) флаг
+// vda_RO не выставляется, поэтому значение можно менять в инспекторе.
 procedure AcadTableBreakSpacingEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -249,6 +251,75 @@ begin
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakSpacing;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись интервала между частями разбиения (issue #1307, часть 1).
+// Изменение интервала смещает части-продолжения относительно главной части
+// (вся геометрия пересчитывается в GDBObjAcadTable.SetBreakSpacing ->
+// RepositionContinuationParts). После изменения вызывается YouChanged,
+// чтобы дерево чертежа перестроило геометрию таблицы.
+procedure AcadTableBreakSpacingEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Double;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakSpacing=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakSpacing:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+end;
+
+// Чтение высоты разбиения (issue #1307, часть 2).
+// Свойство редактируемое: при наличии change-процедуры флаг vda_RO не
+// выставляется.
+procedure AcadTableBreakHeightEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
+  mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
+  const f:TzeUnitsFormat);
+var
+  PVD:pvardesk;
+  v:Double;
+begin
+  PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
+  if @ecp=nil then
+    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+  v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakHeight;
+  ChangedData.PGetDataInEtity:=@v;
+  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись высоты разбиения (issue #1307, часть 2).
+// Изменение высоты пересегментирует таблицу: строки перераспределяются по
+// частям так, чтобы суммарная высота строк в каждой части не превышала
+// заданного порога, число частей определяется автоматически (вся работа
+// выполняется в GDBObjAcadTable.SetBreakHeight). После изменения вызывается
+// YouChanged для пересчёта геометрии.
+procedure AcadTableBreakHeightEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Double;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakHeight=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakHeight:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 // Подготовка списка значений направления разбиения для комбобокса.
@@ -395,11 +466,23 @@ begin
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
     TEntIterateProcsData.Create(nil,@AcadTableBreakManualHeightEntIterateProc,nil));
+  {Break spacing и Break height редактируются (issue #1307):
+   изменение интервала смещает части-продолжения, изменение высоты
+   пересегментирует таблицу с автоопределением числа частей.}
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakSpacing','Break spacing',sysunit^.TypeName2PTD('Double'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableBreakSpacingEntIterateProc,nil));
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakSpacingEntIterateProc,
+      @AcadTableBreakSpacingEntChangeProc));
+  MultiPropertiesManager.RegisterPhysMultiproperty(
+    'AcadTableBreakHeight','Break height',sysunit^.TypeName2PTD('Double'),
+    MPCMisc,GDBAcadTableID,nil,0,0,
+    OneVarDataMIPD,
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakHeightEntIterateProc,
+      @AcadTableBreakHeightEntChangeProc));
 
   MultiPropertiesManager.sort;
 end;
