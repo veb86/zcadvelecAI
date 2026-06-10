@@ -298,7 +298,7 @@ uses
   uzvcommand_spaceshowhide, //команда показ спрятать
   //****//
   {Подсистема ACAD_TABLE — таблица AutoCAD из формата DXF}
-  //uzeacadtable_manager,
+  uzeacadtable_manager,
   //****//
   //FPSpreadsheet//
   uzvspreadsheet_register,
