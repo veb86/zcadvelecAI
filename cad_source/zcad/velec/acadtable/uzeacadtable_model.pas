@@ -184,6 +184,8 @@ type
     // Чтение/запись вычисляемого признака разрыва таблицы (issue #1305)
     function GetBreakEnabled: Boolean;
     procedure SetBreakEnabled(AValue: Boolean);
+    // Чтение/запись направления разрыва таблицы (issue #1315)
+    procedure SetBreakDirection(AValue: TAcadTableBreakDirection);
     // Чтение/запись интервала между частями и высоты разбиения (issue #1307)
     function GetBreakSpacing: Double;
     procedure SetBreakSpacing(AValue: Double);
@@ -284,7 +286,7 @@ type
     // в False объединяет разорванную таблицу сверху вниз (часть 2b).
     property BreakEnabled: Boolean read GetBreakEnabled write SetBreakEnabled;
     property BreakDirection: TAcadTableBreakDirection
-      read FBreakDirection;
+      read FBreakDirection write SetBreakDirection;
     // Повтор верхних меток в каждой части разорванной таблицы (issue #1309).
     // Чтение возвращает определённое при загрузке значение; запись в False
     // удаляет повторяющиеся строки-метки из всех частей-продолжений, запись
@@ -1280,6 +1282,28 @@ begin
   programlog.LogOutFormatStr(
     'AcadTable: model: SetBreakEnabled(False) merged into ' +
     'single table rows=%d cols=%d', [FRowCount, FColCount], LM_Info);
+end;
+
+// Изменение направления разбиения (issue #1315). Для уже разорванной таблицы
+// смещает части-продолжения относительно главной части: Right/Left по ширине,
+// Down по высоте. Для inline-разбиения без частей достаточно сбросить
+// геометрию: RenderCurrentTable использует FBreakDirection напрямую.
+procedure GDBObjAcadTable.SetBreakDirection(AValue: TAcadTableBreakDirection);
+var
+  PartIdx: Integer;
+begin
+  if AValue = FBreakDirection then
+    Exit;
+
+  FBreakDirection := AValue;
+  for PartIdx := 0 to High(FContinuationParts) do
+    FContinuationParts[PartIdx].BreakDirection := AValue;
+  RepositionContinuationParts;
+  FGeometryBuilt := False;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakDirection=%d parts=%d',
+    [Ord(FBreakDirection), Length(FContinuationParts)], LM_Info);
 end;
 
 // Объединяет все части-продолжения в главную часть: строки выстраиваются

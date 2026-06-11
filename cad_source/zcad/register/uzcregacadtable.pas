@@ -21,9 +21,9 @@
   Модуль: uzcregacadtable
   Назначение: регистрация свойств AcadTable в инспекторе объектов ZCAD.
   Вынесено в отдельный модуль register по образцу uzcregleader,
-  чтобы не раздувать общие файлы инспектора. Свойства таблицы доступны
-  только для чтения и применяются исключительно к сущности AcadTable
-  (GDBAcadTableID), не затрагивая обычную сущность Table.
+  чтобы не раздувать общие файлы инспектора. Свойства применяются
+  исключительно к сущности AcadTable (GDBAcadTableID), не затрагивая
+  обычную сущность Table.
 
   Зависимости: uzcoimultiproperties, uzcoimultipropertiesutil,
                uzeacadtable_model, uzeacadtable_types, uzeconsts.
@@ -370,7 +370,8 @@ begin
   end;
 end;
 
-// Чтение направления разбиения (только чтение, отображается комбобоксом)
+// Чтение направления разбиения. При наличии change-процедуры свойство
+// редактируемое и отображается комбобоксом (issue #1315).
 procedure AcadTableBreakDirectionEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -387,6 +388,36 @@ begin
   else
     if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>enumindex then
       ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+end;
+
+// Запись направления разбиения (issue #1315). Изменение направления
+// пересчитывает точки вставки частей-продолжений в GDBObjAcadTable:
+// Left — влево от главной таблицы, Down — ниже главной таблицы.
+procedure AcadTableBreakDirectionEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewIndex:integer;
+  NewValue:TAcadTableBreakDirection;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewIndex:=PTEnumData(pvardesk(pdata)^.data.Addr.Instance)^.Selected;
+  case NewIndex of
+    1: NewValue:=atbdDown;
+    2: NewValue:=atbdLeft;
+  else
+    NewValue:=atbdRight;
+  end;
+  if Table^.BreakDirection=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakDirection:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 procedure RegisterAcadTableProperties;
@@ -452,7 +483,7 @@ begin
 
   {AcadTable — разбиение таблицы}
   {Break enabled редактируется: снятие флага объединяет части (issue #1305).
-   Остальные параметры разбиения — только чтение.}
+   Break direction, Break spacing и Break height также редактируются.}
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakEnabled','Break enabled',sysunit^.TypeName2PTD('Boolean'),
     MPCMisc,GDBAcadTableID,nil,0,0,
@@ -466,7 +497,8 @@ begin
     TMainIterateProcsData.Create(
       @GetAcadTableBreakDirectionData,@FreeTEnumData),
     TEntIterateProcsData.Create(
-      nil,@AcadTableBreakDirectionEntIterateProc,nil),
+      nil,@AcadTableBreakDirectionEntIterateProc,
+      @AcadTableBreakDirectionEntChangeProc),
     MPUM_AtLeastOneEntMatched);
   {Repeat top labels редактируется (issue #1309): снятие флага удаляет
    повторяющиеся верхние строки-метки из всех частей-продолжений, установка —
