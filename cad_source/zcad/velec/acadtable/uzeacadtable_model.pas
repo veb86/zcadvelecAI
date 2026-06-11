@@ -659,6 +659,7 @@ var
   RenderSegments: array[0..255] of TAcadTableRenderSegment;
   SegmentOffsetX, SegmentOffsetY: Double;
   MergeRootPt: TPoint;
+  InlineBreakEnabled: Boolean;
 begin
   programlog.LogOutFormatStr(
     'AcadTable: model: RenderCurrentTable START ' +
@@ -678,9 +679,16 @@ begin
   LineCount := 0;
   TextCount := 0;
 
+  // Если разбиение уже представлено частями-продолжениями или сохранённой
+  // BreakHeight-моделью, не запускаем дополнительное inline-разбиение
+  // текущего фрагмента при отрисовке (issue #1313).
+  InlineBreakEnabled :=
+    FBreakEnabled and (FBreakHeight <= 0) and
+    (Length(FContinuationParts) = 0);
+
   uzeacadtable_layout.BuildRenderSegments(
     FRowCount, FRowHeights, FColWidths, FColCount,
-    FTableFlags, FBreakEnabled, FBreakDirection,
+    FTableFlags, InlineBreakEnabled, FBreakDirection,
     FBreakRepeatTopLabels, FBreakManualHeight,
     FBreakSpacing, RenderSegments, SegmentCount);
   if SegmentCount <= 0 then Exit;
@@ -1239,16 +1247,30 @@ end;
 // для разорванной таблицы объединяет все части-продолжения с главной
 // частью, выстраивая строки сверху вниз в единую непрерывную таблицу.
 procedure GDBObjAcadTable.SetBreakEnabled(AValue: Boolean);
+var
+  L: Integer;
 begin
   if AValue then
   begin
-    // Включить разрыв программно нельзя без геометрии разбиения —
-    // сохраняем только DXF-флаг.
     FBreakEnabled := True;
+    if (Length(FContinuationParts) = 0) and (FBreakHeight > 0) then
+      SplitMainTableByBreakHeight(FBreakHeight)
+    else
+      RepositionContinuationParts;
+    FGeometryBuilt := False;
+    programlog.LogOutFormatStr(
+      'AcadTable: model: SetBreakEnabled(True) rows=%d parts=%d',
+      [FRowCount, Length(FContinuationParts)], LM_Info);
     Exit;
   end;
 
-  // Снять разрыв: объединяем части-продолжения в главную таблицу.
+  // Снять разрыв: сначала удаляем повторённые верхние метки из
+  // частей-продолжений, затем объединяем логические строки в главную таблицу.
+  L := 0;
+  if FBreakRepeatTopLabels then
+    L := EffectiveRepeatTopRowCount;
+  if L > 0 then
+    RemoveTopLabelsFromParts(L);
   FBreakEnabled := False;
   MergeAllContinuationPartsIntoMain;
 
@@ -1370,13 +1392,18 @@ end;
 procedure GDBObjAcadTable.SetBreakHeight(AValue: Double);
 var
   L: Integer;
+  WasBreakEnabled: Boolean;
 begin
   if AValue = FBreakHeight then
     Exit;
+  WasBreakEnabled := GetBreakEnabled;
   FBreakHeight := AValue;
-  // Перебор строк имеет смысл только при положительной высоте.
-  if AValue > 0 then
+  // Перебор строк имеет смысл только при положительной высоте и
+  // включённом разбиении. При BreakEnabled=False параметры разбиения
+  // сохраняются, но не влияют на непрерывную таблицу (issue #1313).
+  if (AValue > 0) and WasBreakEnabled then
   begin
+    FBreakEnabled := True;
     if FBreakRepeatTopLabels then
     begin
       L := EffectiveRepeatTopRowCount;
