@@ -57,6 +57,9 @@ type
     // issue #1305, часть 2b: снятие признака разрыва объединяет
     // части-продолжения в единую непрерывную таблицу.
     procedure ClearingBreakMergesContinuationParts;
+    // issue #1313: снятие разбиения должно удалить повторённые верхние
+    // метки из частей-продолжений.
+    procedure ClearingBreakRemovesRepeatedTopLabels;
     // issue #1307, часть 1: интервал между частями (Break spacing)
     // читается из round-trip данных DXF (≈0.99).
     procedure LoadsBreakSpacingFromDXF;
@@ -274,6 +277,27 @@ begin
         Result := True;
         Exit;
       end;
+    end;
+    PEntity := AArr.iterate(IR);
+  end;
+end;
+
+function CountMTextByTemplate(var AArr: GDBObjEntityTreeArray;
+  const ATemplate: String): Integer;
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PMText: PGDBObjMText;
+begin
+  Result := 0;
+  PEntity := AArr.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBMTextID then
+    begin
+      PMText := PGDBObjMText(PEntity);
+      if PMText^.Template = ATemplate then
+        Inc(Result);
     end;
     PEntity := AArr.iterate(IR);
   end;
@@ -531,6 +555,76 @@ begin
     CheckTrue(AcadTable^.RowCount > RowsBefore,
       'Объединённая таблица должна содержать строки всех частей ' +
       '(issue #1305, часть 2b)');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1313. Если разорванная таблица содержит повтор верхних меток
+// (Title/Header) в частях-продолжениях, то при снятии BreakEnabled эти
+// повторы должны исчезнуть: итоговая таблица становится непрерывной и
+// содержит только один набор верхних меток. При повторном включении
+// BreakEnabled сохранённые параметры разбиения должны примениться снова.
+procedure TAcadTableStyleTest.ClearingBreakRemovesRepeatedTopLabels;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ExpectedRows, PartIdx, RepeatRows, RowsAfterDisable: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckTrue(AcadTable^.BreakEnabled,
+      'До снятия разбиения таблица должна быть разорванной');
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Тестовый DXF должен содержать повтор верхних меток');
+
+    ExpectedRows := AcadTable^.RowCount;
+    for PartIdx := 0 to AcadTable^.ContinuationPartCount - 1 do
+    begin
+      RepeatRows := 0;
+      if AcadTable^.ContinuationPartCellText(PartIdx, 0, 0) = 'Zagolovok' then
+        Inc(RepeatRows);
+      if AcadTable^.ContinuationPartCellText(PartIdx, 1, 0) = 'A' then
+        Inc(RepeatRows);
+      Inc(ExpectedRows,
+        AcadTable^.ContinuationPartRowCount(PartIdx) - RepeatRows);
+    end;
+
+    AcadTable^.BreakEnabled := False;
+    CheckEquals(ExpectedRows, AcadTable^.RowCount,
+      'Снятие разбиения должно объединить только логические строки, ' +
+      'без повторённых верхних меток из частей-продолжений');
+
+    BuildTableGeometry(Drawing, AcadTable);
+    CheckEquals(1,
+      CountMTextByTemplate(AcadTable^.ConstObjArray, 'Zagolovok'),
+      'После снятия разбиения заголовок должен отрисоваться один раз');
+    CheckEquals(1,
+      CountMTextByTemplate(AcadTable^.ConstObjArray, 'A'),
+      'После снятия разбиения шапка должна отрисоваться один раз');
+
+    RowsAfterDisable := AcadTable^.RowCount;
+    CheckTrue(AcadTable^.BreakHeight > 0,
+      'Тестовый DXF должен содержать положительную высоту разбиения');
+    AcadTable^.BreakHeight := AcadTable^.BreakHeight / 2;
+    CheckEquals(0, AcadTable^.ContinuationPartCount,
+      'При выключенном разбиении изменение высоты не должно разбивать таблицу');
+    CheckEquals(RowsAfterDisable, AcadTable^.RowCount,
+      'При выключенном разбиении высота разбиения должна игнорироваться');
+
+    AcadTable^.BreakEnabled := True;
+    CheckTrue(AcadTable^.BreakEnabled,
+      'Повторное включение должно снова установить разбиение таблицы');
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Повторное включение должно применить сохранённую высоту разбиения');
+    CheckEquals('Zagolovok', AcadTable^.ContinuationPartCellText(0, 0, 0),
+      'Повторное включение должно вернуть повтор заголовка в продолжение');
+    CheckEquals('A', AcadTable^.ContinuationPartCellText(0, 1, 0),
+      'Повторное включение должно вернуть повтор шапки в продолжение');
   finally
     Drawing.done;
   end;
