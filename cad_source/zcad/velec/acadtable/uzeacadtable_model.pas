@@ -194,6 +194,31 @@ type
     // Пересчитывает точки вставки частей-продолжений из текущего интервала
     // и направления разрыва (issue #1307).
     procedure RepositionContinuationParts;
+    // Верхняя граница зоны ведущих строк-меток (Title/Header) по индексу
+    // строки: 0, 1 или 2. Тип строки определяется индексом (issue #1309).
+    function ComputeTopLabelRowCount: Integer;
+    // Фактическое число ведущих строк-меток, одинаково повторяющихся во всех
+    // частях-продолжениях; 0, если повтора нет (по содержимому, issue #1309).
+    function EffectiveRepeatTopRowCount: Integer;
+    // Проверяет, повторяет ли часть-продолжение первые L строк-меток главной
+    // части (тексты ячеек первых L строк совпадают) (issue #1309).
+    function PartRepeatsTopLabels(
+      const APart: TAcadTablePart; L: Integer): Boolean;
+    // Определяет значение BreakRepeatTopLabels по данным частей-продолжений:
+    // если все части повторяют ведущие строки-метки главной части, значит
+    // таблица была разорвана с повтором верхних меток (issue #1309).
+    procedure DetectBreakRepeatTopLabels;
+    // Чтение/запись признака повтора верхних меток (issue #1309).
+    function GetBreakRepeatTopLabels: Boolean;
+    procedure SetBreakRepeatTopLabels(AValue: Boolean);
+    // Удаляет первые L строк-меток из каждой части-продолжения (issue #1309).
+    procedure RemoveTopLabelsFromParts(L: Integer);
+    // Добавляет первые L строк-меток главной части в начало каждой
+    // части-продолжения, если их там ещё нет (issue #1309).
+    procedure AddTopLabelsToParts(L: Integer);
+    // Вставляет первые L строк-меток главной части в начало одной
+    // части-продолжения (issue #1309).
+    procedure PrependTopLabelsToPart(L: Integer; var APart: TAcadTablePart);
 
   public
     constructor initnul(
@@ -251,8 +276,12 @@ type
     property BreakEnabled: Boolean read GetBreakEnabled write SetBreakEnabled;
     property BreakDirection: TAcadTableBreakDirection
       read FBreakDirection;
+    // Повтор верхних меток в каждой части разорванной таблицы (issue #1309).
+    // Чтение возвращает определённое при загрузке значение; запись в False
+    // удаляет повторяющиеся строки-метки из всех частей-продолжений, запись
+    // в True — добавляет их обратно.
     property BreakRepeatTopLabels: Boolean
-      read FBreakRepeatTopLabels;
+      read GetBreakRepeatTopLabels write SetBreakRepeatTopLabels;
     property BreakRepeatBottomLabels: Boolean
       read FBreakRepeatBottomLabels;
     property BreakManualPosition: Boolean
@@ -272,6 +301,17 @@ type
     // Количество поглощённых частей-продолжений (issue #1300).
     // Для неразделённой таблицы равно 0.
     property ContinuationPartCount: Integer read GetContinuationPartCount;
+    // Число строк в части-продолжении по индексу (для инспекции/тестов,
+    // issue #1309). Для некорректного индекса возвращает -1.
+    function ContinuationPartRowCount(AIndex: Integer): Integer;
+    // Текст ячейки части-продолжения (для тестов, issue #1309). Для
+    // некорректных индексов возвращает пустую строку.
+    function ContinuationPartCellText(
+      APartIndex, ARow, ACol: Integer): string;
+    // Повторно определяет признак повтора верхних меток по текущим данным
+    // частей-продолжений и возвращает результат (issue #1309). Используется
+    // для проверки детекции после программных изменений модели.
+    function RecomputeBreakRepeatTopLabels: Boolean;
   end;
 
 function AllocAcadTable: Pointer;
@@ -1139,6 +1179,37 @@ begin
   Result := Length(FContinuationParts);
 end;
 
+function GDBObjAcadTable.ContinuationPartRowCount(AIndex: Integer): Integer;
+begin
+  if (AIndex >= 0) and (AIndex <= High(FContinuationParts)) then
+    Result := FContinuationParts[AIndex].RowCount
+  else
+    Result := -1;
+end;
+
+function GDBObjAcadTable.RecomputeBreakRepeatTopLabels: Boolean;
+begin
+  DetectBreakRepeatTopLabels;
+  Result := FBreakRepeatTopLabels;
+end;
+
+function GDBObjAcadTable.ContinuationPartCellText(
+  APartIndex, ARow, ACol: Integer): string;
+var
+  Idx: Integer;
+begin
+  Result := '';
+  if (APartIndex < 0) or (APartIndex > High(FContinuationParts)) then Exit;
+  with FContinuationParts[APartIndex] do
+  begin
+    if (ARow < 0) or (ARow >= RowCount) then Exit;
+    if (ACol < 0) or (ACol >= ColCount) then Exit;
+    Idx := ARow * ColCount + ACol;
+    if (Idx >= 0) and (Idx <= High(CellTexts)) then
+      Result := CellTexts[Idx];
+  end;
+end;
+
 // Признак разрыва вычисляется по двум источникам (issue #1305, часть 2a):
 //  - FBreakEnabled: флаг разрыва из одиночного DXF ACAD_TABLE;
 //  - поглощённые части-продолжения: таблица, разорванная на несколько
@@ -1504,6 +1575,299 @@ begin
   end;
 end;
 
+// --- Повтор верхних строк-меток в частях разорванной таблицы (issue #1309) ---
+
+// Максимальное число ведущих строк-меток (Title/Header), которые могут
+// повторяться в начале каждой части разорванной таблицы. Тип строки в таблице
+// AutoCAD определяется её индексом: строка 0 — Title, строка 1 — Header,
+// строки >=2 — Data. Зона повтора — это ведущие строки Title/Header от начала
+// таблицы до первой строки Data, то есть не более двух строк (issue #1309).
+//
+// Прежняя реализация опиралась на биты подавления TableFlags (бит 2 — Title,
+// бит 4 — Header), но реальные DXF (например, test/tablerazdel.dxf) приходят с
+// TableFlags=22, где эти биты установлены, хотя строки Title и Header реально
+// присутствуют и повторяются в каждой части. Поэтому признак повтора
+// определяется не флагами, а сравнением содержимого строк частей с главной
+// частью (см. EffectiveRepeatTopRowCount), а здесь возвращается лишь верхняя
+// граница зоны меток по индексу строки. Возвращает 0, 1 или 2.
+function GDBObjAcadTable.ComputeTopLabelRowCount: Integer;
+begin
+  Result := 0;
+  if FRowCount > 0 then
+    Inc(Result);
+  if FRowCount > 1 then
+    Inc(Result);
+end;
+
+// Фактическое число ведущих строк-меток, которые ОДИНАКОВО повторяются в начале
+// КАЖДОЙ части-продолжения. Ищется наибольшее L в диапазоне
+// [1..ComputeTopLabelRowCount], при котором все части повторяют первые L строк
+// главной части. Возвращает 0, если частей нет или повтора нет. Подход опирается
+// на содержимое (issue #1309), а не на флаги подавления заголовков.
+function GDBObjAcadTable.EffectiveRepeatTopRowCount: Integer;
+var
+  L, MaxL, PartIdx: Integer;
+  AllRepeat: Boolean;
+begin
+  Result := 0;
+  if Length(FContinuationParts) = 0 then
+    Exit;
+  MaxL := ComputeTopLabelRowCount;
+  for L := MaxL downto 1 do
+  begin
+    AllRepeat := True;
+    for PartIdx := 0 to High(FContinuationParts) do
+      if not PartRepeatsTopLabels(FContinuationParts[PartIdx], L) then
+      begin
+        AllRepeat := False;
+        Break;
+      end;
+    if AllRepeat then
+    begin
+      Result := L;
+      Exit;
+    end;
+  end;
+end;
+
+// Проверяет, повторяет ли часть-продолжение первые L строк-меток главной
+// части: число столбцов должно совпадать, у части должно быть не меньше L
+// строк, а тексты ячеек первых L строк должны быть идентичны главной части.
+function GDBObjAcadTable.PartRepeatsTopLabels(
+  const APart: TAcadTablePart; L: Integer): Boolean;
+var
+  RowIdx, ColIdx, MainIdx, PartTextIdx: Integer;
+begin
+  Result := False;
+  if L <= 0 then Exit;
+  if APart.ColCount <> FColCount then Exit;
+  if APart.RowCount < L then Exit;
+  for RowIdx := 0 to L - 1 do
+    for ColIdx := 0 to FColCount - 1 do
+    begin
+      MainIdx := RowIdx * FColCount + ColIdx;
+      PartTextIdx := RowIdx * APart.ColCount + ColIdx;
+      if (MainIdx > High(FCellTexts)) or
+         (PartTextIdx > High(APart.CellTexts)) then
+        Exit;
+      if FCellTexts[MainIdx] <> APart.CellTexts[PartTextIdx] then
+        Exit;
+    end;
+  Result := True;
+end;
+
+// Определяет признак повтора верхних меток по данным частей-продолжений.
+// Без частей сохраняется значение, прочитанное из DXF. При наличии частей
+// признак равен True тогда и только тогда, когда КАЖДАЯ часть повторяет
+// ведущие строки-метки главной части (issue #1309). Решение принимается по
+// содержимому строк, а не по флагам подавления заголовков.
+procedure GDBObjAcadTable.DetectBreakRepeatTopLabels;
+begin
+  if Length(FContinuationParts) = 0 then
+    Exit;
+  FBreakRepeatTopLabels := EffectiveRepeatTopRowCount > 0;
+end;
+
+function GDBObjAcadTable.GetBreakRepeatTopLabels: Boolean;
+begin
+  Result := FBreakRepeatTopLabels;
+end;
+
+// Изменение признака повтора верхних меток (issue #1309). Установка в False
+// удаляет повторяющиеся ведущие строки-метки из всех частей-продолжений;
+// установка в True — добавляет их обратно. Точки вставки частей и геометрия
+// пересчитываются.
+procedure GDBObjAcadTable.SetBreakRepeatTopLabels(AValue: Boolean);
+var
+  L: Integer;
+begin
+  if AValue = FBreakRepeatTopLabels then
+    Exit;
+  if Length(FContinuationParts) > 0 then
+  begin
+    if AValue then
+    begin
+      // Добавляем ведущие строки-метки главной части в каждую часть.
+      L := ComputeTopLabelRowCount;
+      if L > 0 then
+        AddTopLabelsToParts(L);
+    end
+    else
+    begin
+      // Удаляем ровно те ведущие строки, которые сейчас реально повторяются.
+      L := EffectiveRepeatTopRowCount;
+      if L > 0 then
+        RemoveTopLabelsFromParts(L);
+    end;
+    if L > 0 then
+    begin
+      RepositionContinuationParts;
+      FGeometryBuilt := False;
+    end;
+  end
+  else
+    L := 0;
+  FBreakRepeatTopLabels := AValue;
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakRepeatTopLabels=%d L=%d parts=%d',
+    [Ord(AValue), L, Length(FContinuationParts)], LM_Info);
+end;
+
+// Удаляет первые L строк-меток из каждой части-продолжения, которая их
+// действительно повторяет. Часть пересобирается из своего диапазона строк
+// [L..RowCount-1] через SlicePartFromPart.
+procedure GDBObjAcadTable.RemoveTopLabelsFromParts(L: Integer);
+var
+  PartIdx, Last: Integer;
+  Snap: TAcadTablePart;
+begin
+  if L <= 0 then Exit;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    if not PartRepeatsTopLabels(FContinuationParts[PartIdx], L) then
+      Continue;
+    Last := FContinuationParts[PartIdx].RowCount - 1;
+    // Независимый снимок части, затем пересоздание из диапазона без меток.
+    CopyTablePart(FContinuationParts[PartIdx], Snap);
+    ClearPart(FContinuationParts[PartIdx]);
+    SlicePartFromPart(Snap, L, Last, FContinuationParts[PartIdx]);
+    ClearPart(Snap);
+  end;
+end;
+
+// Добавляет первые L строк-меток главной части в начало каждой
+// части-продолжения, в которой их ещё нет.
+procedure GDBObjAcadTable.AddTopLabelsToParts(L: Integer);
+var
+  PartIdx: Integer;
+begin
+  if L <= 0 then Exit;
+  for PartIdx := 0 to High(FContinuationParts) do
+    if not PartRepeatsTopLabels(FContinuationParts[PartIdx], L) then
+      PrependTopLabelsToPart(L, FContinuationParts[PartIdx]);
+end;
+
+// Вставляет первые L строк-меток главной части в начало части-продолжения.
+// Часть пересобирается: сверху — строки-метки главной части (0..L-1), затем
+// собственные строки части. Высоты, тексты, формат строк, ячейки и
+// объединения переносятся со сдвигом номеров строк на L.
+procedure GDBObjAcadTable.PrependTopLabelsToPart(
+  L: Integer; var APart: TAcadTablePart);
+var
+  Src: TAcadTablePart;
+  ColCnt, DstRows, RowIdx, ColIdx, Idx, SrcRow: Integer;
+begin
+  if L <= 0 then Exit;
+  ColCnt := FColCount;
+  // Независимый снимок части без меток, затем пересоздание части с нуля.
+  CopyTablePart(APart, Src);
+  ClearPart(APart);
+
+  DstRows := L + Src.RowCount;
+  APart.InsertPoint := Src.InsertPoint;
+  APart.RowCount := DstRows;
+  APart.ColCount := ColCnt;
+  APart.TableFlags := Src.TableFlags;
+  APart.TableStyle := Src.TableStyle;
+  APart.TableStyleHandle := Src.TableStyleHandle;
+  APart.BreakEnabled := Src.BreakEnabled;
+  APart.BreakDirection := Src.BreakDirection;
+  APart.BreakRepeatTopLabels := Src.BreakRepeatTopLabels;
+  APart.BreakRepeatBottomLabels := Src.BreakRepeatBottomLabels;
+  APart.BreakManualPosition := Src.BreakManualPosition;
+  APart.BreakManualHeight := Src.BreakManualHeight;
+  APart.BreakSpacing := Src.BreakSpacing;
+  APart.BreakHeight := Src.BreakHeight;
+
+  // Высоты строк: сверху L строк главной части, затем строки исходной части.
+  APart.RowHeights.initnul;
+  for RowIdx := 0 to L - 1 do
+    APart.RowHeights.PushBackData(GetRowHeightLocal(RowIdx));
+  for RowIdx := 0 to Src.RowHeights.Count - 1 do
+    APart.RowHeights.PushBackData(Src.RowHeights.getData(RowIdx));
+
+  // Ширины столбцов — те же, что у части.
+  APart.ColWidths.initnul;
+  for ColIdx := 0 to Src.ColWidths.Count - 1 do
+    APart.ColWidths.PushBackData(Src.ColWidths.getData(ColIdx));
+
+  // Тексты ячеек (плоский массив, индекс = строка * ColCnt + столбец).
+  System.SetLength(APart.CellTexts, DstRows * ColCnt);
+  if ColCnt > 0 then
+    for RowIdx := 0 to DstRows - 1 do
+      for ColIdx := 0 to ColCnt - 1 do
+      begin
+        Idx := RowIdx * ColCnt + ColIdx;
+        if RowIdx < L then
+        begin
+          if (RowIdx * FColCount + ColIdx) <= High(FCellTexts) then
+            APart.CellTexts[Idx] := FCellTexts[RowIdx * FColCount + ColIdx]
+          else
+            APart.CellTexts[Idx] := '';
+        end
+        else
+        begin
+          SrcRow := RowIdx - L;
+          if (SrcRow * ColCnt + ColIdx) <= High(Src.CellTexts) then
+            APart.CellTexts[Idx] := Src.CellTexts[SrcRow * ColCnt + ColIdx]
+          else
+            APart.CellTexts[Idx] := '';
+        end;
+      end;
+
+  // Формат строк.
+  System.SetLength(APart.Rows, DstRows);
+  for RowIdx := 0 to L - 1 do
+    if RowIdx <= High(FRows) then
+      APart.Rows[RowIdx] := FRows[RowIdx];
+  for RowIdx := 0 to Src.RowCount - 1 do
+    if RowIdx <= High(Src.Rows) then
+      APart.Rows[L + RowIdx] := Src.Rows[RowIdx];
+
+  // Столбцы — те же, что у части.
+  System.SetLength(APart.Cols, Length(Src.Cols));
+  for ColIdx := 0 to High(Src.Cols) do
+    APart.Cols[ColIdx] := Src.Cols[ColIdx];
+
+  // Ячейки (двумерный массив [строка][столбец]).
+  System.SetLength(APart.Cells, DstRows);
+  for RowIdx := 0 to L - 1 do
+    if RowIdx <= High(FCells) then
+    begin
+      System.SetLength(APart.Cells[RowIdx], Length(FCells[RowIdx]));
+      for ColIdx := 0 to High(FCells[RowIdx]) do
+        APart.Cells[RowIdx][ColIdx] := FCells[RowIdx][ColIdx];
+    end;
+  for RowIdx := 0 to Src.RowCount - 1 do
+    if RowIdx <= High(Src.Cells) then
+    begin
+      System.SetLength(APart.Cells[L + RowIdx], Length(Src.Cells[RowIdx]));
+      for ColIdx := 0 to High(Src.Cells[RowIdx]) do
+        APart.Cells[L + RowIdx][ColIdx] := Src.Cells[RowIdx][ColIdx];
+    end;
+
+  // Объединения: сначала объединения главной части, попадающие в строки
+  // [0..L-1], затем объединения исходной части со сдвигом строк на L.
+  System.SetLength(APart.Merges, 0);
+  for RowIdx := 0 to High(FMerges) do
+    if (FMerges[RowIdx].Row1 >= 0) and (FMerges[RowIdx].Row2 <= L - 1) then
+    begin
+      Idx := Length(APart.Merges);
+      System.SetLength(APart.Merges, Idx + 1);
+      APart.Merges[Idx] := FMerges[RowIdx];
+    end;
+  for RowIdx := 0 to High(Src.Merges) do
+  begin
+    Idx := Length(APart.Merges);
+    System.SetLength(APart.Merges, Idx + 1);
+    APart.Merges[Idx] := Src.Merges[RowIdx];
+    Inc(APart.Merges[Idx].Row1, L);
+    Inc(APart.Merges[Idx].Row2, L);
+  end;
+
+  ClearPart(Src);
+end;
+
 // Поглощает продолжение разделённой таблицы как часть этого объекта.
 function GDBObjAcadTable.TryMergeContinuation(
   AOther: PGDBObjEntity): Boolean;
@@ -1521,11 +1885,17 @@ begin
   // Геометрию нужно перестроить с учётом новой части
   FGeometryBuilt := False;
 
+  // По данным частей определяем, повторяются ли верхние строки-метки
+  // (issue #1309): если первые строки каждой части совпадают с верхними
+  // строками-метками главной части, то таблица разорвана с RepeatTop=True.
+  DetectBreakRepeatTopLabels;
+
   programlog.LogOutFormatStr(
     'AcadTable: model: TryMergeContinuation merged part %d ' +
-    '(rows=%d cols=%d)',
+    '(rows=%d cols=%d) repeattop=%d',
     [PartIdx, FContinuationParts[PartIdx].RowCount,
-     FContinuationParts[PartIdx].ColCount], LM_Info);
+     FContinuationParts[PartIdx].ColCount,
+     Ord(FBreakRepeatTopLabels)], LM_Info);
   Result := True;
 end;
 
