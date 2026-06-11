@@ -58,6 +58,10 @@ type
   // со смещением относительно точки вставки главной части (issue #1300).
   TAcadTablePart = record
     InsertPoint: TzePoint3d;
+    // Логический индекс первой строки части в полной таблице. Нужен для
+    // базового стиля Title/Header/Data, когда строки смещаются при удалении
+    // повторяющихся верхних меток (issue #1311).
+    RowBaseIndex: Integer;
     RowCount: Integer;
     ColCount: Integer;
     RowHeights: TZctnrVectorDouble;
@@ -148,9 +152,11 @@ type
       RowIdx, ColIdx: Integer): String;
     // Строит визуальное представление текущих полей таблицы в
     // ConstObjArray со смещением (ABaseX, ABaseY) в OCS.
+    // ARowBaseIndex задаёт логический индекс первой строки для выбора
+    // базового стиля строки.
     procedure RenderCurrentTable(
       var ADrawing: TDrawingDef; var ADC: TDrawContext;
-      ABaseX, ABaseY: Double);
+      ABaseX, ABaseY: Double; ARowBaseIndex: Integer);
     // Строит визуальное представление всей таблицы (главная часть и
     // все продолжения) в ConstObjArray
     procedure BuildVisualRepresentation(
@@ -204,6 +210,9 @@ type
     // части (тексты ячеек первых L строк совпадают) (issue #1309).
     function PartRepeatsTopLabels(
       const APart: TAcadTablePart; L: Integer): Boolean;
+    // Обновляет логические индексы первых строк продолжений для выбора
+    // базового стиля Title/Header/Data (issue #1311).
+    procedure UpdateContinuationRowBaseIndexes;
     // Определяет значение BreakRepeatTopLabels по данным частей-продолжений:
     // если все части повторяют ведущие строки-метки главной части, значит
     // таблица была разорвана с повтором верхних меток (issue #1309).
@@ -635,7 +644,7 @@ end;
 
 procedure GDBObjAcadTable.RenderCurrentTable(
   var ADrawing: TDrawingDef; var ADC: TDrawContext;
-  ABaseX, ABaseY: Double);
+  ABaseX, ABaseY: Double; ARowBaseIndex: Integer);
 var
   RowIdx, ColIdx, SegmentIdx, SegmentCount: Integer;
   CurrentY, CurrentX: Double;
@@ -851,8 +860,8 @@ begin
 
         if CellStr <> '' then
         begin
-          CellStyleLocal := uzeacadtable_cell.ResolveCellStyle(
-            RowIdx, ColIdx, FTableStyle,
+          CellStyleLocal := uzeacadtable_cell.ResolveCellStyleForBaseRow(
+            ARowBaseIndex + RowIdx, RowIdx, ColIdx, FTableStyle,
             FRows, FCols, FCells,
             FRowCount, FColCount, FTableFlags);
 
@@ -1028,7 +1037,7 @@ begin
   ConstObjArray.Free;
 
   // Главная часть в собственной системе координат
-  RenderCurrentTable(ADrawing, ADC, 0, 0);
+  RenderCurrentTable(ADrawing, ADC, 0, 0, 0);
 
   // Части-продолжения со смещением относительно главной точки вставки
   for PartIdx := 0 to High(FContinuationParts) do
@@ -1043,7 +1052,9 @@ begin
     // «разъезжается» относительно ячеек (issue #1300).
     uzeacadtable_stylemanager.ApplyDXFTableStyle(
       FTableStyle, FContinuationParts[PartIdx].TableStyleHandle, ADrawing);
-    RenderCurrentTable(ADrawing, ADC, BaseX, BaseY);
+    RenderCurrentTable(
+      ADrawing, ADC, BaseX, BaseY,
+      FContinuationParts[PartIdx].RowBaseIndex);
     SwapTableData(FContinuationParts[PartIdx]);
   end;
 
@@ -1062,6 +1073,7 @@ var
   Idx, Idx2: Integer;
 begin
   APart.InsertPoint := ASource.FInsertPoint;
+  APart.RowBaseIndex := 0;
   APart.RowCount := ASource.FRowCount;
   APart.ColCount := ASource.FColCount;
   APart.TableFlags := ASource.FTableFlags;
@@ -1115,6 +1127,7 @@ var
   Idx, Idx2: Integer;
 begin
   ADest.InsertPoint := ASource.InsertPoint;
+  ADest.RowBaseIndex := ASource.RowBaseIndex;
   ADest.RowCount := ASource.RowCount;
   ADest.ColCount := ASource.ColCount;
   ADest.TableFlags := ASource.TableFlags;
@@ -1165,6 +1178,7 @@ end;
 procedure GDBObjAcadTable.ClearPart(var APart: TAcadTablePart);
 begin
   APart.TableStyleHandle := '';
+  APart.RowBaseIndex := 0;
   APart.RowHeights.done;
   APart.ColWidths.done;
   System.SetLength(APart.CellTexts, 0);
@@ -1354,6 +1368,8 @@ end;
 // все части в единую таблицу, затем заново разбивает строки по новой
 // высоте — автоматически определяя необходимое число частей.
 procedure GDBObjAcadTable.SetBreakHeight(AValue: Double);
+var
+  L: Integer;
 begin
   if AValue = FBreakHeight then
     Exit;
@@ -1361,6 +1377,12 @@ begin
   // Перебор строк имеет смысл только при положительной высоте.
   if AValue > 0 then
   begin
+    if FBreakRepeatTopLabels then
+    begin
+      L := EffectiveRepeatTopRowCount;
+      if L > 0 then
+        RemoveTopLabelsFromParts(L);
+    end;
     MergeAllContinuationPartsIntoMain;
     SplitMainTableByBreakHeight(AValue);
   end;
@@ -1385,6 +1407,7 @@ begin
   ColCnt := ASource.ColCount;
 
   ADest.InsertPoint := ASource.InsertPoint;
+  ADest.RowBaseIndex := ASource.RowBaseIndex + AStart;
   ADest.RowCount := DstRows;
   ADest.ColCount := ColCnt;
   ADest.TableFlags := ASource.TableFlags;
@@ -1465,13 +1488,16 @@ end;
 // строки набираются в сегмент, пока их суммарная высота не превысит
 // порог AThreshold; затем начинается новый сегмент. Первый сегмент
 // остаётся в главной части, остальные выносятся в части-продолжения.
+// Если BreakRepeatTopLabels=True, верхние метки не считаются отдельными
+// строками логической таблицы в продолжениях: они добавляются поверх каждого
+// продолжения и уменьшают доступную высоту сегмента (issue #1311).
 // Число частей определяется автоматически (issue #1307).
 procedure GDBObjAcadTable.SplitMainTableByBreakHeight(AThreshold: Double);
 var
   FullData, TmpPart: TAcadTablePart;
   SegStart, SegEnd: array of Integer;
-  SegCount, StartRow, EndRow, PartIdx: Integer;
-  CurHeight, NextHeight: Double;
+  SegCount, StartRow, EndRow, PartIdx, RepeatRows, RowIdx: Integer;
+  CurHeight, NextHeight, RepeatHeight: Double;
 begin
   if (FRowCount <= 0) or (AThreshold <= 0) then
     Exit;
@@ -1479,6 +1505,18 @@ begin
   // Снимок текущей (объединённой) главной части
   CaptureTableDataToPart(Self, FullData);
   try
+    RepeatRows := 0;
+    RepeatHeight := 0;
+    if FBreakRepeatTopLabels then
+    begin
+      RepeatRows := ComputeTopLabelRowCount;
+      if RepeatRows > FullData.RowCount then
+        RepeatRows := FullData.RowCount;
+      for RowIdx := 0 to RepeatRows - 1 do
+        RepeatHeight := RepeatHeight +
+          uzeacadtable_layout.GetRowHeight(RowIdx, FullData.RowHeights);
+    end;
+
     // Вычисляем границы сегментов по высоте строк
     SegCount := 0;
     StartRow := 0;
@@ -1486,6 +1524,8 @@ begin
     begin
       EndRow := StartRow;
       CurHeight := 0;
+      if (SegCount > 0) and (RepeatRows > 0) then
+        CurHeight := RepeatHeight;
       while EndRow < FullData.RowCount do
       begin
         NextHeight := CurHeight +
@@ -1498,6 +1538,9 @@ begin
       end;
       if EndRow = StartRow then
         Inc(EndRow);
+      if (SegCount = 0) and (RepeatRows > 0) and
+         (EndRow < RepeatRows) then
+        EndRow := RepeatRows;
 
       System.SetLength(SegStart, SegCount + 1);
       System.SetLength(SegEnd, SegCount + 1);
@@ -1505,6 +1548,8 @@ begin
       SegEnd[SegCount] := EndRow - 1;
       Inc(SegCount);
       StartRow := EndRow;
+      if (RepeatRows > 0) and (StartRow < RepeatRows) then
+        StartRow := RepeatRows;
     end;
 
     // Части-продолжения для сегментов 1..SegCount-1
@@ -1512,8 +1557,12 @@ begin
       ClearPart(FContinuationParts[PartIdx]);
     System.SetLength(FContinuationParts, SegCount - 1);
     for PartIdx := 1 to SegCount - 1 do
+    begin
       SlicePartFromPart(FullData, SegStart[PartIdx], SegEnd[PartIdx],
         FContinuationParts[PartIdx - 1]);
+      if RepeatRows > 0 then
+        PrependTopLabelsToPart(RepeatRows, FContinuationParts[PartIdx - 1]);
+    end;
 
     // Сегмент 0 -> главная часть. Готовим временную часть и меняемся
     // данными с собой (точка вставки главной части сохраняется).
@@ -1656,6 +1705,36 @@ begin
   Result := True;
 end;
 
+// Обновляет логический индекс первой строки продолжений после чтения DXF или
+// автоопределения RepeatTop. Если верхние метки повторяются, визуальные строки
+// части начинаются с Title/Header и базовый стиль должен идти от нуля; иначе
+// первая визуальная строка продолжения получает стиль по логической позиции.
+procedure GDBObjAcadTable.UpdateContinuationRowBaseIndexes;
+var
+  PartIdx, BaseIdx, RepeatRows, LogicalRows: Integer;
+begin
+  BaseIdx := FRowCount;
+  RepeatRows := 0;
+  if FBreakRepeatTopLabels then
+    RepeatRows := EffectiveRepeatTopRowCount;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    if (RepeatRows > 0) and
+       PartRepeatsTopLabels(FContinuationParts[PartIdx], RepeatRows) then
+    begin
+      FContinuationParts[PartIdx].RowBaseIndex := 0;
+      LogicalRows := FContinuationParts[PartIdx].RowCount - RepeatRows;
+    end
+    else
+    begin
+      FContinuationParts[PartIdx].RowBaseIndex := BaseIdx;
+      LogicalRows := FContinuationParts[PartIdx].RowCount;
+    end;
+    if LogicalRows > 0 then
+      Inc(BaseIdx, LogicalRows);
+  end;
+end;
+
 // Определяет признак повтора верхних меток по данным частей-продолжений.
 // Без частей сохраняется значение, прочитанное из DXF. При наличии частей
 // признак равен True тогда и только тогда, когда КАЖДАЯ часть повторяет
@@ -1666,6 +1745,7 @@ begin
   if Length(FContinuationParts) = 0 then
     Exit;
   FBreakRepeatTopLabels := EffectiveRepeatTopRowCount > 0;
+  UpdateContinuationRowBaseIndexes;
 end;
 
 function GDBObjAcadTable.GetBreakRepeatTopLabels: Boolean;
@@ -1683,13 +1763,20 @@ var
 begin
   if AValue = FBreakRepeatTopLabels then
     Exit;
+  L := 0;
   if Length(FContinuationParts) > 0 then
   begin
     if AValue then
     begin
       // Добавляем ведущие строки-метки главной части в каждую часть.
       L := ComputeTopLabelRowCount;
-      if L > 0 then
+      FBreakRepeatTopLabels := True;
+      if FBreakHeight > 0 then
+      begin
+        MergeAllContinuationPartsIntoMain;
+        SplitMainTableByBreakHeight(FBreakHeight);
+      end
+      else if L > 0 then
         AddTopLabelsToParts(L);
     end
     else
@@ -1698,16 +1785,21 @@ begin
       L := EffectiveRepeatTopRowCount;
       if L > 0 then
         RemoveTopLabelsFromParts(L);
+      FBreakRepeatTopLabels := False;
+      if FBreakHeight > 0 then
+      begin
+        MergeAllContinuationPartsIntoMain;
+        SplitMainTableByBreakHeight(FBreakHeight);
+      end;
     end;
-    if L > 0 then
+    if (FBreakHeight <= 0) and (L > 0) then
     begin
       RepositionContinuationParts;
-      FGeometryBuilt := False;
     end;
+    FGeometryBuilt := False;
   end
   else
-    L := 0;
-  FBreakRepeatTopLabels := AValue;
+    FBreakRepeatTopLabels := AValue;
   programlog.LogOutFormatStr(
     'AcadTable: model: SetBreakRepeatTopLabels=%d L=%d parts=%d',
     [Ord(AValue), L, Length(FContinuationParts)], LM_Info);
@@ -1765,6 +1857,7 @@ begin
 
   DstRows := L + Src.RowCount;
   APart.InsertPoint := Src.InsertPoint;
+  APart.RowBaseIndex := 0;
   APart.RowCount := DstRows;
   APart.ColCount := ColCnt;
   APart.TableFlags := Src.TableFlags;
