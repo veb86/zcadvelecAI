@@ -55,6 +55,18 @@ function ResolveCellStyle(
   ARowCount, AColCount: Integer;
   ATableFlags: Integer): TCellStyle;
 
+// Резолвит стиль для строки, которая может быть визуально смещена внутри
+// части таблицы. AStyleRowIdx определяет базовый тип строки (Title/Header/Data),
+// ARowIdx индексирует локальные массивы строк/ячеек.
+function ResolveCellStyleForBaseRow(
+  AStyleRowIdx, ARowIdx, AColIdx: Integer;
+  const ATableStyle: TTableStyle;
+  const ARows: array of TTableRow;
+  const ACols: array of TTableColumn;
+  const ACells: TTableCellArray;
+  ARowCount, AColCount: Integer;
+  ATableFlags: Integer): TCellStyle;
+
 // Определяет базовый стиль строки по позиции в таблице.
 // RowIdx=0 → TitleCell, RowIdx=1 → HeaderCell, RowIdx>=2 → DataCell.
 function GetBaseRowStyle(
@@ -144,12 +156,27 @@ function ResolveCellStyle(
   const ACells: TTableCellArray;
   ARowCount, AColCount: Integer;
   ATableFlags: Integer): TCellStyle;
+begin
+  Result := ResolveCellStyleForBaseRow(
+    ARowIdx, ARowIdx, AColIdx, ATableStyle, ARows, ACols, ACells,
+    ARowCount, AColCount, ATableFlags);
+end;
+
+function ResolveCellStyleForBaseRow(
+  AStyleRowIdx, ARowIdx, AColIdx: Integer;
+  const ATableStyle: TTableStyle;
+  const ARows: array of TTableRow;
+  const ACols: array of TTableColumn;
+  const ACells: TTableCellArray;
+  ARowCount, AColCount: Integer;
+  ATableFlags: Integer): TCellStyle;
 var
   TableCell: TTableCell;
   RowStyle, ColStyle, BaseStyle: TCellStyle;
 begin
-  // Базовый стиль по позиции строки
-  BaseStyle := GetBaseRowStyle(ARowIdx, ATableStyle);
+  // Базовый стиль по логической позиции строки, а не по визуальному индексу
+  // внутри части таблицы.
+  BaseStyle := GetBaseRowStyle(AStyleRowIdx, ATableStyle);
   if BaseStyle.Overrides = [] then
     BaseStyle := ATableStyle.DefaultCell;
 

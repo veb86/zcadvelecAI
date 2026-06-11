@@ -75,6 +75,9 @@ type
     // issue #1309, часть 2: снятие признака повтора удаляет повторяющиеся
     // строки-метки из всех частей, а возврат — добавляет их обратно.
     procedure TogglingBreakRepeatTopAddsAndRemovesLabelRows;
+    // issue #1311: строка данных, смещённая на место удалённых верхних меток,
+    // должна сохранять своё форматирование.
+    procedure ClearingBreakRepeatTopKeepsDataRowFormatting;
     // issue #1309: неразорванная таблица не имеет повтора верхних меток.
     procedure NonBrokenTableHasNoBreakRepeatTop;
   end;
@@ -245,6 +248,32 @@ begin
         if Sz > AMaxSize then AMaxSize := Sz;
       end;
       Inc(ACount);
+    end;
+    PEntity := AArr.iterate(IR);
+  end;
+end;
+
+function FindMTextSizeByTemplate(var AArr: GDBObjEntityTreeArray;
+  const ATemplate: String; out ASize: Double): Boolean;
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PMText: PGDBObjMText;
+begin
+  Result := False;
+  ASize := 0;
+  PEntity := AArr.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBMTextID then
+    begin
+      PMText := PGDBObjMText(PEntity);
+      if PMText^.Template = ATemplate then
+      begin
+        ASize := PMText^.textprop.size;
+        Result := True;
+        Exit;
+      end;
     end;
     PEntity := AArr.iterate(IR);
   end;
@@ -668,10 +697,11 @@ begin
   end;
 end;
 
-// issue #1309, часть 2. Установка BreakRepeatTopLabels=False должна удалить
-// повторяющиеся ведущие строки-метки (Title+Header, две строки) из всех
-// частей-продолжений; возврат в True — добавить их обратно. Проверяется как
-// число строк, так и содержимое первых ячеек, и повторное автоопределение.
+// issue #1309, часть 2 / issue #1311. Установка BreakRepeatTopLabels=False
+// должна удалить повторяющиеся ведущие строки-метки (Title+Header, две строки)
+// и пересегментировать строки по BreakHeight: освободившееся место заполняется
+// строками из следующих частей, пустые части исчезают. Возврат в True добавляет
+// метки обратно и снова пересегментирует таблицу.
 procedure TAcadTableStyleTest.TogglingBreakRepeatTopAddsAndRemovesLabelRows;
 var
   Drawing: TSimpleDrawing;
@@ -688,12 +718,15 @@ begin
     CheckTrue(AcadTable^.BreakRepeatTopLabels,
       'Исходно повтор верхних меток должен быть True');
 
-    // Снимаем повтор: две строки-метки удаляются из каждой части.
+    // Снимаем повтор: две строки-метки удаляются, строки следующих частей
+    // подтягиваются в освободившееся место, пустая часть исчезает.
     AcadTable^.BreakRepeatTopLabels := False;
-    CheckEquals(P0Before - 2, AcadTable^.ContinuationPartRowCount(0),
-      'После снятия повтора из части 0 должны исчезнуть две строки-метки');
-    CheckEquals(P1Before - 2, AcadTable^.ContinuationPartRowCount(1),
-      'После снятия повтора из части 1 должны исчезнуть две строки-метки');
+    CheckEquals(1, AcadTable^.ContinuationPartCount,
+      'После снятия повтора строки должны перераспределиться без пустой части');
+    CheckEquals(P0Before, AcadTable^.ContinuationPartRowCount(0),
+      'Первая часть-продолжение должна заполнить освободившееся место');
+    CheckEquals(-1, AcadTable^.ContinuationPartRowCount(1),
+      'Пустая вторая часть-продолжение должна исчезнуть');
     CheckFalse(AcadTable^.RecomputeBreakRepeatTopLabels,
       'После удаления меток автоопределение должно давать False');
     // Первой строкой части 0 теперь должна стать строка данных «11».
@@ -702,6 +735,8 @@ begin
 
     // Возвращаем повтор: строки-метки добавляются обратно.
     AcadTable^.BreakRepeatTopLabels := True;
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'После возврата повтора таблица снова должна разбиться на две части-продолжения');
     CheckEquals(P0Before, AcadTable^.ContinuationPartRowCount(0),
       'После возврата повтора число строк части 0 должно восстановиться');
     CheckEquals(P1Before, AcadTable^.ContinuationPartRowCount(1),
@@ -712,6 +747,39 @@ begin
       'После возврата повтора часть 0 снова начинается с «Zagolovok»');
     CheckEquals('A', AcadTable^.ContinuationPartCellText(0, 1, 0),
       'После возврата повтора часть 0 снова содержит шапку «A..E»');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1311. При снятии Repeat top labels строка данных «11» становится
+// первой визуальной строкой части-продолжения. Её стиль должен остаться стилем
+// данных, а не стать стилем Title/Header по новому локальному индексу строки.
+procedure TAcadTableStyleTest.ClearingBreakRepeatTopKeepsDataRowFormatting;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  SizeBefore, SizeAfter: Double;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    BuildTableGeometry(Drawing, AcadTable);
+    CheckTrue(FindMTextSizeByTemplate(
+      AcadTable^.ConstObjArray, '11', SizeBefore),
+      'До снятия повтора должна отрисоваться строка данных 11');
+
+    AcadTable^.BreakRepeatTopLabels := False;
+    BuildTableGeometry(Drawing, AcadTable);
+    CheckTrue(FindMTextSizeByTemplate(
+      AcadTable^.ConstObjArray, '11', SizeAfter),
+      'После снятия повтора должна отрисоваться строка данных 11');
+
+    CheckEquals(SizeBefore, SizeAfter, 1e-6,
+      'Смещение строки данных на место верхних меток не должно менять высоту текста');
   finally
     Drawing.done;
   end;
