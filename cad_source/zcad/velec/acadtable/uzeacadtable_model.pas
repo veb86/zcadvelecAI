@@ -230,6 +230,12 @@ type
     // Вставляет первые L строк-меток главной части в начало одной
     // части-продолжения (issue #1309).
     procedure PrependTopLabelsToPart(L: Integer; var APart: TAcadTablePart);
+    // Подготовка данных для специализированного DXF writer.
+    procedure FillDXFWritePartFromSelf(var APart: TAcadTableDXFWritePart);
+    procedure FillDXFWritePartFromContinuation(
+      const ASource: TAcadTablePart; var APart: TAcadTableDXFWritePart);
+    procedure BuildDXFContinuationWriteParts(
+      var AParts: TAcadTableDXFWritePartArray);
 
   public
     constructor initnul(
@@ -2262,21 +2268,153 @@ begin
   Result := True;
 end;
 
+procedure CopyVectorToDXFDoubleArray(
+  const ASource: TZctnrVectorDouble;
+  var ADest: TAcadTableDoubleArray);
+var
+  Idx: Integer;
+begin
+  System.SetLength(ADest, ASource.Count);
+  for Idx := 0 to ASource.Count - 1 do
+    ADest[Idx] := ASource.getData(Idx);
+end;
+
+procedure CopyCellTextArray(
+  const ASource: TTableTextArray;
+  var ADest: TTableTextArray);
+var
+  Idx: Integer;
+begin
+  System.SetLength(ADest, Length(ASource));
+  for Idx := 0 to High(ASource) do
+    ADest[Idx] := ASource[Idx];
+end;
+
+procedure CopyCellArray(
+  const ASource: TTableCellArray;
+  var ADest: TTableCellArray);
+var
+  RowIdx, ColIdx: Integer;
+begin
+  System.SetLength(ADest, Length(ASource));
+  for RowIdx := 0 to High(ASource) do
+  begin
+    System.SetLength(ADest[RowIdx], Length(ASource[RowIdx]));
+    for ColIdx := 0 to High(ASource[RowIdx]) do
+      ADest[RowIdx][ColIdx] := ASource[RowIdx][ColIdx];
+  end;
+end;
+
+procedure CopyMergeArray(
+  const ASource: TMergeRangeArray;
+  var ADest: TMergeRangeArray);
+var
+  Idx: Integer;
+begin
+  System.SetLength(ADest, Length(ASource));
+  for Idx := 0 to High(ASource) do
+    ADest[Idx] := ASource[Idx];
+end;
+
+procedure GDBObjAcadTable.FillDXFWritePartFromSelf(
+  var APart: TAcadTableDXFWritePart);
+begin
+  APart.HandleKey := @Self;
+  if vp.Layer <> nil then
+    APart.LayerName := vp.Layer^.Name
+  else
+    APart.LayerName := '0';
+  APart.Color := vp.Color;
+  APart.LineWeight := vp.lineweight;
+  if vp.LineType <> nil then
+    APart.LineTypeName := vp.LineType^.Name
+  else
+    APart.LineTypeName := '';
+  APart.LineTypeScale := vp.LineTypeScale;
+
+  APart.InsertPoint := FInsertPoint;
+  APart.Direction.x := Cos(FRotate);
+  APart.Direction.y := Sin(FRotate);
+  APart.Direction.z := 0;
+  APart.RowCount := FRowCount;
+  APart.ColCount := FColCount;
+  CopyVectorToDXFDoubleArray(FRowHeights, APart.RowHeights);
+  CopyVectorToDXFDoubleArray(FColWidths, APart.ColWidths);
+  CopyCellTextArray(FCellTexts, APart.CellTexts);
+  CopyCellArray(FCells, APart.Cells);
+  CopyMergeArray(FMerges, APart.Merges);
+  APart.TableStyleHandle := FTableStyleHandle;
+  APart.TableFlags := FTableFlags;
+  APart.BreakEnabled := GetBreakEnabled;
+  APart.BreakDirection := FBreakDirection;
+  APart.BreakRepeatTopLabels := FBreakRepeatTopLabels;
+  APart.BreakRepeatBottomLabels := FBreakRepeatBottomLabels;
+  APart.BreakManualPosition := FBreakManualPosition;
+  APart.BreakManualHeight := FBreakManualHeight;
+  APart.BreakSpacing := FBreakSpacing;
+  APart.BreakHeight := FBreakHeight;
+end;
+
+procedure GDBObjAcadTable.FillDXFWritePartFromContinuation(
+  const ASource: TAcadTablePart; var APart: TAcadTableDXFWritePart);
+begin
+  FillDXFWritePartFromSelf(APart);
+  APart.HandleKey := nil;
+  APart.InsertPoint := ASource.InsertPoint;
+  APart.RowCount := ASource.RowCount;
+  APart.ColCount := ASource.ColCount;
+  CopyVectorToDXFDoubleArray(ASource.RowHeights, APart.RowHeights);
+  CopyVectorToDXFDoubleArray(ASource.ColWidths, APart.ColWidths);
+  CopyCellTextArray(ASource.CellTexts, APart.CellTexts);
+  CopyCellArray(ASource.Cells, APart.Cells);
+  CopyMergeArray(ASource.Merges, APart.Merges);
+  APart.TableStyleHandle := ASource.TableStyleHandle;
+  APart.TableFlags := ASource.TableFlags;
+  APart.BreakEnabled := ASource.BreakEnabled;
+  APart.BreakDirection := ASource.BreakDirection;
+  APart.BreakRepeatTopLabels := ASource.BreakRepeatTopLabels;
+  APart.BreakRepeatBottomLabels := ASource.BreakRepeatBottomLabels;
+  APart.BreakManualPosition := ASource.BreakManualPosition;
+  APart.BreakManualHeight := ASource.BreakManualHeight;
+  APart.BreakSpacing := ASource.BreakSpacing;
+  APart.BreakHeight := ASource.BreakHeight;
+end;
+
+procedure GDBObjAcadTable.BuildDXFContinuationWriteParts(
+  var AParts: TAcadTableDXFWritePartArray);
+var
+  PartIdx: Integer;
+begin
+  System.SetLength(AParts, Length(FContinuationParts));
+  for PartIdx := 0 to High(FContinuationParts) do
+    FillDXFWritePartFromContinuation(
+      FContinuationParts[PartIdx], AParts[PartIdx]);
+end;
+
 procedure GDBObjAcadTable.SaveToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext);
+var
+  DXFPart: TAcadTableDXFWritePart;
 begin
+  FillDXFWritePartFromSelf(DXFPart);
   uzeacadtable_dxf_write.WriteAcadTableToDXF(
-    AOutStream, ADrawing, AIODXFContext);
+    AOutStream, ADrawing, AIODXFContext, DXFPart, 0);
 end;
 
 procedure GDBObjAcadTable.SaveToDXFFollow(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext);
+var
+  MainPart: TAcadTableDXFWritePart;
+  Parts: TAcadTableDXFWritePartArray;
 begin
-  // Пустая реализация
+  FillDXFWritePartFromSelf(MainPart);
+  BuildDXFContinuationWriteParts(Parts);
+  uzeacadtable_dxf_write.WriteAcadTableContinuationPartsToDXF(
+    AOutStream, ADrawing, AIODXFContext, MainPart, Parts);
 end;
 
 function GDBObjAcadTable.Clone(
