@@ -187,6 +187,32 @@ begin
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
+// Запись признака повтора верхних подписей (issue #1309).
+// Снятие флага (Repeat top labels = False) удаляет повторяющиеся верхние
+// строки-метки из всех частей-продолжений разорванной таблицы; установка True
+// добавляет их обратно (вся работа выполняется в
+// GDBObjAcadTable.SetBreakRepeatTopLabels). После изменения вызывается
+// YouChanged, чтобы дерево чертежа перестроило геометрию таблицы.
+procedure AcadTableBreakRepeatTopEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Boolean;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PBoolean(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakRepeatTopLabels=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakRepeatTopLabels:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+end;
+
 // Чтение признака повтора нижних подписей (только чтение)
 procedure AcadTableBreakRepeatBottomEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
@@ -442,12 +468,17 @@ begin
     TEntIterateProcsData.Create(
       nil,@AcadTableBreakDirectionEntIterateProc,nil),
     MPUM_AtLeastOneEntMatched);
+  {Repeat top labels редактируется (issue #1309): снятие флага удаляет
+   повторяющиеся верхние строки-метки из всех частей-продолжений, установка —
+   добавляет их обратно.}
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakRepeatTop','Repeat top labels',
     sysunit^.TypeName2PTD('Boolean'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableBreakRepeatTopEntIterateProc,nil));
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakRepeatTopEntIterateProc,
+      @AcadTableBreakRepeatTopEntChangeProc));
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakRepeatBottom','Repeat bottom labels',
     sysunit^.TypeName2PTD('Boolean'),

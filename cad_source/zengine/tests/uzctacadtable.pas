@@ -69,6 +69,14 @@ type
     // issue #1307, часть 1: изменение интервала смещает части-продолжения
     // (меняется ширина отрисованного представления).
     procedure ChangingBreakSpacingRepositionsParts;
+    // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
+    // верхних меток определяется по содержимому частей-продолжений.
+    procedure DetectsBreakRepeatTopOnLoad;
+    // issue #1309, часть 2: снятие признака повтора удаляет повторяющиеся
+    // строки-метки из всех частей, а возврат — добавляет их обратно.
+    procedure TogglingBreakRepeatTopAddsAndRemovesLabelRows;
+    // issue #1309: неразорванная таблица не имеет повтора верхних меток.
+    procedure NonBrokenTableHasNoBreakRepeatTop;
   end;
 
 implementation
@@ -621,6 +629,110 @@ begin
 
     CheckTrue(MaxX2 > MaxX1 + 1e-6,
       'Увеличение интервала должно раздвинуть части и увеличить общую ширину');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1309, часть 1. Файл test/tablerazdel.dxf — разорванная таблица из
+// трёх сегментов. Главная часть: строка 0 «Zagolovok» (Title), строка 1
+// «A..E» (Header), далее строки данных. Каждый сегмент-продолжение начинается
+// с тех же строк «Zagolovok» и «A..E», то есть таблица была разорвана с
+// повтором верхних меток. Признак должен определяться по содержимому, а не по
+// флагам подавления заголовков (реальный DXF приходит с TableFlags=22).
+procedure TAcadTableStyleTest.DetectsBreakRepeatTopOnLoad;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'Таблица должна содержать две части-продолжения');
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Повтор верхних меток должен определяться как True');
+    // Обе части-продолжения должны начинаться с повторённых строк-меток.
+    CheckEquals('Zagolovok', AcadTable^.ContinuationPartCellText(0, 0, 0),
+      'Часть 0, строка 0 должна повторять заголовок «Zagolovok»');
+    CheckEquals('A', AcadTable^.ContinuationPartCellText(0, 1, 0),
+      'Часть 0, строка 1 должна повторять шапку «A..E»');
+    CheckEquals('Zagolovok', AcadTable^.ContinuationPartCellText(1, 0, 0),
+      'Часть 1, строка 0 должна повторять заголовок «Zagolovok»');
+    CheckEquals('A', AcadTable^.ContinuationPartCellText(1, 1, 0),
+      'Часть 1, строка 1 должна повторять шапку «A..E»');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1309, часть 2. Установка BreakRepeatTopLabels=False должна удалить
+// повторяющиеся ведущие строки-метки (Title+Header, две строки) из всех
+// частей-продолжений; возврат в True — добавить их обратно. Проверяется как
+// число строк, так и содержимое первых ячеек, и повторное автоопределение.
+procedure TAcadTableStyleTest.TogglingBreakRepeatTopAddsAndRemovesLabelRows;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  P0Before, P1Before: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    P0Before := AcadTable^.ContinuationPartRowCount(0);
+    P1Before := AcadTable^.ContinuationPartRowCount(1);
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Исходно повтор верхних меток должен быть True');
+
+    // Снимаем повтор: две строки-метки удаляются из каждой части.
+    AcadTable^.BreakRepeatTopLabels := False;
+    CheckEquals(P0Before - 2, AcadTable^.ContinuationPartRowCount(0),
+      'После снятия повтора из части 0 должны исчезнуть две строки-метки');
+    CheckEquals(P1Before - 2, AcadTable^.ContinuationPartRowCount(1),
+      'После снятия повтора из части 1 должны исчезнуть две строки-метки');
+    CheckFalse(AcadTable^.RecomputeBreakRepeatTopLabels,
+      'После удаления меток автоопределение должно давать False');
+    // Первой строкой части 0 теперь должна стать строка данных «11».
+    CheckEquals('11', AcadTable^.ContinuationPartCellText(0, 0, 0),
+      'После снятия повтора часть 0 должна начинаться со строки данных');
+
+    // Возвращаем повтор: строки-метки добавляются обратно.
+    AcadTable^.BreakRepeatTopLabels := True;
+    CheckEquals(P0Before, AcadTable^.ContinuationPartRowCount(0),
+      'После возврата повтора число строк части 0 должно восстановиться');
+    CheckEquals(P1Before, AcadTable^.ContinuationPartRowCount(1),
+      'После возврата повтора число строк части 1 должно восстановиться');
+    CheckTrue(AcadTable^.RecomputeBreakRepeatTopLabels,
+      'После добавления меток автоопределение должно давать True');
+    CheckEquals('Zagolovok', AcadTable^.ContinuationPartCellText(0, 0, 0),
+      'После возврата повтора часть 0 снова начинается с «Zagolovok»');
+    CheckEquals('A', AcadTable^.ContinuationPartCellText(0, 1, 0),
+      'После возврата повтора часть 0 снова содержит шапку «A..E»');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1309. Неразорванная таблица (test/tablerazdel2.dxf) не имеет
+// частей-продолжений, поэтому признак повтора верхних меток равен False.
+procedure TAcadTableStyleTest.NonBrokenTableHasNoBreakRepeatTop;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel2.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(0, AcadTable^.ContinuationPartCount,
+      'Неразорванная таблица не должна иметь частей-продолжений');
+    CheckFalse(AcadTable^.BreakRepeatTopLabels,
+      'Неразорванная таблица не имеет повтора верхних меток');
   finally
     Drawing.done;
   end;
