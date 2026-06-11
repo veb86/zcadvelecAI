@@ -72,6 +72,9 @@ type
     // issue #1307, часть 1: изменение интервала смещает части-продолжения
     // (меняется ширина отрисованного представления).
     procedure ChangingBreakSpacingRepositionsParts;
+    // issue #1315: изменение направления разбиения должно перемещать
+    // части-продолжения влево или вниз от главной таблицы.
+    procedure ChangingBreakDirectionRepositionsParts;
     // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
     // верхних меток определяется по содержимому частей-продолжений.
     procedure DetectsBreakRepeatTopOnLoad;
@@ -218,6 +221,50 @@ begin
       AHasGap := True;
     if Segments[i].MaxX > AMaxX then
       AMaxX := Segments[i].MaxX;
+  end;
+end;
+
+procedure CollectLineBounds2D(var AArr: GDBObjEntityTreeArray;
+  out AMinX, AMaxX, AMinY, AMaxY: Double; out AHasLines: Boolean);
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PLine: PGDBObjLine;
+  LineMinX, LineMaxX, LineMinY, LineMaxY: Double;
+begin
+  AMinX := 0;
+  AMaxX := 0;
+  AMinY := 0;
+  AMaxY := 0;
+  AHasLines := False;
+
+  PEntity := AArr.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBLineID then
+    begin
+      PLine := PGDBObjLine(PEntity);
+      LineMinX := Min(PLine^.CoordInWCS.lBegin.x, PLine^.CoordInWCS.lEnd.x);
+      LineMaxX := Max(PLine^.CoordInWCS.lBegin.x, PLine^.CoordInWCS.lEnd.x);
+      LineMinY := Min(PLine^.CoordInWCS.lBegin.y, PLine^.CoordInWCS.lEnd.y);
+      LineMaxY := Max(PLine^.CoordInWCS.lBegin.y, PLine^.CoordInWCS.lEnd.y);
+      if not AHasLines then
+      begin
+        AMinX := LineMinX;
+        AMaxX := LineMaxX;
+        AMinY := LineMinY;
+        AMaxY := LineMaxY;
+        AHasLines := True;
+      end
+      else
+      begin
+        if LineMinX < AMinX then AMinX := LineMinX;
+        if LineMaxX > AMaxX then AMaxX := LineMaxX;
+        if LineMinY < AMinY then AMinY := LineMinY;
+        if LineMaxY > AMaxY then AMaxY := LineMaxY;
+      end;
+    end;
+    PEntity := AArr.iterate(IR);
   end;
 end;
 
@@ -752,6 +799,61 @@ begin
 
     CheckTrue(MaxX2 > MaxX1 + 1e-6,
       'Увеличение интервала должно раздвинуть части и увеличить общую ширину');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1315. Направление разбиения должно быть редактируемым и менять
+// положение частей-продолжений: Left переносит их влево от главной таблицы,
+// Down — ниже главной таблицы.
+procedure TAcadTableStyleTest.ChangingBreakDirectionRepositionsParts;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  RightMinX, RightMaxX, RightMinY, RightMaxY: Double;
+  LeftMinX, LeftMaxX, LeftMinY, LeftMaxY: Double;
+  DownMinX, DownMaxX, DownMinY, DownMaxY: Double;
+  HasLines: Boolean;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Таблица должна содержать части-продолжения');
+    CheckEquals(Ord(atbdRight), Ord(AcadTable^.BreakDirection),
+      'Исходное направление тестовой таблицы должно быть Right');
+
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectLineBounds2D(AcadTable^.ConstObjArray,
+      RightMinX, RightMaxX, RightMinY, RightMaxY, HasLines);
+    CheckTrue(HasLines, 'Таблица должна отрисовать линии в WCS');
+
+    AcadTable^.BreakDirection := atbdLeft;
+    CheckEquals(Ord(atbdLeft), Ord(AcadTable^.BreakDirection),
+      'Свойство BreakDirection должно принимать значение Left');
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectLineBounds2D(AcadTable^.ConstObjArray,
+      LeftMinX, LeftMaxX, LeftMinY, LeftMaxY, HasLines);
+    CheckTrue(HasLines, 'Таблица с направлением Left должна отрисовать линии');
+    CheckTrue(LeftMinX < RightMinX - 1e-6,
+      'Left должен переносить части-продолжения влево от главной таблицы');
+    CheckTrue(LeftMaxX < RightMaxX - 1e-6,
+      'Left не должен оставлять части-продолжения справа от главной таблицы');
+
+    AcadTable^.BreakDirection := atbdDown;
+    CheckEquals(Ord(atbdDown), Ord(AcadTable^.BreakDirection),
+      'Свойство BreakDirection должно принимать значение Down');
+    BuildTableGeometry(Drawing, AcadTable);
+    CollectLineBounds2D(AcadTable^.ConstObjArray,
+      DownMinX, DownMaxX, DownMinY, DownMaxY, HasLines);
+    CheckTrue(HasLines, 'Таблица с направлением Down должна отрисовать линии');
+    CheckTrue(DownMinY < RightMinY - 1e-6,
+      'Down должен переносить части-продолжения ниже главной таблицы');
+    CheckTrue(DownMaxX < RightMaxX - 1e-6,
+      'Down должен перестать раскладывать части вправо');
   finally
     Drawing.done;
   end;
