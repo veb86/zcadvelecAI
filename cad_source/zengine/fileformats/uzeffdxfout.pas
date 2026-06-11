@@ -36,10 +36,17 @@ type
     на pre-save обработку чертежа (например, конвертацию ProxyEntity
     в BlockInsert). }
   TBeforeSaveDxfProc=procedure(var drawing:TSimpleDrawing);
+  { Callback, вызываемый перед закрытием секции OBJECTS. Позволяет
+    специализированным модулям записывать свои OBJECTS-сущности, не
+    добавляя предметные зависимости в общий DXF writer. }
+  TObjectsSaveDxfProc=procedure(var outstream:TZctnrVectorBytes;
+                                var drawing:TSimpleDrawing;
+                                var IODXFContext:TIODXFSaveContext);
 
 { Регистрирует pre-save callback. Все зарегистрированные callback'и
   вызываются в порядке регистрации в начале savedxf20XX. }
 procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
+procedure RegisterObjectsSaveDxfProc(proc:TObjectsSaveDxfProc);
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
@@ -47,6 +54,7 @@ implementation
 
 var
   BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
+  ObjectsSaveDxfProcs:array of TObjectsSaveDxfProc;
 
 procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
 var
@@ -55,6 +63,15 @@ begin
   i:=Length(BeforeSaveDxfProcs);
   SetLength(BeforeSaveDxfProcs,i+1);
   BeforeSaveDxfProcs[i]:=proc;
+end;
+
+procedure RegisterObjectsSaveDxfProc(proc:TObjectsSaveDxfProc);
+var
+  i:Integer;
+begin
+  i:=Length(ObjectsSaveDxfProcs);
+  SetLength(ObjectsSaveDxfProcs,i+1);
+  ObjectsSaveDxfProcs[i]:=proc;
 end;
 
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
@@ -355,6 +372,16 @@ var
   tsHandles: array of TDWGHandle;
   tsCount: integer;
   beforeProcIdx: integer;
+
+  procedure RunObjectsSaveDxfProcs;
+  var
+    objectsProcIdx: Integer;
+  begin
+    for objectsProcIdx:=0 to High(ObjectsSaveDxfProcs) do
+      if Assigned(ObjectsSaveDxfProcs[objectsProcIdx]) then
+        ObjectsSaveDxfProcs[objectsProcIdx](
+          outstream,drawing,IODXFContext);
+  end;
 begin
   intable:=0;
   IODXFContext.InitRec;
@@ -1314,8 +1341,10 @@ begin
                 ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
               end;
             end;
-            if values=dxfName_ENDSEC then
+            if values=dxfName_ENDSEC then begin
+              RunObjectsSaveDxfProcs;
               inobjectssec:=False;
+            end;
             outstream.TXTAddStringEOL(dxfGroupCode(0));
             outstream.TXTAddStringEOL(values);
           end else begin
@@ -1363,8 +1392,10 @@ begin
             end;
           end;
           { Записываем текущую пару (начало следующего объекта) }
-          if values=dxfName_ENDSEC then
+          if values=dxfName_ENDSEC then begin
+            RunObjectsSaveDxfProcs;
             inobjectssec:=False;
+          end;
           outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL(values);
         end else if inobjectssec and (groupi=0) and (values=dxfName_ENDSEC) then begin
@@ -1382,6 +1413,7 @@ begin
               ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
             end;
           end;
+          RunObjectsSaveDxfProcs;
           inobjectssec:=False;
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);

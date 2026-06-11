@@ -22,6 +22,8 @@ uses
   testregistry,
   Interfaces,
   uzeffdxf,
+  uzctnrVectorBytesStream,
+  uzeffdxfsupport,
   uzedrawingsimple,
   uzeffmanager,
   uzgldrawcontext,
@@ -40,7 +42,8 @@ uses
   uzeentblockinsert,
   uzeenttable,
   uzeacadtable_types,
-  uzeacadtable_model;
+  uzeacadtable_model,
+  uzeacadtable_dxf_write;
 
 type
   TAcadTableStyleTest = class(TTestCase)
@@ -51,6 +54,9 @@ type
     procedure RendersBrokenTableAsSeparatedFragments;
     procedure LoadsSplitTableAsSingleMergedObject;
     procedure AppliesTableStyleToContinuationParts;
+    // issue #1317: сохранение AcadTable в DXF должно писать структурированные
+    // ACAD_TABLE-сущности, включая части-продолжения разделённой таблицы.
+    procedure SavesSplitAcadTableToStructuredDXF;
     // issue #1305, часть 1: трансформация (перенос) должна перестраивать
     // визуальное представление таблицы.
     procedure TransformationMovesRenderedTable;
@@ -117,6 +123,49 @@ begin
     if PEntity^.GetObjType = GDBAcadTableID then
       Inc(Result);
     PEntity := ARoot^.ObjArray.iterate(IR);
+  end;
+end;
+
+function DxfStreamToText(var AStream: TZctnrVectorBytes): String;
+var
+  FileName: String;
+  Lines: TStringList;
+begin
+  FileName := IncludeTrailingPathDelimiter(GetTempDir(False)) +
+    'zcad_acadtable_save_test.dxf';
+  if AStream.SaveToFile(FileName) < 0 then
+    raise Exception.Create('Не удалось сохранить временный DXF-поток');
+
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(FileName);
+    Result := Lines.Text;
+  finally
+    Lines.Free;
+    DeleteFile(FileName);
+  end;
+end;
+
+function CountDxfPairs(
+  const ADXF, ACode, AValue: String): Integer;
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Result := 0;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ADXF;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if (Trim(Lines[I]) = ACode) and
+         (Trim(Lines[I + 1]) = AValue) then
+        Inc(Result);
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
   end;
 end;
 
@@ -521,6 +570,59 @@ begin
     Check(MaxSize < CAcadTableDefaultTextHeight - 1e-6,
       'Высота текста частей-продолжений должна браться из DXF-стиля, ' +
       'а не из значения по умолчанию');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1317. Разделённая таблица должна сохраняться обратно в DXF как
+// структурированные ACAD_TABLE-сущности: главная часть, части-продолжения
+// и XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY, по которому загрузчик снова
+// объединяет продолжения с главной таблицей.
+procedure TAcadTableStyleTest.SavesSplitAcadTableToStructuredDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  DXFText: String;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'Тестовый DXF должен содержать две части-продолжения');
+
+    OutStream.init(64 * 1024);
+    SaveContext.InitRec;
+    SaveContext.Header.Version := AC1021;
+    SaveContext.Header.iVersion := 1021;
+    try
+      ResetAcadTableDXFWriteState;
+      AcadTable^.DXFOut(OutStream, Drawing, SaveContext);
+      WriteAcadTableRoundTripObjectsToDXF(
+        OutStream, Drawing, SaveContext);
+      DXFText := DxfStreamToText(OutStream);
+    finally
+      ResetAcadTableDXFWriteState;
+      SaveContext.Done;
+      OutStream.done;
+    end;
+
+    CheckEquals(3, CountDxfPairs(DXFText, '0', 'ACAD_TABLE'),
+      'Главная таблица и две части-продолжения должны сохраниться как ACAD_TABLE');
+    CheckEquals(3, CountDxfPairs(DXFText, '100', 'AcDbTable'),
+      'Каждая сохранённая ACAD_TABLE должна содержать subclass AcDbTable');
+    CheckTrue(CountDxfPairs(DXFText, '301', 'CELL_VALUE') > 0,
+      'Ячейки таблицы должны сохраняться как CELL_VALUE');
+    CheckTrue(Pos('Zagolovok', DXFText) > 0,
+      'DXF должен содержать текст ячейки из исходной таблицы');
+    CheckEquals(1,
+      CountDxfPairs(
+        DXFText, '102', 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY'),
+      'Для разделённой таблицы должен сохраняться round-trip XRECORD');
   finally
     Drawing.done;
   end;
