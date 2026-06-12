@@ -169,6 +169,54 @@ begin
   end;
 end;
 
+function CountDxfCode(const ADXF, ACode: String): Integer;
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Result := 0;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ADXF;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if Trim(Lines[I]) = ACode then
+        Inc(Result);
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function HasDxfSequence(
+  const ADXF: String; const ASequence: array of String): Boolean;
+var
+  Lines: TStringList;
+  StartIdx, SeqIdx: Integer;
+begin
+  Result := False;
+  if Length(ASequence) = 0 then
+    Exit(True);
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ADXF;
+    for StartIdx := 0 to Lines.Count - Length(ASequence) do
+    begin
+      SeqIdx := 0;
+      while (SeqIdx <= High(ASequence)) and
+        (Trim(Lines[StartIdx + SeqIdx]) = ASequence[SeqIdx]) do
+        Inc(SeqIdx);
+      if SeqIdx > High(ASequence) then
+        Exit(True);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
 function LoadDrawingFromDXF(const AFileName: string; var ADrawing: TSimpleDrawing): Integer;
 var
   DC: TDrawContext;
@@ -615,6 +663,30 @@ begin
       'Главная таблица и две части-продолжения должны сохраниться как ACAD_TABLE');
     CheckEquals(3, CountDxfPairs(DXFText, '100', 'AcDbTable'),
       'Каждая сохранённая ACAD_TABLE должна содержать subclass AcDbTable');
+    CheckTrue(CountDxfCode(DXFText, '310') > 0,
+      'Сырые binary chunks ACAD_TABLE (310) должны сохраняться');
+    CheckEquals(3, CountDxfCode(DXFText, '343'),
+      'Каждая часть таблицы должна сохранить ссылку group 343');
+    CheckTrue(
+      HasDxfSequence(DXFText,
+        ['301', 'CELL_VALUE',
+         '93', '6',
+         '90', '1',
+         '91', '1']),
+      'Числовые значения ячеек должны сохранять DXF-тип, а не превращаться в строки');
+    CheckTrue(
+      HasDxfSequence(DXFText,
+        ['173', '1',
+         '174', '0',
+         '175', '1',
+         '176', '1',
+         '91', '0',
+         '178', '0',
+         '145', '0.0',
+         '92', '0',
+         '301', 'CELL_VALUE',
+         '93', '7']),
+      'Виртуальные ячейки объединений должны сохранять исходные флаги');
     CheckTrue(CountDxfPairs(DXFText, '301', 'CELL_VALUE') > 0,
       'Ячейки таблицы должны сохраняться как CELL_VALUE');
     CheckTrue(Pos('Zagolovok', DXFText) > 0,
