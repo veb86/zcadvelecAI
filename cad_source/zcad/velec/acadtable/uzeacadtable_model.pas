@@ -86,6 +86,8 @@ type
     BreakManualHeight: Boolean;
     BreakSpacing: Double;
     BreakHeight: Double;
+    RawDXFEntity: String;
+    RawDXFEntityValid: Boolean;
   end;
 
   // Сущность ACAD_TABLE — таблица AutoCAD из формата DXF.
@@ -142,6 +144,10 @@ type
     // продолжения хранятся здесь как данные и отображаются со смещением
     // относительно точки вставки главной части (issue #1300).
     FContinuationParts: array of TAcadTablePart;
+    // Исходный текст DXF-entity для точного round-trip сохранения
+    // неизменённых ACAD_TABLE (issue #1317).
+    FRawDXFEntity: String;
+    FRawDXFEntityValid: Boolean;
 
     // Обёртки для делегирования к модулю layout
     function GetRowHeightLocal(RowIndex: Integer): Double;
@@ -236,6 +242,8 @@ type
       const ASource: TAcadTablePart; var APart: TAcadTableDXFWritePart);
     procedure BuildDXFContinuationWriteParts(
       var AParts: TAcadTableDXFWritePartArray);
+    procedure InvalidateRawDXFEntity;
+    function CanSaveRawDXFEntity: Boolean;
 
   public
     constructor initnul(
@@ -253,6 +261,9 @@ type
       var AOutStream: TZctnrVectorBytes;
       var ADrawing: TDrawingDef;
       var AIODXFContext: TIODXFSaveContext); virtual;
+    procedure DXFOut(var AOutStream: TZctnrVectorBytes;
+      var ADrawing: TDrawingDef;
+      var AIODXFContext: TIODXFSaveContext); virtual;
     procedure BuildGeometry(
       var ADrawing: TDrawingDef); virtual;
     procedure FormatEntity(var ADrawing: TDrawingDef;
@@ -265,6 +276,8 @@ type
     procedure CalcObjMatrix(pdrawing: PTDrawingDef = nil); virtual;
     procedure ReCalcFromObjMatrix; virtual;
     procedure rtsave(refp: Pointer); virtual;
+    procedure TransformAt(p: PGDBObjEntity;
+      t_matrix: PzeTypedMatrix4d); virtual;
     function Clone(AOwn: Pointer): PGDBObjEntity; virtual;
     function GetObjType: TObjID; virtual;
     function GetObjTypeName: String; virtual;
@@ -279,6 +292,7 @@ type
     // (issue #1307). Возвращает True.
     function SetTableBreakData(
       ASpacing, ABreakHeight: Double): Boolean; virtual;
+    procedure SetDXFRawEntityText(const ARawText: string); virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -415,6 +429,8 @@ begin
   System.SetLength(FCells, 0, 0);
   System.SetLength(FMerges, 0);
   System.SetLength(FContinuationParts, 0);
+  FRawDXFEntity := '';
+  FRawDXFEntityValid := False;
 end;
 
 destructor GDBObjAcadTable.done;
@@ -428,10 +444,38 @@ begin
   System.SetLength(FCols, 0);
   System.SetLength(FCells, 0, 0);
   System.SetLength(FMerges, 0);
+  FRawDXFEntity := '';
+  FRawDXFEntityValid := False;
   for PartIdx := 0 to High(FContinuationParts) do
     ClearPart(FContinuationParts[PartIdx]);
   System.SetLength(FContinuationParts, 0);
   inherited done;
+end;
+
+procedure GDBObjAcadTable.InvalidateRawDXFEntity;
+var
+  PartIdx: Integer;
+begin
+  FRawDXFEntity := '';
+  FRawDXFEntityValid := False;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    FContinuationParts[PartIdx].RawDXFEntity := '';
+    FContinuationParts[PartIdx].RawDXFEntityValid := False;
+  end;
+end;
+
+function GDBObjAcadTable.CanSaveRawDXFEntity: Boolean;
+var
+  PartIdx: Integer;
+begin
+  Result := FRawDXFEntityValid and (FRawDXFEntity <> '');
+  if not Result then
+    Exit;
+  for PartIdx := 0 to High(FContinuationParts) do
+    if (not FContinuationParts[PartIdx].RawDXFEntityValid) or
+       (FContinuationParts[PartIdx].RawDXFEntity = '') then
+      Exit(False);
 end;
 
 // --- Загрузка из DXF ---
@@ -1009,6 +1053,8 @@ var
   TmpCols: TTableColumnArray;
   TmpCells: TTableCellArray;
   TmpMerges: TMergeRangeArray;
+  TmpRaw: String;
+  TmpRawValid: Boolean;
 begin
   TmpInt := FRowCount; FRowCount := APart.RowCount; APart.RowCount := TmpInt;
   TmpInt := FColCount; FColCount := APart.ColCount; APart.ColCount := TmpInt;
@@ -1034,6 +1080,9 @@ begin
   TmpManualHeight := FBreakManualHeight; FBreakManualHeight := APart.BreakManualHeight; APart.BreakManualHeight := TmpManualHeight;
   TmpSpacing := FBreakSpacing; FBreakSpacing := APart.BreakSpacing; APart.BreakSpacing := TmpSpacing;
   TmpHeight := FBreakHeight; FBreakHeight := APart.BreakHeight; APart.BreakHeight := TmpHeight;
+
+  TmpRaw := FRawDXFEntity; FRawDXFEntity := APart.RawDXFEntity; APart.RawDXFEntity := TmpRaw;
+  TmpRawValid := FRawDXFEntityValid; FRawDXFEntityValid := APart.RawDXFEntityValid; APart.RawDXFEntityValid := TmpRawValid;
 end;
 
 // Строит визуальное представление всей таблицы: сначала главная часть
@@ -1103,6 +1152,8 @@ begin
   APart.BreakManualHeight := ASource.FBreakManualHeight;
   APart.BreakSpacing := ASource.FBreakSpacing;
   APart.BreakHeight := ASource.FBreakHeight;
+  APart.RawDXFEntity := ASource.FRawDXFEntity;
+  APart.RawDXFEntityValid := ASource.FRawDXFEntityValid;
 
   APart.RowHeights.initnul;
   for Idx := 0 to ASource.FRowHeights.Count - 1 do
@@ -1157,6 +1208,8 @@ begin
   ADest.BreakManualHeight := ASource.BreakManualHeight;
   ADest.BreakSpacing := ASource.BreakSpacing;
   ADest.BreakHeight := ASource.BreakHeight;
+  ADest.RawDXFEntity := ASource.RawDXFEntity;
+  ADest.RawDXFEntityValid := ASource.RawDXFEntityValid;
 
   ADest.RowHeights.initnul;
   for Idx := 0 to ASource.RowHeights.Count - 1 do
@@ -1195,6 +1248,8 @@ procedure GDBObjAcadTable.ClearPart(var APart: TAcadTablePart);
 begin
   APart.TableStyleHandle := '';
   APart.RowBaseIndex := 0;
+  APart.RawDXFEntity := '';
+  APart.RawDXFEntityValid := False;
   APart.RowHeights.done;
   APart.ColWidths.done;
   System.SetLength(APart.CellTexts, 0);
@@ -1260,6 +1315,7 @@ var
 begin
   if AValue then
   begin
+    InvalidateRawDXFEntity;
     FBreakEnabled := True;
     if (Length(FContinuationParts) = 0) and (FBreakHeight > 0) then
       SplitMainTableByBreakHeight(FBreakHeight)
@@ -1279,6 +1335,7 @@ begin
     L := EffectiveRepeatTopRowCount;
   if L > 0 then
     RemoveTopLabelsFromParts(L);
+  InvalidateRawDXFEntity;
   FBreakEnabled := False;
   MergeAllContinuationPartsIntoMain;
 
@@ -1301,6 +1358,7 @@ begin
   if AValue = FBreakDirection then
     Exit;
 
+  InvalidateRawDXFEntity;
   FBreakDirection := AValue;
   for PartIdx := 0 to High(FContinuationParts) do
     FContinuationParts[PartIdx].BreakDirection := AValue;
@@ -1403,6 +1461,7 @@ procedure GDBObjAcadTable.SetBreakSpacing(AValue: Double);
 begin
   if AValue = FBreakSpacing then
     Exit;
+  InvalidateRawDXFEntity;
   FBreakSpacing := AValue;
   RepositionContinuationParts;
   FGeometryBuilt := False;
@@ -1426,6 +1485,7 @@ var
 begin
   if AValue = FBreakHeight then
     Exit;
+  InvalidateRawDXFEntity;
   WasBreakEnabled := GetBreakEnabled;
   FBreakHeight := AValue;
   // Перебор строк имеет смысл только при положительной высоте и
@@ -1478,6 +1538,8 @@ begin
   ADest.BreakManualHeight := ASource.BreakManualHeight;
   ADest.BreakSpacing := ASource.BreakSpacing;
   ADest.BreakHeight := ASource.BreakHeight;
+  ADest.RawDXFEntity := '';
+  ADest.RawDXFEntityValid := False;
 
   // Высоты строк диапазона
   ADest.RowHeights.initnul;
@@ -1820,6 +1882,7 @@ var
 begin
   if AValue = FBreakRepeatTopLabels then
     Exit;
+  InvalidateRawDXFEntity;
   L := 0;
   if Length(FContinuationParts) > 0 then
   begin
@@ -1928,6 +1991,8 @@ begin
   APart.BreakManualHeight := Src.BreakManualHeight;
   APart.BreakSpacing := Src.BreakSpacing;
   APart.BreakHeight := Src.BreakHeight;
+  APart.RawDXFEntity := '';
+  APart.RawDXFEntityValid := False;
 
   // Высоты строк: сверху L строк главной части, затем строки исходной части.
   APart.RowHeights.initnul;
@@ -2064,6 +2129,12 @@ begin
   Result := True;
 end;
 
+procedure GDBObjAcadTable.SetDXFRawEntityText(const ARawText: string);
+begin
+  FRawDXFEntity := ARawText;
+  FRawDXFEntityValid := ARawText <> '';
+end;
+
 // --- Трансформация объекта (issue #1305, часть 1) ---
 // Таблица AcadTable реализует ту же модель трансформации, что и вставка
 // блока (uzeentblockinsert): масштаб и поворот хранятся отдельными полями
@@ -2130,6 +2201,14 @@ begin
   inherited;
   PGDBObjAcadTable(refp)^.FRotate := FRotate;
   PGDBObjAcadTable(refp)^.FScale := FScale;
+  PGDBObjAcadTable(refp)^.InvalidateRawDXFEntity;
+end;
+
+procedure GDBObjAcadTable.TransformAt(
+  p: PGDBObjEntity; t_matrix: PzeTypedMatrix4d);
+begin
+  inherited TransformAt(p, t_matrix);
+  InvalidateRawDXFEntity;
 end;
 
 // Вычисляет bounding box
@@ -2417,6 +2496,28 @@ begin
     AOutStream, ADrawing, AIODXFContext, MainPart, Parts);
 end;
 
+procedure GDBObjAcadTable.DXFOut(
+  var AOutStream: TZctnrVectorBytes;
+  var ADrawing: TDrawingDef;
+  var AIODXFContext: TIODXFSaveContext);
+var
+  RawParts: array of String;
+  PartIdx: Integer;
+begin
+  if CanSaveRawDXFEntity then
+  begin
+    System.SetLength(RawParts, Length(FContinuationParts));
+    for PartIdx := 0 to High(FContinuationParts) do
+      RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
+    if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
+      AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
+      FBreakSpacing, FBreakHeight) then
+      Exit;
+  end;
+
+  inherited DXFOut(AOutStream, ADrawing, AIODXFContext);
+end;
+
 function GDBObjAcadTable.Clone(
   AOwn: Pointer): PGDBObjEntity;
 var
@@ -2445,6 +2546,8 @@ begin
   // Трансформация объекта (issue #1305, часть 1)
   NewTable^.FScale := FScale;
   NewTable^.FRotate := FRotate;
+  NewTable^.FRawDXFEntity := FRawDXFEntity;
+  NewTable^.FRawDXFEntityValid := FRawDXFEntityValid;
 
   for Idx := 0 to FRowHeights.Count - 1 do
     NewTable^.FRowHeights.PushBackData(

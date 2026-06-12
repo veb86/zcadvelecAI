@@ -85,6 +85,13 @@ procedure WriteAcadTableContinuationPartsToDXF(
   const AMainPart: TAcadTableDXFWritePart;
   const AParts: TAcadTableDXFWritePartArray);
 
+function WriteRawAcadTablePartsToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const AMainRawEntity: String;
+  const AContinuationRawEntities: array of String;
+  ABreakSpacing, ABreakHeight: Double): Boolean;
+
 procedure WriteAcadTableRoundTripObjectsToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TSimpleDrawing;
@@ -93,7 +100,7 @@ procedure WriteAcadTableRoundTripObjectsToDXF(
 implementation
 
 uses
-  SysUtils, uzeffdxfout;
+  SysUtils, Classes, uzeffdxfout;
 
 type
   TAcadTableRoundTripRecord = record
@@ -421,6 +428,64 @@ begin
       AContinuationHandles[HandleIdx];
 end;
 
+function RawAcadTableHandle(
+  const ARawEntity: String; out AHandle: TDWGHandle): Boolean;
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Result := False;
+  AHandle := 0;
+  if ARawEntity = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawEntity;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if Trim(Lines[I]) = '5' then
+      begin
+        try
+          AHandle := DXFHandle(Trim(Lines[I + 1]));
+          Result := AHandle <> 0;
+        except
+          AHandle := 0;
+          Result := False;
+        end;
+        Exit;
+      end;
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure BumpHandleAfterRawEntity(
+  var AIODXFContext: TIODXFSaveContext; AHandle: TDWGHandle);
+begin
+  if AHandle >= AIODXFContext.handle then
+    AIODXFContext.handle := AHandle + 1;
+end;
+
+procedure WriteRawEntityText(
+  var AOutStream: TZctnrVectorBytes; const ARawEntity: String);
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawEntity;
+    for I := 0 to Lines.Count - 1 do
+      AOutStream.TXTAddStringEOL(Lines[I]);
+  finally
+    Lines.Free;
+  end;
+end;
+
 procedure WriteAcadTablePartToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
@@ -486,6 +551,43 @@ begin
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
     AMainPart.BreakSpacing, AMainPart.BreakHeight);
+end;
+
+function WriteRawAcadTablePartsToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const AMainRawEntity: String;
+  const AContinuationRawEntities: array of String;
+  ABreakSpacing, ABreakHeight: Double): Boolean;
+var
+  MainHandle: TDWGHandle;
+  ContinuationHandles: array of TDWGHandle;
+  PartIdx: Integer;
+begin
+  Result := False;
+  if not RawAcadTableHandle(AMainRawEntity, MainHandle) then
+    Exit;
+
+  System.SetLength(ContinuationHandles, Length(AContinuationRawEntities));
+  for PartIdx := 0 to High(AContinuationRawEntities) do
+    if not RawAcadTableHandle(
+      AContinuationRawEntities[PartIdx],
+      ContinuationHandles[PartIdx]) then
+      Exit;
+
+  WriteRawEntityText(AOutStream, AMainRawEntity);
+  BumpHandleAfterRawEntity(AIODXFContext, MainHandle);
+
+  for PartIdx := 0 to High(AContinuationRawEntities) do
+  begin
+    WriteRawEntityText(AOutStream, AContinuationRawEntities[PartIdx]);
+    BumpHandleAfterRawEntity(
+      AIODXFContext, ContinuationHandles[PartIdx]);
+  end;
+
+  AddRoundTripRecord(MainHandle, ContinuationHandles,
+    ABreakSpacing, ABreakHeight);
+  Result := True;
 end;
 
 procedure WriteRoundTripRecordToDXF(

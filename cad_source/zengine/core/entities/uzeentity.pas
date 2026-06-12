@@ -95,6 +95,9 @@ type
       чтобы свойства Break spacing/Break height отображались и
       редактировались в инспекторе объектов (issue #1307). }
     function SetTableBreakData(ASpacing,ABreakHeight:double):boolean;virtual;
+    { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
+      его для round-trip экспорта. Базовая реализация ничего не делает. }
+    procedure SetDXFRawEntityText(const ARawText:string);virtual;
     procedure postload(var context:TIODXFLoadContext);virtual;
     procedure createfield;virtual;
     function AddExtAttrib:PTExtAttrib;
@@ -464,6 +467,10 @@ end;
 function GDBObjEntity.SetTableBreakData(ASpacing,ABreakHeight:double):boolean;
 begin
   Result:=false;
+end;
+
+procedure GDBObjEntity.SetDXFRawEntityText(const ARawText:string);
+begin
 end;
 
 procedure GDBObjEntity.postload(var context:TIODXFLoadContext);

@@ -113,6 +113,11 @@ type
 
   TDXFHandle2ZCObject=GMapHandle2Pointer<TDWGHandle,Pointer,TObjectTypes>;
 
+  TDXFRawTextObject=class
+    Text:string;
+    constructor Create(const AText:string);
+  end;
+
   TIODXFLoadContext=record
     h2p:TDXFHandle2ZCObject;
     DWGVarsDict:TString2StringDictionary;
@@ -127,6 +132,13 @@ type
       (группа 330). Такие продолжения не должны создавать отдельные
       ProxyEntity: их proxy graphic уже включён в первую таблицу. }
     TableContinuationHandles:TStringList;
+
+    { Сырые тексты ACAD_TABLE-сущностей из секции ENTITIES, индексированные
+      по нормализованному handle. Нужны для round-trip сохранения таблиц,
+      потому что современные ACAD_TABLE содержат бинарные chunks и точные
+      флаги ячеек, которые модель ZCAD пока не реконструирует полностью
+      (issue #1317). }
+    TableRawAcadTableEntities:TStringList;
 
     { Параметры разбиения разделённой таблицы, прочитанные из XRECORD
       ACAD_ROUNDTRIP_2008_TABLE_ENTITY (две группы 40: 1-я — интервал
@@ -192,6 +204,12 @@ function ZCDxfVer2ACVer(AZCVer:TZCDxfVersion):integer;
 function ZCDxfVer2DXF_ACVer(AZCVer:TZCDxfVersion):TACDWGVer;
 
 implementation
+
+constructor TDXFRawTextObject.Create(const AText:string);
+begin
+  inherited Create;
+  Text:=AText;
+end;
 
 function ZCDxfVer2ACVer(AZCVer:TZCDxfVersion):integer;
 begin
@@ -368,6 +386,11 @@ begin
   TableContinuationHandles.Sorted:=True;
   TableContinuationHandles.Duplicates:=dupIgnore;
 
+  TableRawAcadTableEntities:=TStringList.Create;
+  TableRawAcadTableEntities.CaseSensitive:=False;
+  TableRawAcadTableEntities.Sorted:=True;
+  TableRawAcadTableEntities.Duplicates:=dupIgnore;
+
   TableBreakSpacing:=0;
   TableBreakHeight:=0;
   TableBreakDataValid:=False;
@@ -382,11 +405,18 @@ begin
 end;
 
 procedure TIODXFLoadContext.Done;
+var
+  I:Integer;
 begin
   h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
   FreeAndNil(TableContinuationHandles);
+  if TableRawAcadTableEntities<>nil then begin
+    for I:=0 to TableRawAcadTableEntities.Count-1 do
+      TableRawAcadTableEntities.Objects[I].Free;
+    FreeAndNil(TableRawAcadTableEntities);
+  end;
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;

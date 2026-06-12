@@ -171,6 +171,95 @@ begin
     Result := Copy(Result, I, Length(Result) - I + 1);
 end;
 
+procedure StoreRawAcadTableEntity(
+  RawEntities: TStringList; const Handle, RawText: string);
+var
+  Idx: Integer;
+begin
+  if (RawEntities = nil) or (Handle = '') or (RawText = '') then
+    Exit;
+
+  Idx := RawEntities.IndexOf(Handle);
+  if Idx >= 0 then
+  begin
+    RawEntities.Objects[Idx].Free;
+    RawEntities.Objects[Idx] := TDXFRawTextObject.Create(RawText);
+  end
+  else
+    RawEntities.AddObject(Handle, TDXFRawTextObject.Create(RawText));
+end;
+
+{ Сканирует секцию ENTITIES и сохраняет исходный текст каждой ACAD_TABLE
+  по handle. Это нужно для точного round-trip сохранения: таблицы AutoCAD
+  содержат binary chunks (310) и детальные флаги ячеек, которые обычная
+  модель таблицы пока не умеет полностью восстановить (issue #1317). }
+procedure ScanAcadTableRawEntities(
+  const RawEntitiesSection: string; RawEntities: TStringList);
+var
+  Lines: TStringList;
+  I, J, K, EntityStart, EntityEnd: Integer;
+  Handle, RawText: string;
+begin
+  if (RawEntitiesSection = '') or (RawEntities = nil) then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawEntitiesSection;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if (Trim(Lines[I]) = '0') and
+         (UpperCase(Trim(Lines[I + 1])) = 'ACAD_TABLE') then
+      begin
+        EntityStart := I;
+        EntityEnd := Lines.Count;
+        J := I + 2;
+        while J < Lines.Count - 1 do
+        begin
+          if Trim(Lines[J]) = '0' then
+          begin
+            EntityEnd := J;
+            Break;
+          end;
+          Inc(J, 2);
+        end;
+
+        Handle := '';
+        K := EntityStart + 2;
+        while K < EntityEnd - 1 do
+        begin
+          if Trim(Lines[K]) = '5' then
+          begin
+            Handle := NormalizeHandle(Lines[K + 1]);
+            Break;
+          end;
+          Inc(K, 2);
+        end;
+
+        RawText := '';
+        for K := EntityStart to EntityEnd - 1 do
+        begin
+          if K > EntityStart then
+            RawText := RawText + LineEnding;
+          RawText := RawText + Lines[K];
+        end;
+        StoreRawAcadTableEntity(RawEntities, Handle, RawText);
+        I := EntityEnd;
+        Continue;
+      end;
+      Inc(I, 2);
+    end;
+
+    if RawEntities.Count > 0 then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanAcadTableRawEntities: найдено %d raw ACAD_TABLE entity',
+        [RawEntities.Count], LM_Info);
+  finally
+    Lines.Free;
+  end;
+end;
+
 { Сканирует секцию OBJECTS, находит XRECORD'ы с маркером
   ACAD_ROUNDTRIP_2008_TABLE_ENTITY и собирает из них хэндлы
   ACAD_TABLE-сущностей, являющихся продолжениями разделённой таблицы.
@@ -567,6 +656,7 @@ var
   EntInfoData:TEntInfoData;
   bylayerlt:Pointer;
   lph:TLPSHandle;
+  rawIdx:Integer;
   // Последняя добавленная главная ACAD_TABLE — в неё поглощаются
   // продолжения разделённой таблицы (issue #1300).
   pLastMainTable:PGDBObjEntity;
@@ -597,6 +687,21 @@ begin
         PGDBObjEntity(pobj)^.vp.LineType:=bylayerlt;
       if assigned(PGDBObjEntity(pobj)^.EntExtensions) then
         PGDBObjEntity(pobj)^.EntExtensions.RunSupportOldVersions(pobj,drawing);
+
+      if (uppercase(s)='ACAD_TABLE') and
+         (context.TableRawAcadTableEntities<>nil) and
+         (PGDBObjEntity(pobj)^.PExtAttrib<>nil) and
+         (PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle<>0) then
+      begin
+        rawIdx := context.TableRawAcadTableEntities.IndexOf(
+          NormalizeHandle(inttohex(
+            PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)));
+        if (rawIdx >= 0) and
+           (context.TableRawAcadTableEntities.Objects[rawIdx]<>nil) then
+          PGDBObjEntity(pobj)^.SetDXFRawEntityText(
+            TDXFRawTextObject(
+              context.TableRawAcadTableEntities.Objects[rawIdx]).Text);
+      end;
 
       { Если ACAD_TABLE имеет handle из списка продолжений разделённой
         таблицы — это часть, которую AutoCAD сохранил как отдельную
@@ -1569,6 +1674,7 @@ var
   DxfStream:TZMVSMemoryMappedFile;
   rdr:TZMemReader;
   globalTimer: TTimeMeter;
+  RawEntitiesSection: string;
 const
    ffs='%s (%s)';
 begin
@@ -1609,6 +1715,12 @@ begin
           ExtractDxfRawSection(AFileName, 'CLASSES');
         dwgCtx.PDrawing^.RawObjectsSection :=
           ExtractDxfRawSection(AFileName, 'OBJECTS');
+        RawEntitiesSection :=
+          ExtractDxfRawSection(AFileName, 'ENTITIES');
+
+        ScanAcadTableRawEntities(
+          RawEntitiesSection,
+          fileCtx.TableRawAcadTableEntities);
 
         { Сканируем OBJECTS, собираем handles ACAD_TABLE-продолжений.
           Хранятся в fileCtx, используются в addentitiesfromdxf для отбрасывания
