@@ -101,6 +101,9 @@ type
     // issue #1321: ручное управление высотой должно включаться и
     // отключаться через свойство инспектора объектов.
     procedure TogglingBreakManualHeightUpdatesPartGrips;
+    // issue #1321: перетаскивание ручки высоты части-продолжения должно
+    // перераспределять строки этой части, а не только менять сохранённое поле.
+    procedure DraggingContinuationBreakHeightGripResegmentsPart;
     // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
     // верхних меток определяется по содержимому частей-продолжений.
     procedure DetectsBreakRepeatTopOnLoad;
@@ -285,6 +288,42 @@ begin
     CAcadTableBreakHeightGripVertexBase,
     CAcadTableBreakHeightGripVertexBase +
       AAcadTable^.ContinuationPartCount);
+end;
+
+function FindAcadTableControlPoint(
+  AAcadTable: PGDBObjAcadTable; AVertex: Integer;
+  out APoint: controlpointdesc): Boolean;
+var
+  Desc: SelectedObjDesc;
+  Point: pcontrolpointdesc;
+  I: Integer;
+begin
+  Result := False;
+  FillChar(APoint, SizeOf(APoint), 0);
+  FillChar(Desc, SizeOf(Desc), 0);
+  Desc.objaddr := PGDBObjEntity(AAcadTable);
+  GetMem(Pointer(Desc.pcontrolpoint), SizeOf(GDBControlPointArray));
+  try
+    AAcadTable^.CalcObjMatrix;
+    AAcadTable^.addcontrolpoints(@Desc);
+    if Desc.pcontrolpoint^.Count > 0 then
+    begin
+      Point := Desc.pcontrolpoint^.GetParrayAsPointer;
+      for I := 0 to Desc.pcontrolpoint^.Count - 1 do
+      begin
+        if (Point^.pointtype = os_polymin) and
+           (Point^.vertexnum = AVertex) then
+        begin
+          APoint := Point^;
+          Exit(True);
+        end;
+        Inc(Point);
+      end;
+    end;
+  finally
+    Desc.pcontrolpoint^.done;
+    FreeMem(Pointer(Desc.pcontrolpoint));
+  end;
 end;
 
 function CountDxfPairs(
@@ -1364,6 +1403,47 @@ begin
       'Отключение ручной высоты должно сохраниться в модели');
     CheckEquals(1, CountAcadTableBreakHeightControlPoints(AcadTable),
       'Отключение ручной высоты должно оставить только ручку первой части');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.DraggingContinuationBreakHeightGripResegmentsPart;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  Grip: controlpointdesc;
+  RTMod: TRTModifyData;
+  PartRowsBefore: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(2, AcadTable^.ContinuationPartCount,
+      'Тестовый DXF должен содержать две части-продолжения');
+
+    AcadTable^.BreakManualHeight := True;
+    CheckTrue(
+      FindAcadTableControlPoint(
+        AcadTable, CAcadTableBreakHeightGripVertexBase + 1, Grip),
+      'Ручка высоты первой части-продолжения должна существовать');
+    PartRowsBefore := AcadTable^.ContinuationPartRowCount(0);
+    CheckTrue(PartRowsBefore > 0,
+      'Первая часть-продолжение должна содержать строки до перетаскивания');
+
+    FillChar(RTMod, SizeOf(RTMod), 0);
+    RTMod.point := Grip;
+    RTMod.dist := CreateVertex(0, AcadTable^.BreakHeight + 10.0, 0);
+    RTMod.wc := VertexAdd(Grip.worldcoord, RTMod.dist);
+    AcadTable^.rtmodifyonepoint(RTMod);
+
+    CheckTrue(AcadTable^.BreakManualHeight,
+      'Перетаскивание ручки продолжения должно оставить ручную высоту включённой');
+    CheckTrue(AcadTable^.ContinuationPartRowCount(0) < PartRowsBefore,
+      'Перетаскивание ручки высоты продолжения должно пересегментировать ' +
+      'строки этой части');
   finally
     Drawing.done;
   end;
