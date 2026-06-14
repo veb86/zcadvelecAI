@@ -194,6 +194,9 @@ type
     procedure SetBreakEnabled(AValue: Boolean);
     // Чтение/запись направления разрыва таблицы (issue #1315)
     procedure SetBreakDirection(AValue: TAcadTableBreakDirection);
+    // Чтение/запись ручного положения частей разорванной таблицы
+    // (issue #1320).
+    procedure SetBreakManualPosition(AValue: Boolean);
     // Чтение/запись интервала между частями и высоты разбиения (issue #1307)
     function GetBreakSpacing: Double;
     procedure SetBreakSpacing(AValue: Double);
@@ -326,7 +329,7 @@ type
     property BreakRepeatBottomLabels: Boolean
       read FBreakRepeatBottomLabels;
     property BreakManualPosition: Boolean
-      read FBreakManualPosition;
+      read FBreakManualPosition write SetBreakManualPosition;
     property BreakManualHeight: Boolean
       read FBreakManualHeight;
     // Интервал между частями разделённой таблицы (issue #1307). Чтение
@@ -1776,6 +1779,41 @@ var
 begin
   for PartIdx := 0 to High(FContinuationParts) do
     FContinuationParts[PartIdx].BreakManualPosition := AValue;
+end;
+
+procedure GDBObjAcadTable.SetBreakManualPosition(AValue: Boolean);
+begin
+  if AValue then
+  begin
+    if FBreakManualPosition and FBreakManualPositionExplicit then
+      Exit;
+
+    InvalidateRawDXFEntity;
+    FBreakManualPosition := True;
+    FBreakManualPositionExplicit := True;
+    SetBreakManualPositionForParts(True);
+    FGeometryBuilt := False;
+    programlog.LogOutFormatStr(
+      'AcadTable: model: SetBreakManualPosition=True parts=%d',
+      [Length(FContinuationParts)], LM_Info);
+    Exit;
+  end;
+
+  if (not FBreakManualPosition) and (not FBreakManualPositionExplicit) and
+     (not HasManualContinuationPositions) then
+    Exit;
+
+  InvalidateRawDXFEntity;
+  FBreakManualPosition := False;
+  FBreakManualPositionExplicit := False;
+  if Length(FContinuationParts) > 0 then
+    RepositionContinuationParts
+  else
+    SetBreakManualPositionForParts(False);
+  FGeometryBuilt := False;
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakManualPosition=False parts=%d',
+    [Length(FContinuationParts)], LM_Info);
 end;
 
 function GDBObjAcadTable.HasManualContinuationPositions: Boolean;

@@ -229,7 +229,9 @@ begin
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
-// Чтение признака ручного позиционирования разбиения (только чтение)
+// Чтение признака ручного позиционирования разбиения. Свойство редактируемое:
+// включение показывает ручки частей-продолжений, отключение возвращает части
+// в автоматические положения по Break direction и Break spacing (issue #1320).
 procedure AcadTableBreakManualPosEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -243,6 +245,30 @@ begin
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualPosition;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись признака ручного позиционирования разбиения (issue #1320).
+// Вся логика изменения находится в GDBObjAcadTable.SetBreakManualPosition:
+// True включает ручки частей-продолжений, False возвращает автоматическую
+// раскладку частей.
+procedure AcadTableBreakManualPosEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Boolean;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PBoolean(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakManualPosition=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakManualPosition:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 // Чтение признака ручной высоты разбиения (только чтение)
@@ -522,7 +548,9 @@ begin
     sysunit^.TypeName2PTD('Boolean'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableBreakManualPosEntIterateProc,nil));
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakManualPosEntIterateProc,
+      @AcadTableBreakManualPosEntChangeProc));
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableBreakManualHeight','Manual height',
     sysunit^.TypeName2PTD('Boolean'),
