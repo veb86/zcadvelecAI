@@ -90,6 +90,9 @@ type
     // issue #1320: при ручном положении разорванной таблицы каждая часть-
     // продолжение должна иметь собственную ручку положения.
     procedure ManualBreakPositionAddsContinuationPartGrips;
+    // issue #1320: ручное положение должно включаться и отключаться через
+    // свойство, используемое инспектором объектов.
+    procedure TogglingBreakManualPositionUpdatesContinuationPartGrips;
     // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
     // верхних меток определяется по содержимому частей-продолжений.
     procedure DetectsBreakRepeatTopOnLoad;
@@ -1152,6 +1155,46 @@ begin
       CheckEquals(1 + AcadTable^.ContinuationPartCount,
         CountAcadTableControlPoints(AcadTable),
         'Ручное положение должно добавить ручку для каждой части-продолжения');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(ManualDXF);
+  end;
+end;
+
+procedure TAcadTableStyleTest.TogglingBreakManualPositionUpdatesContinuationPartGrips;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ManualDXF: String;
+begin
+  ManualDXF := CreateManualPositionAcadTableDXF;
+  try
+    LoadDrawingFromDXF(ManualDXF, Drawing);
+    try
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Тестовая таблица должна загрузиться в ручном режиме');
+      CheckEquals(1 + AcadTable^.ContinuationPartCount,
+        CountAcadTableControlPoints(AcadTable),
+        'Ручной режим должен показывать ручки частей-продолжений');
+
+      AcadTable^.BreakManualPosition := False;
+      CheckFalse(AcadTable^.BreakManualPosition,
+        'Отключение ручного режима должно вернуть автоматическое положение');
+      CheckEquals(1, CountAcadTableControlPoints(AcadTable),
+        'Автоматическое положение должно скрыть ручки частей-продолжений');
+      CheckFalse(AcadTable^.BreakManualPosition,
+        'Повторное определение не должно снова включить ручной режим');
+
+      AcadTable^.BreakManualPosition := True;
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Включение ручного режима должно сохраниться в модели');
+      CheckEquals(1 + AcadTable^.ContinuationPartCount,
+        CountAcadTableControlPoints(AcadTable),
+        'Включение ручного режима должно вернуть ручки частей-продолжений');
     finally
       Drawing.done;
     end;
