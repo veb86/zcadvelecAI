@@ -38,7 +38,8 @@ interface
 uses
   uzgldrawcontext, uzedrawingdef, uzeentityfactory, uzeentcomplex,
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
-  uzeentity, uzctnrVectorBytesStream, uzeTypes, uzeconsts,
+  uzeentity, UGDBSelectedObjArray, uzglviewareadata,
+  uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
   uzbLogIntf, uzclog, SysUtils, Math, uzctnrvectordouble,
   uzestylestablesdxf, gzctnrVectorTypes, Types, uzestylestexts,
@@ -119,6 +120,7 @@ type
     FBreakRepeatTopLabels: Boolean;
     FBreakRepeatBottomLabels: Boolean;
     FBreakManualPosition: Boolean;
+    FBreakManualPositionExplicit: Boolean;
     FBreakManualHeight: Boolean;
     FBreakSpacing: Double;
     // Высота разбиения (break height): после какой суммарной высоты строк
@@ -208,6 +210,10 @@ type
     // Пересчитывает точки вставки частей-продолжений из текущего интервала
     // и направления разрыва (issue #1307).
     procedure RepositionContinuationParts;
+    procedure SetBreakManualPositionForParts(AValue: Boolean);
+    function HasManualContinuationPositions: Boolean;
+    procedure DetectBreakManualPosition;
+    function ContinuationPartGripPointInWCS(APartIndex: Integer): TzePoint3d;
     // Верхняя граница зоны ведущих строк-меток (Title/Header) по индексу
     // строки: 0, 1 или 2. Тип строки определяется индексом (issue #1309).
     function ComputeTopLabelRowCount: Integer;
@@ -278,6 +284,10 @@ type
     procedure rtsave(refp: Pointer); virtual;
     procedure TransformAt(p: PGDBObjEntity;
       t_matrix: PzeTypedMatrix4d); virtual;
+    procedure addcontrolpoints(tdesc: Pointer); virtual;
+    procedure remaponecontrolpoint(pdesc: pcontrolpointdesc;
+      ProjectProc: GDBProjectProc); virtual;
+    procedure rtmodifyonepoint(const rtmod: TRTModifyData); virtual;
     function Clone(AOwn: Pointer): PGDBObjEntity; virtual;
     function GetObjType: TObjID; virtual;
     function GetObjTypeName: String; virtual;
@@ -351,6 +361,18 @@ function AllocAndInitAcadTable(
 
 implementation
 
+const
+  CAcadTableBreakPositionTolerance = 1e-6;
+
+function SameAcadTableBreakPoint(
+  const ALeft, ARight: TzePoint3d): Boolean;
+begin
+  Result :=
+    (Abs(ALeft.x - ARight.x) <= CAcadTableBreakPositionTolerance) and
+    (Abs(ALeft.y - ARight.y) <= CAcadTableBreakPositionTolerance) and
+    (Abs(ALeft.z - ARight.z) <= CAcadTableBreakPositionTolerance);
+end;
+
 // --- Обёртки для делегирования ---
 
 function GDBObjAcadTable.GetRowHeightLocal(
@@ -417,6 +439,7 @@ begin
   FBreakRepeatTopLabels := False;
   FBreakRepeatBottomLabels := False;
   FBreakManualPosition := False;
+  FBreakManualPositionExplicit := False;
   FBreakManualHeight := False;
   FBreakSpacing := 0;
   FBreakHeight := 0;
@@ -581,7 +604,8 @@ begin
   FBreakDirection := DXFData.BreakDirection;
   FBreakRepeatTopLabels := DXFData.BreakRepeatTopLabels;
   FBreakRepeatBottomLabels := DXFData.BreakRepeatBottomLabels;
-  FBreakManualPosition := DXFData.BreakManualPosition;
+  FBreakManualPositionExplicit := DXFData.BreakManualPosition;
+  FBreakManualPosition := FBreakManualPositionExplicit;
   FBreakManualHeight := DXFData.BreakManualHeight;
   FBreakSpacing := DXFData.BreakSpacing;
 
@@ -1731,6 +1755,7 @@ begin
       FContinuationParts[PartIdx].InsertPoint.x :=
         FInsertPoint.x + CumOffset;
     end;
+    FContinuationParts[PartIdx].BreakManualPosition := False;
 
     if Horizontal then
       PrevExtent := uzeacadtable_layout.GetTotalWidth(
@@ -1741,6 +1766,95 @@ begin
         FContinuationParts[PartIdx].RowCount,
         FContinuationParts[PartIdx].RowHeights);
   end;
+  FBreakManualPosition := False;
+  FBreakManualPositionExplicit := False;
+end;
+
+procedure GDBObjAcadTable.SetBreakManualPositionForParts(AValue: Boolean);
+var
+  PartIdx: Integer;
+begin
+  for PartIdx := 0 to High(FContinuationParts) do
+    FContinuationParts[PartIdx].BreakManualPosition := AValue;
+end;
+
+function GDBObjAcadTable.HasManualContinuationPositions: Boolean;
+var
+  PartIdx: Integer;
+  Horizontal: Boolean;
+  CumOffset, PrevExtent: Double;
+  ExpectedPoint: TzePoint3d;
+begin
+  Result := False;
+  if Length(FContinuationParts) = 0 then
+    Exit;
+
+  Horizontal := FBreakDirection in [atbdRight, atbdLeft];
+  if Horizontal then
+    PrevExtent := GetTotalWidth
+  else
+    PrevExtent := GetTotalHeight;
+
+  CumOffset := 0;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    CumOffset := CumOffset + PrevExtent + FBreakSpacing;
+
+    ExpectedPoint := FInsertPoint;
+    case FBreakDirection of
+      atbdDown:
+        ExpectedPoint.y := FInsertPoint.y - CumOffset;
+      atbdLeft:
+        ExpectedPoint.x := FInsertPoint.x - CumOffset;
+    else
+      ExpectedPoint.x := FInsertPoint.x + CumOffset;
+    end;
+
+    if not SameAcadTableBreakPoint(
+      FContinuationParts[PartIdx].InsertPoint, ExpectedPoint) then
+      Exit(True);
+
+    if Horizontal then
+      PrevExtent := uzeacadtable_layout.GetTotalWidth(
+        FContinuationParts[PartIdx].ColCount,
+        FContinuationParts[PartIdx].ColWidths)
+    else
+      PrevExtent := uzeacadtable_layout.GetTotalHeight(
+        FContinuationParts[PartIdx].RowCount,
+        FContinuationParts[PartIdx].RowHeights);
+  end;
+end;
+
+procedure GDBObjAcadTable.DetectBreakManualPosition;
+var
+  PartIdx: Integer;
+  ManualPosition: Boolean;
+begin
+  if Length(FContinuationParts) = 0 then
+    Exit;
+
+  ManualPosition :=
+    FBreakManualPositionExplicit or HasManualContinuationPositions;
+  for PartIdx := 0 to High(FContinuationParts) do
+    ManualPosition := ManualPosition or
+      FContinuationParts[PartIdx].BreakManualPosition;
+
+  FBreakManualPosition := ManualPosition;
+end;
+
+function GDBObjAcadTable.ContinuationPartGripPointInWCS(
+  APartIndex: Integer): TzePoint3d;
+var
+  LocalOffset: TzePoint3d;
+begin
+  Result := P_insert_in_WCS;
+  if (APartIndex < 0) or
+     (APartIndex > High(FContinuationParts)) then
+    Exit;
+
+  LocalOffset := VertexSub(
+    FContinuationParts[APartIndex].InsertPoint, FInsertPoint);
+  Result := VectorTransform3D(LocalOffset, objMatrix);
 end;
 
 // --- Повтор верхних строк-меток в частях разорванной таблицы (issue #1309) ---
@@ -2104,13 +2218,14 @@ begin
   // (issue #1309): если первые строки каждой части совпадают с верхними
   // строками-метками главной части, то таблица разорвана с RepeatTop=True.
   DetectBreakRepeatTopLabels;
+  DetectBreakManualPosition;
 
   programlog.LogOutFormatStr(
     'AcadTable: model: TryMergeContinuation merged part %d ' +
-    '(rows=%d cols=%d) repeattop=%d',
+    '(rows=%d cols=%d) repeattop=%d manualpos=%d',
     [PartIdx, FContinuationParts[PartIdx].RowCount,
      FContinuationParts[PartIdx].ColCount,
-     Ord(FBreakRepeatTopLabels)], LM_Info);
+     Ord(FBreakRepeatTopLabels), Ord(FBreakManualPosition)], LM_Info);
   Result := True;
 end;
 
@@ -2123,9 +2238,10 @@ function GDBObjAcadTable.SetTableBreakData(
 begin
   FBreakSpacing := ASpacing;
   FBreakHeight := ABreakHeight;
+  DetectBreakManualPosition;
   programlog.LogOutFormatStr(
-    'AcadTable: model: SetTableBreakData spacing=%g breakheight=%g',
-    [FBreakSpacing, FBreakHeight], LM_Info);
+    'AcadTable: model: SetTableBreakData spacing=%g breakheight=%g manualpos=%d',
+    [FBreakSpacing, FBreakHeight, Ord(FBreakManualPosition)], LM_Info);
   Result := True;
 end;
 
@@ -2201,6 +2317,8 @@ begin
   inherited;
   PGDBObjAcadTable(refp)^.FRotate := FRotate;
   PGDBObjAcadTable(refp)^.FScale := FScale;
+  PGDBObjAcadTable(refp)^.FBreakManualPositionExplicit :=
+    FBreakManualPositionExplicit;
   PGDBObjAcadTable(refp)^.InvalidateRawDXFEntity;
 end;
 
@@ -2209,6 +2327,89 @@ procedure GDBObjAcadTable.TransformAt(
 begin
   inherited TransformAt(p, t_matrix);
   InvalidateRawDXFEntity;
+end;
+
+procedure GDBObjAcadTable.addcontrolpoints(tdesc: Pointer);
+var
+  PDesc: controlpointdesc;
+  PartIdx, ControlPointCount: Integer;
+begin
+  DetectBreakManualPosition;
+
+  ControlPointCount := 1;
+  if FBreakManualPosition then
+    Inc(ControlPointCount, Length(FContinuationParts));
+  PSelectedObjDesc(tdesc)^.pcontrolpoint^.init(ControlPointCount);
+
+  PDesc.selected := False;
+  PDesc.PDrawable := nil;
+  PDesc.attr := [];
+  PDesc.dcoord := NulVertex;
+  PDesc.vn := 0;
+  PDesc.pointtype := os_point;
+  PDesc.worldcoord := self.P_insert_in_WCS;
+  PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(PDesc);
+
+  if not FBreakManualPosition then
+    Exit;
+
+  PDesc.attr := [CPA_Strech];
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    PDesc.vertexnum := PartIdx + 1;
+    PDesc.worldcoord := ContinuationPartGripPointInWCS(PartIdx);
+    PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(PDesc);
+  end;
+end;
+
+procedure GDBObjAcadTable.remaponecontrolpoint(
+  pdesc: pcontrolpointdesc; ProjectProc: GDBProjectProc);
+var
+  PartIdx: Integer;
+  TV: TzePoint3d;
+begin
+  if pdesc^.pointtype = os_polymin then
+  begin
+    PartIdx := pdesc^.vertexnum - 1;
+    if (PartIdx >= 0) and (PartIdx <= High(FContinuationParts)) then
+    begin
+      pdesc^.worldcoord := ContinuationPartGripPointInWCS(PartIdx);
+      ProjectProc(pdesc^.worldcoord, TV);
+      pdesc^.dispcoord := ToTzePoint2i(TV);
+      Exit;
+    end;
+  end;
+
+  inherited remaponecontrolpoint(pdesc, ProjectProc);
+end;
+
+procedure GDBObjAcadTable.rtmodifyonepoint(const rtmod: TRTModifyData);
+var
+  PartIdx: Integer;
+  NewGripPoint, LocalOffset: TzePoint3d;
+  M: TzeTypedMatrix4d;
+begin
+  if rtmod.point.pointtype = os_polymin then
+  begin
+    PartIdx := rtmod.point.vertexnum - 1;
+    if (PartIdx >= 0) and (PartIdx <= High(FContinuationParts)) then
+    begin
+      NewGripPoint := VertexAdd(rtmod.point.worldcoord, rtmod.dist);
+      M := objMatrix;
+      MatrixInvert(M);
+      LocalOffset := VectorTransform3D(NewGripPoint, M);
+      FContinuationParts[PartIdx].InsertPoint :=
+        VertexAdd(FInsertPoint, LocalOffset);
+      FBreakManualPosition := True;
+      FBreakManualPositionExplicit := True;
+      SetBreakManualPositionForParts(True);
+      FGeometryBuilt := False;
+      InvalidateRawDXFEntity;
+      Exit;
+    end;
+  end;
+
+  inherited rtmodifyonepoint(rtmod);
 end;
 
 // Вычисляет bounding box
@@ -2453,7 +2654,7 @@ begin
   APart.BreakDirection := ASource.BreakDirection;
   APart.BreakRepeatTopLabels := ASource.BreakRepeatTopLabels;
   APart.BreakRepeatBottomLabels := ASource.BreakRepeatBottomLabels;
-  APart.BreakManualPosition := ASource.BreakManualPosition;
+  APart.BreakManualPosition := FBreakManualPosition;
   APart.BreakManualHeight := ASource.BreakManualHeight;
   APart.BreakSpacing := ASource.BreakSpacing;
   APart.BreakHeight := ASource.BreakHeight;
@@ -2464,6 +2665,7 @@ procedure GDBObjAcadTable.BuildDXFContinuationWriteParts(
 var
   PartIdx: Integer;
 begin
+  DetectBreakManualPosition;
   System.SetLength(AParts, Length(FContinuationParts));
   for PartIdx := 0 to High(FContinuationParts) do
     FillDXFWritePartFromContinuation(
@@ -2477,6 +2679,7 @@ procedure GDBObjAcadTable.SaveToDXF(
 var
   DXFPart: TAcadTableDXFWritePart;
 begin
+  DetectBreakManualPosition;
   FillDXFWritePartFromSelf(DXFPart);
   uzeacadtable_dxf_write.WriteAcadTableToDXF(
     AOutStream, ADrawing, AIODXFContext, DXFPart, 0);
@@ -2490,6 +2693,7 @@ var
   MainPart: TAcadTableDXFWritePart;
   Parts: TAcadTableDXFWritePartArray;
 begin
+  DetectBreakManualPosition;
   FillDXFWritePartFromSelf(MainPart);
   BuildDXFContinuationWriteParts(Parts);
   uzeacadtable_dxf_write.WriteAcadTableContinuationPartsToDXF(
@@ -2540,6 +2744,7 @@ begin
   NewTable^.FBreakRepeatBottomLabels :=
     FBreakRepeatBottomLabels;
   NewTable^.FBreakManualPosition := FBreakManualPosition;
+  NewTable^.FBreakManualPositionExplicit := FBreakManualPositionExplicit;
   NewTable^.FBreakManualHeight := FBreakManualHeight;
   NewTable^.FBreakSpacing := FBreakSpacing;
   NewTable^.FBreakHeight := FBreakHeight;
