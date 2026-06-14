@@ -271,7 +271,8 @@ begin
     pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
-// Чтение признака ручной высоты разбиения (только чтение)
+// Чтение признака ручной высоты разбиения (issue #1321).
+// Свойство редактируемое при наличии change-процедуры.
 procedure AcadTableBreakManualHeightEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -285,6 +286,29 @@ begin
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualHeight;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись признака ручной высоты разбиения (issue #1321).
+// True включает ручки высоты у всех частей, False оставляет только общую
+// ручку первой части.
+procedure AcadTableBreakManualHeightEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:Boolean;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PBoolean(pvardesk(pdata)^.data.Addr.Instance)^;
+  if Table^.BreakManualHeight=NewValue then
+    exit;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  Table^.BreakManualHeight:=NewValue;
+  if drawings.GetCurrentDWG<>nil then
+    Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 // Чтение интервала между частями разбиения (issue #1307, часть 1).
@@ -556,7 +580,9 @@ begin
     sysunit^.TypeName2PTD('Boolean'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableBreakManualHeightEntIterateProc,nil));
+    TEntIterateProcsData.Create(
+      nil,@AcadTableBreakManualHeightEntIterateProc,
+      @AcadTableBreakManualHeightEntChangeProc));
   {Break spacing и Break height редактируются (issue #1307):
    изменение интервала смещает части-продолжения, изменение высоты
    пересегментирует таблицу с автоопределением числа частей.}

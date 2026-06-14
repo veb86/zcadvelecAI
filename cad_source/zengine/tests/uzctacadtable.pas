@@ -93,6 +93,14 @@ type
     // issue #1320: ручное положение должно включаться и отключаться через
     // свойство, используемое инспектором объектов.
     procedure TogglingBreakManualPositionUpdatesContinuationPartGrips;
+    // issue #1321: у разбитой таблицы всегда должна быть ручка высоты
+    // разбиения внизу первой части.
+    procedure BreakEnabledAddsFirstPartBreakHeightGrip;
+    // issue #1321: ручная высота разбиения включает ручки у каждой части.
+    procedure ManualBreakHeightAddsGripForEveryTablePart;
+    // issue #1321: ручное управление высотой должно включаться и
+    // отключаться через свойство инспектора объектов.
+    procedure TogglingBreakManualHeightUpdatesPartGrips;
     // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
     // верхних меток определяется по содержимому частей-продолжений.
     procedure DetectsBreakRepeatTopOnLoad;
@@ -185,6 +193,34 @@ begin
   end;
 end;
 
+function CreateManualHeightAcadTableDXF: String;
+const
+  AcDbTableMarker = '100'#10'AcDbTable'#10;
+  ManualHeightFlag = '100'#10'AcDbTable'#10'295'#10'     1'#10;
+var
+  SourceName, DXFText: String;
+  Lines: TStringList;
+begin
+  SourceName := ExpandFileName('../../../cad_source/test/tablerazdel.dxf');
+  Result := IncludeTrailingPathDelimiter(GetTempDir(False)) +
+    'zcad_acadtable_manual_height.dxf';
+
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(SourceName);
+    DXFText := Lines.Text;
+    if Pos(AcDbTableMarker, DXFText) = 0 then
+      raise Exception.Create(
+        'Тестовый DXF должен содержать секцию AcDbTable');
+    DXFText := StringReplace(
+      DXFText, AcDbTableMarker, ManualHeightFlag, [rfReplaceAll]);
+    Lines.Text := DXFText;
+    Lines.SaveToFile(Result);
+  finally
+    Lines.Free;
+  end;
+end;
+
 function CountAcadTableControlPoints(AAcadTable: PGDBObjAcadTable): Integer;
 var
   Desc: SelectedObjDesc;
@@ -200,6 +236,55 @@ begin
     Desc.pcontrolpoint^.done;
     FreeMem(Pointer(Desc.pcontrolpoint));
   end;
+end;
+
+function CountAcadTableControlPointsInVertexRange(
+  AAcadTable: PGDBObjAcadTable; AFirstVertex, ALastVertex: Integer): Integer;
+var
+  Desc: SelectedObjDesc;
+  Point: pcontrolpointdesc;
+  I: Integer;
+begin
+  Result := 0;
+  FillChar(Desc, SizeOf(Desc), 0);
+  Desc.objaddr := PGDBObjEntity(AAcadTable);
+  GetMem(Pointer(Desc.pcontrolpoint), SizeOf(GDBControlPointArray));
+  try
+    AAcadTable^.CalcObjMatrix;
+    AAcadTable^.addcontrolpoints(@Desc);
+    if Desc.pcontrolpoint^.Count > 0 then
+    begin
+      Point := Desc.pcontrolpoint^.GetParrayAsPointer;
+      for I := 0 to Desc.pcontrolpoint^.Count - 1 do
+      begin
+        if (Point^.pointtype = os_polymin) and
+           (Point^.vertexnum >= AFirstVertex) and
+           (Point^.vertexnum <= ALastVertex) then
+          Inc(Result);
+        Inc(Point);
+      end;
+    end;
+  finally
+    Desc.pcontrolpoint^.done;
+    FreeMem(Pointer(Desc.pcontrolpoint));
+  end;
+end;
+
+function CountAcadTablePositionControlPoints(
+  AAcadTable: PGDBObjAcadTable): Integer;
+begin
+  Result := CountAcadTableControlPointsInVertexRange(
+    AAcadTable, 1, AAcadTable^.ContinuationPartCount);
+end;
+
+function CountAcadTableBreakHeightControlPoints(
+  AAcadTable: PGDBObjAcadTable): Integer;
+begin
+  Result := CountAcadTableControlPointsInVertexRange(
+    AAcadTable,
+    CAcadTableBreakHeightGripVertexBase,
+    CAcadTableBreakHeightGripVertexBase +
+      AAcadTable^.ContinuationPartCount);
 end;
 
 function CountDxfPairs(
@@ -1138,8 +1223,9 @@ begin
   try
     AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
     AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
-    CheckEquals(1, CountAcadTableControlPoints(AcadTable),
-      'Автоматически разложенная таблица должна иметь только общую ручку');
+    CheckEquals(0, CountAcadTablePositionControlPoints(AcadTable),
+      'Автоматически разложенная таблица не должна иметь ручек положения ' +
+      'частей-продолжений');
   finally
     Drawing.done;
   end;
@@ -1152,8 +1238,8 @@ begin
       AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
       CheckTrue(AcadTable^.BreakManualPosition,
         'Тестовая таблица должна определиться как ручная');
-      CheckEquals(1 + AcadTable^.ContinuationPartCount,
-        CountAcadTableControlPoints(AcadTable),
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
         'Ручное положение должно добавить ручку для каждой части-продолжения');
     finally
       Drawing.done;
@@ -1177,14 +1263,14 @@ begin
       AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
       CheckTrue(AcadTable^.BreakManualPosition,
         'Тестовая таблица должна загрузиться в ручном режиме');
-      CheckEquals(1 + AcadTable^.ContinuationPartCount,
-        CountAcadTableControlPoints(AcadTable),
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
         'Ручной режим должен показывать ручки частей-продолжений');
 
       AcadTable^.BreakManualPosition := False;
       CheckFalse(AcadTable^.BreakManualPosition,
         'Отключение ручного режима должно вернуть автоматическое положение');
-      CheckEquals(1, CountAcadTableControlPoints(AcadTable),
+      CheckEquals(0, CountAcadTablePositionControlPoints(AcadTable),
         'Автоматическое положение должно скрыть ручки частей-продолжений');
       CheckFalse(AcadTable^.BreakManualPosition,
         'Повторное определение не должно снова включить ручной режим');
@@ -1192,14 +1278,94 @@ begin
       AcadTable^.BreakManualPosition := True;
       CheckTrue(AcadTable^.BreakManualPosition,
         'Включение ручного режима должно сохраниться в модели');
-      CheckEquals(1 + AcadTable^.ContinuationPartCount,
-        CountAcadTableControlPoints(AcadTable),
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
         'Включение ручного режима должно вернуть ручки частей-продолжений');
     finally
       Drawing.done;
     end;
   finally
     DeleteFile(ManualDXF);
+  end;
+end;
+
+procedure TAcadTableStyleTest.BreakEnabledAddsFirstPartBreakHeightGrip;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckTrue(AcadTable^.BreakEnabled,
+      'Тестовый DXF должен содержать разбитую таблицу');
+    CheckFalse(AcadTable^.BreakManualHeight,
+      'Исходная таблица не должна загружаться с ручной высотой разбиения');
+    CheckEquals(1, CountAcadTableBreakHeightControlPoints(AcadTable),
+      'При BreakEnabled=True должна быть ручка высоты первой части');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.ManualBreakHeightAddsGripForEveryTablePart;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ManualDXF: String;
+begin
+  ManualDXF := CreateManualHeightAcadTableDXF;
+  try
+    LoadDrawingFromDXF(ManualDXF, Drawing);
+    try
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckEquals(2, AcadTable^.ContinuationPartCount,
+        'Тестовый DXF должен содержать две части-продолжения');
+      CheckTrue(AcadTable^.BreakManualHeight,
+        'DXF с флагом 295=1 должен включить ручную высоту разбиения');
+      CheckEquals(1 + AcadTable^.ContinuationPartCount,
+        CountAcadTableBreakHeightControlPoints(AcadTable),
+        'Ручная высота должна показать ручку у каждой части таблицы');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(ManualDXF);
+  end;
+end;
+
+procedure TAcadTableStyleTest.TogglingBreakManualHeightUpdatesPartGrips;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckFalse(AcadTable^.BreakManualHeight,
+      'Исходная таблица должна загрузиться с автоматической высотой');
+    CheckEquals(1, CountAcadTableBreakHeightControlPoints(AcadTable),
+      'Автоматическая высота должна показывать только ручку первой части');
+
+    AcadTable^.BreakManualHeight := True;
+    CheckTrue(AcadTable^.BreakManualHeight,
+      'Включение ручной высоты должно сохраниться в модели');
+    CheckEquals(1 + AcadTable^.ContinuationPartCount,
+      CountAcadTableBreakHeightControlPoints(AcadTable),
+      'Ручная высота должна включить ручки всех частей');
+
+    AcadTable^.BreakManualHeight := False;
+    CheckFalse(AcadTable^.BreakManualHeight,
+      'Отключение ручной высоты должно сохраниться в модели');
+    CheckEquals(1, CountAcadTableBreakHeightControlPoints(AcadTable),
+      'Отключение ручной высоты должно оставить только ручку первой части');
+  finally
+    Drawing.done;
   end;
 end;
 
