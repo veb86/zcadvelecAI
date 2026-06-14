@@ -33,6 +33,9 @@ uses
   uzegeometry,
   uzegeometrytypes,
   uzeentity,
+  UGDBSelectedObjArray,
+  UGDBControlPointArray,
+  uzglviewareadata,
   uzeentmtext,
   uzeentline,
   uzeentgenericsubentry,
@@ -81,6 +84,12 @@ type
     // issue #1315: изменение направления разбиения должно перемещать
     // части-продолжения влево или вниз от главной таблицы.
     procedure ChangingBreakDirectionRepositionsParts;
+    // issue #1320: если части разорванной таблицы стоят не по BreakDirection
+    // и BreakSpacing, то BreakManualPosition должен определяться как True.
+    procedure DetectsBreakManualPositionFromPartOffsets;
+    // issue #1320: при ручном положении разорванной таблицы каждая часть-
+    // продолжение должна иметь собственную ручку положения.
+    procedure ManualBreakPositionAddsContinuationPartGrips;
     // issue #1309, часть 1: при загрузке разорванной таблицы признак повтора
     // верхних меток определяется по содержимому частей-продолжений.
     procedure DetectsBreakRepeatTopOnLoad;
@@ -143,6 +152,50 @@ begin
   finally
     Lines.Free;
     DeleteFile(FileName);
+  end;
+end;
+
+function CreateManualPositionAcadTableDXF: String;
+const
+  AutoPartX = '98.15509801618446';
+  ManualPartX = '99.15509801618446';
+var
+  SourceName, DXFText: String;
+  Lines: TStringList;
+begin
+  SourceName := ExpandFileName('../../../cad_source/test/tablerazdel.dxf');
+  Result := IncludeTrailingPathDelimiter(GetTempDir(False)) +
+    'zcad_acadtable_manual_position.dxf';
+
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(SourceName);
+    DXFText := Lines.Text;
+    if Pos(AutoPartX, DXFText) = 0 then
+      raise Exception.Create(
+        'Тестовый DXF должен содержать ожидаемую точку вставки первой части');
+    DXFText := StringReplace(DXFText, AutoPartX, ManualPartX, []);
+    Lines.Text := DXFText;
+    Lines.SaveToFile(Result);
+  finally
+    Lines.Free;
+  end;
+end;
+
+function CountAcadTableControlPoints(AAcadTable: PGDBObjAcadTable): Integer;
+var
+  Desc: SelectedObjDesc;
+begin
+  FillChar(Desc, SizeOf(Desc), 0);
+  Desc.objaddr := PGDBObjEntity(AAcadTable);
+  GetMem(Pointer(Desc.pcontrolpoint), SizeOf(GDBControlPointArray));
+  try
+    AAcadTable^.CalcObjMatrix;
+    AAcadTable^.addcontrolpoints(@Desc);
+    Result := Desc.pcontrolpoint^.Count;
+  finally
+    Desc.pcontrolpoint^.done;
+    FreeMem(Pointer(Desc.pcontrolpoint));
   end;
 end;
 
@@ -1030,6 +1083,80 @@ begin
       'Down должен перестать раскладывать части вправо');
   finally
     Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.DetectsBreakManualPositionFromPartOffsets;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ManualDXF: String;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckFalse(AcadTable^.BreakManualPosition,
+      'Исходная таблица разложена по BreakDirection/BreakSpacing и не должна ' +
+      'считаться ручной');
+  finally
+    Drawing.done;
+  end;
+
+  ManualDXF := CreateManualPositionAcadTableDXF;
+  try
+    LoadDrawingFromDXF(ManualDXF, Drawing);
+    try
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckEquals(2, AcadTable^.ContinuationPartCount,
+        'Тестовый DXF должен содержать две части-продолжения');
+      CheckEquals(0.99, AcadTable^.BreakSpacing, 1e-4,
+        'Интервал BreakSpacing должен сохраниться из round-trip данных');
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Смещённая часть должна включить BreakManualPosition');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(ManualDXF);
+  end;
+end;
+
+procedure TAcadTableStyleTest.ManualBreakPositionAddsContinuationPartGrips;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ManualDXF: String;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(1, CountAcadTableControlPoints(AcadTable),
+      'Автоматически разложенная таблица должна иметь только общую ручку');
+  finally
+    Drawing.done;
+  end;
+
+  ManualDXF := CreateManualPositionAcadTableDXF;
+  try
+    LoadDrawingFromDXF(ManualDXF, Drawing);
+    try
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Тестовая таблица должна определиться как ручная');
+      CheckEquals(1 + AcadTable^.ContinuationPartCount,
+        CountAcadTableControlPoints(AcadTable),
+        'Ручное положение должно добавить ручку для каждой части-продолжения');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(ManualDXF);
   end;
 end;
 
