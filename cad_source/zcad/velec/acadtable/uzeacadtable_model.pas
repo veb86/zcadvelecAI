@@ -44,7 +44,7 @@ uses
   uzbLogIntf, uzclog, SysUtils, Math, uzctnrvectordouble,
   uzestylestablesdxf, gzctnrVectorTypes, Types, uzestylestexts,
   uzeacadtable_types, uzeacadtable_styles,
-  uzeacadtable_cell, uzeacadtable_merge,
+  uzeacadtable_cell, uzeacadtable_merge,uzecamera,uzeSnap,
   uzeacadtable_layout, uzeacadtable_stylemanager,
   uzeacadtable_dxf_read, uzeacadtable_dxf_write;
 
