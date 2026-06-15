@@ -773,6 +773,7 @@ var
   LineCount, TextCount: Integer;
   CellStyleLocal: TCellStyle;
   TextHeightLocal: Double;
+  ResolvedTextStyle: PGDBTextStyle;
   RenderSegments: array[0..255] of TAcadTableRenderSegment;
   SegmentOffsetX, SegmentOffsetY: Double;
   MergeRootPt: TPoint;
@@ -993,8 +994,20 @@ begin
           pointer(PMText) :=
             ConstObjArray.CreateInitObj(GDBMTextID, @Self);
           PMText^.Template := UTF8ToString(CellStr);
+          ResolvedTextStyle :=
+            uzeacadtable_stylemanager.ResolveTextStyle(
+              CellStyleLocal.TextStyle, ADrawing);
+          PMText^.TXTStyle := ResolvedTextStyle;
 
-          if CellStyleLocal.TextHeight > 0 then
+          // Nonzero STYLE group 40 is a fixed text height and must override
+          // the table cell height stored in TABLESTYLE.
+          if (ResolvedTextStyle <> nil) and
+             (CellStyleLocal.TextStyle <> '') and
+             SameText(ResolvedTextStyle^.Name, CellStyleLocal.TextStyle) and
+             (ResolvedTextStyle^.prop.size > 0) then
+            PMText^.textprop.size :=
+              ResolvedTextStyle^.prop.size
+          else if CellStyleLocal.TextHeight > 0 then
             PMText^.textprop.size :=
               CellStyleLocal.TextHeight
           else
@@ -1078,9 +1091,6 @@ begin
           end;
 
           PMText^.Local.P_insert.z := 0;
-          PMText^.TXTStyle :=
-            uzeacadtable_stylemanager.ResolveTextStyle(
-              CellStyleLocal.TextStyle, ADrawing);
           CopyVPto(PMText^);
           PMText^.FormatEntity(ADrawing, ADC);
           Inc(TextCount);

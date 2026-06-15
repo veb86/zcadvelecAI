@@ -52,6 +52,9 @@ type
   TAcadTableStyleTest = class(TTestCase)
   published
     procedure LoadsCellTextStylesFromDXFTableStyle;
+    // issue #1330: fixed text height from the referenced text style should
+    // be used for imported AcadTable cells.
+    procedure LoadsFixedTextHeightFromDXFTextStyle;
     procedure LoadsBreakSettingsFromDXF;
     procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
@@ -591,6 +594,46 @@ begin
   end;
 end;
 
+// Собирает диапазон высот MText для конкретного текстового стиля.
+procedure CollectMTextSizeRangeByStyle(var AArr: GDBObjEntityTreeArray;
+  const AStyleName: String; out AMinSize, AMaxSize: Double;
+  out ACount: Integer);
+var
+  IR: itrec;
+  PEntity: PGDBObjEntity;
+  PMText: PGDBObjMText;
+  Sz: Double;
+begin
+  AMinSize := 0;
+  AMaxSize := 0;
+  ACount := 0;
+  PEntity := AArr.beginiterate(IR);
+  while PEntity <> nil do
+  begin
+    if PEntity^.GetObjType = GDBMTextID then
+    begin
+      PMText := PGDBObjMText(PEntity);
+      if (PMText^.TXTStyle <> nil) and
+         SameText(PMText^.TXTStyle^.Name, AStyleName) then
+      begin
+        Sz := PMText^.textprop.size;
+        if ACount = 0 then
+        begin
+          AMinSize := Sz;
+          AMaxSize := Sz;
+        end
+        else
+        begin
+          if Sz < AMinSize then AMinSize := Sz;
+          if Sz > AMaxSize then AMaxSize := Sz;
+        end;
+        Inc(ACount);
+      end;
+    end;
+    PEntity := AArr.iterate(IR);
+  end;
+end;
+
 function FindMTextSizeByTemplate(var AArr: GDBObjEntityTreeArray;
   const ATemplate: String; out ASize: Double): Boolean;
 var
@@ -668,6 +711,46 @@ begin
     finally
       StyleNames.Free;
     end;
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.LoadsFixedTextHeightFromDXFTextStyle;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  MinTitleHeaderSize, MaxTitleHeaderSize: Double;
+  MinDataSize, MaxDataSize: Double;
+  TitleHeaderTextCount, DataTextCount: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tableheighttextbug.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    BuildTableGeometry(Drawing, AcadTable);
+
+    CollectMTextSizeRangeByStyle(
+      AcadTable^.ConstObjArray, '!!!VTableText_320',
+      MinTitleHeaderSize, MaxTitleHeaderSize, TitleHeaderTextCount);
+    CollectMTextSizeRangeByStyle(
+      AcadTable^.ConstObjArray, '!!!VTableText_220',
+      MinDataSize, MaxDataSize, DataTextCount);
+
+    Check(TitleHeaderTextCount > 0,
+      'Таблица должна отрисовать текст названия/шапки стилем !!!VTableText_320');
+    Check(DataTextCount > 0,
+      'Таблица должна отрисовать текст данных стилем !!!VTableText_220');
+    CheckEquals(320.0, MinTitleHeaderSize, 1e-6,
+      'Минимальная высота текста названия/шапки должна браться из стиля');
+    CheckEquals(320.0, MaxTitleHeaderSize, 1e-6,
+      'Максимальная высота текста названия/шапки должна браться из стиля');
+    CheckEquals(220.0, MinDataSize, 1e-6,
+      'Минимальная высота текста данных должна браться из стиля');
+    CheckEquals(220.0, MaxDataSize, 1e-6,
+      'Максимальная высота текста данных должна браться из стиля');
   finally
     Drawing.done;
   end;
