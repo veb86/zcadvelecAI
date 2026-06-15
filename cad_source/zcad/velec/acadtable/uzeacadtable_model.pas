@@ -94,6 +94,8 @@ type
     RawDXFEntityValid: Boolean;
   end;
 
+  TAcadTableBreakHeightArray = array of Double;
+
   // Сущность ACAD_TABLE — таблица AutoCAD из формата DXF.
   // Хранит геометрию таблицы и текстовое содержимое ячеек.
   // При форматировании строит визуальное представление из линий и текста.
@@ -212,6 +214,12 @@ type
     // Пересегментирует объединённую главную часть по высоте разбиения,
     // вынося хвостовые строки в новые части-продолжения (issue #1307).
     procedure SplitMainTableByBreakHeight(AThreshold: Double);
+    procedure SplitMainTableByBreakHeights(
+      const ABreakHeights: TAcadTableBreakHeightArray);
+    function BreakHeightForPart(
+      const ABreakHeights: TAcadTableBreakHeightArray;
+      APartNumber: Integer): Double;
+    procedure ResplitByCurrentBreakHeights;
     // Копирует диапазон строк [AStart..AEnd] исходной части в целевую часть.
     procedure SlicePartFromPart(const ASource: TAcadTablePart;
       AStart, AEnd: Integer; var ADest: TAcadTablePart);
@@ -1664,13 +1672,43 @@ end;
 // Число частей определяется автоматически (issue #1307).
 procedure GDBObjAcadTable.SplitMainTableByBreakHeight(AThreshold: Double);
 var
+  BreakHeights: TAcadTableBreakHeightArray;
+begin
+  if AThreshold <= 0 then
+    Exit;
+
+  System.SetLength(BreakHeights, 1);
+  BreakHeights[0] := AThreshold;
+  SplitMainTableByBreakHeights(BreakHeights);
+end;
+
+function GDBObjAcadTable.BreakHeightForPart(
+  const ABreakHeights: TAcadTableBreakHeightArray;
+  APartNumber: Integer): Double;
+begin
+  Result := FBreakHeight;
+  if (APartNumber >= 0) and
+     (APartNumber < Length(ABreakHeights)) and
+     AcadTableBreakHeightHasValue(ABreakHeights[APartNumber]) then
+    Result := ABreakHeights[APartNumber];
+
+  if not AcadTableBreakHeightHasValue(Result) then
+    Result := CAcadTableBreakHeightTolerance;
+end;
+
+procedure GDBObjAcadTable.SplitMainTableByBreakHeights(
+  const ABreakHeights: TAcadTableBreakHeightArray);
+var
   FullData, TmpPart: TAcadTablePart;
   SegStart, SegEnd: array of Integer;
   SegCount, StartRow, EndRow, PartIdx, RepeatRows, RowIdx: Integer;
-  CurHeight, NextHeight, RepeatHeight: Double;
+  CurHeight, NextHeight, RepeatHeight, PartBreakHeight: Double;
+  ManualHeight: Boolean;
 begin
-  if (FRowCount <= 0) or (AThreshold <= 0) then
+  if FRowCount <= 0 then
     Exit;
+
+  ManualHeight := FBreakManualHeight;
 
   // Снимок текущей (объединённой) главной части
   CaptureTableDataToPart(Self, FullData);
@@ -1694,6 +1732,7 @@ begin
     begin
       EndRow := StartRow;
       CurHeight := 0;
+      PartBreakHeight := BreakHeightForPart(ABreakHeights, SegCount);
       if (SegCount > 0) and (RepeatRows > 0) then
         CurHeight := RepeatHeight;
       while EndRow < FullData.RowCount do
@@ -1701,7 +1740,7 @@ begin
         NextHeight := CurHeight +
           uzeacadtable_layout.GetRowHeight(EndRow, FullData.RowHeights);
         if (EndRow > StartRow) and
-           (NextHeight > AThreshold + 1e-9) then
+           (NextHeight > PartBreakHeight + 1e-9) then
           Break;
         CurHeight := NextHeight;
         Inc(EndRow);
@@ -1730,6 +1769,9 @@ begin
     begin
       SlicePartFromPart(FullData, SegStart[PartIdx], SegEnd[PartIdx],
         FContinuationParts[PartIdx - 1]);
+      FContinuationParts[PartIdx - 1].BreakHeight :=
+        BreakHeightForPart(ABreakHeights, PartIdx);
+      FContinuationParts[PartIdx - 1].BreakManualHeight := ManualHeight;
       if RepeatRows > 0 then
         PrependTopLabelsToPart(RepeatRows, FContinuationParts[PartIdx - 1]);
     end;
@@ -1738,12 +1780,40 @@ begin
     // данными с собой (точка вставки главной части сохраняется).
     SlicePartFromPart(FullData, SegStart[0], SegEnd[0], TmpPart);
     SwapTableData(TmpPart);
+    FBreakHeight := BreakHeightForPart(ABreakHeights, 0);
+    FBreakManualHeight := ManualHeight;
     ClearPart(TmpPart);
 
     RepositionContinuationParts;
   finally
     ClearPart(FullData);
   end;
+end;
+
+procedure GDBObjAcadTable.ResplitByCurrentBreakHeights;
+var
+  BreakHeights: TAcadTableBreakHeightArray;
+  PartIdx, L: Integer;
+begin
+  if not GetBreakEnabled then
+    Exit;
+
+  System.SetLength(BreakHeights, Length(FContinuationParts) + 1);
+  BreakHeights[0] := FBreakHeight;
+  for PartIdx := 0 to High(FContinuationParts) do
+    BreakHeights[PartIdx + 1] := FContinuationParts[PartIdx].BreakHeight;
+
+  FBreakEnabled := True;
+  FBreakManualHeight := True;
+  L := 0;
+  if FBreakRepeatTopLabels then
+    L := EffectiveRepeatTopRowCount;
+  if L > 0 then
+    RemoveTopLabelsFromParts(L);
+  MergeAllContinuationPartsIntoMain;
+  SplitMainTableByBreakHeights(BreakHeights);
+  FBreakManualHeight := True;
+  SetBreakManualHeightForParts(True);
 end;
 
 // Пересчитывает точки вставки частей-продолжений из текущего интервала
@@ -2662,7 +2732,7 @@ begin
           FContinuationParts[PartIdx].BreakHeight := NewHeight;
       end;
       FBreakManualHeight := True;
-      SetBreakManualHeightForParts(True);
+      ResplitByCurrentBreakHeights;
       FGeometryBuilt := False;
       Exit;
     end;
