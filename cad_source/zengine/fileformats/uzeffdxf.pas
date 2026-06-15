@@ -171,6 +171,26 @@ begin
     Result := Copy(Result, I, Length(Result) - I + 1);
 end;
 
+function TryReadDxfPair(const Lines: TStrings; AIndex: Integer;
+  out ACode: Integer; out AValue: string): Boolean;
+begin
+  Result := False;
+  AValue := '';
+  if (AIndex < 0) or (AIndex >= Lines.Count - 1) then
+    Exit;
+
+  if TryStrToInt(Trim(Lines[AIndex]), ACode) then
+  begin
+    AValue := Trim(Lines[AIndex + 1]);
+    Result := True;
+  end;
+end;
+
+function IsAcadTableRoundtripMarker(const Value: string): Boolean;
+begin
+  Result := UpperCase(Trim(Value)) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY';
+end;
+
 procedure StoreRawAcadTableEntity(
   RawEntities: TStringList; const Handle, RawText: string);
 var
@@ -275,9 +295,8 @@ procedure ScanTableContinuationHandles(const RawObjectsSection: string;
   ContinuationHandles: TStringList);
 var
   Lines: TStringList;
-  I, Code: Integer;
-  Value: string;
-  InXRecord, InRoundtripBlock: Boolean;
+  I, J, Code, BlockCode: Integer;
+  Value, BlockValue, Handle: string;
 begin
   if (RawObjectsSection = '') or (ContinuationHandles = nil) then
     Exit;
@@ -285,39 +304,39 @@ begin
   Lines := TStringList.Create;
   try
     Lines.Text := RawObjectsSection;
-    InXRecord := False;
-    InRoundtripBlock := False;
     I := 0;
     while I < Lines.Count - 1 do
     begin
-      if not TryStrToInt(Trim(Lines[I]), Code) then begin
-        Inc(I, 2);
-        Continue;
-      end;
-      Value := Trim(Lines[I + 1]);
-
-      if Code = 0 then
+      if TryReadDxfPair(Lines, I, Code, Value) and
+         (Code = 102) and IsAcadTableRoundtripMarker(Value) then
       begin
-        InXRecord := (UpperCase(Value) = 'XRECORD');
-        InRoundtripBlock := False;
-      end
-      else if InXRecord then
-      begin
-        { Маркер начала блока продолжений: группа 102
-          со значением ACAD_ROUNDTRIP_2008_TABLE_ENTITY }
-        if (Code = 102) and
-           (UpperCase(Value) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY') then
-          InRoundtripBlock := True
-        else if InRoundtripBlock then
+        { Маркер может находиться на другой чётности строк, чем начало
+          секции OBJECTS, поэтому ищем его построчно, а затем читаем пары
+          от локальной позиции самого маркера. }
+        J := I + 2;
+        while J < Lines.Count - 1 do
         begin
-          if Code = 330 then
-            ContinuationHandles.Add(NormalizeHandle(Value))
-          else if Code = 361 then
-            InRoundtripBlock := False;
+          if TryReadDxfPair(Lines, J, BlockCode, BlockValue) then
+          begin
+            if BlockCode = 0 then
+              Break
+            else if BlockCode = 330 then
+            begin
+              Handle := NormalizeHandle(BlockValue);
+              if Handle <> '' then
+                ContinuationHandles.Add(Handle);
+            end
+            else if BlockCode = 361 then
+              Break;
+
+            Inc(J, 2);
+          end
+          else
+            Inc(J);
         end;
       end;
 
-      Inc(I, 2);
+      Inc(I);
     end;
 
     if ContinuationHandles.Count > 0 then
@@ -343,10 +362,9 @@ procedure ScanTableBreakData(const RawObjectsSection: string;
   out ASpacing, ABreakHeight: Double; out AValid: Boolean);
 var
   Lines: TStringList;
-  I, Code, Found: Integer;
-  Value: string;
+  I, J, Code, BlockCode, Found: Integer;
+  Value, BlockValue: string;
   V: Extended;
-  InXRecord, InRoundtripBlock: Boolean;
 begin
   ASpacing := 0;
   ABreakHeight := 0;
@@ -357,50 +375,46 @@ begin
   Lines := TStringList.Create;
   try
     Lines.Text := RawObjectsSection;
-    InXRecord := False;
-    InRoundtripBlock := False;
-    Found := 0;
     I := 0;
-    while I < Lines.Count - 1 do
+    while (I < Lines.Count - 1) and (not AValid) do
     begin
-      if not TryStrToInt(Trim(Lines[I]), Code) then begin
-        Inc(I, 2);
-        Continue;
-      end;
-      Value := Trim(Lines[I + 1]);
-
-      if Code = 0 then
+      if TryReadDxfPair(Lines, I, Code, Value) and
+         (Code = 102) and IsAcadTableRoundtripMarker(Value) then
       begin
-        InXRecord := (UpperCase(Value) = 'XRECORD');
-        InRoundtripBlock := False;
-      end
-      else if InXRecord then
-      begin
-        if (Code = 102) and
-           (UpperCase(Value) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY') then
-          InRoundtripBlock := True
-        else if InRoundtripBlock then
+        Found := 0;
+        J := I + 2;
+        while J < Lines.Count - 1 do
         begin
-          if Code = 361 then
-            InRoundtripBlock := False
-          else if (Code = 40) and (Found < 2) then
+          if TryReadDxfPair(Lines, J, BlockCode, BlockValue) then
           begin
-            { DXF использует точку как десятичный разделитель }
-            if TextToFloat(PChar(Value), V, fvExtended) then
+            if (BlockCode = 0) or (BlockCode = 361) then
+              Break
+            else if (BlockCode = 40) and (Found < 2) then
             begin
-              if Found = 0 then
-                ASpacing := V
-              else
-                ABreakHeight := V;
-              Inc(Found);
-              if Found >= 2 then
-                AValid := True;
+              { DXF использует точку как десятичный разделитель }
+              if TextToFloat(PChar(BlockValue), V, fvExtended) then
+              begin
+                if Found = 0 then
+                  ASpacing := V
+                else
+                  ABreakHeight := V;
+                Inc(Found);
+                if Found >= 2 then
+                begin
+                  AValid := True;
+                  Break;
+                end;
+              end;
             end;
+
+            Inc(J, 2);
           end;
-        end;
+          else
+            Inc(J);
+        end
       end;
 
-      Inc(I, 2);
+      Inc(I);
     end;
 
     if AValid then
