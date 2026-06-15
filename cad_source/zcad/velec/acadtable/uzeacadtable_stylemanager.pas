@@ -44,6 +44,15 @@ procedure ApplyDXFTableStyle(
   const AStyleHandle: String;
   var ADrawing: TDrawingDef);
 
+// Применяет DXF-стиль таблицы по имени из инспектора объектов.
+// Возвращает хэндл найденного TABLESTYLE для записи обратно в ACAD_TABLE
+// (группа DXF 342).
+function ApplyDXFTableStyleByName(
+  var ATableStyle: TTableStyle;
+  const AStyleName: String;
+  var ADrawing: TDrawingDef;
+  out AStyleHandle: String): Boolean;
+
 // Резолвит указатель на текстовый стиль по имени
 // с fallback к Standard, затем к первому доступному.
 function ResolveTextStyle(
@@ -57,6 +66,66 @@ procedure FillCellStyleFromDXF(
   const ATextStyleName: String);
 
 implementation
+
+procedure ApplyDXFTableStyleData(
+  var ATableStyle: TTableStyle;
+  StylePtr: PTGDBDXFTableStyle;
+  const AStyleHandle: String);
+var
+  CellStylePtr: PTGDBDXFTableCellStyle;
+  CellFormatsIter: itrec;
+  CellIdx: Integer;
+begin
+  if StylePtr = nil then
+    Exit;
+
+  InitTableStyle(ATableStyle);
+  ATableStyle.Name := StylePtr^.Name;
+
+  // Порядок хранения в DXF (TABLESTYLE):
+  // 0=Data, 1=Title, 2=Header
+  CellIdx := 0;
+  CellStylePtr :=
+    StylePtr^.CellFormats.beginiterate(CellFormatsIter);
+  while (CellStylePtr <> nil) and (CellIdx < 3) do
+  begin
+    case CellIdx of
+      0:
+        begin
+          // Первый блок — стиль Data (данные)
+          FillCellStyleFromDXF(
+            ATableStyle.DataCell, CellStylePtr^,
+            StylePtr^.CellTextStyleName[0]);
+          // Data используется как базовый стиль
+          FillCellStyleFromDXF(
+            ATableStyle.DefaultCell, CellStylePtr^,
+            StylePtr^.CellTextStyleName[0]);
+        end;
+      1:
+        // Второй блок — стиль Title (название)
+        FillCellStyleFromDXF(
+          ATableStyle.TitleCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[1]);
+      2:
+        // Третий блок — стиль Header (заголовок)
+        FillCellStyleFromDXF(
+          ATableStyle.HeaderCell, CellStylePtr^,
+          StylePtr^.CellTextStyleName[2]);
+    end;
+    Inc(CellIdx);
+    CellStylePtr :=
+      StylePtr^.CellFormats.iterate(CellFormatsIter);
+  end;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: stylemanager: ApplyDXFTableStyleData OK ' +
+    'стиль="%s" хэндл=%s title_height=%.2f ' +
+    'header_height=%.2f data_height=%.2f',
+    [ATableStyle.Name, AStyleHandle,
+     ATableStyle.TitleCell.TextHeight,
+     ATableStyle.HeaderCell.TextHeight,
+     ATableStyle.DataCell.TextHeight], LM_Info);
+end;
 
 procedure FillCellStyleFromDXF(
   var CellStyle: TCellStyle;
@@ -102,9 +171,6 @@ var
   DXFStyleTable: PGDBDXFTableStyleArray;
   StylePtr: PTGDBDXFTableStyle;
   IterRec: itrec;
-  CellStylePtr: PTGDBDXFTableCellStyle;
-  CellFormatsIter: itrec;
-  CellIdx: Integer;
 begin
   DXFStyleTable := ADrawing.GetDXFTableStyleTable;
   if DXFStyleTable = nil then
@@ -142,51 +208,51 @@ begin
     'применяем стиль "%s" (хэндл=%s)',
     [StylePtr^.Name, AStyleHandle], LM_Info);
 
-  ATableStyle.Name := StylePtr^.Name;
+  ApplyDXFTableStyleData(ATableStyle, StylePtr, AStyleHandle);
+end;
 
-  // Порядок хранения в DXF (TABLESTYLE):
-  // 0=Data, 1=Title, 2=Header
-  CellIdx := 0;
-  CellStylePtr :=
-    StylePtr^.CellFormats.beginiterate(CellFormatsIter);
-  while (CellStylePtr <> nil) and (CellIdx < 3) do
+function ApplyDXFTableStyleByName(
+  var ATableStyle: TTableStyle;
+  const AStyleName: String;
+  var ADrawing: TDrawingDef;
+  out AStyleHandle: String): Boolean;
+var
+  DXFStyleTable: PGDBDXFTableStyleArray;
+  StylePtr: PTGDBDXFTableStyle;
+begin
+  Result := False;
+  AStyleHandle := '';
+
+  DXFStyleTable := ADrawing.GetDXFTableStyleTable;
+  if DXFStyleTable = nil then
   begin
-    case CellIdx of
-      0:
-        begin
-          // Первый блок — стиль Data (данные)
-          FillCellStyleFromDXF(
-            ATableStyle.DataCell, CellStylePtr^,
-            StylePtr^.CellTextStyleName[0]);
-          // Data используется как базовый стиль
-          FillCellStyleFromDXF(
-            ATableStyle.DefaultCell, CellStylePtr^,
-            StylePtr^.CellTextStyleName[0]);
-        end;
-      1:
-        // Второй блок — стиль Title (название)
-        FillCellStyleFromDXF(
-          ATableStyle.TitleCell, CellStylePtr^,
-          StylePtr^.CellTextStyleName[1]);
-      2:
-        // Третий блок — стиль Header (заголовок)
-        FillCellStyleFromDXF(
-          ATableStyle.HeaderCell, CellStylePtr^,
-          StylePtr^.CellTextStyleName[2]);
-    end;
-    Inc(CellIdx);
-    CellStylePtr :=
-      StylePtr^.CellFormats.iterate(CellFormatsIter);
+    programlog.LogOutStr(
+      'AcadTable: stylemanager: ApplyDXFTableStyleByName — ' +
+      'таблица DXF-стилей недоступна', LM_Info);
+    Exit;
   end;
 
-  programlog.LogOutFormatStr(
-    'AcadTable: stylemanager: ApplyDXFTableStyle OK ' +
-    'стиль="%s" title_height=%.2f ' +
-    'header_height=%.2f data_height=%.2f',
-    [ATableStyle.Name,
-     ATableStyle.TitleCell.TextHeight,
-     ATableStyle.HeaderCell.TextHeight,
-     ATableStyle.DataCell.TextHeight], LM_Info);
+  if DXFStyleTable^.count = 0 then
+  begin
+    programlog.LogOutStr(
+      'AcadTable: stylemanager: ApplyDXFTableStyleByName — ' +
+      'таблица DXF-стилей пуста', LM_Info);
+    Exit;
+  end;
+
+  StylePtr := PTGDBDXFTableStyle(DXFStyleTable^.getAddres(AStyleName));
+  if StylePtr = nil then
+  begin
+    programlog.LogOutFormatStr(
+      'AcadTable: stylemanager: ApplyDXFTableStyleByName — ' +
+      'стиль "%s" не найден',
+      [AStyleName], LM_Info);
+    Exit;
+  end;
+
+  AStyleHandle := StylePtr^.DXFHandle;
+  ApplyDXFTableStyleData(ATableStyle, StylePtr, AStyleHandle);
+  Result := True;
 end;
 
 function ResolveTextStyle(
