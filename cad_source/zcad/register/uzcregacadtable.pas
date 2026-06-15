@@ -44,6 +44,7 @@ uses
   uzcoimultiproperties,uzcoimultipropertiesutil,
   uzeacadtable_model,uzeacadtable_types,
   uzeconsts,uzegeometrytypes,
+  uzestylestablesdxf,
   uzcdrawings,
   uzsbVarmanDef,Varman,uzbUnits,uzetypes,gzctnrVectorTypes,uzctnrVectorStrings,
   uzclog,uzbLogIntf;
@@ -80,33 +81,96 @@ begin
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
-// Чтение имени стиля таблицы. Свойство редактируемое при наличии change-proc.
+function AcadTableStyleNameToEnumIndex(EnumData:PTEnumData;
+  const StyleName:String):integer;
+var
+  i:integer;
+begin
+  result:=-1;
+  if EnumData=nil then
+    exit;
+  for i:=0 to EnumData^.Enums.Count-1 do
+    if SameText(pstring(EnumData^.Enums.getDataMutable(i))^,StyleName) then
+    begin
+      result:=i;
+      exit;
+    end;
+end;
+
+// Подготовка списка DXF-стилей таблиц для комбобокса инспектора объектов.
+function GetAcadTableStyleNameData(mp:TMultiProperty;pu:PTEntityUnit):Pointer;
+var
+  PVD:pvardesk;
+  t:PTEnumData;
+  StyleTable:PGDBDXFTableStyleArray;
+  StylePtr:PTGDBDXFTableStyle;
+  IterRec:itrec;
+begin
+  result:=GetTEnumData(mp,pu);
+  PVD:=PTOneVarData(result)^.VDAddr.Instance;
+  if PVD<>nil then
+  begin
+    t:=PVD^.data.Addr.Instance;
+    t^.Enums.Clear;
+    if drawings.GetCurrentDWG<>nil then
+    begin
+      StyleTable:=@drawings.GetCurrentDWG^.DXFTableStyleTable;
+      StylePtr:=StyleTable^.beginiterate(IterRec);
+      while StylePtr<>nil do
+      begin
+        if StylePtr^.Name<>'' then
+          t^.Enums.PushBackData(StylePtr^.Name);
+        StylePtr:=StyleTable^.iterate(IterRec);
+      end;
+    end;
+    t^.Selected:=0;
+  end;
+end;
+
+// Чтение имени стиля таблицы через список существующих DXF TABLESTYLE.
 procedure AcadTableStyleNameEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
 var
   PVD:pvardesk;
-  v:AnsiString;
+  EnumData:PTEnumData;
+  EnumIndex:integer;
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
     ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
-  v:=PGDBObjAcadTable(ChangedData.PEntity)^.TableStyleName;
-  ChangedData.PGetDataInEtity:=@v;
-  GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+  EnumData:=PTEnumData(PVD^.data.Addr.Instance);
+  EnumIndex:=AcadTableStyleNameToEnumIndex(
+    EnumData,PGDBObjAcadTable(ChangedData.PEntity)^.TableStyleName);
+  if EnumIndex<0 then
+  begin
+    ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+    exit;
+  end;
+  if fistrun then
+    PTEnumData(PVD^.data.Addr.Instance)^.Selected:=EnumIndex
+  else
+    if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>EnumIndex then
+      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
 end;
 
-// Запись имени DXF-стиля таблицы из инспектора объектов (issue #1336).
+// Запись выбранного DXF-стиля таблицы из инспектора объектов (issue #1336).
 // Имя резолвится в GDBObjAcadTable.SetTableStyleName через таблицу
 // DXF TABLESTYLE; при успешном изменении сохраняется новый хэндл группы 342.
 procedure AcadTableStyleNameEntChangeProc(var UMPlaced:boolean;
   pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
 var
   Table:PGDBObjAcadTable;
+  EnumData:PTEnumData;
+  NewIndex:integer;
   NewValue:String;
 begin
   Table:=PGDBObjAcadTable(ChangedData.PEntity);
-  NewValue:=PString(pvardesk(pdata)^.data.Addr.Instance)^;
+  EnumData:=PTEnumData(pvardesk(pdata)^.data.Addr.Instance);
+  NewIndex:=EnumData^.Selected;
+  if (NewIndex<0)or(NewIndex>=EnumData^.Enums.Count) then
+    exit;
+  NewValue:=pstring(EnumData^.Enums.getDataMutable(NewIndex))^;
   if SameText(Table^.TableStyleName, Trim(NewValue)) then
     exit;
   if drawings.GetCurrentDWG=nil then
@@ -547,11 +611,13 @@ begin
 
   {AcadTable — основные свойства}
   MultiPropertiesManager.RegisterPhysMultiproperty(
-    'AcadTableStyleName','Table style',sysunit^.TypeName2PTD('AnsiString'),
+    'AcadTableStyleName','Table style',sysunit^.TypeName2PTD('TEnumData'),
     MPCMisc,GDBAcadTableID,nil,0,0,
-    OneVarDataMIPD,
+    TMainIterateProcsData.Create(
+      @GetAcadTableStyleNameData,@FreeTEnumData),
     TEntIterateProcsData.Create(nil,@AcadTableStyleNameEntIterateProc,
-      @AcadTableStyleNameEntChangeProc));
+      @AcadTableStyleNameEntChangeProc),
+    MPUM_AtLeastOneEntMatched);
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableRowCount','Rows',sysunit^.TypeName2PTD('TArrayIndex'),
     MPCMisc,GDBAcadTableID,nil,0,0,
