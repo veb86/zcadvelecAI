@@ -66,6 +66,9 @@ type
     // issue #1305, часть 1: трансформация (перенос) должна перестраивать
     // визуальное представление таблицы.
     procedure TransformationMovesRenderedTable;
+    // issue #1332: временный клон для интерактивного редактирования должен
+    // начинать отрисовку в текущем положении таблицы, а не в начале координат.
+    procedure ClonedPreviewKeepsRenderedTableAtSourceLocation;
     // issue #1305, часть 2b: снятие признака разрыва объединяет
     // части-продолжения в единую непрерывную таблицу.
     procedure ClearingBreakMergesContinuationParts;
@@ -1013,6 +1016,57 @@ begin
       '(issue #1305, часть 1)');
     CheckEquals(MaxX1 + Shift, MaxX2, 1e-6,
       'Правая граница перенесённой таблицы должна сдвинуться на ту же величину');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.ClonedPreviewKeepsRenderedTableAtSourceLocation;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable, PreviewTable: PGDBObjAcadTable;
+  DC: TDrawContext;
+  SrcMinX, SrcMaxX, SrcMinY, SrcMaxY: Double;
+  CloneMinX, CloneMaxX, CloneMinY, CloneMaxY: Double;
+  HasLines: Boolean;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    DC := Drawing.CreateDrawingRC;
+    AcadTable^.FormatEntity(Drawing, DC);
+    CollectLineBounds2D(AcadTable^.ConstObjArray,
+      SrcMinX, SrcMaxX, SrcMinY, SrcMaxY, HasLines);
+    CheckTrue(HasLines, 'Исходная таблица должна отрисовать линии в WCS');
+
+    PreviewTable := PGDBObjAcadTable(AcadTable^.Clone(nil));
+    AssertNotNull(
+      'AcadTable.Clone должен вернуть временный объект предпросмотра',
+      PreviewTable);
+    try
+      PreviewTable^.bp.ListPos.Owner := AcadTable^.bp.ListPos.Owner;
+      PreviewTable^.FormatFast(Drawing, DC);
+      PreviewTable^.BuildGeometry(Drawing);
+      CollectLineBounds2D(PreviewTable^.ConstObjArray,
+        CloneMinX, CloneMaxX, CloneMinY, CloneMaxY, HasLines);
+      CheckTrue(HasLines,
+        'Клон предпросмотра должен отрисовать линии в WCS');
+
+      CheckEquals(SrcMinX, CloneMinX, 1e-6,
+        'Клон предпросмотра не должен смещать таблицу в начало координат (MinX)');
+      CheckEquals(SrcMaxX, CloneMaxX, 1e-6,
+        'Клон предпросмотра должен сохранить правую границу таблицы');
+      CheckEquals(SrcMinY, CloneMinY, 1e-6,
+        'Клон предпросмотра должен сохранить нижнюю границу таблицы');
+      CheckEquals(SrcMaxY, CloneMaxY, 1e-6,
+        'Клон предпросмотра должен сохранить верхнюю границу таблицы');
+    finally
+      PreviewTable^.done;
+      FreeMem(Pointer(PreviewTable));
+    end;
   finally
     Drawing.done;
   end;

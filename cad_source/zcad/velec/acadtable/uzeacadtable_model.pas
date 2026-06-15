@@ -3211,6 +3211,9 @@ begin
     NewTable^.FCellTexts[Idx] := FCellTexts[Idx];
 
   NewTable^.FTableStyle := FTableStyle;
+  NewTable^.Local := Local;
+  NewTable^.objMatrix := objMatrix;
+  NewTable^.P_insert_in_WCS := P_insert_in_WCS;
 
   System.SetLength(NewTable^.FRows, Length(FRows));
   for Idx := 0 to High(FRows) do
