@@ -331,6 +331,8 @@ type
     // (issue #1307). Возвращает True.
     function SetTableBreakData(
       ASpacing, ABreakHeight: Double): Boolean; virtual;
+    function SetTableStyleName(
+      const AValue: String; var ADrawing: TDrawingDef): Boolean; virtual;
     procedure SetDXFRawEntityText(const ARawText: string); virtual;
 
     // Публичные свойства для инспектора объектов
@@ -445,6 +447,48 @@ end;
 function GDBObjAcadTable.GetTableStyleName: String;
 begin
   Result := FTableStyle.Name;
+end;
+
+function GDBObjAcadTable.SetTableStyleName(
+  const AValue: String; var ADrawing: TDrawingDef): Boolean;
+var
+  NewHandle: String;
+  PartIdx: Integer;
+  StyleName: String;
+begin
+  Result := False;
+  StyleName := Trim(AValue);
+  if StyleName = '' then
+  begin
+    programlog.LogOutStr(
+      'AcadTable: model: SetTableStyleName — empty style name',
+      LM_Info);
+    Exit;
+  end;
+
+  if SameText(FTableStyle.Name, StyleName) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  if not uzeacadtable_stylemanager.ApplyDXFTableStyleByName(
+    FTableStyle, StyleName, ADrawing, NewHandle) then
+    Exit;
+
+  FTableStyleHandle := NewHandle;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    FContinuationParts[PartIdx].TableStyle := FTableStyle;
+    FContinuationParts[PartIdx].TableStyleHandle := NewHandle;
+  end;
+  FGeometryBuilt := False;
+  InvalidateRawDXFEntity;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetTableStyleName="%s" handle=%s',
+    [FTableStyle.Name, FTableStyleHandle], LM_Info);
+  Result := True;
 end;
 
 function GDBObjAcadTable.GetCellTextLocal(

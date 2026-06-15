@@ -40,6 +40,7 @@ procedure RegisterAcadTableProperties;
 implementation
 
 uses
+  SysUtils,
   uzcoimultiproperties,uzcoimultipropertiesutil,
   uzeacadtable_model,uzeacadtable_types,
   uzeconsts,uzegeometrytypes,
@@ -79,7 +80,7 @@ begin
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
-// Чтение имени стиля таблицы (только чтение)
+// Чтение имени стиля таблицы. Свойство редактируемое при наличии change-proc.
 procedure AcadTableStyleNameEntIterateProc(pdata:Pointer;ChangedData:TChangedData;
   mp:TMultiProperty;fistrun:boolean;ecp:TEntChangeProc;
   const f:TzeUnitsFormat);
@@ -93,6 +94,36 @@ begin
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.TableStyleName;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
+end;
+
+// Запись имени DXF-стиля таблицы из инспектора объектов (issue #1336).
+// Имя резолвится в GDBObjAcadTable.SetTableStyleName через таблицу
+// DXF TABLESTYLE; при успешном изменении сохраняется новый хэндл группы 342.
+procedure AcadTableStyleNameEntChangeProc(var UMPlaced:boolean;
+  pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
+var
+  Table:PGDBObjAcadTable;
+  NewValue:String;
+begin
+  Table:=PGDBObjAcadTable(ChangedData.PEntity);
+  NewValue:=PString(pvardesk(pdata)^.data.Addr.Instance)^;
+  if SameText(Table^.TableStyleName, Trim(NewValue)) then
+    exit;
+  if drawings.GetCurrentDWG=nil then
+  begin
+    programlog.LogOutStr(
+      'AcadTable: register: SetTableStyleName — current drawing is nil',
+      LM_Info);
+    exit;
+  end;
+
+  PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
+  if not Table^.SetTableStyleName(NewValue, drawings.GetCurrentDWG^) then
+    exit;
+  Table^.YouChanged(drawings.GetCurrentDWG^);
+
+  ProcessVariableAttributes(
+    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 end;
 
 // Чтение количества строк (только чтение, не редактируется)
@@ -514,12 +545,13 @@ begin
     OneVarDataMIPD,
     TEntIterateProcsData.Create(nil,@AcadTableHeightEntIterateProc,nil));
 
-  {AcadTable — основные свойства (только чтение)}
+  {AcadTable — основные свойства}
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableStyleName','Table style',sysunit^.TypeName2PTD('AnsiString'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,
-    TEntIterateProcsData.Create(nil,@AcadTableStyleNameEntIterateProc,nil));
+    TEntIterateProcsData.Create(nil,@AcadTableStyleNameEntIterateProc,
+      @AcadTableStyleNameEntChangeProc));
   MultiPropertiesManager.RegisterPhysMultiproperty(
     'AcadTableRowCount','Rows',sysunit^.TypeName2PTD('TArrayIndex'),
     MPCMisc,GDBAcadTableID,nil,0,0,
