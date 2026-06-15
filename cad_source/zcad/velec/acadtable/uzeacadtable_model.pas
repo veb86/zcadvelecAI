@@ -95,6 +95,7 @@ type
   end;
 
   TAcadTableBreakHeightArray = array of Double;
+  TAcadTableBreakPositionArray = array of TzePoint3d;
 
   // Сущность ACAD_TABLE — таблица AutoCAD из формата DXF.
   // Хранит геометрию таблицы и текстовое содержимое ячеек.
@@ -219,6 +220,11 @@ type
     function BreakHeightForPart(
       const ABreakHeights: TAcadTableBreakHeightArray;
       APartNumber: Integer): Double;
+    procedure CaptureContinuationInsertPoints(
+      var APositions: TAcadTableBreakPositionArray);
+    procedure RestoreManualContinuationInsertPoints(
+      const APositions: TAcadTableBreakPositionArray;
+      AWasExplicit: Boolean);
     procedure ResplitByCurrentBreakHeights;
     // Копирует диапазон строк [AStart..AEnd] исходной части в целевую часть.
     procedure SlicePartFromPart(const ASource: TAcadTablePart;
@@ -1378,6 +1384,8 @@ begin
     FBreakEnabled := True;
     if (Length(FContinuationParts) = 0) and (FBreakHeight > 0) then
       SplitMainTableByBreakHeight(FBreakHeight)
+    else if FBreakManualPosition then
+      SetBreakManualPositionForParts(True)
     else
       RepositionContinuationParts;
     FGeometryBuilt := False;
@@ -1407,9 +1415,9 @@ begin
 end;
 
 // Изменение направления разбиения (issue #1315). Для уже разорванной таблицы
-// смещает части-продолжения относительно главной части: Right/Left по ширине,
-// Down по высоте. Для inline-разбиения без частей достаточно сбросить
-// геометрию: RenderCurrentTable использует FBreakDirection напрямую.
+// в автоматическом режиме смещает части-продолжения относительно главной
+// части. В ручном режиме направление только сохраняется и не влияет на
+// положение частей (issue #1328).
 procedure GDBObjAcadTable.SetBreakDirection(AValue: TAcadTableBreakDirection);
 var
   PartIdx: Integer;
@@ -1421,7 +1429,10 @@ begin
   FBreakDirection := AValue;
   for PartIdx := 0 to High(FContinuationParts) do
     FContinuationParts[PartIdx].BreakDirection := AValue;
-  RepositionContinuationParts;
+  if FBreakManualPosition then
+    SetBreakManualPositionForParts(True)
+  else
+    RepositionContinuationParts;
   FGeometryBuilt := False;
 
   programlog.LogOutFormatStr(
@@ -1513,16 +1524,23 @@ begin
   Result := FBreakSpacing;
 end;
 
-// Изменение интервала между частями (issue #1307, часть 1). Пересчитывает
-// точки вставки всех частей-продолжений так, чтобы расстояние между
-// соседними частями изменилось на чертеже.
+// Изменение интервала между частями (issue #1307, часть 1). В автоматическом
+// режиме пересчитывает точки вставки всех частей-продолжений. В ручном режиме
+// интервал только сохраняется и не влияет на положение частей (issue #1328).
 procedure GDBObjAcadTable.SetBreakSpacing(AValue: Double);
+var
+  PartIdx: Integer;
 begin
   if AValue = FBreakSpacing then
     Exit;
   InvalidateRawDXFEntity;
   FBreakSpacing := AValue;
-  RepositionContinuationParts;
+  for PartIdx := 0 to High(FContinuationParts) do
+    FContinuationParts[PartIdx].BreakSpacing := AValue;
+  if FBreakManualPosition then
+    SetBreakManualPositionForParts(True)
+  else
+    RepositionContinuationParts;
   FGeometryBuilt := False;
   programlog.LogOutFormatStr(
     'AcadTable: model: SetBreakSpacing=%g parts=%d',
@@ -1541,11 +1559,18 @@ procedure GDBObjAcadTable.SetBreakHeight(AValue: Double);
 var
   L: Integer;
   WasBreakEnabled: Boolean;
+  WasManualPosition, WasManualPositionExplicit: Boolean;
+  ManualPositions: TAcadTableBreakPositionArray;
 begin
   if AValue = FBreakHeight then
     Exit;
   InvalidateRawDXFEntity;
   WasBreakEnabled := GetBreakEnabled;
+  WasManualPosition := FBreakManualPosition and
+    (Length(FContinuationParts) > 0);
+  WasManualPositionExplicit := FBreakManualPositionExplicit;
+  if WasManualPosition then
+    CaptureContinuationInsertPoints(ManualPositions);
   FBreakHeight := AValue;
   // Перебор строк имеет смысл только при положительной высоте и
   // включённом разбиении. При BreakEnabled=False параметры разбиения
@@ -1561,6 +1586,9 @@ begin
     end;
     MergeAllContinuationPartsIntoMain;
     SplitMainTableByBreakHeight(AValue);
+    if WasManualPosition then
+      RestoreManualContinuationInsertPoints(
+        ManualPositions, WasManualPositionExplicit);
   end;
   FGeometryBuilt := False;
   programlog.LogOutFormatStr(
@@ -1696,6 +1724,36 @@ begin
     Result := CAcadTableBreakHeightTolerance;
 end;
 
+procedure GDBObjAcadTable.CaptureContinuationInsertPoints(
+  var APositions: TAcadTableBreakPositionArray);
+var
+  PartIdx: Integer;
+begin
+  System.SetLength(APositions, Length(FContinuationParts));
+  for PartIdx := 0 to High(FContinuationParts) do
+    APositions[PartIdx] := FContinuationParts[PartIdx].InsertPoint;
+end;
+
+procedure GDBObjAcadTable.RestoreManualContinuationInsertPoints(
+  const APositions: TAcadTableBreakPositionArray;
+  AWasExplicit: Boolean);
+var
+  PartIdx, LastIdx: Integer;
+begin
+  if (Length(APositions) = 0) or (Length(FContinuationParts) = 0) then
+    Exit;
+
+  LastIdx := High(APositions);
+  if LastIdx > High(FContinuationParts) then
+    LastIdx := High(FContinuationParts);
+  for PartIdx := 0 to LastIdx do
+    FContinuationParts[PartIdx].InsertPoint := APositions[PartIdx];
+
+  FBreakManualPosition := True;
+  FBreakManualPositionExplicit := AWasExplicit;
+  SetBreakManualPositionForParts(True);
+end;
+
 procedure GDBObjAcadTable.SplitMainTableByBreakHeights(
   const ABreakHeights: TAcadTableBreakHeightArray);
 var
@@ -1794,9 +1852,17 @@ procedure GDBObjAcadTable.ResplitByCurrentBreakHeights;
 var
   BreakHeights: TAcadTableBreakHeightArray;
   PartIdx, L: Integer;
+  WasManualPosition, WasManualPositionExplicit: Boolean;
+  ManualPositions: TAcadTableBreakPositionArray;
 begin
   if not GetBreakEnabled then
     Exit;
+
+  WasManualPosition := FBreakManualPosition and
+    (Length(FContinuationParts) > 0);
+  WasManualPositionExplicit := FBreakManualPositionExplicit;
+  if WasManualPosition then
+    CaptureContinuationInsertPoints(ManualPositions);
 
   System.SetLength(BreakHeights, Length(FContinuationParts) + 1);
   BreakHeights[0] := FBreakHeight;
@@ -1812,6 +1878,9 @@ begin
     RemoveTopLabelsFromParts(L);
   MergeAllContinuationPartsIntoMain;
   SplitMainTableByBreakHeights(BreakHeights);
+  if WasManualPosition then
+    RestoreManualContinuationInsertPoints(
+      ManualPositions, WasManualPositionExplicit);
   FBreakManualHeight := True;
   SetBreakManualHeightForParts(True);
 end;
@@ -1841,6 +1910,8 @@ begin
     CumOffset := CumOffset + PrevExtent + FBreakSpacing;
 
     FContinuationParts[PartIdx].InsertPoint := FInsertPoint;
+    FContinuationParts[PartIdx].BreakDirection := FBreakDirection;
+    FContinuationParts[PartIdx].BreakSpacing := FBreakSpacing;
     case FBreakDirection of
       atbdDown:
         FContinuationParts[PartIdx].InsertPoint.y :=
@@ -2258,11 +2329,13 @@ end;
 
 // Изменение признака повтора верхних меток (issue #1309). Установка в False
 // удаляет повторяющиеся ведущие строки-метки из всех частей-продолжений;
-// установка в True — добавляет их обратно. Точки вставки частей и геометрия
-// пересчитываются.
+// установка в True — добавляет их обратно. В ручном режиме точки вставки
+// частей сохраняются (issue #1328).
 procedure GDBObjAcadTable.SetBreakRepeatTopLabels(AValue: Boolean);
 var
   L: Integer;
+  WasManualPosition, WasManualPositionExplicit: Boolean;
+  ManualPositions: TAcadTableBreakPositionArray;
 begin
   if AValue = FBreakRepeatTopLabels then
     Exit;
@@ -2270,6 +2343,12 @@ begin
   L := 0;
   if Length(FContinuationParts) > 0 then
   begin
+    WasManualPosition := FBreakManualPosition and
+      (Length(FContinuationParts) > 0);
+    WasManualPositionExplicit := FBreakManualPositionExplicit;
+    if WasManualPosition then
+      CaptureContinuationInsertPoints(ManualPositions);
+
     if AValue then
     begin
       // Добавляем ведущие строки-метки главной части в каждую часть.
@@ -2298,8 +2377,14 @@ begin
     end;
     if (FBreakHeight <= 0) and (L > 0) then
     begin
-      RepositionContinuationParts;
+      if WasManualPosition then
+        SetBreakManualPositionForParts(True)
+      else
+        RepositionContinuationParts;
     end;
+    if WasManualPosition then
+      RestoreManualContinuationInsertPoints(
+        ManualPositions, WasManualPositionExplicit);
     FGeometryBuilt := False;
   end
   else
