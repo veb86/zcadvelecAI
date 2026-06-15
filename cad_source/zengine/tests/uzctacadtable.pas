@@ -59,6 +59,7 @@ type
     procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
     procedure LoadsSplitTableAsSingleMergedObject;
+    procedure LoadsIssue1334BreakTableAsSingleMergedObject;
     procedure AppliesTableStyleToContinuationParts;
     // issue #1317: сохранение AcadTable в DXF должно писать структурированные
     // ACAD_TABLE-сущности, включая части-продолжения разделённой таблицы.
@@ -860,6 +861,31 @@ begin
     AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
     CheckEquals(2, AcadTable^.ContinuationPartCount,
       'В главную таблицу должны быть поглощены две части-продолжения');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// Разорванная на 11 частей таблица (bugbreaktable.dxf) хранит список
+// продолжений в OBJECTS/XRECORD. Эти части должны загружаться как один
+// логический AcadTable (issue #1334).
+procedure TAcadTableStyleTest.LoadsIssue1334BreakTableAsSingleMergedObject;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  TableCount: Integer;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/bugbreaktable.dxf'), Drawing);
+  try
+    TableCount := CountAcadTables(Drawing.pObjRoot);
+    CheckEquals(1, TableCount,
+      'Одиннадцать частей разорванной таблицы должны загружаться как один объект AcadTable');
+
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(10, AcadTable^.ContinuationPartCount,
+      'В главную таблицу должны быть поглощены десять частей-продолжений');
   finally
     Drawing.done;
   end;
