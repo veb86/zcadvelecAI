@@ -408,7 +408,7 @@ begin
             end;
 
             Inc(J, 2);
-          end;
+          end
           else
             Inc(J);
         end
