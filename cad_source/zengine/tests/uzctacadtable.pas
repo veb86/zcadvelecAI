@@ -93,6 +93,9 @@ type
     // issue #1320: ручное положение должно включаться и отключаться через
     // свойство, используемое инспектором объектов.
     procedure TogglingBreakManualPositionUpdatesContinuationPartGrips;
+    // issue #1328: при ручном положении изменение направления, интервала и
+    // высоты разбиения не должно сбрасывать положение частей.
+    procedure ManualBreakPositionSurvivesBreakLayoutPropertyChanges;
     // issue #1321: у разбитой таблицы всегда должна быть ручка высоты
     // разбиения внизу первой части.
     procedure BreakEnabledAddsFirstPartBreakHeightGrip;
@@ -324,6 +327,14 @@ begin
     Desc.pcontrolpoint^.done;
     FreeMem(Pointer(Desc.pcontrolpoint));
   end;
+end;
+
+procedure CheckAcadTablePointEquals(
+  const AExpected, AActual: TzePoint3d; const AMsg: String);
+begin
+  CheckEquals(AExpected.x, AActual.x, 1e-6, AMsg + ' (X)');
+  CheckEquals(AExpected.y, AActual.y, 1e-6, AMsg + ' (Y)');
+  CheckEquals(AExpected.z, AActual.z, 1e-6, AMsg + ' (Z)');
 end;
 
 function CountDxfPairs(
@@ -1320,6 +1331,87 @@ begin
       CheckEquals(AcadTable^.ContinuationPartCount,
         CountAcadTablePositionControlPoints(AcadTable),
         'Включение ручного режима должно вернуть ручки частей-продолжений');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(ManualDXF);
+  end;
+end;
+
+procedure TAcadTableStyleTest.ManualBreakPositionSurvivesBreakLayoutPropertyChanges;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  ManualDXF: String;
+  FirstGripBefore, SecondGripBefore: controlpointdesc;
+  FirstGripAfter, SecondGripAfter: controlpointdesc;
+begin
+  ManualDXF := CreateManualPositionAcadTableDXF;
+  try
+    LoadDrawingFromDXF(ManualDXF, Drawing);
+    try
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Тестовая таблица должна загрузиться в ручном режиме');
+      CheckEquals(2, AcadTable^.ContinuationPartCount,
+        'Тестовый DXF должен содержать две части-продолжения');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 1, FirstGripBefore),
+        'Ручка положения первой части-продолжения должна существовать');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 2, SecondGripBefore),
+        'Ручка положения второй части-продолжения должна существовать');
+
+      AcadTable^.BreakDirection := atbdLeft;
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Изменение направления не должно сбрасывать ручное положение');
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
+        'Ручки положения должны остаться видимыми после смены направления');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 1, FirstGripAfter),
+        'Ручка первой части должна сохраниться после смены направления');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 2, SecondGripAfter),
+        'Ручка второй части должна сохраниться после смены направления');
+      CheckAcadTablePointEquals(
+        FirstGripBefore.worldcoord, FirstGripAfter.worldcoord,
+        'Смена направления не должна перемещать первую часть');
+      CheckAcadTablePointEquals(
+        SecondGripBefore.worldcoord, SecondGripAfter.worldcoord,
+        'Смена направления не должна перемещать вторую часть');
+
+      AcadTable^.BreakSpacing := AcadTable^.BreakSpacing + 10.0;
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Изменение интервала не должно сбрасывать ручное положение');
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
+        'Ручки положения должны остаться видимыми после смены интервала');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 1, FirstGripAfter),
+        'Ручка первой части должна сохраниться после смены интервала');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 2, SecondGripAfter),
+        'Ручка второй части должна сохраниться после смены интервала');
+      CheckAcadTablePointEquals(
+        FirstGripBefore.worldcoord, FirstGripAfter.worldcoord,
+        'Смена интервала не должна перемещать первую часть');
+      CheckAcadTablePointEquals(
+        SecondGripBefore.worldcoord, SecondGripAfter.worldcoord,
+        'Смена интервала не должна перемещать вторую часть');
+
+      AcadTable^.BreakHeight := AcadTable^.BreakHeight + 0.001;
+      CheckTrue(AcadTable^.BreakManualPosition,
+        'Изменение высоты не должно сбрасывать ручное положение');
+      CheckEquals(AcadTable^.ContinuationPartCount,
+        CountAcadTablePositionControlPoints(AcadTable),
+        'Ручки положения должны остаться видимыми после смены высоты');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 1, FirstGripAfter),
+        'Ручка первой части должна сохраниться после смены высоты');
+      CheckTrue(FindAcadTableControlPoint(AcadTable, 2, SecondGripAfter),
+        'Ручка второй части должна сохраниться после смены высоты');
+      CheckAcadTablePointEquals(
+        FirstGripBefore.worldcoord, FirstGripAfter.worldcoord,
+        'Смена высоты не должна перемещать первую часть');
+      CheckAcadTablePointEquals(
+        SecondGripBefore.worldcoord, SecondGripAfter.worldcoord,
+        'Смена высоты не должна перемещать вторую часть');
     finally
       Drawing.done;
     end;
