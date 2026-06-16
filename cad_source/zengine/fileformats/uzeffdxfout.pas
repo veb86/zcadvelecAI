@@ -195,16 +195,11 @@ begin
   outstream.TXTAddStringEOL(dxfGroupCode(5));
   outstream.TXTAddStringEOL(inttohex(StyleHandle, 0));
 
-  { Блок ACAD_XDICTIONARY }
-  if Style^.XDictHandle <> '' then
-  begin
-    outstream.TXTAddStringEOL(dxfGroupCode(102));
-    outstream.TXTAddStringEOL('{ACAD_XDICTIONARY');
-    outstream.TXTAddStringEOL(dxfGroupCode(360));
-    outstream.TXTAddStringEOL(Style^.XDictHandle);
-    outstream.TXTAddStringEOL(dxfGroupCode(102));
-    outstream.TXTAddStringEOL('}');
-  end;
+  { Блок ACAD_XDICTIONARY намеренно НЕ пишем (issue #1339): сам объект
+    расширенного словаря в выходной файл не сохраняется, поэтому ссылка 360
+    на Style^.XDictHandle (старый хэндл из загруженного файла) указывала бы
+    на несуществующий объект — висячая ссылка, из-за которой AutoCAD
+    открывает пустой чертёж. }
 
   { Блок ACAD_REACTORS — принадлежность словарю }
   outstream.TXTAddStringEOL(dxfGroupCode(102));
@@ -371,6 +366,7 @@ var
   { Массивы предварительно выделенных хэндлов для стилей таблиц }
   tsHandles: array of TDWGHandle;
   tsCount: integer;
+  tsHandlesAllocated: boolean;
   beforeProcIdx: integer;
 
   procedure RunObjectsSaveDxfProcs;
@@ -381,6 +377,46 @@ var
       if Assigned(ObjectsSaveDxfProcs[objectsProcIdx]) then
         ObjectsSaveDxfProcs[objectsProcIdx](
           outstream,drawing,IODXFContext);
+  end;
+
+  { Предварительно выделяет хэндлы для стилей таблиц и строит карту
+    «имя стиля -> новый хэндл», а также вычисляет новый хэндл владельца
+    (*Model_Space) для сырых сущностей ACAD_TABLE. Должно вызываться ДО
+    записи секции ENTITIES, т.к. сырая сущность ACAD_TABLE ссылается на
+    стиль таблицы (342) и владельца (330), которые иначе пишутся позже
+    или перенумеровываются (issue #1339). }
+  procedure PreallocateTableStyleHandles;
+  var
+    psIdx: integer;
+    psStyle: PTGDBDXFTableStyle;
+    psIter: itrec;
+    msHandle: TDWGHandle;
+  begin
+    if tsHandlesAllocated then
+      Exit;
+    tsHandlesAllocated:=True;
+
+    { Новый хэндл владельца сущностей пространства модели. В шаблоне и в
+      исходных файлах AutoCAD блок *Model_Space всегда имеет хэндл 1F. }
+    msHandle:=OldHandele2NewHandle.MyGetValue($1F);
+    if msHandle>0 then
+      IODXFContext.AcadTableOwnerHandle:=msHandle;
+
+    tsCount:=drawing.DXFTableStyleTable.count;
+    if tsCount>0 then begin
+      SetLength(tsHandles, tsCount);
+      psIdx:=0;
+      psStyle:=drawing.DXFTableStyleTable.beginiterate(psIter);
+      while (psStyle<>nil) and (psIdx<tsCount) do begin
+        tsHandles[psIdx]:=IODXFContext.handle;
+        Inc(IODXFContext.handle);
+        if not IODXFContext.TableStyleNameHandleMap.MyContans(psStyle^.Name) then
+          IODXFContext.TableStyleNameHandleMap.Add(
+            psStyle^.Name, inttohex(tsHandles[psIdx],0));
+        Inc(psIdx);
+        psStyle:=drawing.DXFTableStyleTable.iterate(psIter);
+      end;
+    end;
   end;
 begin
   intable:=0;
@@ -423,6 +459,7 @@ begin
     tablestyledicthandle:=0;
     writtenstylecount:=0;
     tsCount:=0;
+    tsHandlesAllocated:=False;
     SetLength(tsHandles, 0);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
@@ -487,6 +524,10 @@ begin
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
+          { Перед записью сущностей выделяем хэндлы стилей таблиц и
+            вычисляем хэндл владельца — сырые ACAD_TABLE ссылаются на них
+            (issue #1339). }
+          PreallocateTableStyleHandles;
           saveentitiesdxf2000(@{p}drawing.pObjRoot^.ObjArray,outstream,drawing,IODXFContext);
         end else if (groupi=2) and (values='BLOCKS') then begin
           outstream.TXTAddStringEOL(groups);
@@ -708,6 +749,14 @@ begin
               outstream.TXTAddStringEOL(dxfName_BLOCK_RECORD);
 
               IODXFContext.p2h.MyGetOrCreateValue(@(PBlockdefArray(drawing.BlockDefArray.parray)^[i]),IODXFContext.handle,temphandle);
+              { Запоминаем «имя блока -> новый хэндл BLOCK_RECORD», чтобы
+                переписать ссылку 343 сырой сущности ACAD_TABLE на её
+                анонимный блок (issue #1339). }
+              if not IODXFContext.BlockNameHandleMap.MyContans(
+                   PBlockdefArray(drawing.BlockDefArray.parray)^[i].Name) then
+                IODXFContext.BlockNameHandleMap.Add(
+                  PBlockdefArray(drawing.BlockDefArray.parray)^[i].Name,
+                  inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(100));
@@ -1242,17 +1291,13 @@ begin
             Предварительно выделяем хэндлы для всех стилей таблиц из чертежа,
             чтобы потом использовать их и в словаре, и в объектах TABLESTYLE. }
           inobjectssec:=True;
-          tsCount:=drawing.DXFTableStyleTable.count;
-          if tsCount>0 then begin
-            SetLength(tsHandles, tsCount);
-            for i:=0 to tsCount-1 do begin
-              tsHandles[i]:=IODXFContext.handle;
-              Inc(IODXFContext.handle);
-            end;
+          { Хэндлы стилей таблиц уже могли быть выделены перед секцией
+            ENTITIES (issue #1339). Вызов идемпотентен. }
+          PreallocateTableStyleHandles;
+          if tsCount>0 then
             programlog.LogOutFormatStr(
               'uzeffdxfout: выделены хэндлы для %d стилей таблиц',
               [tsCount], LM_Info);
-          end;
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
         end else if inobjectssec and (groupi=3) and (values='ACAD_TABLESTYLE') then begin

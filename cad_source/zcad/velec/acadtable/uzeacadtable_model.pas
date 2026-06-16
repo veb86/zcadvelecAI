@@ -3198,12 +3198,22 @@ var
 begin
   if CanSaveRawDXFEntity then
   begin
+    // Перед сохранением гарантируем, что имя стиля таблицы определено.
+    // Для raw-таблиц (issue #1339) BuildGeometry мог ещё не выполняться
+    // (например, при пакетном "Сохранить как" без отрисовки), поэтому
+    // FTableStyle.Name остаётся пустым. Без имени невозможно перенумеровать
+    // ссылку 342 на актуальный хэндл TABLESTYLE — и таблица сохраняется со
+    // ссылкой на старый (чужой после перенумерации) хэндл.
+    if (FTableStyle.Name = '') and (FTableStyleHandle <> '') then
+      uzeacadtable_stylemanager.ApplyDXFTableStyle(
+        FTableStyle, FTableStyleHandle, ADrawing);
+
     System.SetLength(RawParts, Length(FContinuationParts));
     for PartIdx := 0 to High(FContinuationParts) do
       RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
     if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
       AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
-      FBreakSpacing, FBreakHeight) then
+      FBreakSpacing, FBreakHeight, Self.TableStyleName) then
       Exit;
   end;
 

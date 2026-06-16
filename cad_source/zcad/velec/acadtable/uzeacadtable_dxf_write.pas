@@ -90,7 +90,8 @@ function WriteRawAcadTablePartsToDXF(
   var AIODXFContext: TIODXFSaveContext;
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
-  ABreakSpacing, ABreakHeight: Double): Boolean;
+  ABreakSpacing, ABreakHeight: Double;
+  const ATableStyleName: String): Boolean;
 
 procedure WriteAcadTableRoundTripObjectsToDXF(
   var AOutStream: TZctnrVectorBytes;
@@ -470,17 +471,86 @@ begin
     AIODXFContext.handle := AHandle + 1;
 end;
 
+// Записывает сырую (raw) сущность ACAD_TABLE, переписывая ссылки на хэндлы
+// под актуальную (перенумерованную) нумерацию сохраняемого файла (issue #1339):
+//   330 — владелец сущности (*Model_Space);
+//   342 — стиль таблицы (по имени стиля ATableStyleName);
+//   343 — анонимный блок таблицы (по имени блока из предшествующей пары 2);
+//   блок расширенного словаря 102/ACAD_XDICTIONARY удаляется, т.к. он не
+//        круглорейсится и иначе оставляет висячую ссылку (360).
+// Хэндл самой сущности (группа 5) намеренно не трогаем.
 procedure WriteRawEntityText(
-  var AOutStream: TZctnrVectorBytes; const ARawEntity: String);
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ATableStyleName: String;
+  const ARawEntity: String);
 var
   Lines: TStringList;
   I: Integer;
+  Code, OutValue, LastBlockName, MappedValue: String;
 begin
   Lines := TStringList.Create;
   try
     Lines.Text := ARawEntity;
-    for I := 0 to Lines.Count - 1 do
+    LastBlockName := '';
+    I := 0;
+    while I < Lines.Count do
+    begin
+      Code := Trim(Lines[I]);
+
+      { Удаляем блок расширенного словаря целиком (вместе с висячим 360). }
+      if (Code = '102') and (I + 1 < Lines.Count)
+         and (Trim(Lines[I + 1]) = '{ACAD_XDICTIONARY') then
+      begin
+        Inc(I, 2);
+        while I + 1 < Lines.Count do
+        begin
+          if (Trim(Lines[I]) = '102') and (Trim(Lines[I + 1]) = '}') then
+          begin
+            Inc(I, 2);
+            Break;
+          end;
+          Inc(I, 2);
+        end;
+        Continue;
+      end;
+
+      if I + 1 >= Lines.Count then
+      begin
+        { Непарная завершающая строка — пишем как есть. }
+        AOutStream.TXTAddStringEOL(Lines[I]);
+        Inc(I);
+        Continue;
+      end;
+
+      OutValue := Lines[I + 1];
+
+      if Code = '2' then
+        LastBlockName := Trim(Lines[I + 1])
+      else if Code = '330' then
+      begin
+        if AIODXFContext.AcadTableOwnerHandle <> 0 then
+          OutValue := IntToHex(AIODXFContext.AcadTableOwnerHandle, 0);
+      end
+      else if Code = '342' then
+      begin
+        if (ATableStyleName <> '')
+           and AIODXFContext.TableStyleNameHandleMap.MyGetValue(
+             ATableStyleName, MappedValue) then
+          OutValue := MappedValue;
+      end
+      else if Code = '343' then
+      begin
+        if (LastBlockName <> '')
+           and AIODXFContext.BlockNameHandleMap.MyGetValue(
+             LastBlockName, MappedValue) then
+          OutValue := MappedValue;
+      end;
+
       AOutStream.TXTAddStringEOL(Lines[I]);
+      AOutStream.TXTAddStringEOL(OutValue);
+      Inc(I, 2);
+    end;
   finally
     Lines.Free;
   end;
@@ -558,7 +628,8 @@ function WriteRawAcadTablePartsToDXF(
   var AIODXFContext: TIODXFSaveContext;
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
-  ABreakSpacing, ABreakHeight: Double): Boolean;
+  ABreakSpacing, ABreakHeight: Double;
+  const ATableStyleName: String): Boolean;
 var
   MainHandle: TDWGHandle;
   ContinuationHandles: array of TDWGHandle;
@@ -575,12 +646,14 @@ begin
       ContinuationHandles[PartIdx]) then
       Exit;
 
-  WriteRawEntityText(AOutStream, AMainRawEntity);
+  WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
+    AMainRawEntity);
   BumpHandleAfterRawEntity(AIODXFContext, MainHandle);
 
   for PartIdx := 0 to High(AContinuationRawEntities) do
   begin
-    WriteRawEntityText(AOutStream, AContinuationRawEntities[PartIdx]);
+    WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
+      AContinuationRawEntities[PartIdx]);
     BumpHandleAfterRawEntity(
       AIODXFContext, ContinuationHandles[PartIdx]);
   end;
