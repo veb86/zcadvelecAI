@@ -81,7 +81,7 @@
     </RequiredPackages>
     <Units Count="1">
       <Unit0>
-        <Filename Value="testacadtable_standalone.lpr"/>
+        <Filename Value="roundtrip1339.lpr"/>
         <IsPartOfProject Value="True"/>
       </Unit0>
     </Units>
@@ -89,7 +89,7 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="testacadtable_standalone"/>
+      <Filename Value="roundtrip1339"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir);.."/>
@@ -104,8 +104,8 @@
     <CodeGeneration>
       <Checks>
         <IOChecks Value="True"/>
-        <RangeChecks Value="True"/>
-        <OverflowChecks Value="True"/>
+        <RangeChecks Value="False"/>
+        <OverflowChecks Value="False"/>
         <StackChecks Value="True"/>
       </Checks>
       <VerifyObjMethodCallValidity Value="True"/>
@@ -120,7 +120,7 @@
       </Debugging>
     </Linking>
     <Other>
-      <CustomOptions Value="-dDUnit"/>
+      <CustomOptions Value="-dDUnit -Cr- -CO- -Ct-"/>
     </Other>
   </CompilerOptions>
   <Debugging>

@@ -105,6 +105,18 @@ type
     Header:TDXFHeaderInfo;
     LocalEntityFlags:TLocalEntityFlags;
 
+    { Карты ремаппинга хэндлов для сырых (raw) сущностей ACAD_TABLE
+      (issue #1339). При сохранении ACAD_TABLE пишется дословно, сохраняя
+      старые хэндлы исходного файла, тогда как весь остальной файл
+      перенумеровывается. Эти карты позволяют переписать ссылки сырой
+      сущности на актуальные новые хэндлы:
+        AcadTableOwnerHandle  — новый хэндл владельца (*Model_Space) для 330;
+        BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
+        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342. }
+    AcadTableOwnerHandle:TDWGHandle;
+    BlockNameHandleMap:TString2StringDictionary;
+    TableStyleNameHandleMap:TString2StringDictionary;
+
     procedure InitRec;
     procedure Done;
   end;
@@ -364,12 +376,18 @@ begin
   VarsDict:=TString2StringDictionary.create;
   handle := $2;
 
+  AcadTableOwnerHandle:=0;
+  BlockNameHandleMap:=TString2StringDictionary.create;
+  TableStyleNameHandleMap:=TString2StringDictionary.create;
+
   Header.InitRec;
 end;
 procedure TIODXFSaveContext.Done;
 begin
   p2h.Free;
   VarsDict.Free;
+  BlockNameHandleMap.Free;
+  TableStyleNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;

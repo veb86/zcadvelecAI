@@ -33,6 +33,7 @@ uses
   uzegeometry,
   uzegeometrytypes,
   uzeentity,
+  uzesnap,
   UGDBSelectedObjArray,
   UGDBControlPointArray,
   uzglviewareadata,
@@ -64,6 +65,17 @@ type
     // issue #1317: сохранение AcadTable в DXF должно писать структурированные
     // ACAD_TABLE-сущности, включая части-продолжения разделённой таблицы.
     procedure SavesSplitAcadTableToStructuredDXF;
+    // issue #1339: при сохранении сырой (raw) ACAD_TABLE ссылки на хэндлы
+    // (330 владелец, 342 стиль таблицы, 343 анонимный блок) должны
+    // перенумеровываться под актуальный файл, а блок расширенного словаря
+    // (102/ACAD_XDICTIONARY) — удаляться, чтобы не оставлять висячих ссылок.
+    procedure RemapsRawAcadTableHandlesOnSave;
+    // issue #1339: сквозная проверка. Загружаем реальный файл с raw-таблицей,
+    // у которой имя стиля ещё не разрешено (BuildGeometry не выполнялся), и
+    // проверяем, что DXFOut сам разрешает имя стиля по хэндлу и перенумеровывает
+    // ссылку 342 на актуальный хэндл TABLESTYLE, а не оставляет старый хэндл,
+    // который после перенумерации указывал на чужой объект ("aits"/блок).
+    procedure ResolvesRawTableStyleNameAndRemaps342OnDXFOut;
     // issue #1305, часть 1: трансформация (перенос) должна перестраивать
     // визуальное представление таблицы.
     procedure TransformationMovesRenderedTable;
@@ -339,9 +351,9 @@ end;
 procedure CheckAcadTablePointEquals(
   const AExpected, AActual: TzePoint3d; const AMsg: String);
 begin
-  CheckEquals(AExpected.x, AActual.x, 1e-6, AMsg + ' (X)');
-  CheckEquals(AExpected.y, AActual.y, 1e-6, AMsg + ' (Y)');
-  CheckEquals(AExpected.z, AActual.z, 1e-6, AMsg + ' (Z)');
+  TAssert.CheckEquals(AExpected.x, AActual.x, 1e-6, AMsg + ' (X)');
+  TAssert.CheckEquals(AExpected.y, AActual.y, 1e-6, AMsg + ' (Y)');
+  TAssert.CheckEquals(AExpected.z, AActual.z, 1e-6, AMsg + ' (Z)');
 end;
 
 function CountDxfPairs(
@@ -998,6 +1010,154 @@ begin
       CountDxfPairs(
         DXFText, '102', 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY'),
       'Для разделённой таблицы должен сохраняться round-trip XRECORD');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1339. Сырая (raw) ACAD_TABLE из исходного файла сохраняла все
+// исходные хэндлы дословно. После перенумерации файла шаблоном это давало
+// 342 -> чужой стиль (грузился как "aits" вместо "Standard"), висячие 343/360
+// и неверного владельца 330. Проверяем, что при записи ссылки переписываются
+// под актуальную нумерацию, а блок расширенного словаря удаляется.
+procedure TAcadTableStyleTest.RemapsRawAcadTableHandlesOnSave;
+var
+  Raw: TStringList;
+  RawText, DXFText: String;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  Ok: Boolean;
+begin
+  Raw := TStringList.Create;
+  try
+    Raw.Add('0');   Raw.Add('ACAD_TABLE');
+    Raw.Add('5');   Raw.Add('2FF');
+    Raw.Add('102'); Raw.Add('{ACAD_XDICTIONARY');
+    Raw.Add('360'); Raw.Add('357');
+    Raw.Add('102'); Raw.Add('}');
+    Raw.Add('330'); Raw.Add('1F');
+    Raw.Add('100'); Raw.Add('AcDbEntity');
+    Raw.Add('8');   Raw.Add('0');
+    Raw.Add('100'); Raw.Add('AcDbBlockReference');
+    Raw.Add('2');   Raw.Add('*T1');
+    Raw.Add('100'); Raw.Add('AcDbTable');
+    Raw.Add('342'); Raw.Add('87');
+    Raw.Add('343'); Raw.Add('ED');
+    Raw.Add('310'); Raw.Add('ABCDEF');
+    RawText := Raw.Text;
+  finally
+    Raw.Free;
+  end;
+
+  OutStream.init(8 * 1024);
+  SaveContext.InitRec;
+  SaveContext.Header.Version := AC1021;
+  SaveContext.Header.iVersion := 1021;
+  try
+    // Эмулируем состояние, которое savedxf20XX заполняет перед секцией
+    // ENTITIES: новый хэндл владельца и карты имя->новый хэндл.
+    SaveContext.AcadTableOwnerHandle := $123;
+    SaveContext.TableStyleNameHandleMap.Add('Standard', '4A2');
+    SaveContext.BlockNameHandleMap.Add('*T1', '5B3');
+
+    ResetAcadTableDXFWriteState;
+    Ok := WriteRawAcadTablePartsToDXF(
+      OutStream, SaveContext, RawText, [], 0.0, 0.0, 'Standard');
+    DXFText := DxfStreamToText(OutStream);
+  finally
+    ResetAcadTableDXFWriteState;
+    SaveContext.Done;
+    OutStream.done;
+  end;
+
+  CheckTrue(Ok, 'Сырая ACAD_TABLE должна успешно записаться');
+
+  // Висячий расширенный словарь должен быть удалён целиком.
+  CheckEquals(0, Pos('ACAD_XDICTIONARY', DXFText),
+    'Блок 102/ACAD_XDICTIONARY должен удаляться при сохранении');
+  CheckFalse(HasDxfSequence(DXFText, ['360', '357']),
+    'Висячая ссылка 360 на словарь не должна сохраняться');
+
+  // Собственный хэндл сущности (группа 5) не трогаем.
+  CheckTrue(HasDxfSequence(DXFText, ['5', '2FF']),
+    'Собственный хэндл сущности (группа 5) должен сохраняться без изменений');
+
+  // Ссылки перенумерованы под актуальный файл.
+  CheckTrue(HasDxfSequence(DXFText, ['330', '123']),
+    'Владелец (330) должен указывать на новый хэндл *Model_Space');
+  CheckTrue(HasDxfSequence(DXFText, ['342', '4A2']),
+    'Стиль таблицы (342) должен указывать на новый хэндл стиля');
+  CheckTrue(HasDxfSequence(DXFText, ['343', '5B3']),
+    'Анонимный блок (343) должен указывать на новый хэндл BLOCK_RECORD');
+
+  // Старые (исходные) хэндлы ссылок не должны протекать в новый файл.
+  CheckEquals(0, CountDxfPairs(DXFText, '330', '1F'),
+    'Старый владелец 1F не должен оставаться');
+  CheckEquals(0, CountDxfPairs(DXFText, '342', '87'),
+    'Старый хэндл стиля 87 (грузится как "aits") не должен оставаться');
+  CheckEquals(0, CountDxfPairs(DXFText, '343', 'ED'),
+    'Старый хэндл блока ED не должен оставаться');
+
+  // Бинарные данные ячеек должны сохраняться без изменений.
+  CheckTrue(HasDxfSequence(DXFText, ['310', 'ABCDEF']),
+    'Бинарные чанки ячеек (310) должны сохраняться');
+end;
+
+// issue #1339. Сквозная проверка корневой причины. В исходном файле таблица
+// ссылается на стиль "Standard" (342 -> хэндл 87). Загруженная raw-таблица не
+// разрешает имя стиля до BuildGeometry, поэтому FTableStyle.Name пуст. При
+// пакетном "Сохранить как" (без отрисовки) DXFOut обязан сам разрешить имя
+// стиля по хэндлу и перенумеровать 342 на актуальный хэндл TABLESTYLE. Раньше
+// 342 оставался равен 87, который после перенумерации указывал на чужой объект
+// (стиль грузился как "aits"). Проверяем имя стиля и перенумерацию 342.
+procedure TAcadTableStyleTest.ResolvesRawTableStyleNameAndRemaps342OnDXFOut;
+const
+  StandardHandle = 'B8';
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  DXFText: String;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/acadtablerazdel2007_1.dxf'),
+    Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    OutStream.init(64 * 1024);
+    SaveContext.InitRec;
+    SaveContext.Header.Version := AC1021;
+    SaveContext.Header.iVersion := 1021;
+    try
+      // Эмулируем состояние, которое savedxf20XX (PreallocateTableStyleHandles)
+      // заполняет перед секцией ENTITIES: владелец и карты имя->новый хэндл.
+      SaveContext.AcadTableOwnerHandle := $1F;
+      SaveContext.TableStyleNameHandleMap.Add('Standard', StandardHandle);
+      SaveContext.BlockNameHandleMap.Add('*T1', 'A1');
+
+      ResetAcadTableDXFWriteState;
+      AcadTable^.DXFOut(OutStream, Drawing, SaveContext);
+      DXFText := DxfStreamToText(OutStream);
+    finally
+      ResetAcadTableDXFWriteState;
+      SaveContext.Done;
+      OutStream.done;
+    end;
+
+    // DXFOut должен был разрешить имя стиля по хэндлу 87 -> "Standard".
+    CheckEquals('Standard', AcadTable^.TableStyleName,
+      'Имя стиля raw-таблицы должно разрешаться по хэндлу при сохранении');
+
+    // Ссылка 342 должна указывать на актуальный хэндл TABLESTYLE.
+    CheckTrue(HasDxfSequence(DXFText, ['342', StandardHandle]),
+      'Стиль таблицы (342) должен перенумеровываться на хэндл стиля "Standard"');
+
+    // Старый хэндл стиля 87 (после перенумерации — чужой объект) не должен течь.
+    CheckEquals(0, CountDxfPairs(DXFText, '342', '87'),
+      'Старый хэндл стиля 87 не должен оставаться в сохранённой таблице');
   finally
     Drawing.done;
   end;
