@@ -119,6 +119,9 @@
         <UseHeaptrc Value="True"/>
       </Debugging>
     </Linking>
+    <Other>
+      <CustomOptions Value="-dDUnit"/>
+    </Other>
   </CompilerOptions>
   <Debugging>
     <Exceptions Count="3">
