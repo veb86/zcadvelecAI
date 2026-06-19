@@ -95,6 +95,10 @@ type
       чтобы свойства Break spacing/Break height отображались и
       редактировались в инспекторе объектов (issue #1307). }
     function SetTableBreakData(ASpacing,ABreakHeight:double):boolean;virtual;
+    { Passes explicit table break flags read from
+      ACAD_ROUNDTRIP_2008_TABLE_ENTITY. Base implementation does nothing;
+      table entities override it (issue #1339). }
+    procedure SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);virtual;
     { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
       его для round-trip экспорта. Базовая реализация ничего не делает. }
     procedure SetDXFRawEntityText(const ARawText:string);virtual;
@@ -467,6 +471,10 @@ end;
 function GDBObjEntity.SetTableBreakData(ASpacing,ABreakHeight:double):boolean;
 begin
   Result:=false;
+end;
+
+procedure GDBObjEntity.SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);
+begin
 end;
 
 procedure GDBObjEntity.SetDXFRawEntityText(const ARawText:string);
