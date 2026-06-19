@@ -357,18 +357,33 @@ end;
   (issue #1307).
 
   ASpacing/ABreakHeight получают найденные значения, AValid=True,
-  если в блоке найдено хотя бы две группы 40. }
+  если в блоке найдено хотя бы две группы 40.
+
+  Дополнительно из первой группы 90 (BreakOption) извлекаются признаки
+  ручного позиционирования (бит 8) и ручной высоты разбиения (бит 16).
+  AManualPosition/AManualHeight получают эти значения, AFlagsValid=True,
+  если группа 90 найдена (issue #1339). Эвристика по геометрии частей
+  ненадёжна (для acadtablerazdel2007_1 ложно даёт ManualHeight=true),
+  поэтому явные флаги из roundtrip-данных имеют приоритет. }
+const
+  cTableBreakAllowManualPositions = 8;
+  cTableBreakAllowManualHeights   = 16;
+
 procedure ScanTableBreakData(const RawObjectsSection: string;
-  out ASpacing, ABreakHeight: Double; out AValid: Boolean);
+  out ASpacing, ABreakHeight: Double; out AValid: Boolean;
+  out AManualPosition, AManualHeight, AFlagsValid: Boolean);
 var
   Lines: TStringList;
-  I, J, Code, BlockCode, Found: Integer;
+  I, J, Code, BlockCode, Found, Found90, Flags: Integer;
   Value, BlockValue: string;
   V: Extended;
 begin
   ASpacing := 0;
   ABreakHeight := 0;
   AValid := False;
+  AManualPosition := False;
+  AManualHeight := False;
+  AFlagsValid := False;
   if RawObjectsSection = '' then
     Exit;
 
@@ -382,6 +397,7 @@ begin
          (Code = 102) and IsAcadTableRoundtripMarker(Value) then
       begin
         Found := 0;
+        Found90 := 0;
         J := I + 2;
         while J < Lines.Count - 1 do
         begin
@@ -389,6 +405,17 @@ begin
           begin
             if (BlockCode = 0) or (BlockCode = 361) then
               Break
+            else if (BlockCode = 90) and (Found90 = 0) then
+            begin
+              { Первая группа 90 — флаги BreakOption. }
+              Flags := StrToIntDef(Trim(BlockValue), 0);
+              AManualPosition :=
+                (Flags and cTableBreakAllowManualPositions) <> 0;
+              AManualHeight :=
+                (Flags and cTableBreakAllowManualHeights) <> 0;
+              AFlagsValid := True;
+              Inc(Found90);
+            end
             else if (BlockCode = 40) and (Found < 2) then
             begin
               { DXF использует точку как десятичный разделитель }
@@ -417,10 +444,12 @@ begin
       Inc(I);
     end;
 
-    if AValid then
+    if AValid or AFlagsValid then
       programlog.LogOutFormatStr(
-        'uzeffdxf: ScanTableBreakData: spacing=%g breakheight=%g',
-        [ASpacing, ABreakHeight], LM_Info);
+        'uzeffdxf: ScanTableBreakData: spacing=%g breakheight=%g ' +
+        'manualPos=%d manualHeight=%d flagsValid=%d',
+        [ASpacing, ABreakHeight, Ord(AManualPosition),
+         Ord(AManualHeight), Ord(AFlagsValid)], LM_Info);
   finally
     Lines.Free;
   end;
@@ -800,6 +829,13 @@ begin
           if context.TableBreakDataValid then
             pLastMainTable^.SetTableBreakData(
               context.TableBreakSpacing, context.TableBreakHeight);
+          { Явные флаги ручного позиционирования/высоты из roundtrip-данных
+            имеют приоритет над эвристикой по геометрии частей (issue #1339).
+            Вызывается после SetTableBreakData, т.к. тот запускает эвристику. }
+          if context.TableBreakFlagsValid then
+            pLastMainTable^.SetBreakOptionFlags(
+              context.TableBreakManualPosition,
+              context.TableBreakManualHeight);
         end;
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
@@ -1750,7 +1786,10 @@ begin
           dwgCtx.PDrawing^.RawObjectsSection,
           fileCtx.TableBreakSpacing,
           fileCtx.TableBreakHeight,
-          fileCtx.TableBreakDataValid);
+          fileCtx.TableBreakDataValid,
+          fileCtx.TableBreakManualPosition,
+          fileCtx.TableBreakManualHeight,
+          fileCtx.TableBreakFlagsValid);
 
         lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
         case fileCtx.Header.Version of

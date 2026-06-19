@@ -91,6 +91,7 @@ function WriteRawAcadTablePartsToDXF(
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
   ABreakSpacing, ABreakHeight: Double;
+  ABreakManualPosition, ABreakManualHeight: Boolean;
   const ATableStyleName: String): Boolean;
 
 procedure WriteAcadTableRoundTripObjectsToDXF(
@@ -109,6 +110,12 @@ type
     ContinuationHandles: array of TDWGHandle;
     BreakSpacing: Double;
     BreakHeight: Double;
+    { Признаки ручного управления разрывами (issue #1339). Влияют на
+      BreakOption-флаг (первая группа 90) в ACAD_ROUNDTRIP_2008_TABLE_ENTITY:
+        8  (AllowManualPositions) <- BreakManualPosition,
+        16 (AllowManualHeights)   <- BreakManualHeight. }
+    BreakManualPosition: Boolean;
+    BreakManualHeight: Boolean;
   end;
 
 var
@@ -409,7 +416,8 @@ end;
 procedure AddRoundTripRecord(
   AMainHandle: TDWGHandle;
   const AContinuationHandles: array of TDWGHandle;
-  ABreakSpacing, ABreakHeight: Double);
+  ABreakSpacing, ABreakHeight: Double;
+  ABreakManualPosition, ABreakManualHeight: Boolean);
 var
   RecIdx, HandleIdx: Integer;
 begin
@@ -421,6 +429,8 @@ begin
   RoundTripRecords[RecIdx].MainHandle := AMainHandle;
   RoundTripRecords[RecIdx].BreakSpacing := ABreakSpacing;
   RoundTripRecords[RecIdx].BreakHeight := ABreakHeight;
+  RoundTripRecords[RecIdx].BreakManualPosition := ABreakManualPosition;
+  RoundTripRecords[RecIdx].BreakManualHeight := ABreakManualHeight;
   System.SetLength(
     RoundTripRecords[RecIdx].ContinuationHandles,
     Length(AContinuationHandles));
@@ -620,7 +630,8 @@ begin
   end;
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
-    AMainPart.BreakSpacing, AMainPart.BreakHeight);
+    AMainPart.BreakSpacing, AMainPart.BreakHeight,
+    AMainPart.BreakManualPosition, AMainPart.BreakManualHeight);
 end;
 
 function WriteRawAcadTablePartsToDXF(
@@ -629,6 +640,7 @@ function WriteRawAcadTablePartsToDXF(
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
   ABreakSpacing, ABreakHeight: Double;
+  ABreakManualPosition, ABreakManualHeight: Boolean;
   const ATableStyleName: String): Boolean;
 var
   MainHandle: TDWGHandle;
@@ -659,7 +671,8 @@ begin
   end;
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
-    ABreakSpacing, ABreakHeight);
+    ABreakSpacing, ABreakHeight,
+    ABreakManualPosition, ABreakManualHeight);
   Result := True;
 end;
 
@@ -667,11 +680,26 @@ procedure WriteRoundTripRecordToDXF(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ARecord: TAcadTableRoundTripRecord);
+const
+  { Базовые биты BreakOption: EnableBreaks(1) + RepeatTopLabels(2) = 3. }
+  cTableBreakBaseFlags = 3;
+  cTableBreakAllowManualPositions = 8;
+  cTableBreakAllowManualHeights = 16;
 var
   ObjectHandle: TDWGHandle;
   HandleIdx: Integer;
+  BreakOptionFlags: Integer;
 begin
   ObjectHandle := NextAnonymousHandle(AIODXFContext);
+
+  { Восстанавливаем BreakOption-флаг из признаков ручного управления
+    разрывами (issue #1339). Раньше здесь была жёстко зашита 3, из-за чего
+    при пересохранении терялись AllowManualPositions/AllowManualHeights. }
+  BreakOptionFlags := cTableBreakBaseFlags;
+  if ARecord.BreakManualPosition then
+    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualPositions;
+  if ARecord.BreakManualHeight then
+    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualHeights;
 
   dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
   dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(ObjectHandle, 0));
@@ -683,7 +711,7 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 360,
     IntToHex(ARecord.MainHandle, 0));
   dxfIntegerout(AOutStream, 70, 1);
-  dxfIntegerout(AOutStream, 90, 3);
+  dxfIntegerout(AOutStream, 90, BreakOptionFlags);
   dxfIntegerout(AOutStream, 90, 1);
   dxfDoubleout(AOutStream, 40, ARecord.BreakSpacing);
   dxfIntegerout(AOutStream, 90, 2);
