@@ -1237,9 +1237,9 @@ AcDbViewportTableRecord
 21
 1.0
 12
-103.361441810349
+97.9515248890858
 22
-19.1248656571599
+19.8882519201108
 13
 0
 23
@@ -1265,7 +1265,7 @@ AcDbViewportTableRecord
 37
 0
 40
-32.4792344919282
+19.9995286280346
 41
 1.57978723404255
 42
@@ -2057,7 +2057,7 @@ ByLayer
 71
 5
 1
-
+Zagolovok
 7
 newtext
 11
@@ -2105,7 +2105,7 @@ ByLayer
 71
 5
 1
-
+A
 7
 Standard
 11
@@ -2153,7 +2153,7 @@ ByLayer
 71
 5
 1
-
+B
 7
 Standard
 11
@@ -2201,7 +2201,7 @@ ByLayer
 71
 5
 1
-
+C
 7
 Standard
 11
@@ -2249,7 +2249,7 @@ ByLayer
 71
 5
 1
-
+D
 7
 Standard
 11
@@ -2297,7 +2297,7 @@ ByLayer
 71
 5
 1
-
+E
 7
 Standard
 11
@@ -2345,7 +2345,7 @@ ByLayer
 71
 3
 1
-
+1
 7
 newtext
 11
@@ -2393,7 +2393,7 @@ ByLayer
 71
 3
 1
-
+2
 7
 newtext
 11
@@ -2441,7 +2441,7 @@ ByLayer
 71
 3
 1
-
+3
 7
 newtext
 11
@@ -2489,7 +2489,7 @@ ByLayer
 71
 3
 1
-
+4
 7
 newtext
 11
@@ -2537,7 +2537,7 @@ ByLayer
 71
 3
 1
-
+5
 7
 newtext
 11
@@ -2585,7 +2585,7 @@ ByLayer
 71
 3
 1
-
+6
 7
 newtext
 11
@@ -2633,7 +2633,7 @@ ByLayer
 71
 3
 1
-
+7
 7
 newtext
 11
@@ -2681,7 +2681,7 @@ ByLayer
 71
 3
 1
-
+8
 7
 newtext
 11
@@ -2729,7 +2729,7 @@ ByLayer
 71
 3
 1
-
+9
 7
 newtext
 11
@@ -2777,7 +2777,7 @@ ByLayer
 71
 3
 1
-
+0
 7
 newtext
 11
@@ -2825,7 +2825,7 @@ ByLayer
 71
 5
 1
-
+F
 7
 Standard
 11
@@ -2873,7 +2873,7 @@ ByLayer
 71
 5
 1
-
+G
 7
 Standard
 11
@@ -2921,7 +2921,7 @@ ByLayer
 71
 5
 1
-
+H
 7
 Standard
 11
@@ -2969,7 +2969,7 @@ ByLayer
 71
 5
 1
-
+SS
 7
 Standard
 11
@@ -3017,7 +3017,7 @@ ByLayer
 71
 5
 1
-
+FF
 7
 Standard
 11
@@ -3065,7 +3065,7 @@ ByLayer
 71
 5
 1
-
+Zagolovok
 7
 newtext
 11
@@ -3113,7 +3113,7 @@ ByLayer
 71
 5
 1
-
+A
 7
 Standard
 11
@@ -3161,7 +3161,7 @@ ByLayer
 71
 5
 1
-
+B
 7
 Standard
 11
@@ -3209,7 +3209,7 @@ ByLayer
 71
 5
 1
-
+C
 7
 Standard
 11
@@ -3257,7 +3257,7 @@ ByLayer
 71
 5
 1
-
+D
 7
 Standard
 11
@@ -3305,7 +3305,7 @@ ByLayer
 71
 5
 1
-
+E
 7
 Standard
 11
@@ -3353,7 +3353,7 @@ ByLayer
 71
 3
 1
-
+11
 7
 newtext
 11
@@ -3401,7 +3401,7 @@ ByLayer
 71
 3
 1
-
+12
 7
 newtext
 11
@@ -3449,7 +3449,7 @@ ByLayer
 71
 3
 1
-
+13
 7
 newtext
 11
@@ -3497,7 +3497,7 @@ ByLayer
 71
 3
 1
-
+14
 7
 newtext
 11
@@ -3545,7 +3545,7 @@ ByLayer
 71
 3
 1
-
+15
 7
 newtext
 11
@@ -3593,7 +3593,7 @@ ByLayer
 71
 5
 1
-
+Zagolovok
 7
 newtext
 11
@@ -3641,7 +3641,7 @@ ByLayer
 71
 5
 1
-
+A
 7
 Standard
 11
@@ -3689,7 +3689,7 @@ ByLayer
 71
 5
 1
-
+B
 7
 Standard
 11
@@ -3737,7 +3737,7 @@ ByLayer
 71
 5
 1
-
+C
 7
 Standard
 11
@@ -3785,7 +3785,7 @@ ByLayer
 71
 5
 1
-
+D
 7
 Standard
 11
@@ -3833,7 +3833,7 @@ ByLayer
 71
 5
 1
-
+E
 7
 Standard
 11
@@ -5369,7 +5369,7 @@ ByLayer
 71
 5
 1
-
+Zagolovok
 7
 newtext
 11
@@ -5417,7 +5417,7 @@ ByLayer
 71
 5
 1
-
+A
 7
 Standard
 11
@@ -5465,7 +5465,7 @@ ByLayer
 71
 5
 1
-
+B
 7
 Standard
 11
@@ -5513,7 +5513,7 @@ ByLayer
 71
 5
 1
-
+C
 7
 Standard
 11
@@ -5561,7 +5561,7 @@ ByLayer
 71
 5
 1
-
+D
 7
 Standard
 11
@@ -5609,7 +5609,7 @@ ByLayer
 71
 5
 1
-
+E
 7
 Standard
 11
@@ -5657,7 +5657,7 @@ ByLayer
 71
 3
 1
-
+11
 7
 newtext
 11
@@ -5705,7 +5705,7 @@ ByLayer
 71
 3
 1
-
+12
 7
 newtext
 11
@@ -5753,7 +5753,7 @@ ByLayer
 71
 3
 1
-
+13
 7
 newtext
 11
@@ -5801,7 +5801,7 @@ ByLayer
 71
 3
 1
-
+14
 7
 newtext
 11
@@ -5849,7 +5849,7 @@ ByLayer
 71
 3
 1
-
+15
 7
 newtext
 11
@@ -6405,7 +6405,7 @@ ByLayer
 71
 5
 1
-
+Zagolovok
 7
 newtext
 11
@@ -6453,7 +6453,7 @@ ByLayer
 71
 5
 1
-
+A
 7
 Standard
 11
@@ -6501,7 +6501,7 @@ ByLayer
 71
 5
 1
-
+B
 7
 Standard
 11
@@ -6549,7 +6549,7 @@ ByLayer
 71
 5
 1
-
+C
 7
 Standard
 11
@@ -6597,7 +6597,7 @@ ByLayer
 71
 5
 1
-
+D
 7
 Standard
 11
@@ -6645,7 +6645,7 @@ ByLayer
 71
 5
 1
-
+E
 7
 Standard
 11
