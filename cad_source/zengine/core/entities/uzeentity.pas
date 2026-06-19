@@ -102,6 +102,9 @@ type
     { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
       его для round-trip экспорта. Базовая реализация ничего не делает. }
     procedure SetDXFRawEntityText(const ARawText:string);virtual;
+    { Передаёт сущности исходное поддерево расширенного словаря DXF-entity
+      для round-trip экспорта. Базовая реализация ничего не делает. }
+    procedure SetDXFRawExtDictSubtree(const ARawText,ARawTextStyleHandleMap:string);virtual;
     procedure postload(var context:TIODXFLoadContext);virtual;
     procedure createfield;virtual;
     function AddExtAttrib:PTExtAttrib;
@@ -478,6 +481,10 @@ begin
 end;
 
 procedure GDBObjEntity.SetDXFRawEntityText(const ARawText:string);
+begin
+end;
+
+procedure GDBObjEntity.SetDXFRawExtDictSubtree(const ARawText,ARawTextStyleHandleMap:string);
 begin
 end;
 

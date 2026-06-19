@@ -90,6 +90,7 @@ function WriteRawAcadTablePartsToDXF(
   var AIODXFContext: TIODXFSaveContext;
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
+  const AMainExtDictSubtree, ARawTextStyleHandleMap: String;
   ABreakSpacing, ABreakHeight: Double;
   ABreakManualPosition, ABreakManualHeight: Boolean;
   const ATableStyleName: String): Boolean;
@@ -105,9 +106,23 @@ uses
   SysUtils, Classes, uzeffdxfout;
 
 type
+  TAcadTableHandleRemap = record
+    OldHandle: String;
+    NewHandle: String;
+  end;
+
+  TAcadTableHandleRemapArray = array of TAcadTableHandleRemap;
+
   TAcadTableRoundTripRecord = record
     MainHandle: TDWGHandle;
     ContinuationHandles: array of TDWGHandle;
+    RawExtDictSubtree: String;
+    RawExtDictSubtreeValid: Boolean;
+    RawTextStyleHandleMap: String;
+    HandleRemaps: TAcadTableHandleRemapArray;
+    ExtDictHandleNew: String;
+    MainTableStyleHandle: String;
+    TableStyleName: String;
     BreakSpacing: Double;
     BreakHeight: Double;
     { Признаки ручного управления разрывами (issue #1339). Влияют на
@@ -126,7 +141,12 @@ var
   I: Integer;
 begin
   for I := 0 to High(RoundTripRecords) do
+  begin
     System.SetLength(RoundTripRecords[I].ContinuationHandles, 0);
+    System.SetLength(RoundTripRecords[I].HandleRemaps, 0);
+    RoundTripRecords[I].RawExtDictSubtree := '';
+    RoundTripRecords[I].RawTextStyleHandleMap := '';
+  end;
   System.SetLength(RoundTripRecords, 0);
 end;
 
@@ -413,24 +433,42 @@ begin
         RowIdx, ColIdx);
 end;
 
+function NormalizeRawHandle(const S: String): String; forward;
+
 procedure AddRoundTripRecord(
   AMainHandle: TDWGHandle;
   const AContinuationHandles: array of TDWGHandle;
+  const ARawExtDictSubtree, ARawTextStyleHandleMap: String;
+  const AHandleRemaps: TAcadTableHandleRemapArray;
+  const AExtDictHandleNew, AMainTableStyleHandle, ATableStyleName: String;
   ABreakSpacing, ABreakHeight: Double;
   ABreakManualPosition, ABreakManualHeight: Boolean);
 var
   RecIdx, HandleIdx: Integer;
 begin
-  if Length(AContinuationHandles) = 0 then
+  if (Length(AContinuationHandles) = 0) and (ARawExtDictSubtree = '') then
     Exit;
 
   RecIdx := Length(RoundTripRecords);
   System.SetLength(RoundTripRecords, RecIdx + 1);
   RoundTripRecords[RecIdx].MainHandle := AMainHandle;
+  RoundTripRecords[RecIdx].RawExtDictSubtree := ARawExtDictSubtree;
+  RoundTripRecords[RecIdx].RawExtDictSubtreeValid := ARawExtDictSubtree <> '';
+  RoundTripRecords[RecIdx].RawTextStyleHandleMap := ARawTextStyleHandleMap;
+  RoundTripRecords[RecIdx].ExtDictHandleNew := NormalizeRawHandle(AExtDictHandleNew);
+  RoundTripRecords[RecIdx].MainTableStyleHandle :=
+    NormalizeRawHandle(AMainTableStyleHandle);
+  RoundTripRecords[RecIdx].TableStyleName := ATableStyleName;
   RoundTripRecords[RecIdx].BreakSpacing := ABreakSpacing;
   RoundTripRecords[RecIdx].BreakHeight := ABreakHeight;
   RoundTripRecords[RecIdx].BreakManualPosition := ABreakManualPosition;
   RoundTripRecords[RecIdx].BreakManualHeight := ABreakManualHeight;
+  System.SetLength(
+    RoundTripRecords[RecIdx].HandleRemaps,
+    Length(AHandleRemaps));
+  for HandleIdx := 0 to High(AHandleRemaps) do
+    RoundTripRecords[RecIdx].HandleRemaps[HandleIdx] :=
+      AHandleRemaps[HandleIdx];
   System.SetLength(
     RoundTripRecords[RecIdx].ContinuationHandles,
     Length(AContinuationHandles));
@@ -481,19 +519,243 @@ begin
     AIODXFContext.handle := AHandle + 1;
 end;
 
+function NormalizeRawHandle(const S: String): String;
+var
+  I: Integer;
+begin
+  Result := UpperCase(Trim(S));
+  I := 1;
+  while (I < Length(Result)) and (Result[I] = '0') do
+    Inc(I);
+  if I > 1 then
+    Result := Copy(Result, I, Length(Result) - I + 1);
+end;
+
+function RawDxfGroupValue(
+  const ARawText, AGroupCode: String; out AValue: String): Boolean;
+var
+  Lines: TStringList;
+  I: Integer;
+begin
+  Result := False;
+  AValue := '';
+  if ARawText = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawText;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if Trim(Lines[I]) = AGroupCode then
+      begin
+        AValue := NormalizeRawHandle(Lines[I + 1]);
+        Result := AValue <> '';
+        Exit;
+      end;
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function RawAcadTableExtDictHandle(
+  const ARawEntity: String; out AHandle: String): Boolean;
+var
+  Lines: TStringList;
+  I: Integer;
+  Code, Value: String;
+  InExtDict: Boolean;
+begin
+  Result := False;
+  AHandle := '';
+  if ARawEntity = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawEntity;
+    InExtDict := False;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      Code := Trim(Lines[I]);
+      Value := Trim(Lines[I + 1]);
+
+      if (Code = '102') and (Value = '{ACAD_XDICTIONARY') then
+        InExtDict := True
+      else if InExtDict and (Code = '102') and (Value = '}') then
+        Break
+      else if InExtDict and (Code = '360') then
+      begin
+        AHandle := NormalizeRawHandle(Value);
+        Result := AHandle <> '';
+        Break;
+      end;
+
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure AddHandleRemap(
+  var AHandleRemaps: TAcadTableHandleRemapArray;
+  const AOldHandle, ANewHandle: String);
+var
+  Idx: Integer;
+begin
+  if (AOldHandle = '') or (ANewHandle = '') then
+    Exit;
+
+  Idx := Length(AHandleRemaps);
+  System.SetLength(AHandleRemaps, Idx + 1);
+  AHandleRemaps[Idx].OldHandle := NormalizeRawHandle(AOldHandle);
+  AHandleRemaps[Idx].NewHandle := NormalizeRawHandle(ANewHandle);
+end;
+
+function FindHandleRemap(
+  const AHandleRemaps: TAcadTableHandleRemapArray;
+  const AOldHandle: String; out ANewHandle: String): Boolean;
+var
+  Idx: Integer;
+  OldHandle: String;
+begin
+  Result := False;
+  ANewHandle := '';
+  OldHandle := NormalizeRawHandle(AOldHandle);
+  for Idx := 0 to High(AHandleRemaps) do
+    if AHandleRemaps[Idx].OldHandle = OldHandle then
+    begin
+      ANewHandle := AHandleRemaps[Idx].NewHandle;
+      Result := ANewHandle <> '';
+      Exit;
+    end;
+end;
+
+function CollectRawExtDictHandleRemaps(
+  const ARawObjects, AExtDictHandleOld: String;
+  var AIODXFContext: TIODXFSaveContext;
+  out AHandleRemaps: TAcadTableHandleRemapArray;
+  out AExtDictHandleNew: String): Boolean;
+var
+  Lines: TStringList;
+  I, J, K, ObjectStart, ObjectEnd: Integer;
+  OldHandle, NewHandle: String;
+  NewHandleValue: TDWGHandle;
+begin
+  Result := False;
+  AExtDictHandleNew := '';
+  System.SetLength(AHandleRemaps, 0);
+  if ARawObjects = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawObjects;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if Trim(Lines[I]) = '0' then
+      begin
+        ObjectStart := I;
+        ObjectEnd := Lines.Count;
+        J := I + 2;
+        while J < Lines.Count - 1 do
+        begin
+          if Trim(Lines[J]) = '0' then
+          begin
+            ObjectEnd := J;
+            Break;
+          end;
+          Inc(J, 2);
+        end;
+
+        OldHandle := '';
+        K := ObjectStart + 2;
+        while K < ObjectEnd - 1 do
+        begin
+          if Trim(Lines[K]) = '5' then
+          begin
+            OldHandle := NormalizeRawHandle(Lines[K + 1]);
+            Break;
+          end;
+          Inc(K, 2);
+        end;
+
+        if OldHandle <> '' then
+        begin
+          NewHandleValue := NextAnonymousHandle(AIODXFContext);
+          NewHandle := IntToHex(NewHandleValue, 0);
+          AddHandleRemap(AHandleRemaps, OldHandle, NewHandle);
+          if OldHandle = NormalizeRawHandle(AExtDictHandleOld) then
+            AExtDictHandleNew := NewHandle;
+        end;
+
+        I := ObjectEnd;
+        Continue;
+      end;
+      Inc(I);
+    end;
+  finally
+    Lines.Free;
+  end;
+
+  Result := (Length(AHandleRemaps) > 0) and (AExtDictHandleNew <> '');
+end;
+
+function DxfRawDoubleString(const AValue: Double): String;
+begin
+  Str(AValue:10:10, Result);
+end;
+
+function AcadTableBreakOptionFlags(
+  ABreakManualPosition, ABreakManualHeight: Boolean): Integer;
+const
+  { Базовые биты BreakOption: EnableBreaks(1) + RepeatTopLabels(2) = 3. }
+  cTableBreakBaseFlags = 3;
+  cTableBreakAllowManualPositions = 8;
+  cTableBreakAllowManualHeights = 16;
+begin
+  Result := cTableBreakBaseFlags;
+  if ABreakManualPosition then
+    Result := Result or cTableBreakAllowManualPositions;
+  if ABreakManualHeight then
+    Result := Result or cTableBreakAllowManualHeights;
+end;
+
+function IsHandleCode(const ACode: String): Boolean;
+begin
+  Result :=
+    (ACode = '5') or (ACode = '330') or (ACode = '340') or
+    (ACode = '350') or (ACode = '360') or (ACode = '361');
+end;
+
+function IsAcadTableRoundTripMarkerValue(const AValue: String): Boolean;
+begin
+  Result :=
+    UpperCase(Trim(AValue)) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY';
+end;
+
 // Записывает сырую (raw) сущность ACAD_TABLE, переписывая ссылки на хэндлы
 // под актуальную (перенумерованную) нумерацию сохраняемого файла (issue #1339):
 //   330 — владелец сущности (*Model_Space);
 //   342 — стиль таблицы (по имени стиля ATableStyleName);
 //   343 — анонимный блок таблицы (по имени блока из предшествующей пары 2);
-//   блок расширенного словаря 102/ACAD_XDICTIONARY удаляется, т.к. он не
-//        круглорейсится и иначе оставляет висячую ссылку (360).
+//   102/ACAD_XDICTIONARY — либо переписывается на новый хэндл сохранённого
+//        поддерева TABLECONTENT/TABLEGEOMETRY, либо удаляется, чтобы не
+//        оставить висячую ссылку (360).
 // Хэндл самой сущности (группа 5) намеренно не трогаем.
 procedure WriteRawEntityText(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ATableStyleName: String;
-  const ARawEntity: String);
+  const ARawEntity: String;
+  AKeepExtDict: Boolean;
+  const AExtDictHandleNew: String);
 var
   Lines: TStringList;
   I: Integer;
@@ -512,6 +774,28 @@ begin
       if (Code = '102') and (I + 1 < Lines.Count)
          and (Trim(Lines[I + 1]) = '{ACAD_XDICTIONARY') then
       begin
+        if AKeepExtDict and (AExtDictHandleNew <> '') then
+        begin
+          AOutStream.TXTAddStringEOL(Lines[I]);
+          AOutStream.TXTAddStringEOL(Lines[I + 1]);
+          Inc(I, 2);
+          while I + 1 < Lines.Count do
+          begin
+            Code := Trim(Lines[I]);
+            OutValue := Lines[I + 1];
+            if Code = '360' then
+              OutValue := AExtDictHandleNew;
+            AOutStream.TXTAddStringEOL(Lines[I]);
+            AOutStream.TXTAddStringEOL(OutValue);
+            Inc(I, 2);
+            if (Code = '102') and (Trim(OutValue) = '}') then
+              Break;
+          end;
+          Continue;
+        end;
+
+        { Нет сохранённого поддерева — удаляем блок расширенного словаря
+          целиком (вместе с висячим 360). }
         Inc(I, 2);
         while I + 1 < Lines.Count do
         begin
@@ -566,6 +850,141 @@ begin
   end;
 end;
 
+function RemapRawExtDictHandleValue(
+  var AIODXFContext: TIODXFSaveContext;
+  const ARecord: TAcadTableRoundTripRecord;
+  const ACode, AValue: String;
+  ATextStyleHandleNames: TStringList;
+  out AOutValue: String): Boolean;
+var
+  NormalizedValue, MappedValue, StyleName: String;
+  TextStyleIdx: Integer;
+begin
+  Result := False;
+  AOutValue := AValue;
+  NormalizedValue := NormalizeRawHandle(AValue);
+  if NormalizedValue = '' then
+    Exit;
+
+  if FindHandleRemap(
+    ARecord.HandleRemaps, NormalizedValue, MappedValue) then
+  begin
+    AOutValue := MappedValue;
+    Result := True;
+    Exit;
+  end;
+
+  if ACode <> '340' then
+    Exit;
+
+  if (ARecord.MainTableStyleHandle <> '') and
+     (NormalizedValue = ARecord.MainTableStyleHandle) and
+     (ARecord.TableStyleName <> '') and
+     AIODXFContext.TableStyleNameHandleMap.MyGetValue(
+       ARecord.TableStyleName, MappedValue) then
+  begin
+    AOutValue := MappedValue;
+    Result := True;
+    Exit;
+  end;
+
+  if ATextStyleHandleNames <> nil then
+  begin
+    TextStyleIdx := ATextStyleHandleNames.IndexOfName(NormalizedValue);
+    if TextStyleIdx >= 0 then
+    begin
+      StyleName := ATextStyleHandleNames.ValueFromIndex[TextStyleIdx];
+      if (StyleName <> '') and
+         AIODXFContext.TextStyleNameHandleMap.MyGetValue(
+           StyleName, MappedValue) then
+      begin
+        AOutValue := MappedValue;
+        Result := True;
+      end;
+    end;
+  end;
+end;
+
+procedure WriteRawExtDictSubtreeToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ARecord: TAcadTableRoundTripRecord);
+var
+  Lines, TextStyleHandleNames: TStringList;
+  I, BreakDoubleCount, BreakOptionFlags: Integer;
+  Code, OutValue: String;
+  InRoundTripBlock, BreakOptionWritten: Boolean;
+begin
+  if (not ARecord.RawExtDictSubtreeValid) or
+     (ARecord.RawExtDictSubtree = '') then
+    Exit;
+
+  Lines := TStringList.Create;
+  TextStyleHandleNames := TStringList.Create;
+  try
+    Lines.Text := ARecord.RawExtDictSubtree;
+    TextStyleHandleNames.CaseSensitive := False;
+    TextStyleHandleNames.Text := ARecord.RawTextStyleHandleMap;
+
+    InRoundTripBlock := False;
+    BreakOptionWritten := False;
+    BreakDoubleCount := 0;
+    BreakOptionFlags := AcadTableBreakOptionFlags(
+      ARecord.BreakManualPosition, ARecord.BreakManualHeight);
+
+    I := 0;
+    while I < Lines.Count do
+    begin
+      if I + 1 >= Lines.Count then
+      begin
+        AOutStream.TXTAddStringEOL(Lines[I]);
+        Inc(I);
+        Continue;
+      end;
+
+      Code := Trim(Lines[I]);
+      OutValue := Lines[I + 1];
+
+      if Code = '0' then
+        InRoundTripBlock := False;
+
+      if IsHandleCode(Code) then
+        RemapRawExtDictHandleValue(
+          AIODXFContext, ARecord, Code, OutValue,
+          TextStyleHandleNames, OutValue);
+
+      if (Code = '102') and IsAcadTableRoundTripMarkerValue(OutValue) then
+      begin
+        InRoundTripBlock := True;
+        BreakOptionWritten := False;
+        BreakDoubleCount := 0;
+      end
+      else if InRoundTripBlock and (Code = '90') and
+              (not BreakOptionWritten) then
+      begin
+        OutValue := IntToStr(BreakOptionFlags);
+        BreakOptionWritten := True;
+      end
+      else if InRoundTripBlock and (Code = '40') and
+              (BreakDoubleCount < 2) then
+      begin
+        if BreakDoubleCount = 0 then
+          OutValue := DxfRawDoubleString(ARecord.BreakSpacing)
+        else
+          OutValue := DxfRawDoubleString(ARecord.BreakHeight);
+        Inc(BreakDoubleCount);
+      end;
+
+      AOutStream.TXTAddStringEOL(Lines[I]);
+      AOutStream.TXTAddStringEOL(OutValue);
+      Inc(I, 2);
+    end;
+  finally
+    TextStyleHandleNames.Free;
+    Lines.Free;
+  end;
+end;
+
 procedure WriteAcadTablePartToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
@@ -610,6 +1029,7 @@ var
   MainHandle: TDWGHandle;
   ContinuationHandles: array of TDWGHandle;
   ContinuationHandle: TDWGHandle;
+  EmptyHandleRemaps: TAcadTableHandleRemapArray;
   PartIdx: Integer;
 begin
   if Length(AParts) = 0 then
@@ -629,7 +1049,9 @@ begin
     ContinuationHandles[PartIdx] := ContinuationHandle;
   end;
 
+  System.SetLength(EmptyHandleRemaps, 0);
   AddRoundTripRecord(MainHandle, ContinuationHandles,
+    '', '', EmptyHandleRemaps, '', '', '',
     AMainPart.BreakSpacing, AMainPart.BreakHeight,
     AMainPart.BreakManualPosition, AMainPart.BreakManualHeight);
 end;
@@ -639,6 +1061,7 @@ function WriteRawAcadTablePartsToDXF(
   var AIODXFContext: TIODXFSaveContext;
   const AMainRawEntity: String;
   const AContinuationRawEntities: array of String;
+  const AMainExtDictSubtree, ARawTextStyleHandleMap: String;
   ABreakSpacing, ABreakHeight: Double;
   ABreakManualPosition, ABreakManualHeight: Boolean;
   const ATableStyleName: String): Boolean;
@@ -646,6 +1069,11 @@ var
   MainHandle: TDWGHandle;
   ContinuationHandles: array of TDWGHandle;
   PartIdx: Integer;
+  MainExtDictHandleOld, MainExtDictHandleNew: String;
+  MainTableStyleHandle: String;
+  HandleRemaps: TAcadTableHandleRemapArray;
+  PreserveExtDict: Boolean;
+  RawExtDictSubtreeToWrite, RawTextStyleMapToWrite: String;
 begin
   Result := False;
   if not RawAcadTableHandle(AMainRawEntity, MainHandle) then
@@ -658,21 +1086,49 @@ begin
       ContinuationHandles[PartIdx]) then
       Exit;
 
-  WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-    AMainRawEntity);
   BumpHandleAfterRawEntity(AIODXFContext, MainHandle);
+  for PartIdx := 0 to High(ContinuationHandles) do
+    BumpHandleAfterRawEntity(
+      AIODXFContext, ContinuationHandles[PartIdx]);
+
+  RawDxfGroupValue(AMainRawEntity, '342', MainTableStyleHandle);
+  PreserveExtDict := False;
+  MainExtDictHandleOld := '';
+  MainExtDictHandleNew := '';
+  System.SetLength(HandleRemaps, 0);
+  if (AMainExtDictSubtree <> '') and
+     RawAcadTableExtDictHandle(AMainRawEntity, MainExtDictHandleOld) then
+    PreserveExtDict := CollectRawExtDictHandleRemaps(
+      AMainExtDictSubtree, MainExtDictHandleOld, AIODXFContext,
+      HandleRemaps, MainExtDictHandleNew);
+
+  WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
+    AMainRawEntity, PreserveExtDict, MainExtDictHandleNew);
 
   for PartIdx := 0 to High(AContinuationRawEntities) do
   begin
     WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-      AContinuationRawEntities[PartIdx]);
-    BumpHandleAfterRawEntity(
-      AIODXFContext, ContinuationHandles[PartIdx]);
+      AContinuationRawEntities[PartIdx], False, '');
+  end;
+
+  if PreserveExtDict then
+  begin
+    RawExtDictSubtreeToWrite := AMainExtDictSubtree;
+    RawTextStyleMapToWrite := ARawTextStyleHandleMap;
+  end
+  else
+  begin
+    RawExtDictSubtreeToWrite := '';
+    RawTextStyleMapToWrite := '';
   end;
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
+    RawExtDictSubtreeToWrite, RawTextStyleMapToWrite,
+    HandleRemaps, MainExtDictHandleNew, MainTableStyleHandle,
+    ATableStyleName,
     ABreakSpacing, ABreakHeight,
     ABreakManualPosition, ABreakManualHeight);
+  System.SetLength(HandleRemaps, 0);
   Result := True;
 end;
 
@@ -680,26 +1136,25 @@ procedure WriteRoundTripRecordToDXF(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ARecord: TAcadTableRoundTripRecord);
-const
-  { Базовые биты BreakOption: EnableBreaks(1) + RepeatTopLabels(2) = 3. }
-  cTableBreakBaseFlags = 3;
-  cTableBreakAllowManualPositions = 8;
-  cTableBreakAllowManualHeights = 16;
 var
   ObjectHandle: TDWGHandle;
   HandleIdx: Integer;
   BreakOptionFlags: Integer;
 begin
+  if ARecord.RawExtDictSubtreeValid then
+  begin
+    WriteRawExtDictSubtreeToDXF(
+      AOutStream, AIODXFContext, ARecord);
+    Exit;
+  end;
+
   ObjectHandle := NextAnonymousHandle(AIODXFContext);
 
   { Восстанавливаем BreakOption-флаг из признаков ручного управления
     разрывами (issue #1339). Раньше здесь была жёстко зашита 3, из-за чего
     при пересохранении терялись AllowManualPositions/AllowManualHeights. }
-  BreakOptionFlags := cTableBreakBaseFlags;
-  if ARecord.BreakManualPosition then
-    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualPositions;
-  if ARecord.BreakManualHeight then
-    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualHeights;
+  BreakOptionFlags := AcadTableBreakOptionFlags(
+    ARecord.BreakManualPosition, ARecord.BreakManualHeight);
 
   dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
   dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(ObjectHandle, 0));

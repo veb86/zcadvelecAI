@@ -280,6 +280,381 @@ begin
   end;
 end;
 
+procedure AddNameValue(AList: TStringList; const AName, AValue: string);
+var
+  Idx: Integer;
+begin
+  if (AList = nil) or (AName = '') then
+    Exit;
+
+  Idx := AList.IndexOfName(AName);
+  if Idx >= 0 then
+    AList.ValueFromIndex[Idx] := AValue
+  else
+    AList.Add(AName + '=' + AValue);
+end;
+
+function TryGetNameValue(AList: TStringList; const AName: string;
+  out AValue: string): Boolean;
+var
+  Idx: Integer;
+begin
+  Result := False;
+  AValue := '';
+  if (AList = nil) or (AName = '') then
+    Exit;
+
+  Idx := AList.IndexOfName(AName);
+  if Idx < 0 then
+    Exit;
+
+  AValue := AList.ValueFromIndex[Idx];
+  Result := True;
+end;
+
+procedure ScanTextStyleHandleNames(const RawTablesSection: string;
+  AHandleNames: TStringList);
+var
+  Lines: TStringList;
+  I, J, K, Code, ObjectEnd: Integer;
+  Value, Handle, StyleName: string;
+begin
+  if (RawTablesSection = '') or (AHandleNames = nil) then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawTablesSection;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryReadDxfPair(Lines, I, Code, Value) and
+         (Code = 0) and (UpperCase(Trim(Value)) = dxfName_Style) then
+      begin
+        ObjectEnd := Lines.Count;
+        J := I + 2;
+        while J < Lines.Count - 1 do
+        begin
+          if TryReadDxfPair(Lines, J, Code, Value) and (Code = 0) then
+          begin
+            ObjectEnd := J;
+            Break;
+          end;
+          Inc(J, 2);
+        end;
+
+        Handle := '';
+        StyleName := '';
+        K := I + 2;
+        while K < ObjectEnd - 1 do
+        begin
+          if TryReadDxfPair(Lines, K, Code, Value) then
+          begin
+            if Code = 5 then
+              Handle := NormalizeHandle(Value)
+            else if (Code = 2) and (StyleName = '') then
+              StyleName := Trim(Value);
+          end;
+          Inc(K, 2);
+        end;
+
+        if (Handle <> '') and (StyleName <> '') then
+          AddNameValue(AHandleNames, Handle, StyleName);
+
+        I := ObjectEnd;
+        Continue;
+      end;
+      Inc(I);
+    end;
+
+    if AHandleNames.Count > 0 then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanTextStyleHandleNames: найдено %d STYLE handle(s)',
+        [AHandleNames.Count], LM_Info);
+  finally
+    Lines.Free;
+  end;
+end;
+
+function IsAcadTableExtDictObjectType(const ATypeName: string): Boolean;
+var
+  TypeName: string;
+begin
+  TypeName := UpperCase(Trim(ATypeName));
+  Result :=
+    (TypeName = 'DICTIONARY') or
+    (TypeName = 'XRECORD') or
+    (TypeName = 'TABLECONTENT') or
+    (TypeName = 'TABLEGEOMETRY');
+end;
+
+procedure ScanDxfRawObjects(const RawObjectsSection: string;
+  RawObjects, RawObjectTypes: TStringList);
+var
+  Lines: TStringList;
+  I, J, K, Code, ObjectStart, ObjectEnd: Integer;
+  Value, Handle, TypeName, RawText: string;
+begin
+  if (RawObjectsSection = '') or (RawObjects = nil) or
+     (RawObjectTypes = nil) then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawObjectsSection;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryReadDxfPair(Lines, I, Code, Value) and (Code = 0) then
+      begin
+        TypeName := UpperCase(Trim(Value));
+        ObjectStart := I;
+        ObjectEnd := Lines.Count;
+        J := I + 2;
+        while J < Lines.Count - 1 do
+        begin
+          if TryReadDxfPair(Lines, J, Code, Value) and (Code = 0) then
+          begin
+            ObjectEnd := J;
+            Break;
+          end;
+          Inc(J, 2);
+        end;
+
+        if IsAcadTableExtDictObjectType(TypeName) then
+        begin
+          Handle := '';
+          K := ObjectStart + 2;
+          while K < ObjectEnd - 1 do
+          begin
+            if TryReadDxfPair(Lines, K, Code, Value) and (Code = 5) then
+            begin
+              Handle := NormalizeHandle(Value);
+              Break;
+            end;
+            Inc(K, 2);
+          end;
+
+          if Handle <> '' then
+          begin
+            RawText := '';
+            for K := ObjectStart to ObjectEnd - 1 do
+            begin
+              if K > ObjectStart then
+                RawText := RawText + LineEnding;
+              RawText := RawText + Lines[K];
+            end;
+            StoreRawAcadTableEntity(RawObjects, Handle, RawText);
+            AddNameValue(RawObjectTypes, Handle, TypeName);
+          end;
+        end;
+
+        I := ObjectEnd;
+        Continue;
+      end;
+      Inc(I);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function ExtractAcadTableExtDictHandle(const ARawEntity: string;
+  out AExtDictHandle: string): Boolean;
+var
+  Lines: TStringList;
+  I: Integer;
+  Code, Value: string;
+  InExtDict: Boolean;
+begin
+  Result := False;
+  AExtDictHandle := '';
+  if ARawEntity = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ARawEntity;
+    InExtDict := False;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      Code := Trim(Lines[I]);
+      Value := Trim(Lines[I + 1]);
+
+      if (Code = '102') and (Value = '{ACAD_XDICTIONARY') then
+        InExtDict := True
+      else if InExtDict and (Code = '102') and (Value = '}') then
+        Break
+      else if InExtDict and (Code = '360') then
+      begin
+        AExtDictHandle := NormalizeHandle(Value);
+        Result := AExtDictHandle <> '';
+        Break;
+      end;
+
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure AppendRawText(var ADest: string; const AText: string);
+begin
+  if AText = '' then
+    Exit;
+  if ADest <> '' then
+    ADest := ADest + LineEnding;
+  ADest := ADest + AText;
+end;
+
+procedure CollectAcadTableExtDictObject(const AHandle: string;
+  RawObjects, RawObjectTypes, Visited: TStringList; var ARawText: string);
+var
+  Handle, TypeName, ObjText, Value: string;
+  ObjIdx, I, Code: Integer;
+  Lines: TStringList;
+begin
+  Handle := NormalizeHandle(AHandle);
+  if (Handle = '') or (Visited = nil) or (Visited.IndexOf(Handle) >= 0) then
+    Exit;
+  if (RawObjects = nil) or (RawObjectTypes = nil) then
+    Exit;
+
+  ObjIdx := RawObjects.IndexOf(Handle);
+  if ObjIdx < 0 then
+    Exit;
+  if not TryGetNameValue(RawObjectTypes, Handle, TypeName) or
+     (not IsAcadTableExtDictObjectType(TypeName)) then
+    Exit;
+
+  Visited.Add(Handle);
+  ObjText := TDXFRawTextObject(RawObjects.Objects[ObjIdx]).Text;
+  AppendRawText(ARawText, ObjText);
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ObjText;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryReadDxfPair(Lines, I, Code, Value) and
+         ((Code = 350) or (Code = 360) or (Code = 361)) then
+        CollectAcadTableExtDictObject(
+          NormalizeHandle(Value), RawObjects, RawObjectTypes,
+          Visited, ARawText);
+      Inc(I, 2);
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure ScanAcadTableRawExtDictSubtrees(
+  const RawEntitiesSection, RawObjectsSection: string;
+  RawExtDictSubtrees: TStringList);
+var
+  Lines, RawObjects, RawObjectTypes, Visited: TStringList;
+  I, J, K, EntityStart, EntityEnd, Code: Integer;
+  Value, Handle, ExtDictHandle, RawEntity, RawSubtree: string;
+begin
+  if (RawEntitiesSection = '') or (RawObjectsSection = '') or
+     (RawExtDictSubtrees = nil) then
+    Exit;
+
+  RawObjects := TStringList.Create;
+  RawObjectTypes := TStringList.Create;
+  Lines := TStringList.Create;
+  try
+    RawObjects.CaseSensitive := False;
+    RawObjects.Sorted := True;
+    RawObjects.Duplicates := dupIgnore;
+    RawObjectTypes.CaseSensitive := False;
+    RawObjectTypes.Sorted := True;
+    RawObjectTypes.Duplicates := dupIgnore;
+    ScanDxfRawObjects(RawObjectsSection, RawObjects, RawObjectTypes);
+
+    Lines.Text := RawEntitiesSection;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryReadDxfPair(Lines, I, Code, Value) and
+         (Code = 0) and (UpperCase(Trim(Value)) = 'ACAD_TABLE') then
+      begin
+        EntityStart := I;
+        EntityEnd := Lines.Count;
+        J := I + 2;
+        while J < Lines.Count - 1 do
+        begin
+          if TryReadDxfPair(Lines, J, Code, Value) and (Code = 0) then
+          begin
+            EntityEnd := J;
+            Break;
+          end;
+          Inc(J, 2);
+        end;
+
+        Handle := '';
+        RawEntity := '';
+        for K := EntityStart to EntityEnd - 1 do
+        begin
+          if K > EntityStart then
+            RawEntity := RawEntity + LineEnding;
+          RawEntity := RawEntity + Lines[K];
+        end;
+
+        K := EntityStart + 2;
+        while K < EntityEnd - 1 do
+        begin
+          if TryReadDxfPair(Lines, K, Code, Value) and
+             (Code = 5) then
+          begin
+            Handle := NormalizeHandle(Value);
+            Break;
+          end;
+          Inc(K, 2);
+        end;
+
+        if (Handle <> '') and
+           ExtractAcadTableExtDictHandle(RawEntity, ExtDictHandle) then
+        begin
+          Visited := TStringList.Create;
+          try
+            Visited.CaseSensitive := False;
+            Visited.Sorted := True;
+            Visited.Duplicates := dupIgnore;
+            RawSubtree := '';
+            CollectAcadTableExtDictObject(
+              ExtDictHandle, RawObjects, RawObjectTypes,
+              Visited, RawSubtree);
+            if RawSubtree <> '' then
+              StoreRawAcadTableEntity(
+                RawExtDictSubtrees, Handle, RawSubtree);
+          finally
+            Visited.Free;
+          end;
+        end;
+
+        I := EntityEnd;
+        Continue;
+      end;
+      Inc(I);
+    end;
+
+    if RawExtDictSubtrees.Count > 0 then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanAcadTableRawExtDictSubtrees: найдено %d subtree(s)',
+        [RawExtDictSubtrees.Count], LM_Info);
+  finally
+    for I := 0 to RawObjects.Count - 1 do
+      RawObjects.Objects[I].Free;
+    RawObjects.Free;
+    RawObjectTypes.Free;
+    Lines.Free;
+  end;
+end;
+
 { Сканирует секцию OBJECTS, находит XRECORD'ы с маркером
   ACAD_ROUNDTRIP_2008_TABLE_ENTITY и собирает из них хэндлы
   ACAD_TABLE-сущностей, являющихся продолжениями разделённой таблицы.
@@ -744,6 +1119,19 @@ begin
           PGDBObjEntity(pobj)^.SetDXFRawEntityText(
             TDXFRawTextObject(
               context.TableRawAcadTableEntities.Objects[rawIdx]).Text);
+
+        if context.TableRawAcadTableExtDictSubtrees<>nil then
+        begin
+          rawIdx := context.TableRawAcadTableExtDictSubtrees.IndexOf(
+            NormalizeHandle(inttohex(
+              PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)));
+          if (rawIdx >= 0) and
+             (context.TableRawAcadTableExtDictSubtrees.Objects[rawIdx]<>nil) then
+            PGDBObjEntity(pobj)^.SetDXFRawExtDictSubtree(
+              TDXFRawTextObject(
+                context.TableRawAcadTableExtDictSubtrees.Objects[rawIdx]).Text,
+              context.TableRawTextStyleHandleNames.Text);
+        end;
       end;
 
       { Если ACAD_TABLE имеет handle из списка продолжений разделённой
@@ -1725,6 +2113,7 @@ var
   rdr:TZMemReader;
   globalTimer: TTimeMeter;
   RawEntitiesSection: string;
+  RawTablesSection: string;
 const
    ffs='%s (%s)';
 begin
@@ -1767,10 +2156,21 @@ begin
           ExtractDxfRawSection(AFileName, 'OBJECTS');
         RawEntitiesSection :=
           ExtractDxfRawSection(AFileName, 'ENTITIES');
+        RawTablesSection :=
+          ExtractDxfRawSection(AFileName, 'TABLES');
 
         ScanAcadTableRawEntities(
           RawEntitiesSection,
           fileCtx.TableRawAcadTableEntities);
+
+        ScanTextStyleHandleNames(
+          RawTablesSection,
+          fileCtx.TableRawTextStyleHandleNames);
+
+        ScanAcadTableRawExtDictSubtrees(
+          RawEntitiesSection,
+          dwgCtx.PDrawing^.RawObjectsSection,
+          fileCtx.TableRawAcadTableExtDictSubtrees);
 
         { Сканируем OBJECTS, собираем handles ACAD_TABLE-продолжений.
           Хранятся в fileCtx, используются в addentitiesfromdxf для отбрасывания
