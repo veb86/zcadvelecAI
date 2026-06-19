@@ -161,6 +161,15 @@ type
     TableBreakHeight:double;
     TableBreakDataValid:boolean;
 
+    { Флаг BreakOption из того же XRECORD (первая группа 90). Биты:
+      8  (AllowManualPositions) -> AcadTableBreakManualPosition,
+      16 (AllowManualHeights)   -> AcadTableBreakManualHeight.
+      Эти признаки нельзя надёжно вычислить эвристикой по геометрии частей
+      (issue #1339), поэтому читаем их явно из roundtrip-данных. }
+    TableBreakManualPosition:boolean;
+    TableBreakManualHeight:boolean;
+    TableBreakFlagsValid:boolean;
+
     procedure InitRec;
     procedure Done;
   end;
@@ -412,6 +421,9 @@ begin
   TableBreakSpacing:=0;
   TableBreakHeight:=0;
   TableBreakDataValid:=False;
+  TableBreakManualPosition:=False;
+  TableBreakManualHeight:=False;
+  TableBreakFlagsValid:=False;
 end;
 
 procedure TDXFHeaderInfo.InitRec;

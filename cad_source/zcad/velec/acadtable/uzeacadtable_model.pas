@@ -128,6 +128,11 @@ type
     FBreakManualPosition: Boolean;
     FBreakManualPositionExplicit: Boolean;
     FBreakManualHeight: Boolean;
+    // True, когда признаки ручного позиционирования/высоты заданы явно
+    // из roundtrip-данных DXF (BreakOption, issue #1339). В этом случае
+    // эвристики DetectBreakManualPosition/DetectBreakManualHeight не должны
+    // переопределять значения, полученные из файла.
+    FBreakFlagsKnown: Boolean;
     FBreakSpacing: Double;
     // Высота разбиения (break height): после какой суммарной высоты строк
     // строки начинают переноситься в следующую часть разделённой таблицы.
@@ -331,6 +336,11 @@ type
     // (issue #1307). Возвращает True.
     function SetTableBreakData(
       ASpacing, ABreakHeight: Double): Boolean; virtual;
+    // Задаёт явные признаки ручного позиционирования/высоты разбиения,
+    // прочитанные из BreakOption (XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY,
+    // issue #1339). Имеют приоритет над эвристиками Detect*.
+    procedure SetBreakOptionFlags(
+      AManualPosition, AManualHeight: Boolean); virtual;
     function SetTableStyleName(
       const AValue: String; var ADrawing: TDrawingDef): Boolean; virtual;
     procedure SetDXFRawEntityText(const ARawText: string); virtual;
@@ -526,6 +536,7 @@ begin
   FBreakManualPosition := False;
   FBreakManualPositionExplicit := False;
   FBreakManualHeight := False;
+  FBreakFlagsKnown := False;
   FBreakSpacing := 0;
   FBreakHeight := 0;
   // Трансформация по умолчанию: единичный масштаб, без поворота (issue #1305)
@@ -2115,6 +2126,9 @@ var
   PartIdx: Integer;
   ManualPosition: Boolean;
 begin
+  { Явные флаги из roundtrip-данных DXF приоритетнее эвристики (issue #1339). }
+  if FBreakFlagsKnown then
+    Exit;
   if Length(FContinuationParts) = 0 then
     Exit;
 
@@ -2133,6 +2147,9 @@ var
   ReferenceHeight, PartHeight: Double;
   HasReference, ManualHeight: Boolean;
 begin
+  { Явные флаги из roundtrip-данных DXF приоритетнее эвристики (issue #1339). }
+  if FBreakFlagsKnown then
+    Exit;
   ManualHeight := FBreakManualHeight;
   HasReference := False;
   ReferenceHeight := 0;
@@ -2667,6 +2684,20 @@ begin
     [FBreakSpacing, FBreakHeight, Ord(FBreakManualPosition),
      Ord(FBreakManualHeight)], LM_Info);
   Result := True;
+end;
+
+procedure GDBObjAcadTable.SetBreakOptionFlags(
+  AManualPosition, AManualHeight: Boolean);
+begin
+  FBreakFlagsKnown := True;
+  FBreakManualPositionExplicit := AManualPosition;
+  FBreakManualPosition := AManualPosition;
+  FBreakManualHeight := AManualHeight;
+  SetBreakManualPositionForParts(AManualPosition);
+  SetBreakManualHeightForParts(AManualHeight);
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetBreakOptionFlags manualpos=%d manualheight=%d',
+    [Ord(FBreakManualPosition), Ord(FBreakManualHeight)], LM_Info);
 end;
 
 procedure GDBObjAcadTable.SetDXFRawEntityText(const ARawText: string);
@@ -3211,9 +3242,14 @@ begin
     System.SetLength(RawParts, Length(FContinuationParts));
     for PartIdx := 0 to High(FContinuationParts) do
       RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
+    // Признаки ручного управления разрывами должны попасть в roundtrip-запись
+    // (issue #1339), иначе при пересохранении BreakOption теряет манульные биты.
+    DetectBreakManualPosition;
+    DetectBreakManualHeight;
     if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
       AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
-      FBreakSpacing, FBreakHeight, Self.TableStyleName) then
+      FBreakSpacing, FBreakHeight,
+      FBreakManualPosition, FBreakManualHeight, Self.TableStyleName) then
       Exit;
   end;
 

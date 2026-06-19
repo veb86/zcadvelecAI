@@ -1062,7 +1062,7 @@ begin
 
     ResetAcadTableDXFWriteState;
     Ok := WriteRawAcadTablePartsToDXF(
-      OutStream, SaveContext, RawText, [], 0.0, 0.0, 'Standard');
+      OutStream, SaveContext, RawText, [], 0.0, 0.0, False, False, 'Standard');
     DXFText := DxfStreamToText(OutStream);
   finally
     ResetAcadTableDXFWriteState;
