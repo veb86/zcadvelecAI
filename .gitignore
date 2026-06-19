@@ -49,6 +49,7 @@ cad_source/zengine/tests/*.or
 cad_source/zengine/tests/*.rsj
 cad_source/zengine/tests/*.compiled
 cad_source/zengine/tests/testacadtable_standalone
+cad_source/zengine/tests/testmtext1344_standalone
 cad_source/zengine/tests/roundtrip1339
 
 # issue #1339 round-trip experiment output

@@ -9,6 +9,7 @@ uses
   uzctEntityArc, uzctmtextwrap, uzctenttextjustify, uzctacadtable, uzctentproxy,
   uzctentpolyfacemesh, uzctentleader, uzctdwgblockreserve, uzctdwgentleader,
   uzctenttextnilstyle,
+  uzctmtextcontentsave,
   uzctenttransformscalars;
 
 var

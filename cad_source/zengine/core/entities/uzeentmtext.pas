@@ -799,6 +799,7 @@ var
   ul:boolean;
   quotedcontent:TDXFEntsInternalStringType;
   ASourcesCounter:TSPFSourceSet;
+  effectivetemplate:TDXFEntsInternalStringType;
 begin
   ul:=False;
   SaveToDXFObjPrefix(outStream,'MTEXT','AcDbMText',IODXFContext);
@@ -806,19 +807,30 @@ begin
   dxfDoubleout(outStream,40,textprop.size);
   dxfDoubleout(outStream,41,Width);
   dxfIntegerout(outStream,71,j2b[textprop.justify]);
+  //Если шаблон ещё не сформирован (template=''), но текст уже загружен в
+  //Content — берём Content. Так бывает у MTEXT внутри блоков, которые
+  //загрузились из DXF, но не проходили FormatContent: например анонимный
+  //блок *T таблицы ACAD_TABLE. Без этого группа 1 при пересохранении
+  //писалась пустой, и AutoCAD не показывал текст в ячейках таблицы до
+  //трансформации (перемещение/поворот/масштаб), т.к. кэш графики таблицы
+  //(этот блок) оставался без текста (issue #1344). Логика повторяет
+  //FormatContent: «if template='' then template:=content».
+  effectivetemplate:=template;
+  if effectivetemplate='' then
+    effectivetemplate:=Content;
   //проверяем есть ли в шаблоне управляющие последовательности
   //отсутствующие в dxf
-  s:=TxtFormatAndCountSrcs(template,SPFSources.GetFull,ASourcesCounter,@Self);
+  s:=TxtFormatAndCountSrcs(effectivetemplate,SPFSources.GetFull,ASourcesCounter,@Self);
   if (ASourcesCounter and (not SPFSdxf))<>0 then begin
     //шаблон dxf НЕсовместим, разворачиваем всё кроме dxf последовательностей
     //пишем dxf совместимое содержимое, шаблом сохраним отдельно
-    quotedcontent:=TxtFormatAndCountSrcs(template,SPFSources.GetFull and
+    quotedcontent:=TxtFormatAndCountSrcs(effectivetemplate,SPFSources.GetFull and
       (not SPFSdxf),ASourcesCounter,@Self);
     s:=UTF8Encode(quotedcontent);
   end else begin
     //шаблон dxf совместим, пишем сразу его,
     //отдельно его дописывать в расширенные данные ненадо
-    s:=UTF8Encode(template);
+    s:=UTF8Encode(effectivetemplate);
     IODXFContext.LocalEntityFlags:=IODXFContext.LocalEntityFlags or
       CLEFNotNeedSaveTemplate;
   end;
