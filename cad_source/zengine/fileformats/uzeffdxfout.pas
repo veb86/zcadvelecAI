@@ -1161,10 +1161,6 @@ begin
                   p:=pcurrtextstyle;
 
                   IODXFContext.p2h.MyGetOrCreateValue(pcurrtextstyle,IODXFContext.handle,temphandle);
-                  if (pcurrtextstyle^.Name<>'') and
-                     (not IODXFContext.TextStyleNameHandleMap.MyContans(pcurrtextstyle^.Name)) then
-                    IODXFContext.TextStyleNameHandleMap.Add(
-                      pcurrtextstyle^.Name,inttohex(temphandle,0));
                   outstream.TXTAddStringEOL(dxfGroupCode(5));
                   outstream.TXTAddStringEOL(inttohex(temphandle,0));
                   Inc(IODXFContext.handle);
@@ -1207,10 +1203,6 @@ begin
 
                   p:=pcurrtextstyle;
                   IODXFContext.p2h.MyGetOrCreateValue(p,IODXFContext.handle,temphandle);
-                  if (pcurrtextstyle^.Name<>'') and
-                     (not IODXFContext.TextStyleNameHandleMap.MyContans(pcurrtextstyle^.Name)) then
-                    IODXFContext.TextStyleNameHandleMap.Add(
-                      pcurrtextstyle^.Name,inttohex(temphandle,0));
                   outstream.TXTAddStringEOL(inttohex(temphandle,0));
 
                   outstream.TXTAddStringEOL(dxfGroupCode(330));

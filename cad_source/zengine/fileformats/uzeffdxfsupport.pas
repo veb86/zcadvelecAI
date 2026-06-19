@@ -112,13 +112,10 @@ type
       сущности на актуальные новые хэндлы:
         AcadTableOwnerHandle  — новый хэндл владельца (*Model_Space) для 330;
         BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
-        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342;
-        TextStyleNameHandleMap  — имя текстового стиля -> новый хэндл для
-                                  TABLECONTENT/340. }
+        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342. }
     AcadTableOwnerHandle:TDWGHandle;
     BlockNameHandleMap:TString2StringDictionary;
     TableStyleNameHandleMap:TString2StringDictionary;
-    TextStyleNameHandleMap:TString2StringDictionary;
 
     procedure InitRec;
     procedure Done;
@@ -154,17 +151,6 @@ type
       флаги ячеек, которые модель ZCAD пока не реконструирует полностью
       (issue #1317). }
     TableRawAcadTableEntities:TStringList;
-
-    { Сырые OBJECTS-поддеревья расширенных словарей ACAD_TABLE, индексированные
-      по handle главной таблицы. В них AutoCAD хранит TABLECONTENT и
-      TABLEGEOMETRY, необходимые для первичного отображения текста таблицы
-      без принудительной регенерации (issue #1344). }
-    TableRawAcadTableExtDictSubtrees:TStringList;
-
-    { Карта старый handle STYLE -> имя текстового стиля из исходной секции
-      TABLES. Нужна, чтобы при сохранении TABLECONTENT/340 ссылался на
-      актуальные новые STYLE-хэндлы, а не на хэндлы исходного файла. }
-    TableRawTextStyleHandleNames:TStringList;
 
     { Параметры разбиения разделённой таблицы, прочитанные из XRECORD
       ACAD_ROUNDTRIP_2008_TABLE_ENTITY (две группы 40: 1-я — интервал
@@ -402,7 +388,6 @@ begin
   AcadTableOwnerHandle:=0;
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
-  TextStyleNameHandleMap:=TString2StringDictionary.create;
 
   Header.InitRec;
 end;
@@ -412,7 +397,6 @@ begin
   VarsDict.Free;
   BlockNameHandleMap.Free;
   TableStyleNameHandleMap.Free;
-  TextStyleNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;
@@ -433,16 +417,6 @@ begin
   TableRawAcadTableEntities.CaseSensitive:=False;
   TableRawAcadTableEntities.Sorted:=True;
   TableRawAcadTableEntities.Duplicates:=dupIgnore;
-
-  TableRawAcadTableExtDictSubtrees:=TStringList.Create;
-  TableRawAcadTableExtDictSubtrees.CaseSensitive:=False;
-  TableRawAcadTableExtDictSubtrees.Sorted:=True;
-  TableRawAcadTableExtDictSubtrees.Duplicates:=dupIgnore;
-
-  TableRawTextStyleHandleNames:=TStringList.Create;
-  TableRawTextStyleHandleNames.CaseSensitive:=False;
-  TableRawTextStyleHandleNames.Sorted:=True;
-  TableRawTextStyleHandleNames.Duplicates:=dupIgnore;
 
   TableBreakSpacing:=0;
   TableBreakHeight:=0;
@@ -473,12 +447,6 @@ begin
       TableRawAcadTableEntities.Objects[I].Free;
     FreeAndNil(TableRawAcadTableEntities);
   end;
-  if TableRawAcadTableExtDictSubtrees<>nil then begin
-    for I:=0 to TableRawAcadTableExtDictSubtrees.Count-1 do
-      TableRawAcadTableExtDictSubtrees.Objects[I].Free;
-    FreeAndNil(TableRawAcadTableExtDictSubtrees);
-  end;
-  FreeAndNil(TableRawTextStyleHandleNames);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;
