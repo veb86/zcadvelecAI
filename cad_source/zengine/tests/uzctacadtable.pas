@@ -137,6 +137,12 @@ type
     procedure ClearingBreakRepeatTopKeepsDataRowFormatting;
     // issue #1309: неразорванная таблица не имеет повтора верхних меток.
     procedure NonBrokenTableHasNoBreakRepeatTop;
+    // issue #1344: исходный хэндл сущности raw-таблицы (группа 5) может
+    // совпасть с хэндлом, уже выданным анонимному блоку таблицы при записи
+    // секции BLOCKS. При сохранении таблица и все её части-продолжения
+    // должны получать свежие хэндлы из общего счётчика документа, а
+    // round-trip XRECORD (360/361/330) — ссылаться на эти же новые хэндлы.
+    procedure RenumbersRawAcadTableEntityHandlesToAvoidCollision;
   end;
 
 implementation
@@ -1078,9 +1084,13 @@ begin
   CheckFalse(HasDxfSequence(DXFText, ['360', '357']),
     'Висячая ссылка 360 на словарь не должна сохраняться');
 
-  // Собственный хэндл сущности (группа 5) не трогаем.
-  CheckTrue(HasDxfSequence(DXFText, ['5', '2FF']),
-    'Собственный хэндл сущности (группа 5) должен сохраняться без изменений');
+  // Собственный хэндл сущности (группа 5) перенумеровывается под актуальную
+  // нумерацию файла (issue #1344). SaveContext.InitRec выставляет счётчик в $2,
+  // поэтому первая (главная) raw-таблица получает хэндл 2.
+  CheckTrue(HasDxfSequence(DXFText, ['5', '2']),
+    'Собственный хэндл сущности (группа 5) должен перенумеровываться в свежий');
+  CheckEquals(0, CountDxfPairs(DXFText, '5', '2FF'),
+    'Старый хэндл сущности 2FF не должен оставаться (issue #1344)');
 
   // Ссылки перенумерованы под актуальный файл.
   CheckTrue(HasDxfSequence(DXFText, ['330', '123']),
@@ -2005,6 +2015,111 @@ begin
   finally
     Drawing.done;
   end;
+end;
+
+// issue #1344. Таблица AutoCAD хранит отрисованную графику в анонимном блоке
+// (*T1, *T2, ...). При сохранении ZCAD заново и последовательно нумерует
+// хэндлы секции BLOCKS, а raw-сущность ACAD_TABLE раньше сохраняла свой
+// исходный хэндл (группа 5) дословно. Для разделённых таблиц с большим
+// объёмом графики (файл №4: ручная высота разбиения) исходный хэндл таблицы
+// совпадал с хэндлом, уже выданным MTEXT внутри анонимного блока. AutoCAD при
+// открытии сообщал «Неверная метка <handle>: уже используется» и отказывался
+// импортировать чертёж. Проверяем, что и главная таблица, и её части-
+// продолжения получают свежие хэндлы из общего счётчика документа, исходные
+// (потенциально конфликтующие) хэндлы не протекают в файл, а round-trip
+// XRECORD (360/361/330) ссылается на эти же новые хэндлы.
+procedure TAcadTableStyleTest.RenumbersRawAcadTableEntityHandlesToAvoidCollision;
+var
+  MainRaw, ContRaw: TStringList;
+  MainText, ContText, DXFText: String;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  Drawing: TSimpleDrawing;
+  Ok: Boolean;
+begin
+  MainRaw := TStringList.Create;
+  ContRaw := TStringList.Create;
+  try
+    // Главная часть: исходный хэндл EB (в реальном файле №4 он совпадал с
+    // хэндлом MTEXT внутри блока *T7).
+    MainRaw.Add('0');   MainRaw.Add('ACAD_TABLE');
+    MainRaw.Add('5');   MainRaw.Add('EB');
+    MainRaw.Add('330'); MainRaw.Add('26');
+    MainRaw.Add('100'); MainRaw.Add('AcDbEntity');
+    MainRaw.Add('8');   MainRaw.Add('0');
+    MainRaw.Add('100'); MainRaw.Add('AcDbBlockReference');
+    MainRaw.Add('2');   MainRaw.Add('*T7');
+    MainRaw.Add('100'); MainRaw.Add('AcDbTable');
+    MainRaw.Add('342'); MainRaw.Add('FE');
+    MainRaw.Add('343'); MainRaw.Add('32');
+    MainText := MainRaw.Text;
+
+    // Часть-продолжение: исходный хэндл 54C.
+    ContRaw.Add('0');   ContRaw.Add('ACAD_TABLE');
+    ContRaw.Add('5');   ContRaw.Add('54C');
+    ContRaw.Add('330'); ContRaw.Add('26');
+    ContRaw.Add('100'); ContRaw.Add('AcDbEntity');
+    ContRaw.Add('8');   ContRaw.Add('0');
+    ContRaw.Add('100'); ContRaw.Add('AcDbBlockReference');
+    ContRaw.Add('2');   ContRaw.Add('*T8');
+    ContRaw.Add('100'); ContRaw.Add('AcDbTable');
+    ContRaw.Add('342'); ContRaw.Add('FE');
+    ContRaw.Add('343'); ContRaw.Add('33');
+    ContText := ContRaw.Text;
+  finally
+    MainRaw.Free;
+    ContRaw.Free;
+  end;
+
+  OutStream.init(8 * 1024);
+  SaveContext.InitRec;
+  SaveContext.Header.Version := AC1021;
+  SaveContext.Header.iVersion := 1021;
+  try
+    SaveContext.AcadTableOwnerHandle := $123;
+    SaveContext.TableStyleNameHandleMap.Add('Standard', '4A2');
+    // Эмулируем счётчик, который к началу секции ENTITIES уже прошёл BLOCKS:
+    // следующий свободный хэндл — 100. Именно из него (а не из исходного EB)
+    // должна нумероваться таблица.
+    SaveContext.handle := $100;
+
+    ResetAcadTableDXFWriteState;
+    Ok := WriteRawAcadTablePartsToDXF(
+      OutStream, SaveContext, MainText, [ContText],
+      0.99, 2.05, False, True, 'Standard');
+    WriteAcadTableRoundTripObjectsToDXF(OutStream, Drawing, SaveContext);
+    DXFText := DxfStreamToText(OutStream);
+  finally
+    ResetAcadTableDXFWriteState;
+    SaveContext.Done;
+    OutStream.done;
+  end;
+
+  CheckTrue(Ok, 'Сырые части ACAD_TABLE должны успешно записаться');
+
+  // Свежие хэндлы из счётчика: главная — 100, продолжение — 101.
+  CheckTrue(HasDxfSequence(DXFText, ['5', '100']),
+    'Главная таблица должна получить свежий хэндл 100');
+  CheckTrue(HasDxfSequence(DXFText, ['5', '101']),
+    'Часть-продолжение должна получить свежий хэндл 101');
+
+  // Исходные (потенциально конфликтующие) хэндлы не должны протекать в файл.
+  CheckEquals(0, CountDxfPairs(DXFText, '5', 'EB'),
+    'Исходный хэндл главной таблицы EB не должен оставаться (issue #1344)');
+  CheckEquals(0, CountDxfPairs(DXFText, '5', '54C'),
+    'Исходный хэндл продолжения 54C не должен оставаться (issue #1344)');
+
+  // Round-trip XRECORD должен ссылаться на новые хэндлы.
+  CheckTrue(HasDxfSequence(DXFText, ['360', '100']),
+    'Round-trip 360 должен указывать на новый хэндл главной таблицы');
+  CheckTrue(HasDxfSequence(DXFText, ['361', '100']),
+    'Round-trip 361 должен указывать на новый хэндл главной таблицы');
+  CheckTrue(HasDxfSequence(DXFText, ['330', '101']),
+    'Round-trip 330 должен указывать на новый хэндл продолжения');
+  CheckEquals(0, CountDxfPairs(DXFText, '360', 'EB'),
+    'Round-trip не должен ссылаться на исходный хэндл EB');
+  CheckEquals(0, CountDxfPairs(DXFText, '330', '54C'),
+    'Round-trip не должен ссылаться на исходный хэндл продолжения 54C');
 end;
 
 begin

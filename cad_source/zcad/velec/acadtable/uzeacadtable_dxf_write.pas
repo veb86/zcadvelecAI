@@ -474,35 +474,31 @@ begin
   end;
 end;
 
-procedure BumpHandleAfterRawEntity(
-  var AIODXFContext: TIODXFSaveContext; AHandle: TDWGHandle);
-begin
-  if AHandle >= AIODXFContext.handle then
-    AIODXFContext.handle := AHandle + 1;
-end;
-
 // Записывает сырую (raw) сущность ACAD_TABLE, переписывая ссылки на хэндлы
 // под актуальную (перенумерованную) нумерацию сохраняемого файла (issue #1339):
+//   5   — хэндл самой сущности (перенумеровывается в ANewHandle, issue #1344);
 //   330 — владелец сущности (*Model_Space);
 //   342 — стиль таблицы (по имени стиля ATableStyleName);
 //   343 — анонимный блок таблицы (по имени блока из предшествующей пары 2);
 //   блок расширенного словаря 102/ACAD_XDICTIONARY удаляется, т.к. он не
 //        круглорейсится и иначе оставляет висячую ссылку (360).
-// Хэндл самой сущности (группа 5) намеренно не трогаем.
 procedure WriteRawEntityText(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ATableStyleName: String;
-  const ARawEntity: String);
+  const ARawEntity: String;
+  ANewHandle: TDWGHandle);
 var
   Lines: TStringList;
   I: Integer;
   Code, OutValue, LastBlockName, MappedValue: String;
+  HandleRewritten: Boolean;
 begin
   Lines := TStringList.Create;
   try
     Lines.Text := ARawEntity;
     LastBlockName := '';
+    HandleRewritten := False;
     I := 0;
     while I < Lines.Count do
     begin
@@ -537,6 +533,20 @@ begin
 
       if Code = '2' then
         LastBlockName := Trim(Lines[I + 1])
+      else if (Code = '5') and (not HandleRewritten) then
+      begin
+        { Перенумеровываем хэндл самой сущности (группа 5) под актуальную
+          нумерацию сохраняемого файла (issue #1344). Исходный хэндл из
+          файла AutoCAD может совпасть с хэндлом, который уже был выдан
+          анонимному блоку таблицы при записи секции BLOCKS (там хэндлы
+          назначаются заново, последовательно). При совпадении AutoCAD
+          сообщает «Неверная метка <handle>: уже используется» и
+          отказывается открывать файл. Свежий хэндл из общего счётчика
+          документа исключает это столкновение. Переписываем только первый
+          код 5 (хэндл сущности), значения ячеек (302="5") не затрагиваем. }
+        OutValue := IntToHex(ANewHandle, 0);
+        HandleRewritten := True;
+      end
       else if Code = '330' then
       begin
         if AIODXFContext.AcadTableOwnerHandle <> 0 then
@@ -648,6 +658,11 @@ var
   PartIdx: Integer;
 begin
   Result := False;
+  { Валидируем raw-сущности: у каждой части должен быть исходный хэндл
+    (группа 5). Если нет — это не пригодная для round-trip сущность, и
+    управление возвращается обычному (модельному) сохранению. Сами
+    исходные значения хэндлов далее не используются — каждая часть
+    получает свежий хэндл (issue #1344). }
   if not RawAcadTableHandle(AMainRawEntity, MainHandle) then
     Exit;
 
@@ -658,16 +673,20 @@ begin
       ContinuationHandles[PartIdx]) then
       Exit;
 
+  { Выдаём свежие хэндлы из общего счётчика документа. К моменту записи
+    секции ENTITIES счётчик уже прошёл секцию BLOCKS, поэтому новые хэндлы
+    гарантированно не сталкиваются с хэндлами анонимных блоков таблицы
+    (issue #1344). Эти же значения попадают в round-trip XRECORD (360/330/
+    361), оставаясь согласованными с группой 5 сущностей. }
+  MainHandle := NextAnonymousHandle(AIODXFContext);
   WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-    AMainRawEntity);
-  BumpHandleAfterRawEntity(AIODXFContext, MainHandle);
+    AMainRawEntity, MainHandle);
 
   for PartIdx := 0 to High(AContinuationRawEntities) do
   begin
+    ContinuationHandles[PartIdx] := NextAnonymousHandle(AIODXFContext);
     WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-      AContinuationRawEntities[PartIdx]);
-    BumpHandleAfterRawEntity(
-      AIODXFContext, ContinuationHandles[PartIdx]);
+      AContinuationRawEntities[PartIdx], ContinuationHandles[PartIdx]);
   end;
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
