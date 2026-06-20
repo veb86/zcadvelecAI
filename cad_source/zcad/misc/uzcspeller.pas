@@ -76,14 +76,28 @@ procedure CreateSpellChecker;
 var
   lph:TLPSHandle;
   UserDict:string;
+  UserDictHandle:TSpeller.TLangHandle;
 begin
-  lph:=LPS.StartLongProcess('SpellChecker.Create and LoadDictionaries',nil);
+  // Путь к пользовательскому словарю показываем в сообщении прогресса,
+  // чтобы было видно, куда сохраняются добавленные слова (см. issue #1296).
+  UserDict:=GetUserDictionaryPath;
+  lph:=LPS.StartLongProcess(
+    'SpellChecker.Create and LoadDictionaries (пользовательский словарь: '+
+    UserDict+')',nil);
   SpellChecker.CreateRec(@SpellLogCallBack);
   SpellChecker.LoadDictionaries(ExpandPath(ZCSysParams.saved.DictionariesPath));
   // Подключить пользовательский словарь, если он уже создан
-  UserDict:=GetUserDictionaryPath;
-  if FileExists(UserDict) then
-    SpellChecker.LoadDictionary(UserDict);
+  if FileExists(UserDict) then begin
+    UserDictHandle:=SpellChecker.LoadDictionary(UserDict);
+    if UserDictHandle=TSpeller.WrongLang then
+      ProgramLog.LogOutStr(
+        'CreateSpellChecker: не удалось загрузить пользовательский словарь "'+
+        UserDict+'"',LM_Warning,LMDSpeller)
+    else
+      ProgramLog.LogOutStr(
+        'CreateSpellChecker: подключён пользовательский словарь "'+
+        UserDict+'"',LM_Info,LMDSpeller);
+  end;
   LPS.EndLongProcess(lph);
 end;
 

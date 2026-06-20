@@ -54,3 +54,7 @@ cad_source/zengine/tests/roundtrip1339
 
 # issue #1339 round-trip experiment output
 experiments/out1339/
+
+# Python bytecode cache (pytest):
+__pycache__/
+*.pyc
