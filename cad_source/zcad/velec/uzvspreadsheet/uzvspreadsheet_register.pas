@@ -32,7 +32,10 @@ uses
   Controls,
   Types,
   uzcguimanager,
-  uzvspreadsheet_gui;
+  uzvspreadsheet_gui,
+  // Сборочный модуль команд: подключает все модули команд редактора,
+  // чтобы их секции initialization зарегистрировали команды в реестре
+  uzvspreadsheet_commands;
 
 implementation
 

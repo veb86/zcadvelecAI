@@ -46,7 +46,6 @@ uses
   uzeparsercmdprompt,
   uzcdrawings,
   uzvspreadsheet_cmdopenbook,
-  uzvspreadsheet_actions,
   uzccommandsmanager;
 
 resourcestring

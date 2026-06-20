@@ -43,7 +43,8 @@ uses
   Dialogs,
   Controls,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 { Создаёт новую пустую книгу без подтверждения }
 procedure CreateEmptyBook(aWorkbookSource: TsWorkbookSource);
@@ -128,5 +129,22 @@ begin
   // Создаём новую книгу
   CreateEmptyBook(aWorkbookSource);
 end;
+
+{ Обработчик команды "Создать книгу" для реестра команд }
+procedure CommandNewBook(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteNewBook(Context.WorkbookSource);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'NewBook',                  // Идентификатор
+    'Создать',                  // Подпись
+    'Создать новую книгу',      // Подсказка
+    'new',                      // Иконка
+    @CommandNewBook,            // Обработчик
+    10,                         // Порядок
+    1                           // Группа
+  );
 
 end.

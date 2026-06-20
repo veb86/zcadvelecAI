@@ -57,6 +57,14 @@ procedure FillSpacesFromTable(RoomList: TRoomInfoList);
 
 implementation
 
+uses
+  Grids,
+  fpspreadsheet,
+  fpsTypes,
+  fpspreadsheetctrls,
+  fpspreadsheetgrid,
+  uzvspreadsheet_cmdregistry;
+
 { Проверяет наличие переменных пространства у примитива }
 function HasSpaceVariables(pEntity: PGDBObjEntity): Boolean;
 var
@@ -199,5 +207,125 @@ begin
     zcUI.Do_GUIaction(nil, zcMsgUIActionRedraw);
   end;
 end;
+
+{ Обработчик команды "Заполнить пространства помещений" для реестра команд.
+  Считывает выделенный диапазон таблицы и заполняет параметры пространств. }
+procedure CommandFillSpaceRoom(const Context: TSpreadsheetCommandContext);
+var
+  StartRow, EndRow, StartCol, EndCol: Integer;
+  RoomList: TRoomInfoList;
+  Room: TRoomInfo;
+  worksheet: TsWorksheet;
+  row, col: Integer;
+  ColCount: Integer;
+  cell: PCell;
+  selection: TGridRect;
+begin
+  // Проверка наличия рабочей книги
+  if (Context.WorkbookSource = nil) or (Context.WorkbookSource.Workbook = nil) then
+  begin
+    ShowMessage('Нет открытой книги');
+    Exit;
+  end;
+
+  worksheet := Context.WorkbookSource.Workbook.ActiveWorksheet;
+  if worksheet = nil then
+  begin
+    ShowMessage('Нет активного листа');
+    Exit;
+  end;
+
+  if Context.WorksheetGrid = nil then
+  begin
+    ShowMessage('Не удалось определить выделенный диапазон');
+    Exit;
+  end;
+
+  // Получаем выделенный диапазон с учётом фиксированных строк и колонок
+  selection := Context.WorksheetGrid.Selection;
+  StartRow := selection.Top - Context.WorksheetGrid.FixedRows;
+  EndRow := selection.Bottom - Context.WorksheetGrid.FixedRows;
+  StartCol := selection.Left - Context.WorksheetGrid.FixedCols;
+  EndCol := selection.Right - Context.WorksheetGrid.FixedCols;
+
+  if not ((StartRow >= 0) and (EndRow >= StartRow) and
+          (StartCol >= 0) and (EndCol >= StartCol)) then
+  begin
+    ShowMessage('Не удалось определить выделенный диапазон');
+    Exit;
+  end;
+
+  // Проверка минимального количества колонок
+  ColCount := EndCol - StartCol + 1;
+  if ColCount < 2 then
+  begin
+    ShowMessage('Минимум должно быть выделено 2-е колонки');
+    Exit;
+  end;
+
+  programlog.LogOutFormatStr(
+    'Заполнение пространств: выделено строк %d, колонок %d',
+    [EndRow - StartRow + 1, ColCount], LM_Info);
+
+  // Создаем список помещений
+  RoomList := TRoomInfoList.Create;
+  try
+    // Обрабатываем каждую строку выделенного диапазона
+    for row := StartRow to EndRow do
+    begin
+      Room.RoomPos := '';
+      Room.RoomName := '';
+      Room.RoomArea := '';
+      Room.RoomCategory := '';
+
+      // Читаем данные из колонок согласно таблице из ТЗ
+      for col := StartCol to EndCol do
+      begin
+        cell := worksheet.FindCell(row, col);
+        case col - StartCol of
+          0: if cell <> nil then
+               Room.RoomPos := worksheet.ReadAsText(cell);
+          1: if cell <> nil then
+               Room.RoomName := worksheet.ReadAsText(cell);
+          2: if cell <> nil then
+               Room.RoomArea := worksheet.ReadAsText(cell);
+          3: if cell <> nil then
+               Room.RoomCategory := worksheet.ReadAsText(cell);
+        end;
+      end;
+
+      // Добавляем в список только если RoomPos не пустой
+      if Room.RoomPos <> '' then
+        RoomList.Add(Room);
+    end;
+
+    // Проверка на пустой список
+    if RoomList.Count = 0 then
+    begin
+      ShowMessage('Нет данных для заполнения пространств');
+      Exit;
+    end;
+
+    programlog.LogOutFormatStr('Подготовлено %d записей для обработки',
+      [RoomList.Count], LM_Info);
+
+    // Вызываем процедуру заполнения пространств
+    FillSpacesFromTable(RoomList);
+
+  finally
+    RoomList.Free;
+  end;
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'FillSpaceRoom',
+    'Заполнить пространства',
+    'Заполнить пространства помещений из таблицы',
+    'velec/space_room',
+    @CommandFillSpaceRoom,
+    150,
+    5
+  );
 
 end.

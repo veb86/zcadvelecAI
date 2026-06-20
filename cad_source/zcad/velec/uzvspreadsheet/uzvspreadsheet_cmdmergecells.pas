@@ -41,7 +41,8 @@ implementation
 
 uses
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 { Объединяет выделенные ячейки или разъединяет объединённую ячейку }
 procedure ExecuteMergeCells(aWorkbookSource: TsWorkbookSource;
@@ -156,5 +157,22 @@ begin
     end;
   end;
 end;
+
+{ Обработчик команды "Объединить/разъединить ячейки" для реестра команд }
+procedure CommandMergeCells(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteMergeCells(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'MergeCells',
+    'Объединить/разъединить ячейки',
+    'Объединить выделенные ячейки или разъединить объединённую ячейку',
+    'velec/sheet_merge_cells',
+    @CommandMergeCells,
+    140,
+    4
+  );
 
 end.

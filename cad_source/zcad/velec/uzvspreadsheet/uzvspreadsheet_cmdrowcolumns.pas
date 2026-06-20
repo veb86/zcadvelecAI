@@ -61,7 +61,8 @@ implementation
 
 uses
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 { Добавляет строку под выделенной ячейкой }
 procedure ExecuteAddRowBelow(aWorkbookSource: TsWorkbookSource;
@@ -404,5 +405,97 @@ begin
     end;
   end;
 end;
+
+{ Обработчики команд работы со строками и столбцами для реестра команд }
+procedure CommandAddRowBelow(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteAddRowBelow(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+procedure CommandAddRowAbove(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteAddRowAbove(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+procedure CommandAddColumnRight(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteAddColumnRight(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+procedure CommandAddColumnLeft(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteAddColumnLeft(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+procedure CommandDeleteRow(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteDeleteRow(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+procedure CommandDeleteColumn(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteDeleteColumn(Context.WorkbookSource, Context.WorksheetGrid);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'AddRowBelow',
+    'Добавить строку снизу',
+    'Добавить строку под выделенной ячейкой',
+    'velec/sheet_add_row_below',
+    @CommandAddRowBelow,
+    80,
+    4
+  );
+
+  RegisterSpreadsheetCommand(
+    'AddRowAbove',
+    'Добавить строку сверху',
+    'Добавить строку над выделенной ячейкой',
+    'velec/sheet_add_row_above',
+    @CommandAddRowAbove,
+    90,
+    4
+  );
+
+  RegisterSpreadsheetCommand(
+    'AddColumnRight',
+    'Добавить столбец справа',
+    'Добавить столбец справа от выделенной ячейки',
+    'velec/sheet_add_column_right',
+    @CommandAddColumnRight,
+    100,
+    4
+  );
+
+  RegisterSpreadsheetCommand(
+    'AddColumnLeft',
+    'Добавить столбец слева',
+    'Добавить столбец слева от выделенной ячейки',
+    'velec/sheet_add_column_left',
+    @CommandAddColumnLeft,
+    110,
+    4
+  );
+
+  RegisterSpreadsheetCommand(
+    'DeleteRow',
+    'Удалить строку',
+    'Удалить строку, в которой выделена ячейка',
+    'velec/sheet_delete_row',
+    @CommandDeleteRow,
+    120,
+    4
+  );
+
+  RegisterSpreadsheetCommand(
+    'DeleteColumn',
+    'Удалить столбец',
+    'Удалить столбец, в котором выделена ячейка',
+    'velec/sheet_delete_column',
+    @CommandDeleteColumn,
+    130,
+    4
+  );
 
 end.

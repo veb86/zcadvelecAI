@@ -68,7 +68,8 @@ procedure InsertTableFromEditor_GUI;
 implementation
 
 uses
-  uzclog;
+  uzclog,
+  uzvspreadsheet_cmdregistry;
 
 // Находит последнюю заполненную строку в таблице
 // @param worksheet - рабочий лист
@@ -403,6 +404,17 @@ begin
   );
 end;
 
+{ Обработчик команды "Вставить таблицу в чертёж" для реестра команд.
+  Выполняет зарегистрированную в ZCAD команду вставки таблицы. }
+procedure CommandInsertTable(const Context: TSpreadsheetCommandContext);
+begin
+  commandmanager.executecommand(
+    'InsertTableFromEditor',
+    drawings.GetCurrentDWG,
+    drawings.GetCurrentOGLWParam
+  );
+end;
+
 initialization
   // Регистрируем команду в системе ZCAD
   CreateZCADCommand(
@@ -416,6 +428,17 @@ initialization
     'Команда InsertTableFromEditor зарегистрирована',
     [],
     LM_Info
+  );
+
+  // Регистрируем кнопку команды в редакторе электронных таблиц
+  RegisterSpreadsheetCommand(
+    'InsertTable',
+    'Вставить таблицу',
+    'Вставить таблицу из редактора в чертёж',
+    'velec/table_insert',
+    @CommandInsertTable,
+    160,
+    6
   );
 
 end.
