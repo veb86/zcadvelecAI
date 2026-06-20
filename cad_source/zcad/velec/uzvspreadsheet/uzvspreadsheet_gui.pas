@@ -41,7 +41,7 @@ uses
   fpsUtils,
   fpspreadsheetgrid,
   fpspreadsheetctrls,
-  uzvspreadsheet_actions,
+  uzvspreadsheet_cmdregistry,
   uzcimagesmanager;
 
 const
@@ -76,31 +76,10 @@ type
 
     // Панель инструментов
     FToolBar: TToolBar;
-    FBtnNew: TToolButton;
-    FBtnOpen: TToolButton;
-    FBtnSave: TToolButton;
-    FBtnSeparator1: TToolButton;
-    FBtnUndo: TToolButton;
-    FBtnRedo: TToolButton;
-    FBtnSeparator2: TToolButton;
-    FBtnCalc: TToolButton;
-    FBtnAutoCalc: TToolButton;
-    FBtnSeparator3: TToolButton;
-    FBtnAddRowBelow: TToolButton;
-    FBtnAddRowAbove: TToolButton;
-    FBtnAddColumnRight: TToolButton;
-    FBtnAddColumnLeft: TToolButton;
-    FBtnDeleteRow: TToolButton;
-    FBtnDeleteColumn: TToolButton;
-    FBtnMergeCells: TToolButton;
-    FBtnSeparator4: TToolButton;
-    FBtnFillSpaceRoom: TToolButton;
-    FBtnSeparator5: TToolButton;
-    FBtnInsertTable: TToolButton;
 
-    // Действия
+    // Действия и построитель панели инструментов по реестру команд
     FActionList: TActionList;
-    FSpreadsheetActions: TSpreadsheetActions;
+    FCommandBar: TSpreadsheetCommandBar;
 
     // Переменные для отслеживания редактирования ячеек
     FEditingCell: Boolean;
@@ -110,11 +89,11 @@ type
     FUndoSavedForCurrentEdit: Boolean;  // Флаг: undo-запись для текущего редактирования уже создана
 
     // Процедуры создания компонентов
-    procedure CreateActions;
     procedure CreatePanels;
     procedure CreateToolBar;
     procedure CreateSpreadsheetComponents;
     procedure CreateCellInfoPanel;
+    procedure BuildCommandBar;
 
     // Обработчики событий
     procedure OnWorksheetGridSelection(Sender: TObject;
@@ -185,45 +164,44 @@ begin
   CreateToolBar;
   CreateCellInfoPanel;
   CreateSpreadsheetComponents;
-  CreateActions;
+  // Панель инструментов строится по реестру команд после создания
+  // компонентов таблицы, чтобы передать их в контекст команд
+  BuildCommandBar;
 
   zcUI.TextMessage('Форма электронных таблиц создана', TMWOHistoryOut);
 end;
 
 procedure TuzvSpreadsheetForm.DoDestroy;
 begin
-  // Освобождаем объект действий
-  if Assigned(FSpreadsheetActions) then
-    FreeAndNil(FSpreadsheetActions);
+  // Освобождаем построитель панели инструментов
+  if Assigned(FCommandBar) then
+    FreeAndNil(FCommandBar);
+
+  // Освобождаем менеджер отмены/возврата
+  FreeUndoManager;
 
   zcUI.TextMessage('Форма электронных таблиц закрыта', TMWOHistoryOut);
   inherited DoDestroy;
 end;
 
-{ Создание действий и привязка к кнопкам }
-procedure TuzvSpreadsheetForm.CreateActions;
+{ Построение панели инструментов по реестру зарегистрированных команд.
+  Кнопки и действия создаются автоматически для всех команд, добавленных
+  отдельными модулями через RegisterSpreadsheetCommand. Добавление новых
+  команд не требует изменения данного модуля формы. }
+procedure TuzvSpreadsheetForm.BuildCommandBar;
+var
+  Context: TSpreadsheetCommandContext;
 begin
-  // Создаём объект действий с передачей ссылки на компонент таблицы
-  FSpreadsheetActions := TSpreadsheetActions.Create(FActionList, FWorkbookSource,
-    FWorksheetGrid);
+  // Инициализируем менеджер отмены/возврата для текущей книги
+  InitUndoManager(FWorkbookSource);
 
-  // Привязываем действия к кнопкам панели инструментов
-  FBtnNew.Action := FSpreadsheetActions.ActNewBook;
-  FBtnOpen.Action := FSpreadsheetActions.ActOpenBook;
-  FBtnSave.Action := FSpreadsheetActions.ActSaveBook;
-  FBtnUndo.Action := FSpreadsheetActions.ActUndo;
-  FBtnRedo.Action := FSpreadsheetActions.ActRedo;
-  FBtnCalc.Action := FSpreadsheetActions.ActCalc;
-  FBtnAutoCalc.Action := FSpreadsheetActions.ActAutoCalc;
-  FBtnAddRowBelow.Action := FSpreadsheetActions.ActAddRowBelow;
-  FBtnAddRowAbove.Action := FSpreadsheetActions.ActAddRowAbove;
-  FBtnAddColumnRight.Action := FSpreadsheetActions.ActAddColumnRight;
-  FBtnAddColumnLeft.Action := FSpreadsheetActions.ActAddColumnLeft;
-  FBtnDeleteRow.Action := FSpreadsheetActions.ActDeleteRow;
-  FBtnDeleteColumn.Action := FSpreadsheetActions.ActDeleteColumn;
-  FBtnMergeCells.Action := FSpreadsheetActions.ActMergeCells;
-  FBtnFillSpaceRoom.Action := FSpreadsheetActions.ActFillSpaceRoom;
-  FBtnInsertTable.Action := FSpreadsheetActions.ActInsertTable;
+  // Формируем контекст выполнения команд
+  Context.WorkbookSource := FWorkbookSource;
+  Context.WorksheetGrid := FWorksheetGrid;
+
+  // Создаём построитель и строим панель инструментов по реестру команд
+  FCommandBar := TSpreadsheetCommandBar.Create(FActionList, FToolBar);
+  FCommandBar.Build(Context);
 end;
 
 { Создание основных панелей формы }
@@ -245,7 +223,8 @@ begin
   FPanelSheet.Caption := '';
 end;
 
-{ Создание панели инструментов с кнопками }
+{ Создание пустой панели инструментов.
+  Кнопки команд создаются позднее в BuildCommandBar по реестру команд. }
 procedure TuzvSpreadsheetForm.CreateToolBar;
 begin
   // Создаем список действий
@@ -259,147 +238,6 @@ begin
   FToolBar.Images := ImagesManager.IconList;  // Устанавливаем список иконок
   FToolBar.ButtonWidth := 28;
   FToolBar.ButtonHeight := 28;
-
-  // Кнопка "Создать книгу"
-  FBtnNew := TToolButton.Create(FToolBar);
-  FBtnNew.Parent := FToolBar;
-  FBtnNew.Hint := 'Создать новую книгу';
-  FBtnNew.ShowHint := True;
-
-  // Кнопка "Открыть книгу"
-  FBtnOpen := TToolButton.Create(FToolBar);
-  FBtnOpen.Parent := FToolBar;
-  FBtnOpen.Hint := 'Открыть файл книги';
-  FBtnOpen.ShowHint := True;
-
-
-  // Кнопка "Сохранить книгу"
-  FBtnSave := TToolButton.Create(FToolBar);
-  FBtnSave.Parent := FToolBar;
-  FBtnSave.Hint := 'Сохранить книгу в файл';
-  FBtnSave.ShowHint := True;
-
-
-  // Разделитель 1
-  FBtnSeparator1 := TToolButton.Create(FToolBar);
-  FBtnSeparator1.Parent := FToolBar;
-  FBtnSeparator1.Style := tbsSeparator;
-  FBtnSeparator1.Width := 10;
-
-  // Кнопка "Назад" (Undo)
-  FBtnUndo := TToolButton.Create(FToolBar);
-  FBtnUndo.Parent := FToolBar;
-  FBtnUndo.Hint := 'Назад: Отменить последнее изменение';
-  FBtnUndo.ShowHint := True;
-
-
-  // Кнопка "Вперёд" (Redo)
-  FBtnRedo := TToolButton.Create(FToolBar);
-  FBtnRedo.Parent := FToolBar;
-  FBtnRedo.Hint := 'Вперёд: Вернуть отменённое изменение';
-  FBtnRedo.ShowHint := True;
-
-
-  // Разделитель 2
-  FBtnSeparator2 := TToolButton.Create(FToolBar);
-  FBtnSeparator2.Parent := FToolBar;
-  FBtnSeparator2.Style := tbsSeparator;
-  FBtnSeparator2.Width := 10;
-
-  // Кнопка "Пересчитать формулы"
-  FBtnCalc := TToolButton.Create(FToolBar);
-  FBtnCalc.Parent := FToolBar;
-  FBtnCalc.Hint := 'Расчёт: Пересчитать формулы';
-  FBtnCalc.ShowHint := True;
-
-  // Кнопка "Автопересчёт"
-  FBtnAutoCalc := TToolButton.Create(FToolBar);
-  FBtnAutoCalc.Parent := FToolBar;
-  FBtnAutoCalc.Hint := 'Автопересчёт: Включить/выключить автопересчёт формул';
-  FBtnAutoCalc.ShowHint := True;
-  FBtnAutoCalc.Style := tbsCheck;
-  FBtnAutoCalc.Down := True;
-
-  // Разделитель 3
-  FBtnSeparator3 := TToolButton.Create(FToolBar);
-  FBtnSeparator3.Parent := FToolBar;
-  FBtnSeparator3.Style := tbsSeparator;
-  FBtnSeparator3.Width := 10;
-
-  // Кнопка "Добавить строку под ячейкой"
-  FBtnAddRowBelow := TToolButton.Create(FToolBar);
-  FBtnAddRowBelow.Parent := FToolBar;
-  FBtnAddRowBelow.Hint := 'Добавить строку под выделенной ячейкой';
-  FBtnAddRowBelow.ShowHint := True;
-  FBtnAddRowBelow.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_add_row_below');
-
-  // Кнопка "Добавить строку над ячейкой"
-  FBtnAddRowAbove := TToolButton.Create(FToolBar);
-  FBtnAddRowAbove.Parent := FToolBar;
-  FBtnAddRowAbove.Hint := 'Добавить строку над выделенной ячейкой';
-  FBtnAddRowAbove.ShowHint := True;
-  FBtnAddRowAbove.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_add_row_above');
-
-  // Кнопка "Добавить столбец справа от ячейки"
-  FBtnAddColumnRight := TToolButton.Create(FToolBar);
-  FBtnAddColumnRight.Parent := FToolBar;
-  FBtnAddColumnRight.Hint := 'Добавить столбец справа от выделенной ячейки';
-  FBtnAddColumnRight.ShowHint := True;
-  FBtnAddColumnRight.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_add_column_right');
-
-  // Кнопка "Добавить столбец слева от ячейки"
-  FBtnAddColumnLeft := TToolButton.Create(FToolBar);
-  FBtnAddColumnLeft.Parent := FToolBar;
-  FBtnAddColumnLeft.Hint := 'Добавить столбец слева от выделенной ячейки';
-  FBtnAddColumnLeft.ShowHint := True;
-  FBtnAddColumnLeft.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_add_column_left');
-
-  // Кнопка "Удалить строку"
-  FBtnDeleteRow := TToolButton.Create(FToolBar);
-  FBtnDeleteRow.Parent := FToolBar;
-  FBtnDeleteRow.Hint := 'Удалить строку, в которой выделена ячейка';
-  FBtnDeleteRow.ShowHint := True;
-  FBtnDeleteRow.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_row');
-
-  // Кнопка "Удалить столбец"
-  FBtnDeleteColumn := TToolButton.Create(FToolBar);
-  FBtnDeleteColumn.Parent := FToolBar;
-  FBtnDeleteColumn.Hint := 'Удалить столбец, в котором выделена ячейка';
-  FBtnDeleteColumn.ShowHint := True;
-  FBtnDeleteColumn.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_delete_column');
-
-  // Кнопка "Объединить/разъединить ячейки"
-  FBtnMergeCells := TToolButton.Create(FToolBar);
-  FBtnMergeCells.Parent := FToolBar;
-  FBtnMergeCells.Hint := 'Объединить выделенные ячейки или разъединить объединённую ячейку';
-  FBtnMergeCells.ShowHint := True;
-  FBtnMergeCells.ImageIndex := ImagesManager.GetImageIndex('velec/sheet_merge_cells');
-
-  // Разделитель 4
-  FBtnSeparator4 := TToolButton.Create(FToolBar);
-  FBtnSeparator4.Parent := FToolBar;
-  FBtnSeparator4.Style := tbsSeparator;
-  FBtnSeparator4.Width := 10;
-
-  // Кнопка "Заполнить пространства помещений"
-  FBtnFillSpaceRoom := TToolButton.Create(FToolBar);
-  FBtnFillSpaceRoom.Parent := FToolBar;
-  FBtnFillSpaceRoom.Hint := 'Заполнить пространства помещений из таблицы';
-  FBtnFillSpaceRoom.ShowHint := True;
-  FBtnFillSpaceRoom.ImageIndex := ImagesManager.GetImageIndex('velec/space_room');
-
-  // Разделитель 5
-  FBtnSeparator5 := TToolButton.Create(FToolBar);
-  FBtnSeparator5.Parent := FToolBar;
-  FBtnSeparator5.Style := tbsSeparator;
-  FBtnSeparator5.Width := 10;
-
-  // Кнопка "Вставить таблицу в чертёж"
-  FBtnInsertTable := TToolButton.Create(FToolBar);
-  FBtnInsertTable.Parent := FToolBar;
-  FBtnInsertTable.Hint := 'Вставить таблицу из редактора в чертёж';
-  FBtnInsertTable.ShowHint := True;
-  FBtnInsertTable.ImageIndex := ImagesManager.GetImageIndex('velec/table_insert');
 end;
 
 { Создание панели информации о ячейке }
