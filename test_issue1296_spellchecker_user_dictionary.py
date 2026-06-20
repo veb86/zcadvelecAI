@@ -105,10 +105,24 @@ def test_user_dictionary_uses_hunspell_format_with_aff_pair() -> None:
     save_routine = extract_routine(source, "SaveUserWords")
     assert "IntToStr(AList.Count)" in save_routine
 
-    # A paired (possibly empty) .aff file is required by hunspell.
+    # A paired .aff file is required by hunspell.
     assert "procedure EnsureAffFile" in source
     aff_routine = extract_routine(source, "EnsureAffFile")
     assert "ChangeFileExt(ADicPath, '.aff')" in aff_routine
+
+
+def test_user_dictionary_aff_declares_utf8_encoding() -> None:
+    # The dictionary stores UTF-8 words; the paired .aff must declare the
+    # encoding (SET UTF-8) so hunspell does not fall back to ISO8859-1 and
+    # fail to recognize the added word (issue #1296, follow-up comment 2).
+    source = read_text(USERDICT_PAS)
+
+    match = re.search(r"CUserDictAffContent\s*=\s*'SET UTF-8'", source)
+    assert match, "user .aff must declare SET UTF-8"
+
+    aff_routine = extract_routine(source, "EnsureAffFile")
+    assert "CUserDictAffContent" in aff_routine, (
+        "EnsureAffFile must write the SET UTF-8 affix content")
 
 
 def test_add_word_creates_dictionary_and_reloads_speller() -> None:

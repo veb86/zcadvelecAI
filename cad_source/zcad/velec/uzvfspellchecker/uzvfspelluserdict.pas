@@ -19,7 +19,8 @@
 // Работа с пользовательским словарём орфографии (issue #1296):
 // добавление нового слова в словарь и его создание при необходимости.
 // Словарь хранится в формате hunspell (.dic: первая строка - количество
-// слов, далее сами слова) рядом с парным пустым файлом .aff, как у abbrv.
+// слов, далее сами слова) рядом с парным файлом .aff, который объявляет
+// кодировку UTF-8 (SET UTF-8), чтобы добавленные слова распознавались.
 
 unit uzvfspelluserdict;
 
@@ -39,6 +40,13 @@ uses
   Classes, SysUtils,
   uzclog,
   uzcSpeller;
+
+const
+  // Содержимое парного .aff: словарь хранится в UTF-8, поэтому явно указываем
+  // кодировку директивой SET UTF-8 (как в штатных ru_RU.aff/en_US.aff).
+  // Без неё hunspell считает словарь однобайтовым (ISO8859-1), и в некоторых
+  // сборках добавленное слово не распознаётся (см. issue #1296).
+  CUserDictAffContent = 'SET UTF-8' + LineEnding;
 
 // Прочитать файл как «сырые» байты без перекодировки (словарь в UTF-8).
 // Байты помечаются как UTF-8, чтобы сравнение слов было побайтовым и не
@@ -131,14 +139,24 @@ begin
   WriteFileRaw(ADicPath, content);
 end;
 
-// Создать парный пустой файл .aff, если его нет (требуется hunspell).
+// Прочитать весь файл в строку (или '' если файла нет).
+function ReadFileIfExists(const AFileName: string): RawByteString;
+begin
+  if FileExists(AFileName) then
+    Result := ReadFileRaw(AFileName)
+  else
+    Result := '';
+end;
+
+// Создать/обновить парный файл .aff с указанием кодировки UTF-8.
+// Требуется hunspell; перезаписываем и старые пустые .aff, созданные ранее.
 procedure EnsureAffFile(const ADicPath: string);
 var
   affPath: string;
 begin
   affPath := ChangeFileExt(ADicPath, '.aff');
-  if not FileExists(affPath) then
-    WriteFileRaw(affPath, '');
+  if ReadFileIfExists(affPath) <> CUserDictAffContent then
+    WriteFileRaw(affPath, CUserDictAffContent);
 end;
 
 function AddWordToUserDictionary(const AWord: string): boolean;

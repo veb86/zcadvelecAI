@@ -1,6 +1,6 @@
 // Standalone functional test for the user-dictionary file logic from
 // uzvfspelluserdict.pas (issue #1296). Verifies the hunspell .dic format
-// (count-first), round-trip read, dedup, and empty .aff creation.
+// (count-first), round-trip read, dedup, and SET UTF-8 .aff creation.
 program test_userdict_logic;
 {$mode objfpc}{$H+}
 {$Codepage UTF8}
@@ -93,13 +93,24 @@ begin
   WriteFileRaw(ADicPath, content);
 end;
 
+const
+  CUserDictAffContent = 'SET UTF-8' + LineEnding;
+
+function ReadFileIfExists(const AFileName: string): RawByteString;
+begin
+  if FileExists(AFileName) then
+    Result := ReadFileRaw(AFileName)
+  else
+    Result := '';
+end;
+
 procedure EnsureAffFile(const ADicPath: string);
 var
   affPath: string;
 begin
   affPath := ChangeFileExt(ADicPath, '.aff');
-  if not FileExists(affPath) then
-    WriteFileRaw(affPath, '');
+  if ReadFileIfExists(affPath) <> CUserDictAffContent then
+    WriteFileRaw(affPath, CUserDictAffContent);
 end;
 
 // --- test driver ---
@@ -136,7 +147,7 @@ begin
 
   Check('dic file created', FileExists(dic));
   Check('aff file created', FileExists(aff));
-  Check('aff file is empty', ReadFileRaw(aff) = '');
+  Check('aff declares SET UTF-8', ReadFileRaw(aff) = 'SET UTF-8' + LineEnding);
 
   firstLine := ReadFileRaw(dic);
   Check('first line is the count "1"',
