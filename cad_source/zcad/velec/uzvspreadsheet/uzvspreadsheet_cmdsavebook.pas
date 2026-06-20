@@ -47,7 +47,8 @@ implementation
 uses
   Dialogs,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 const
   // Фильтр для диалога сохранения файлов
@@ -188,5 +189,23 @@ begin
     saveDialog.Free;
   end;
 end;
+
+{ Обработчик команды "Сохранить книгу" для реестра команд.
+  Если файл не был сохранён ранее - откроется диалог "Сохранить как". }
+procedure CommandSaveBook(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteSaveBookAs(Context.WorkbookSource);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'SaveBook',                 // Идентификатор
+    'Сохранить',                // Подпись
+    'Сохранить книгу в файл',   // Подсказка
+    'saveas',                   // Иконка
+    @CommandSaveBook,           // Обработчик
+    30,                         // Порядок
+    1                           // Группа
+  );
 
 end.

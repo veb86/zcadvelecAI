@@ -48,7 +48,8 @@ implementation
 uses
   Dialogs,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 const
   // Фильтр для диалога открытия файлов
@@ -195,5 +196,22 @@ begin
     openDialog.Free;
   end;
 end;
+
+{ Обработчик команды "Открыть книгу" для реестра команд }
+procedure CommandOpenBook(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteOpenBook(Context.WorkbookSource);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'OpenBook',                 // Идентификатор
+    'Открыть',                  // Подпись
+    'Открыть файл книги',       // Подсказка
+    'open',                     // Иконка
+    @CommandOpenBook,           // Обработчик
+    20,                         // Порядок
+    1                           // Группа
+  );
 
 end.

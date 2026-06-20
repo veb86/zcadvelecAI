@@ -159,8 +159,10 @@ function CanRedo: Boolean;
 implementation
 
 uses
+  ActnList,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 { TSpreadsheetUndoManager }
 
@@ -756,8 +758,60 @@ begin
     Result := False;
 end;
 
+{ Обработчик команды "Назад" (Undo) для реестра команд }
+procedure CommandUndo(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteUndo(Context.WorkbookSource);
+end;
+
+{ Обработчик команды "Вперёд" (Redo) для реестра команд }
+procedure CommandRedo(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteRedo(Context.WorkbookSource);
+end;
+
+{ Обновление доступности кнопки "Назад" }
+procedure UpdateUndo(const Context: TSpreadsheetCommandContext;
+  anAction: TAction);
+begin
+  anAction.Enabled := CanUndo;
+end;
+
+{ Обновление доступности кнопки "Вперёд" }
+procedure UpdateRedo(const Context: TSpreadsheetCommandContext;
+  anAction: TAction);
+begin
+  anAction.Enabled := CanRedo;
+end;
+
 initialization
   SpreadsheetUndoManager := nil;
+
+  RegisterSpreadsheetCommand(
+    'Undo',                                       // Идентификатор
+    'Назад',                                      // Подпись
+    'Отменить последнее изменение (Ctrl+Z)',      // Подсказка
+    'undo',                                       // Иконка
+    @CommandUndo,                                 // Обработчик
+    40,                                           // Порядок
+    2,                                            // Группа
+    sbsButton,                                    // Обычная кнопка
+    @UpdateUndo,                                  // Обновление состояния
+    16474                                         // Ctrl+Z
+  );
+
+  RegisterSpreadsheetCommand(
+    'Redo',                                       // Идентификатор
+    'Вперёд',                                     // Подпись
+    'Вернуть отменённое изменение (Ctrl+Y)',      // Подсказка
+    'redo',                                       // Иконка
+    @CommandRedo,                                 // Обработчик
+    50,                                           // Порядок
+    2,                                            // Группа
+    sbsButton,                                    // Обычная кнопка
+    @UpdateRedo,                                  // Обновление состояния
+    16473                                         // Ctrl+Y
+  );
 
 finalization
   FreeUndoManager;

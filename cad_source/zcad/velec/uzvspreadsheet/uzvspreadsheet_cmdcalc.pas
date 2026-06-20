@@ -48,8 +48,10 @@ function IsAutoCalcEnabled(aWorkbookSource: TsWorkbookSource): Boolean;
 implementation
 
 uses
+  ActnList,
   uzclog,
-  uzcinterface;
+  uzcinterface,
+  uzvspreadsheet_cmdregistry;
 
 { Выполняет пересчёт всех формул в книге }
 procedure ExecuteCalcFormulas(aWorkbookSource: TsWorkbookSource);
@@ -229,5 +231,55 @@ begin
 
   Result := boAutoCalc in workbook.Options;
 end;
+
+{ Обработчик команды "Пересчитать формулы" для реестра команд }
+procedure CommandCalc(const Context: TSpreadsheetCommandContext);
+begin
+  ExecuteCalcFormulas(Context.WorkbookSource);
+end;
+
+{ Обработчик команды "Автопересчёт" для реестра команд: переключает режим }
+procedure CommandAutoCalc(const Context: TSpreadsheetCommandContext);
+begin
+  SetAutoCalcEnabled(Context.WorkbookSource,
+    not IsAutoCalcEnabled(Context.WorkbookSource));
+
+  if IsAutoCalcEnabled(Context.WorkbookSource) then
+    zcUI.TextMessage('Автопересчёт формул включён', TMWOHistoryOut)
+  else
+    zcUI.TextMessage('Автопересчёт формул выключен', TMWOHistoryOut);
+end;
+
+{ Обновление состояния кнопки "Автопересчёт" по текущему режиму книги }
+procedure UpdateAutoCalc(const Context: TSpreadsheetCommandContext;
+  anAction: TAction);
+begin
+  anAction.Checked := IsAutoCalcEnabled(Context.WorkbookSource);
+end;
+
+initialization
+  RegisterSpreadsheetCommand(
+    'Calc',                          // Идентификатор
+    'Расчёт',                        // Подпись
+    'Пересчитать все формулы',       // Подсказка
+    'spreadsheet_calc',              // Иконка
+    @CommandCalc,                    // Обработчик
+    60,                              // Порядок
+    3                                // Группа
+  );
+
+  RegisterSpreadsheetCommand(
+    'AutoCalc',                      // Идентификатор
+    'Автопересчёт',                  // Подпись
+    'Включить/выключить автопересчёт формул', // Подсказка
+    'spreadsheet_autocalc',          // Иконка
+    @CommandAutoCalc,                // Обработчик
+    70,                              // Порядок
+    3,                               // Группа
+    sbsCheck,                        // Кнопка-переключатель
+    @UpdateAutoCalc,                 // Обновление состояния
+    0,                               // Без горячей клавиши
+    True                             // Начально включена
+  );
 
 end.
