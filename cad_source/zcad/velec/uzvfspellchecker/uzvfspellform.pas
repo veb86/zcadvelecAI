@@ -44,6 +44,8 @@ type
   { TSpellCheckerForm }
   TSpellCheckerForm = class(TForm)
     ActionList: TActionList;
+    AddToDictionaryAction: TAction;
+    AddToDictionaryButton: TToolButton;
     ApplySuggestionAction: TAction;
     ApplySuggestionButton: TToolButton;
     ErrorsTree: TLazVirtualStringTree;
@@ -60,6 +62,7 @@ type
     procedure ErrorsTreeGetText(Sender: TBaseVirtualTree; Node: PVirtualNode;
       Column: TColumnIndex; TextType: TVSTTextType; var CellText: string);
     procedure ApplySuggestionActionExecute(Sender: TObject);
+    procedure AddToDictionaryActionExecute(Sender: TObject);
     procedure MainPanelResize(Sender: TObject);
     procedure RefreshActionExecute(Sender: TObject);
     procedure SuggestionsTreeDblClick(Sender: TObject);
@@ -122,7 +125,8 @@ implementation
 uses
   gzctnrVectorTypes,
   uzcdrawing, uzcdrawings, uzcutils, uzeconsts, uzeentity, uzeenttext,
-  uzetypes, uzgldrawcontext, uzvfspellzoom, zUndoCmdSaveEntityState;
+  uzetypes, uzgldrawcontext, uzvfspellzoom, uzvfspelluserdict,
+  zUndoCmdSaveEntityState;
 
 {$R *.lfm}
 
@@ -147,6 +151,8 @@ const
   STR_NO_TEXT_ENTITIES = 'В чертеже нет примитивов TEXT/MTEXT';
   // Сообщение при пустом тексте в найденных примитивах
   STR_NO_TEXT_CONTENT = 'В текстовых примитивах нет текста';
+  // Сообщение при отсутствии выбранного слова для добавления в словарь
+  STR_NO_WORD_SELECTED = 'Выберите слово с ошибкой для добавления в словарь';
 
 function IsSpellTextEntity(EntityPtr: PGDBObjEntity): boolean;
 begin
@@ -697,6 +703,35 @@ end;
 procedure TSpellCheckerForm.ApplySuggestionActionExecute(Sender: TObject);
 begin
   ApplySelectedSuggestion;
+end;
+
+// Обработчик действия "Добавить в словарь":
+// добавить выбранное слово с ошибкой в пользовательский словарь
+procedure TSpellCheckerForm.AddToDictionaryActionExecute(Sender: TObject);
+var
+  errorPtr: PSpellError;
+begin
+  errorPtr := GetFocusedError;
+
+  if not Assigned(errorPtr) then begin
+    SentenceLabel.Caption := STR_NO_WORD_SELECTED;
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.AddToDictionaryActionExecute: no word selected',
+      [], LM_Info);
+    Exit;
+  end;
+
+  if AddWordToUserDictionary(errorPtr^.ErrorWord) then begin
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.AddToDictionaryActionExecute: added "%s"',
+      [errorPtr^.ErrorWord], LM_Info);
+    // Перепроверить чертёж: добавленное слово больше не будет ошибкой
+    CheckCurrentDrawing;
+  end
+  else
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.AddToDictionaryActionExecute: failed to add "%s"',
+      [errorPtr^.ErrorWord], LM_Info);
 end;
 
 // Обработчик изменения размера рабочей области

@@ -33,6 +33,13 @@ object SpellCheckerForm: TSpellCheckerForm
       Caption = 'Применить'
       ImageIndex = 1
     end
+    object AddToDictionaryButton: TToolButton
+      Left = 165
+      Top = 2
+      Action = AddToDictionaryAction
+      Caption = 'В словарь'
+      ImageIndex = 2
+    end
   end
   object SentenceLabel: TLabel
     Left = 0
@@ -113,6 +120,11 @@ object SpellCheckerForm: TSpellCheckerForm
     object ApplySuggestionAction: TAction
       Caption = 'Применить'
       OnExecute = ApplySuggestionActionExecute
+    end
+    object AddToDictionaryAction: TAction
+      Caption = 'В словарь'
+      Hint = 'Добавить выбранное слово в пользовательский словарь'
+      OnExecute = AddToDictionaryActionExecute
     end
   end
 end
