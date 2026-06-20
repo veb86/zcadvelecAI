@@ -41,6 +41,10 @@ uses
 
 const
   WORD_VOLUME_PADDING_FACTOR = 0.35;
+  // Коэффициент увеличения размера слова перед зуммированием.
+  // Слово зуммируется так, будто оно в WORD_ZOOM_ENLARGE_FACTOR раз больше,
+  // чтобы зум не был слишком близким (см. issue #1296).
+  WORD_ZOOM_ENLARGE_FACTOR = 3;
 
 function IsZoomTextEntity(EntityPtr: PGDBObjEntity): boolean;
 begin
@@ -146,6 +150,27 @@ begin
     Volume.RTF.y := Point.y;
   if Point.z > Volume.RTF.z then
     Volume.RTF.z := Point.z;
+end;
+
+// Увеличить объём слова относительно его центра в Factor раз,
+// чтобы зум был не таким близким (см. issue #1296).
+procedure EnlargeVolume(var Volume: TBoundingBox; Factor: double);
+var
+  center: TzePoint3d;
+begin
+  if Factor <= 1 then
+    Exit;
+
+  center.x := (Volume.LBN.x + Volume.RTF.x) / 2;
+  center.y := (Volume.LBN.y + Volume.RTF.y) / 2;
+  center.z := (Volume.LBN.z + Volume.RTF.z) / 2;
+
+  Volume.LBN.x := center.x + (Volume.LBN.x - center.x) * Factor;
+  Volume.LBN.y := center.y + (Volume.LBN.y - center.y) * Factor;
+  Volume.LBN.z := center.z + (Volume.LBN.z - center.z) * Factor;
+  Volume.RTF.x := center.x + (Volume.RTF.x - center.x) * Factor;
+  Volume.RTF.y := center.y + (Volume.RTF.y - center.y) * Factor;
+  Volume.RTF.z := center.z + (Volume.RTF.z - center.z) * Factor;
 end;
 
 procedure PadVolume(var Volume: TBoundingBox; Padding: double);
@@ -393,6 +418,7 @@ begin
     Exit;
 
   if TryGetSpellErrorWordVolume(ErrorPtr, volume) then begin
+    EnlargeVolume(volume, WORD_ZOOM_ENLARGE_FACTOR);
     drawings.GetCurrentDWG^.wa.ZoomToVolume(volume);
     programlog.LogOutFormatStr(
       'ZoomToSpellError: zoomed word "%s" at entity position %d',
