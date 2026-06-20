@@ -77,6 +77,12 @@ type
     // Панель инструментов
     FToolBar: TToolBar;
 
+    // Комбобокс выбора выравнивания текста внутри ячейки
+    FAlignmentCombo: TComboBox;
+    // Флаг: комбобокс выравнивания обновляется программно (не реагировать
+    // на OnChange, чтобы не перезаписывать выравнивание выделенной ячейки)
+    FUpdatingAlignmentCombo: Boolean;
+
     // Действия и построитель панели инструментов по реестру команд
     FActionList: TActionList;
     FCommandBar: TSpreadsheetCommandBar;
@@ -91,9 +97,15 @@ type
     // Процедуры создания компонентов
     procedure CreatePanels;
     procedure CreateToolBar;
+    procedure CreateAlignmentCombo;
     procedure CreateSpreadsheetComponents;
     procedure CreateCellInfoPanel;
     procedure BuildCommandBar;
+
+    // Обработчик изменения выравнивания через комбобокс
+    procedure OnAlignmentComboChange(Sender: TObject);
+    // Обновляет комбобокс выравнивания по выделенной ячейке
+    procedure UpdateAlignmentCombo;
 
     // Обработчики событий
     procedure OnWorksheetGridSelection(Sender: TObject;
@@ -139,6 +151,7 @@ implementation
 uses
   uzclog,
   uzcinterface,
+  uzvspreadsheet_cmdalignment,
   uzvspreadsheet_cmdundoredo;
 
 { TuzvSpreadsheetForm }
@@ -152,6 +165,7 @@ begin
   FEditingRow := 0;
   FEditingCol := 0;
   FUndoSavedForCurrentEdit := False;
+  FUpdatingAlignmentCombo := False;
 
   // Настройка основных параметров формы
   Caption := 'Электронные таблицы / Spreadsheet';
@@ -167,6 +181,9 @@ begin
   // Панель инструментов строится по реестру команд после создания
   // компонентов таблицы, чтобы передать их в контекст команд
   BuildCommandBar;
+  // Комбобокс выравнивания добавляется после кнопок команд, чтобы
+  // располагаться в конце панели инструментов
+  CreateAlignmentCombo;
 
   zcUI.TextMessage('Форма электронных таблиц создана', TMWOHistoryOut);
 end;
@@ -238,6 +255,32 @@ begin
   FToolBar.Images := ImagesManager.IconList;  // Устанавливаем список иконок
   FToolBar.ButtonWidth := 28;
   FToolBar.ButtonHeight := 28;
+end;
+
+{ Создание комбобокса выбора выравнивания текста внутри ячейки.
+  Размещается на панели инструментов после кнопок команд. Показывает текущее
+  выравнивание выделенной ячейки и применяет выбранное выравнивание к
+  выделенному диапазону. }
+procedure TuzvSpreadsheetForm.CreateAlignmentCombo;
+var
+  Separator: TToolButton;
+begin
+  // Разделитель между кнопками команд и комбобоксом выравнивания
+  Separator := TToolButton.Create(FToolBar);
+  Separator.Parent := FToolBar;
+  Separator.Style := tbsSeparator;
+  Separator.Width := 10;
+
+  // Комбобокс выравнивания (только выбор из списка)
+  FAlignmentCombo := TComboBox.Create(Self);
+  FAlignmentCombo.Parent := FToolBar;
+  FAlignmentCombo.Style := csDropDownList;
+  FAlignmentCombo.Width := 180;
+  FAlignmentCombo.Hint := 'Выравнивание текста внутри ячейки';
+  FAlignmentCombo.ShowHint := True;
+  FillAlignmentItems(FAlignmentCombo.Items);
+  FAlignmentCombo.ItemIndex := 0;
+  FAlignmentCombo.OnChange := @OnAlignmentComboChange;
 end;
 
 { Создание панели информации о ячейке }
@@ -448,6 +491,49 @@ begin
     cellContent := '';
 
   FEditCellContent.Text := cellContent;
+
+  // Синхронизируем комбобокс выравнивания с выделенной ячейкой
+  UpdateAlignmentCombo;
+end;
+
+{ Обновление комбобокса выравнивания по выделенной ячейке }
+procedure TuzvSpreadsheetForm.UpdateAlignmentCombo;
+var
+  index: Integer;
+begin
+  if FAlignmentCombo = nil then
+    Exit;
+
+  index := GetActiveCellAlignmentIndex(FWorkbookSource, FWorksheetGrid);
+
+  // Устанавливаем индекс программно, не вызывая обработчик OnChange
+  FUpdatingAlignmentCombo := True;
+  try
+    FAlignmentCombo.ItemIndex := index;
+  finally
+    FUpdatingAlignmentCombo := False;
+  end;
+end;
+
+{ Обработчик изменения выравнивания через комбобокс }
+procedure TuzvSpreadsheetForm.OnAlignmentComboChange(Sender: TObject);
+begin
+  // Игнорируем программное обновление индекса (синхронизация с ячейкой)
+  if FUpdatingAlignmentCombo then
+    Exit;
+
+  if FAlignmentCombo = nil then
+    Exit;
+
+  ApplyAlignmentToSelection(FWorkbookSource, FWorksheetGrid,
+    FAlignmentCombo.ItemIndex);
+
+  // Принудительно перерисовываем таблицу, чтобы изменения стали видны
+  if FWorksheetGrid <> nil then
+  begin
+    FWorksheetGrid.Invalidate;
+    FWorksheetGrid.SetFocus;
+  end;
 end;
 
 { Применение содержимого из поля редактирования к ячейке }
