@@ -143,6 +143,12 @@ type
     // должны получать свежие хэндлы из общего счётчика документа, а
     // round-trip XRECORD (360/361/330) — ссылаться на эти же новые хэндлы.
     procedure RenumbersRawAcadTableEntityHandlesToAvoidCollision;
+    // issue #1357: программное построение ACAD_TABLE из текстов ячеек
+    // (как при вставке из редактора электронных таблиц) должно задавать
+    // размеры таблицы и отрисовывать текст каждой непустой ячейки.
+    procedure BuildsAcadTableFromCellTexts;
+    // issue #1357: пустой диапазон не создаёт таблицу.
+    procedure BuildFromCellTextsRejectsEmptyDimensions;
   end;
 
 implementation
@@ -2120,6 +2126,79 @@ begin
     'Round-trip не должен ссылаться на исходный хэндл EB');
   CheckEquals(0, CountDxfPairs(DXFText, '330', '54C'),
     'Round-trip не должен ссылаться на исходный хэндл продолжения 54C');
+end;
+
+procedure TAcadTableStyleTest.BuildsAcadTableFromCellTexts;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  InsertPt: TzePoint3d;
+  Ok: Boolean;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    // Заполненный диапазон 2 строки × 3 столбца. Часть ячеек пустые,
+    // чтобы проверить, что отрисовывается только непустой текст.
+    System.SetLength(Texts, 6);
+    Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
+    Texts[3] := 'A2'; Texts[4] := '';   Texts[5] := 'C2';
+
+    InsertPt := NulVertex;
+    Ok := Table^.BuildFromCellTexts(2, 3, Texts, InsertPt);
+    CheckTrue(Ok, 'BuildFromCellTexts должен успешно построить таблицу');
+
+    CheckEquals(2, Table^.RowCount,
+      'Число строк должно соответствовать заполненному диапазону');
+    CheckEquals(3, Table^.ColCount,
+      'Число столбцов должно соответствовать заполненному диапазону');
+    CheckTrue(Table^.ForceDataStyleForAllRows,
+      'Все строки должны оформляться стилем Data (issue #1357)');
+
+    // Строим геометрию и проверяем, что текст каждой непустой ячейки
+    // отрисован ровно один раз, а пустая ячейка текста не создаёт.
+    Table^.BuildGeometry(Drawing);
+    CheckEquals(1, CountMTextByTemplate(Table^.ConstObjArray, 'A1'),
+      'Ячейка A1 должна быть отрисована');
+    CheckEquals(1, CountMTextByTemplate(Table^.ConstObjArray, 'C2'),
+      'Ячейка C2 должна быть отрисована');
+    CheckEquals(0, CountMTextByTemplate(Table^.ConstObjArray, ''),
+      'Пустая ячейка не должна создавать текст');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.BuildFromCellTextsRejectsEmptyDimensions;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 0);
+    InsertPt := NulVertex;
+    CheckFalse(Table^.BuildFromCellTexts(0, 0, Texts, InsertPt),
+      'Пустой диапазон не должен создавать таблицу');
+    CheckEquals(0, Table^.RowCount,
+      'У не построенной таблицы число строк должно остаться 0');
+    CheckEquals(0, Table^.ColCount,
+      'У не построенной таблицы число столбцов должно остаться 0');
+  finally
+    Drawing.done;
+  end;
 end;
 
 begin
