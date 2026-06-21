@@ -52,6 +52,7 @@ uses
   uzeconsts,
   uzeTypes,
   uzegeometry,
+  uzegeometrytypes,
   uzgldrawcontext,
   uzvspreadsheet_dimensions,
   uzvspreadsheet_gui;
