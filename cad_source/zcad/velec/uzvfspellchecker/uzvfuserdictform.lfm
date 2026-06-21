@@ -1,0 +1,118 @@
+object UserDictForm: TUserDictForm
+  Left = 300
+  Height = 600
+  Top = 150
+  Width = 500
+  Caption = 'Пользовательский словарь'
+  ClientHeight = 600
+  ClientWidth = 500
+  Position = poScreenCenter
+  LCLVersion = '2.0.12.0'
+  object MainToolBar: TToolBar
+    Left = 0
+    Height = 36
+    Top = 0
+    Width = 500
+    Align = alTop
+    AutoSize = True
+    ButtonHeight = 32
+    ButtonWidth = 32
+    ShowCaptions = True
+    TabOrder = 0
+    object RefreshButton: TToolButton
+      Left = 1
+      Top = 2
+      Action = RefreshAction
+      Caption = 'Обновить'
+      ImageIndex = 0
+    end
+    object DeleteWordButton: TToolButton
+      Left = 83
+      Top = 2
+      Action = DeleteWordAction
+      Caption = 'Удалить'
+      ImageIndex = 1
+    end
+  end
+  object SearchPanel: TPanel
+    Left = 0
+    Height = 32
+    Top = 36
+    Width = 500
+    Align = alTop
+    BevelOuter = bvNone
+    ClientHeight = 32
+    ClientWidth = 500
+    TabOrder = 1
+    object SearchLabel: TLabel
+      Left = 6
+      Height = 32
+      Top = 0
+      Width = 50
+      Align = alLeft
+      Alignment = taRightJustify
+      AutoSize = False
+      Caption = 'Поиск:'
+      Layout = tlCenter
+    end
+    object SearchEdit: TEdit
+      Left = 56
+      Height = 28
+      Top = 2
+      Width = 444
+      Align = alClient
+      BorderSpacing.Left = 6
+      BorderSpacing.Around = 2
+      TabOrder = 0
+      TextHint = 'Введите слово для поиска'
+      OnChange = SearchEditChange
+    end
+  end
+  object StatusLabel: TLabel
+    Left = 0
+    Height = 28
+    Top = 572
+    Width = 500
+    Align = alBottom
+    Alignment = taCenter
+    AutoSize = False
+    Caption = 'Пользовательский словарь пуст'
+    Layout = tlCenter
+    WordWrap = True
+  end
+  object WordsTree: TLazVirtualStringTree
+    Left = 0
+    Height = 504
+    Top = 68
+    Width = 500
+    Align = alClient
+    DefaultNodeHeight = 20
+    Header.AutoSizeIndex = 0
+    Header.Columns = <
+      item
+        Position = 0
+        Width = 496
+        Text = 'Слово в словаре'
+      end>
+    Header.Options = [hoAutoResize, hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
+    TabOrder = 2
+    TreeOptions.MiscOptions = [toFullRepaintOnResize, toInitOnSave, toToggleOnDblClick, toWheelPanning]
+    TreeOptions.PaintOptions = [toShowButtons, toShowDropmark, toThemeAware, toUseBlendedImages]
+    TreeOptions.SelectionOptions = [toFullRowSelect]
+    OnGetText = WordsTreeGetText
+  end
+  object ActionList: TActionList
+    Left = 40
+    Top = 120
+    object RefreshAction: TAction
+      Caption = 'Обновить'
+      Hint = 'Перечитать пользовательский словарь'
+      OnExecute = RefreshActionExecute
+    end
+    object DeleteWordAction: TAction
+      Caption = 'Удалить'
+      Hint = 'Удалить выбранное слово из пользовательского словаря'
+      OnExecute = DeleteWordActionExecute
+    end
+  end
+end
