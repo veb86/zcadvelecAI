@@ -255,6 +255,7 @@ uses
   uzcCommand_LPCSRun,
   uzcCommand_Find,
   uzcCommand_SpellCheck,
+  uzcCommand_SpellUserDict,
   uzcCommand_Duplicate,
 
   uzcCommand_PlaceDelegate,

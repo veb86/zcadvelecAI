@@ -20,7 +20,8 @@ interface
 uses
   Types, Controls,
   uzcguimanager,
-  uzvfspellform;
+  uzvfspellform,
+  uzvfuserdictform;
 
 implementation
 
@@ -46,7 +47,28 @@ begin
       [Form.ClassName], LM_Info);
 end;
 
+// При показе формы пользовательского словаря перечитываем список слов с диска,
+// чтобы он отражал актуальное содержимое словаря (issue #1361).
+procedure uzvfuserdictSetupProc(Form: TControl);
+begin
+  programlog.LogOutFormatStr('uzvfuserdictSetupProc: setup started',
+    [], LM_Info);
+
+  if Form = nil then begin
+    programlog.LogOutFormatStr('uzvfuserdictSetupProc: nil form', [], LM_Info);
+    Exit;
+  end;
+
+  if Form is TUserDictForm then
+    TUserDictForm(Form).ReloadWords
+  else
+    programlog.LogOutFormatStr(
+      'uzvfuserdictSetupProc: unexpected form class "%s"',
+      [Form.ClassName], LM_Info);
+end;
+
 initialization
   ZCADGUIManager.RegisterZCADFormInfo('uzvfspellchecker','uzvfspellchecker',TSpellCheckerForm,Rect(0,100,900,600),@uzvfspellcheckerSetupProc,nil,@SpellCheckerForm,true);
+  ZCADGUIManager.RegisterZCADFormInfo('uzvfuserdict','uzvfuserdict',TUserDictForm,Rect(0,100,500,600),@uzvfuserdictSetupProc,nil,@UserDictForm,true);
 finalization
 end.
