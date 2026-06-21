@@ -155,6 +155,9 @@ type
     // issue #1359: отсутствующие или неположительные размеры заменяются
     // значениями по умолчанию.
     procedure BuildFromCellTextsWithSizesFallsBackToDefaults;
+    // issue #1363: выравнивание ячеек (код AutoCAD 1..9) переносится в
+    // таблицу ACAD_TABLE; отсутствующие коды дают 0 (наследование от стиля).
+    procedure BuildFromCellTextsAppliesCellAlignments;
   end;
 
 implementation
@@ -2291,6 +2294,57 @@ begin
     // Высота единственной строки = высота по умолчанию
     CheckEquals(CAcadTableDefaultRowHeight, Table^.Height, CSizeDelta,
       'Пустой массив высот должен давать высоту строки по умолчанию');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.BuildFromCellTextsAppliesCellAlignments;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 6);
+    Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
+    Texts[3] := 'A2'; Texts[4] := 'B2'; Texts[5] := 'C2';
+
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+
+    // Коды AutoCAD: 1=TopLeft, 5=MiddleCenter, 9=BottomRight.
+    // Последняя ячейка (индекс 5) не задана в массиве -> 0 (наследование).
+    System.SetLength(Alignments, 5);
+    Alignments[0] := 1; Alignments[1] := 5; Alignments[2] := 9;
+    Alignments[3] := 4; Alignments[4] := 0;
+
+    InsertPt := NulVertex;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(2, 3, Texts,
+      ColWidths, RowHeights, Alignments, InsertPt),
+      'BuildFromCellTextsWithSizesAndAlignments должен построить таблицу');
+
+    CheckEquals(1, Table^.CellAlignmentAt(0, 0),
+      'Ячейка [0,0] должна получить выравнивание TopLeft (1)');
+    CheckEquals(5, Table^.CellAlignmentAt(0, 1),
+      'Ячейка [0,1] должна получить выравнивание MiddleCenter (5)');
+    CheckEquals(9, Table^.CellAlignmentAt(0, 2),
+      'Ячейка [0,2] должна получить выравнивание BottomRight (9)');
+    CheckEquals(4, Table^.CellAlignmentAt(1, 0),
+      'Ячейка [1,0] должна получить выравнивание MiddleLeft (4)');
+    CheckEquals(0, Table^.CellAlignmentAt(1, 1),
+      'Ячейка [1,1] с явным 0 должна наследовать выравнивание (0)');
+    CheckEquals(0, Table^.CellAlignmentAt(1, 2),
+      'Ячейка [1,2] вне массива должна наследовать выравнивание (0)');
   finally
     Drawing.done;
   end;
