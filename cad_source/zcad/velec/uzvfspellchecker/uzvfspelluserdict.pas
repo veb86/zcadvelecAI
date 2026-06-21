@@ -22,15 +22,23 @@
 // слов, далее сами слова) рядом с парным файлом .aff, который объявляет
 // кодировку UTF-8 (SET UTF-8), чтобы добавленные слова распознавались.
 //
-// issue #1353: слово, у которого в начале или в конце стоит знак "-"
-// (например "АВ-" или "-12"), всегда определялось как ошибка даже после
-// добавления в словарь. Причина в том, что орфо-движок (uSpeller.
-// SpellTextSimple) считает дефис (и любой другой однобайтовый символ, не
-// являющийся латинской буквой) разделителем слова и ищет в словаре только
-// буквенное «ядро» без таких символов. В словарь же попадало слово вместе с
-// дефисом, поэтому совпадения никогда не было. Перед сохранением слово
-// нормализуется: ведущие и замыкающие символы-разделители отбрасываются,
-// чтобы запись совпадала с тем, что реально ищет движок.
+// issue #1353: слово, у которого есть знак "-" (например "АВ-", "-12" или
+// "охранно-пожарный"), всегда определялось как ошибка даже после добавления
+// в словарь. Причина в том, что орфо-движок (uSpeller.SpellTextSimple)
+// считает дефис (и любой другой однобайтовый символ, не являющийся латинской
+// буквой: цифру, точку, "/" и т. п.) разделителем слова и ищет в словаре
+// каждое буквенное «ядро» по отдельности, без таких символов. В словарь же
+// попадало слово целиком вместе с разделителями, поэтому совпадения никогда
+// не было — ни для краевых дефисов, ни для внутренних.
+//
+// Прошлая правка лишь отбрасывала ведущие/замыкающие разделители, поэтому
+// слова с внутренним дефисом ("охранно-пожарный") и со спецсимволами hunspell
+// ("слово/привет", где "/" вводит аффиксы) по-прежнему не распознавались.
+// Теперь перед сохранением слово разбивается на те же буквенные токены, что
+// ищет движок (максимальные цепочки байтов, не являющихся разделителями), и в
+// словарь добавляется каждый токен по отдельности. Это разом покрывает дефис
+// в начале, в конце и внутри слова и при этом никогда не пишет в .dic
+// спецсимволы hunspell (так снимается вопрос об экранировании).
 
 unit uzvfspelluserdict;
 
@@ -101,21 +109,30 @@ begin
   Result := (Ord(AByte) < $80) and not (AByte in ['a'..'z', 'A'..'Z']);
 end;
 
-// Отбросить ведущие и замыкающие символы-разделители (дефис, цифры, точку и
-// т. п.), чтобы сохранённое слово совпадало с буквенным «ядром», которое ищет
-// орфо-движок. Без этого слова с дефисом по краям не распознаются даже после
-// добавления в словарь (issue #1353).
-function NormalizeUserWord(const AWord: string): string;
+// Разбить слово на буквенные токены — максимальные цепочки байтов, не
+// являющихся разделителями. Это в точности те токены, которые орфо-движок
+// (uSpeller.SpellTextSimple) ищет в словаре по отдельности. Любые разделители
+// (дефис в начале/конце/внутри слова, цифры, точка, "/" и пр.) отбрасываются,
+// поэтому в словарь попадают только буквенные ядра без спецсимволов hunspell
+// (issue #1353).
+procedure SplitWordToTokens(const AWord: string; ATokens: TStrings);
 var
-  startIdx, endIdx: integer;
+  i, startIdx, len: integer;
 begin
-  startIdx := 1;
-  endIdx := Length(AWord);
-  while (startIdx <= endIdx) and IsBreakByte(AWord[startIdx]) do
-    Inc(startIdx);
-  while (endIdx >= startIdx) and IsBreakByte(AWord[endIdx]) do
-    Dec(endIdx);
-  Result := Copy(AWord, startIdx, endIdx - startIdx + 1);
+  len := Length(AWord);
+  i := 1;
+  while i <= len do begin
+    // Пропустить разделители
+    while (i <= len) and IsBreakByte(AWord[i]) do
+      Inc(i);
+    if i > len then
+      Break;
+    // Считать максимальную цепочку «буквенных» байтов
+    startIdx := i;
+    while (i <= len) and not IsBreakByte(AWord[i]) do
+      Inc(i);
+    ATokens.Add(Copy(AWord, startIdx, i - startIdx));
+  end;
 end;
 
 // Является ли строка только цифрами (строка-счётчик в начале .dic).
@@ -198,50 +215,65 @@ end;
 
 function AddWordToUserDictionary(const AWord: string): boolean;
 var
-  word, dicPath: string;
-  words: TStringList;
+  dicPath, token: string;
+  words, tokens: TStringList;
+  i: integer;
+  changed: boolean;
 begin
   Result := False;
 
-  // Нормализуем слово: убираем пробелы и ведущие/замыкающие символы-
-  // разделители (дефис и т. п.), иначе слово не совпадёт с тем, что ищет
-  // орфо-движок, и останется «ошибкой» даже после добавления (issue #1353).
-  word := NormalizeUserWord(Trim(AWord));
-  if word = '' then begin
-    programlog.LogOutStr(
-      'AddWordToUserDictionary: empty word, nothing to add', LM_Warning);
-    Exit;
-  end;
-
-  dicPath := GetUserDictionaryPath;
+  // Разбиваем слово на буквенные токены так же, как их ищет орфо-движок, и
+  // добавляем каждый по отдельности. Иначе слово с дефисом (краевым или
+  // внутренним) или со спецсимволом ("/") не совпадёт с тем, что ищет движок,
+  // и останется «ошибкой» даже после добавления (issue #1353).
+  tokens := TStringList.Create;
   words := TStringList.Create;
   try
+    SplitWordToTokens(Trim(AWord), tokens);
+    if tokens.Count = 0 then begin
+      programlog.LogOutStr(
+        'AddWordToUserDictionary: empty word, nothing to add', LM_Warning);
+      Exit;
+    end;
+
+    dicPath := GetUserDictionaryPath;
     words.CaseSensitive := True;
 
     if FileExists(dicPath) then
       LoadUserWords(words, dicPath);
 
-    if words.IndexOf(word) >= 0 then begin
+    changed := False;
+    for i := 0 to tokens.Count - 1 do begin
+      token := tokens[i];
+      if words.IndexOf(token) >= 0 then begin
+        programlog.LogOutFormatStr(
+          'AddWordToUserDictionary: token "%s" already in dictionary',
+          [token], LM_Info);
+        Continue;
+      end;
+      words.Add(token);
+      changed := True;
       programlog.LogOutFormatStr(
-        'AddWordToUserDictionary: word "%s" already in dictionary',
-        [word], LM_Info);
+        'AddWordToUserDictionary: added token "%s" to "%s"',
+        [token, dicPath], LM_Info);
+    end;
+
+    // Все токены уже были в словаре — слово считается добавленным
+    if not changed then begin
       Result := True;
       Exit;
     end;
 
-    words.Add(word);
     SaveUserWords(words, dicPath);
     EnsureAffFile(dicPath);
 
     // Перезагрузить словари, чтобы слово сразу считалось корректным
     ReloadSpellChecker;
 
-    programlog.LogOutFormatStr(
-      'AddWordToUserDictionary: added word "%s" to "%s"',
-      [word, dicPath], LM_Info);
     Result := True;
   finally
     words.Free;
+    tokens.Free;
   end;
 end;
 
