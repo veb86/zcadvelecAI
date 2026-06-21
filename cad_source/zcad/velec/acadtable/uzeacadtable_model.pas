@@ -116,6 +116,11 @@ type
     FCellTexts: TTableTextArray;
     // Признак того, что геометрия уже была построена
     FGeometryBuilt: Boolean;
+    // Если True — при рендеринге все строки используют базовый стиль Data
+    // (issue #1357). В этой задаче программно созданная из редактора
+    // электронных таблиц таблица состоит только из ячеек данных; отдельное
+    // отображение строк Title/Header добавят будущие задачи.
+    FForceDataStyleAllRows: Boolean;
     // Хэндл DXF-стиля таблицы (group code 342)
     FTableStyleHandle: String;
     // Флаги свойств таблицы (group code 90)
@@ -344,6 +349,16 @@ type
     function SetTableStyleName(
       const AValue: String; var ADrawing: TDrawingDef): Boolean; virtual;
     procedure SetDXFRawEntityText(const ARawText: string); virtual;
+    // Программно строит таблицу из текстов ячеек редактора электронных
+    // таблиц (issue #1357). Все ячейки имеют тип cdtText и оформляются
+    // стилем Data, объединения отсутствуют. ACellTexts индексируется как
+    // строка*AColCount + столбец; недостающие тексты считаются пустыми.
+    // Высоты строк и ширины столбцов берутся по умолчанию. Возвращает
+    // True при успешном построении непустой таблицы.
+    function BuildFromCellTexts(
+      ARowCount, AColCount: Integer;
+      const ACellTexts: TTableTextArray;
+      const AInsertPoint: TzePoint3d): Boolean; virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -352,6 +367,9 @@ type
     property Width: Double read GetTotalWidth;
     property Height: Double read GetTotalHeight;
     property TableStyleName: String read GetTableStyleName;
+    // Если True — все строки таблицы отображаются стилем Data (issue #1357).
+    property ForceDataStyleForAllRows: Boolean
+      read FForceDataStyleAllRows write FForceDataStyleAllRows;
     // Признак разрыва вычисляется: учитывает как DXF-флаг, так и
     // поглощённые части-продолжения (issue #1305, часть 2a). Запись
     // в False объединяет разорванную таблицу сверху вниз (часть 2b).
@@ -501,6 +519,101 @@ begin
   Result := True;
 end;
 
+function GDBObjAcadTable.BuildFromCellTexts(
+  ARowCount, AColCount: Integer;
+  const ACellTexts: TTableTextArray;
+  const AInsertPoint: TzePoint3d): Boolean;
+var
+  RowIdx, ColIdx, CellIndex: Integer;
+begin
+  Result := False;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: BuildFromCellTexts START rows=%d cols=%d texts=%d',
+    [ARowCount, AColCount, Length(ACellTexts)], LM_Info);
+
+  if (ARowCount <= 0) or (AColCount <= 0) then
+  begin
+    programlog.LogOutStr(
+      'AcadTable: model: BuildFromCellTexts — пустые размеры таблицы',
+      LM_Info);
+    Exit;
+  end;
+
+  if ARowCount > CAcadTableMaxDimension then
+    ARowCount := CAcadTableMaxDimension;
+  if AColCount > CAcadTableMaxDimension then
+    AColCount := CAcadTableMaxDimension;
+
+  FInsertPoint := AInsertPoint;
+  Local.P_insert := FInsertPoint;
+  FRowCount := ARowCount;
+  FColCount := AColCount;
+
+  // Высоты строк и ширины столбцов — значения по умолчанию
+  for RowIdx := 0 to FRowCount - 1 do
+    FRowHeights.PushBackData(CAcadTableDefaultRowHeight);
+  for ColIdx := 0 to FColCount - 1 do
+    FColWidths.PushBackData(CAcadTableDefaultColWidth);
+
+  // Тексты ячеек: индекс = строка*FColCount + столбец
+  System.SetLength(FCellTexts, FRowCount * FColCount);
+  for CellIndex := 0 to High(FCellTexts) do
+    if CellIndex <= High(ACellTexts) then
+      FCellTexts[CellIndex] := ACellTexts[CellIndex]
+    else
+      FCellTexts[CellIndex] := '';
+
+  // Инициализируем табличный стиль значениями по умолчанию (стиль Standard
+  // присваивается командой через SetTableStyleName)
+  InitTableStyle(FTableStyle);
+
+  // Все строки отображаются как данные (Title/Header в этой задаче нет)
+  FForceDataStyleAllRows := True;
+
+  // Инициализируем строки, столбцы и ячейки (все ячейки — текстовые)
+  System.SetLength(FRows, FRowCount);
+  for RowIdx := 0 to FRowCount - 1 do
+  begin
+    FRows[RowIdx].Height := GetRowHeightLocal(RowIdx);
+    InitCellStyle(FRows[RowIdx].Style);
+  end;
+
+  System.SetLength(FCols, FColCount);
+  for ColIdx := 0 to FColCount - 1 do
+  begin
+    FCols[ColIdx].Width := GetColWidthLocal(ColIdx);
+    InitCellStyle(FCols[ColIdx].Style);
+  end;
+
+  System.SetLength(FCells, FRowCount, FColCount);
+  for RowIdx := 0 to FRowCount - 1 do
+    for ColIdx := 0 to FColCount - 1 do
+    begin
+      FCells[RowIdx][ColIdx].DataType := cdtText;
+      FCells[RowIdx][ColIdx].Text := GetCellTextLocal(RowIdx, ColIdx);
+      FCells[RowIdx][ColIdx].Value := 0;
+      FCells[RowIdx][ColIdx].Formula := '';
+      FCells[RowIdx][ColIdx].BlockName := '';
+      FCells[RowIdx][ColIdx].CellAlignment := 0;
+      FCells[RowIdx][ColIdx].ColSpan := 1;
+      FCells[RowIdx][ColIdx].RowSpan := 1;
+      InitCellStyle(FCells[RowIdx][ColIdx].Style);
+    end;
+
+  // Программно созданная таблица не содержит объединений ячеек
+  System.SetLength(FMerges, 0);
+
+  FGeometryBuilt := False;
+  InvalidateRawDXFEntity;
+
+  programlog.LogOutFormatStr(
+    'AcadTable: model: BuildFromCellTexts END rows=%d cols=%d cells=%d',
+    [FRowCount, FColCount, Length(FCellTexts)], LM_Info);
+
+  Result := True;
+end;
+
 function GDBObjAcadTable.GetCellTextLocal(
   RowIdx, ColIdx: Integer): String;
 var
@@ -527,6 +640,7 @@ begin
   FColWidths.initnul;
   System.SetLength(FCellTexts, 0);
   FGeometryBuilt := False;
+  FForceDataStyleAllRows := False;
   FTableStyleHandle := '';
   FTableFlags := 0;
   FBreakEnabled := False;
@@ -833,6 +947,7 @@ var
   SegmentOffsetX, SegmentOffsetY: Double;
   MergeRootPt: TPoint;
   InlineBreakEnabled: Boolean;
+  StyleRowIndex: Integer;
 begin
   programlog.LogOutFormatStr(
     'AcadTable: model: RenderCurrentTable START ' +
@@ -1041,8 +1156,16 @@ begin
 
         if CellStr <> '' then
         begin
+          // По умолчанию базовый стиль строки выбирается по её позиции
+          // (0=Title, 1=Header, >=2=Data). Для программно созданной из
+          // редактора таблицы (issue #1357) все строки оформляются как
+          // данные — принудительно используем индекс строки данных.
+          if FForceDataStyleAllRows then
+            StyleRowIndex := 2
+          else
+            StyleRowIndex := ARowBaseIndex + RowIdx;
           CellStyleLocal := uzeacadtable_cell.ResolveCellStyleForBaseRow(
-            ARowBaseIndex + RowIdx, RowIdx, ColIdx, FTableStyle,
+            StyleRowIndex, RowIdx, ColIdx, FTableStyle,
             FRows, FCols, FCells,
             FRowCount, FColCount, FTableFlags);
 

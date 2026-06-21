@@ -46,7 +46,8 @@ uses
   uzvspreadsheet_cmdrowcolumns,
   uzvspreadsheet_cmdmergecells,
   uzvspreadsheet_cmdfillspaceroom,
-  uzvspreadsheet_cmdinserttable;
+  uzvspreadsheet_cmdinserttable,
+  uzvspreadsheet_cmdcreateacadtable;
 
 implementation
 
