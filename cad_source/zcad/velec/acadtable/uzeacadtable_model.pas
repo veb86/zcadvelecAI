@@ -359,6 +359,17 @@ type
       ARowCount, AColCount: Integer;
       const ACellTexts: TTableTextArray;
       const AInsertPoint: TzePoint3d): Boolean; virtual;
+    // Расширенный вариант построения таблицы из текстов ячеек с явным
+    // указанием ширин столбцов и высот строк в единицах чертежа (issue
+    // #1359). AColWidths индексируется по столбцам, ARowHeights — по
+    // строкам. Если размер отсутствует или не положителен, берётся
+    // значение по умолчанию. BuildFromCellTexts делегирует сюда с
+    // пустыми массивами размеров. Возвращает True при успехе.
+    function BuildFromCellTextsWithSizes(
+      ARowCount, AColCount: Integer;
+      const ACellTexts: TTableTextArray;
+      const AColWidths, ARowHeights: TTableSizeArray;
+      const AInsertPoint: TzePoint3d): Boolean; virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -524,6 +535,32 @@ function GDBObjAcadTable.BuildFromCellTexts(
   const ACellTexts: TTableTextArray;
   const AInsertPoint: TzePoint3d): Boolean;
 var
+  EmptySizes: TTableSizeArray;
+begin
+  // Делегируем расширенному варианту без явных размеров — все ширины
+  // столбцов и высоты строк будут взяты по умолчанию.
+  System.SetLength(EmptySizes, 0);
+  Result := BuildFromCellTextsWithSizes(ARowCount, AColCount, ACellTexts,
+    EmptySizes, EmptySizes, AInsertPoint);
+end;
+
+{ Возвращает размер из массива по индексу, либо значение по умолчанию,
+  если индекс вне диапазона или размер не положителен. }
+function SizeOrDefault(const ASizes: TTableSizeArray;
+  AIndex: Integer; ADefault: Double): Double;
+begin
+  if (AIndex >= 0) and (AIndex <= High(ASizes)) and (ASizes[AIndex] > 0) then
+    Result := ASizes[AIndex]
+  else
+    Result := ADefault;
+end;
+
+function GDBObjAcadTable.BuildFromCellTextsWithSizes(
+  ARowCount, AColCount: Integer;
+  const ACellTexts: TTableTextArray;
+  const AColWidths, ARowHeights: TTableSizeArray;
+  const AInsertPoint: TzePoint3d): Boolean;
+var
   RowIdx, ColIdx, CellIndex: Integer;
 begin
   Result := False;
@@ -550,11 +587,14 @@ begin
   FRowCount := ARowCount;
   FColCount := AColCount;
 
-  // Высоты строк и ширины столбцов — значения по умолчанию
+  // Высоты строк и ширины столбцов: берём из переданных массивов,
+  // при отсутствии значения — по умолчанию (issue #1359).
   for RowIdx := 0 to FRowCount - 1 do
-    FRowHeights.PushBackData(CAcadTableDefaultRowHeight);
+    FRowHeights.PushBackData(
+      SizeOrDefault(ARowHeights, RowIdx, CAcadTableDefaultRowHeight));
   for ColIdx := 0 to FColCount - 1 do
-    FColWidths.PushBackData(CAcadTableDefaultColWidth);
+    FColWidths.PushBackData(
+      SizeOrDefault(AColWidths, ColIdx, CAcadTableDefaultColWidth));
 
   // Тексты ячеек: индекс = строка*FColCount + столбец
   System.SetLength(FCellTexts, FRowCount * FColCount);

@@ -166,6 +166,10 @@ type
   TTableColumnArray = array of TTableColumn;
   TMergeRangeArray = array of TMergeRange;
   TTableTextArray = array of String;
+  // Массив размеров (ширин столбцов или высот строк) в единицах чертежа.
+  // Используется для переноса размеров ячеек из электронной таблицы
+  // (TsWorksheet) в таблицу ACAD_TABLE при её создании (issue #1359).
+  TTableSizeArray = array of Double;
 
 implementation
 
