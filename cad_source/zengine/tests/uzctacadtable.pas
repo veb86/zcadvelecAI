@@ -149,6 +149,12 @@ type
     procedure BuildsAcadTableFromCellTexts;
     // issue #1357: пустой диапазон не создаёт таблицу.
     procedure BuildFromCellTextsRejectsEmptyDimensions;
+    // issue #1359: явные ширины столбцов и высоты строк должны переноситься
+    // в таблицу ACAD_TABLE (суммарные размеры равны сумме переданных).
+    procedure BuildFromCellTextsWithSizesAppliesColWidthsAndRowHeights;
+    // issue #1359: отсутствующие или неположительные размеры заменяются
+    // значениями по умолчанию.
+    procedure BuildFromCellTextsWithSizesFallsBackToDefaults;
   end;
 
 implementation
@@ -2196,6 +2202,95 @@ begin
       'У не построенной таблицы число строк должно остаться 0');
     CheckEquals(0, Table^.ColCount,
       'У не построенной таблицы число столбцов должно остаться 0');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.
+  BuildFromCellTextsWithSizesAppliesColWidthsAndRowHeights;
+const
+  // Ожидаемая точность сравнения суммарных размеров таблицы
+  CSizeDelta = 1e-6;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  InsertPt: TzePoint3d;
+  Ok: Boolean;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 6);
+    Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
+    Texts[3] := 'A2'; Texts[4] := 'B2'; Texts[5] := 'C2';
+
+    // Явные ширины столбцов (3) и высоты строк (2)
+    System.SetLength(ColWidths, 3);
+    ColWidths[0] := 40; ColWidths[1] := 50; ColWidths[2] := 60;
+    System.SetLength(RowHeights, 2);
+    RowHeights[0] := 20; RowHeights[1] := 30;
+
+    InsertPt := NulVertex;
+    Ok := Table^.BuildFromCellTextsWithSizes(2, 3, Texts,
+      ColWidths, RowHeights, InsertPt);
+    CheckTrue(Ok, 'BuildFromCellTextsWithSizes должен построить таблицу');
+
+    // Суммарная ширина = 40+50+60, суммарная высота = 20+30
+    CheckEquals(150.0, Table^.Width, CSizeDelta,
+      'Суммарная ширина должна равняться сумме ширин столбцов');
+    CheckEquals(50.0, Table^.Height, CSizeDelta,
+      'Суммарная высота должна равняться сумме высот строк');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.BuildFromCellTextsWithSizesFallsBackToDefaults;
+const
+  CSizeDelta = 1e-6;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 3);
+    Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
+
+    // Один столбец задан, один нулевой (-> по умолчанию), один отсутствует.
+    // Массив высот строк пуст -> высота по умолчанию.
+    System.SetLength(ColWidths, 2);
+    ColWidths[0] := 45; ColWidths[1] := 0;
+    System.SetLength(RowHeights, 0);
+
+    InsertPt := NulVertex;
+    CheckTrue(Table^.BuildFromCellTextsWithSizes(1, 3, Texts,
+      ColWidths, RowHeights, InsertPt),
+      'BuildFromCellTextsWithSizes должен построить таблицу');
+
+    // Ширина = 45 (задан) + 30 (нулевой -> по умолчанию)
+    //         + 30 (отсутствует -> по умолчанию) = 105
+    CheckEquals(45.0 + CAcadTableDefaultColWidth + CAcadTableDefaultColWidth,
+      Table^.Width, CSizeDelta,
+      'Отсутствующие/нулевые ширины должны заменяться значением по умолчанию');
+    // Высота единственной строки = высота по умолчанию
+    CheckEquals(CAcadTableDefaultRowHeight, Table^.Height, CSizeDelta,
+      'Пустой массив высот должен давать высоту строки по умолчанию');
   finally
     Drawing.done;
   end;

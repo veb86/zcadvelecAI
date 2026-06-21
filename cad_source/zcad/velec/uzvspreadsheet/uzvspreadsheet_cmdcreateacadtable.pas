@@ -53,6 +53,7 @@ uses
   uzeTypes,
   uzegeometry,
   uzgldrawcontext,
+  uzvspreadsheet_dimensions,
   uzvspreadsheet_gui;
 
 const
@@ -167,6 +168,7 @@ var
   row, col: Cardinal;
   cell: PCell;
   texts: TTableTextArray;
+  colWidths, rowHeights: TTableSizeArray;
   rowCount, colCount: Integer;
   insPt: TzePoint3d;
   dc: TDrawContext;
@@ -208,15 +210,22 @@ begin
         texts[Integer(row) * colCount + Integer(col)] := '';
     end;
 
+  // Собираем ширины столбцов и высоты строк листа в единицах чертежа,
+  // чтобы перенести их в таблицу ACAD_TABLE (issue #1359)
+  colWidths := CollectColWidths(worksheet, colCount);
+  rowHeights := CollectRowHeights(worksheet, rowCount);
+
   // Создаём сущность и помещаем её в конструктивный root чертежа
   pt := AllocAndInitAcadTable(
     PGDBObjGenericWithSubordinated(@drawings.CurrentDWG^.ConstructObjRoot));
   drawings.CurrentDWG^.ConstructObjRoot.ObjArray.AddPEntity(pt^);
 
-  // Строим таблицу из текстов ячеек (точка вставки временная, нулевая —
-  // окончательное положение пользователь укажет при перемещении из root)
+  // Строим таблицу из текстов ячеек с переносом размеров столбцов/строк
+  // (точка вставки временная, нулевая — окончательное положение
+  // пользователь укажет при перемещении из root)
   insPt := NulVertex;
-  if not pt^.BuildFromCellTexts(rowCount, colCount, texts, insPt) then
+  if not pt^.BuildFromCellTextsWithSizes(rowCount, colCount, texts,
+       colWidths, rowHeights, insPt) then
   begin
     programlog.LogOutFormatStr(
       'CreateAcadTableFromWorksheet: BuildFromCellTexts failed', [], LM_Info);
