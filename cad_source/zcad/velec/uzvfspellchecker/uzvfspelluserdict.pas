@@ -47,15 +47,28 @@ unit uzvfspelluserdict;
 
 interface
 
+uses
+  Classes;
+
 // Добавить слово в пользовательский словарь. Создаёт словарь, если его нет,
 // и перезагружает SpellChecker, чтобы слово сразу учитывалось.
 // Возвращает True, если слово добавлено (или уже присутствовало).
 function AddWordToUserDictionary(const AWord: string): boolean;
 
+// Загрузить все слова пользовательского словаря в список (в порядке файла,
+// без строки-счётчика, аффиксов после '/' и BOM). Возвращает True, если
+// словарь существует и прочитан; список очищается в любом случае.
+function LoadUserDictionaryWords(AList: TStrings): boolean;
+
+// Удалить слово из пользовательского словаря и перезагрузить SpellChecker,
+// чтобы изменение сразу учитывалось. Возвращает True, если слово было найдено
+// и удалено.
+function RemoveWordFromUserDictionary(const AWord: string): boolean;
+
 implementation
 
 uses
-  Classes, SysUtils,
+  SysUtils,
   uzclog,
   uzcSpeller;
 
@@ -274,6 +287,90 @@ begin
   finally
     words.Free;
     tokens.Free;
+  end;
+end;
+
+function LoadUserDictionaryWords(AList: TStrings): boolean;
+var
+  dicPath: string;
+  words: TStringList;
+begin
+  Result := False;
+  AList.Clear;
+
+  dicPath := GetUserDictionaryPath;
+  if not FileExists(dicPath) then begin
+    programlog.LogOutFormatStr(
+      'LoadUserDictionaryWords: dictionary "%s" not found', [dicPath],
+      LM_Info);
+    Exit;
+  end;
+
+  words := TStringList.Create;
+  try
+    words.CaseSensitive := True;
+    LoadUserWords(words, dicPath);
+    AList.Assign(words);
+    Result := True;
+    programlog.LogOutFormatStr(
+      'LoadUserDictionaryWords: loaded %d words from "%s"',
+      [words.Count, dicPath], LM_Info);
+  finally
+    words.Free;
+  end;
+end;
+
+function RemoveWordFromUserDictionary(const AWord: string): boolean;
+var
+  dicPath, wordText: string;
+  words: TStringList;
+  idx: integer;
+begin
+  Result := False;
+
+  wordText := Trim(AWord);
+  if wordText = '' then begin
+    programlog.LogOutStr(
+      'RemoveWordFromUserDictionary: empty word, nothing to remove',
+      LM_Warning);
+    Exit;
+  end;
+
+  dicPath := GetUserDictionaryPath;
+  if not FileExists(dicPath) then begin
+    programlog.LogOutFormatStr(
+      'RemoveWordFromUserDictionary: dictionary "%s" not found', [dicPath],
+      LM_Info);
+    Exit;
+  end;
+
+  words := TStringList.Create;
+  try
+    words.CaseSensitive := True;
+    LoadUserWords(words, dicPath);
+
+    idx := words.IndexOf(wordText);
+    if idx < 0 then begin
+      programlog.LogOutFormatStr(
+        'RemoveWordFromUserDictionary: word "%s" not in dictionary',
+        [wordText], LM_Info);
+      Exit;
+    end;
+
+    words.Delete(idx);
+    SaveUserWords(words, dicPath);
+    EnsureAffFile(dicPath);
+
+    // Перезагрузить словари, чтобы удалённое слово сразу снова считалось
+    // ошибкой при последующих проверках
+    ReloadSpellChecker;
+
+    Result := True;
+    programlog.LogOutFormatStr(
+      'RemoveWordFromUserDictionary: removed "%s" from "%s"',
+      [wordText, dicPath], LM_Info);
+  finally
+    words.Free;
   end;
 end;
 
