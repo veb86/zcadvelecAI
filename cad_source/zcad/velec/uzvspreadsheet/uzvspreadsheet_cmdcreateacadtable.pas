@@ -170,6 +170,7 @@ var
   cell: PCell;
   texts: TTableTextArray;
   colWidths, rowHeights: TTableSizeArray;
+  cellAlignments: TTableAlignmentArray;
   rowCount, colCount: Integer;
   insPt: TzePoint3d;
   dc: TDrawContext;
@@ -216,17 +217,21 @@ begin
   colWidths := CollectColWidths(worksheet, colCount);
   rowHeights := CollectRowHeights(worksheet, rowCount);
 
+  // Собираем выравнивание ячеек листа в кодировке AutoCAD, чтобы перенести
+  // его в таблицу ACAD_TABLE при создании (issue #1363)
+  cellAlignments := CollectCellAlignments(worksheet, rowCount, colCount);
+
   // Создаём сущность и помещаем её в конструктивный root чертежа
   pt := AllocAndInitAcadTable(
     PGDBObjGenericWithSubordinated(@drawings.CurrentDWG^.ConstructObjRoot));
   drawings.CurrentDWG^.ConstructObjRoot.ObjArray.AddPEntity(pt^);
 
   // Строим таблицу из текстов ячеек с переносом размеров столбцов/строк
-  // (точка вставки временная, нулевая — окончательное положение
-  // пользователь укажет при перемещении из root)
+  // и выравнивания ячеек (точка вставки временная, нулевая — окончательное
+  // положение пользователь укажет при перемещении из root)
   insPt := NulVertex;
-  if not pt^.BuildFromCellTextsWithSizes(rowCount, colCount, texts,
-       colWidths, rowHeights, insPt) then
+  if not pt^.BuildFromCellTextsWithSizesAndAlignments(rowCount, colCount,
+       texts, colWidths, rowHeights, cellAlignments, insPt) then
   begin
     programlog.LogOutFormatStr(
       'CreateAcadTableFromWorksheet: BuildFromCellTexts failed', [], LM_Info);

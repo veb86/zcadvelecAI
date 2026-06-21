@@ -86,6 +86,20 @@ function CollectColWidths(AWorksheet: TsWorksheet;
 function CollectRowHeights(AWorksheet: TsWorksheet;
   ARowCount: Integer): TTableSizeArray;
 
+{ Преобразует пару выравниваний fpspreadsheet (горизонтальное и вертикальное)
+  в код выравнивания AutoCAD (group 170, значения 1..9). Значения "по
+  умолчанию" (haDefault/vaDefault) трактуются как левое/верхнее — так же, как
+  в комбобоксе выравнивания редактора (issue #1352). }
+function WorksheetAlignmentToAcad(AHor: TsHorAlignment;
+  AVert: TsVertAlignment): Integer;
+
+{ Собирает выравнивания ячеек листа в кодировке AutoCAD для передачи в
+  GDBObjAcadTable.BuildFromCellTextsWithSizesAndAlignments (issue #1363).
+  Ячейкам без явно заданного выравнивания (оба значения "по умолчанию")
+  присваивается 0 — наследование выравнивания от стиля таблицы. }
+function CollectCellAlignments(AWorksheet: TsWorksheet;
+  ARowCount, AColCount: Integer): TTableAlignmentArray;
+
 implementation
 
 function WorksheetToAcadSize(AWorksheetMM: Double): Double;
@@ -163,6 +177,67 @@ begin
   for RowIdx := 0 to ARowCount - 1 do
     Result[RowIdx] :=
       WorksheetToAcadSize(GetWorksheetRowHeightMM(AWorksheet, RowIdx));
+end;
+
+{ Группа горизонтального выравнивания: 0 - левое, 1 - центр, 2 - правое.
+  Совпадает с логикой комбобокса выравнивания редактора (issue #1352). }
+function HorAlignToGroup(AHor: TsHorAlignment): Integer;
+begin
+  case AHor of
+    haCenter: Result := 1;
+    haRight:  Result := 2;
+    else      Result := 0;  // haLeft, haDefault
+  end;
+end;
+
+{ Группа вертикального выравнивания: 0 - верх, 1 - центр, 2 - низ. }
+function VertAlignToGroup(AVert: TsVertAlignment): Integer;
+begin
+  case AVert of
+    vaCenter: Result := 1;
+    vaBottom: Result := 2;
+    else      Result := 0;  // vaTop, vaDefault
+  end;
+end;
+
+function WorksheetAlignmentToAcad(AHor: TsHorAlignment;
+  AVert: TsVertAlignment): Integer;
+begin
+  // Код AutoCAD (group 170): 1..9 = вертикаль*3 + горизонталь + 1,
+  // где 1=TopLeft .. 9=BottomRight.
+  Result := VertAlignToGroup(AVert) * 3 + HorAlignToGroup(AHor) + 1;
+end;
+
+function CollectCellAlignments(AWorksheet: TsWorksheet;
+  ARowCount, AColCount: Integer): TTableAlignmentArray;
+var
+  RowIdx, ColIdx: Integer;
+  Cell: PCell;
+  Hor: TsHorAlignment;
+  Vert: TsVertAlignment;
+begin
+  System.SetLength(Result, 0);
+  if (AWorksheet = nil) or (ARowCount <= 0) or (AColCount <= 0) then
+    Exit;
+  System.SetLength(Result, ARowCount * AColCount);
+  for RowIdx := 0 to ARowCount - 1 do
+    for ColIdx := 0 to AColCount - 1 do
+    begin
+      // По умолчанию выравнивание не задано — ячейка наследует его от стиля
+      // таблицы. Это сохраняет прежнее поведение для ячеек, которым в
+      // редакторе явно не назначали выравнивание.
+      Result[RowIdx * AColCount + ColIdx] := 0;
+      Cell := AWorksheet.FindCell(Cardinal(RowIdx), Cardinal(ColIdx));
+      if Cell = nil then
+        Continue;
+      Hor := AWorksheet.ReadHorAlignment(Cell);
+      Vert := AWorksheet.ReadVertAlignment(Cell);
+      // Переносим выравнивание только если оно задано в ячейке листа явно;
+      // иначе оставляем 0 (наследование от стиля таблицы).
+      if (Hor <> haDefault) or (Vert <> vaDefault) then
+        Result[RowIdx * AColCount + ColIdx] :=
+          WorksheetAlignmentToAcad(Hor, Vert);
+    end;
 end;
 
 end.

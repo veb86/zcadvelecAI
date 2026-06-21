@@ -370,6 +370,20 @@ type
       const ACellTexts: TTableTextArray;
       const AColWidths, ARowHeights: TTableSizeArray;
       const AInsertPoint: TzePoint3d): Boolean; virtual;
+    // Полный вариант программного построения таблицы из текстов ячеек
+    // с явными ширинами столбцов, высотами строк и выравниванием ячеек
+    // (issue #1363). ACellAlignments индексируется как строка*AColCount +
+    // столбец и содержит код выравнивания AutoCAD (group 170, 1..9); 0 или
+    // отсутствующий элемент означает наследование выравнивания от стиля
+    // таблицы. BuildFromCellTexts и BuildFromCellTextsWithSizes делегируют
+    // сюда (с пустыми массивами размеров/выравниваний). Возвращает True при
+    // успехе.
+    function BuildFromCellTextsWithSizesAndAlignments(
+      ARowCount, AColCount: Integer;
+      const ACellTexts: TTableTextArray;
+      const AColWidths, ARowHeights: TTableSizeArray;
+      const ACellAlignments: TTableAlignmentArray;
+      const AInsertPoint: TzePoint3d): Boolean; virtual;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -419,6 +433,10 @@ type
     // некорректных индексов возвращает пустую строку.
     function ContinuationPartCellText(
       APartIndex, ARow, ACol: Integer): string;
+    // Код выравнивания AutoCAD (group 170, 1..9) ячейки главной части
+    // таблицы; 0 — выравнивание не задано (наследуется от стиля). Для
+    // некорректных индексов возвращает 0 (для инспекции/тестов, issue #1363).
+    function CellAlignmentAt(ARow, ACol: Integer): Integer;
     // Повторно определяет признак повтора верхних меток по текущим данным
     // частей-продолжений и возвращает результат (issue #1309). Используется
     // для проверки детекции после программных изменений модели.
@@ -561,6 +579,33 @@ function GDBObjAcadTable.BuildFromCellTextsWithSizes(
   const AColWidths, ARowHeights: TTableSizeArray;
   const AInsertPoint: TzePoint3d): Boolean;
 var
+  EmptyAlignments: TTableAlignmentArray;
+begin
+  // Делегируем полному варианту без явного выравнивания — все ячейки
+  // наследуют выравнивание от стиля таблицы (issue #1363).
+  System.SetLength(EmptyAlignments, 0);
+  Result := BuildFromCellTextsWithSizesAndAlignments(ARowCount, AColCount,
+    ACellTexts, AColWidths, ARowHeights, EmptyAlignments, AInsertPoint);
+end;
+
+{ Возвращает код выравнивания из массива по индексу, либо 0 (наследование от
+  стиля таблицы), если индекс вне диапазона. }
+function AlignmentOrZero(const AAlignments: TTableAlignmentArray;
+  AIndex: Integer): Integer;
+begin
+  if (AIndex >= 0) and (AIndex <= High(AAlignments)) then
+    Result := AAlignments[AIndex]
+  else
+    Result := 0;
+end;
+
+function GDBObjAcadTable.BuildFromCellTextsWithSizesAndAlignments(
+  ARowCount, AColCount: Integer;
+  const ACellTexts: TTableTextArray;
+  const AColWidths, ARowHeights: TTableSizeArray;
+  const ACellAlignments: TTableAlignmentArray;
+  const AInsertPoint: TzePoint3d): Boolean;
+var
   RowIdx, ColIdx, CellIndex: Integer;
 begin
   Result := False;
@@ -634,8 +679,10 @@ begin
       FCells[RowIdx][ColIdx].Text := GetCellTextLocal(RowIdx, ColIdx);
       FCells[RowIdx][ColIdx].Value := 0;
       FCells[RowIdx][ColIdx].Formula := '';
-      FCells[RowIdx][ColIdx].BlockName := '';
-      FCells[RowIdx][ColIdx].CellAlignment := 0;
+      // Выравнивание ячейки из электронной таблицы (issue #1363): код
+      // AutoCAD 1..9, либо 0 — наследование от стиля таблицы.
+      FCells[RowIdx][ColIdx].CellAlignment :=
+        AlignmentOrZero(ACellAlignments, RowIdx * FColCount + ColIdx);
       FCells[RowIdx][ColIdx].ColSpan := 1;
       FCells[RowIdx][ColIdx].RowSpan := 1;
       InitCellStyle(FCells[RowIdx][ColIdx].Style);
@@ -1586,6 +1633,15 @@ begin
     if (Idx >= 0) and (Idx <= High(CellTexts)) then
       Result := CellTexts[Idx];
   end;
+end;
+
+function GDBObjAcadTable.CellAlignmentAt(ARow, ACol: Integer): Integer;
+begin
+  Result := 0;
+  if (ARow < 0) or (ARow >= FRowCount) then Exit;
+  if (ACol < 0) or (ACol >= FColCount) then Exit;
+  if (Length(FCells) > ARow) and (Length(FCells[ARow]) > ACol) then
+    Result := FCells[ARow][ACol].CellAlignment;
 end;
 
 // Признак разрыва вычисляется по двум источникам (issue #1305, часть 2a):

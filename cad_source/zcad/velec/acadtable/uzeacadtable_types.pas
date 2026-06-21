@@ -170,6 +170,14 @@ type
   // Используется для переноса размеров ячеек из электронной таблицы
   // (TsWorksheet) в таблицу ACAD_TABLE при её создании (issue #1359).
   TTableSizeArray = array of Double;
+  // Массив выравниваний ячеек в кодировке AutoCAD (group 170, значения 1..9:
+  // 1=TopLeft, 2=TopCenter, 3=TopRight, 4=MiddleLeft, 5=MiddleCenter,
+  // 6=MiddleRight, 7=BottomLeft, 8=BottomCenter, 9=BottomRight). 0 = не задано
+  // (ячейка наследует выравнивание из стиля таблицы). Индексируется как
+  // строка*количество_столбцов + столбец. Используется для переноса
+  // выравнивания ячеек из электронной таблицы (TsWorksheet) в таблицу
+  // ACAD_TABLE при её создании (issue #1363).
+  TTableAlignmentArray = array of Integer;
 
 implementation
 
