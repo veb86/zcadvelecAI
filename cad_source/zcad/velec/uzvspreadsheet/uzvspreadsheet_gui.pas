@@ -89,13 +89,12 @@ type
     // на OnChange, чтобы не перезаписывать выравнивание выделенной ячейки)
     FUpdatingAlignmentCombo: Boolean;
 
-    // Поля размеров ячейки (issue #1359). Каждое поле состоит из двух
-    // значений: размер в листе (TsWorksheet, мм, редактируемый) и размер
-    // в таблице ACAD_TABLE (GDBObjAcadTable, единицы чертежа, только чтение).
+    // Поля размеров ячейки (issue #1359). Одно поле управляет шириной
+    // выделенного столбца, второе — высотой выделенной строки (в мм листа
+    // TsWorksheet). При выделении нескольких столбцов/строк изменение
+    // применяется ко всему выделенному диапазону.
     FEditColWidthWS: TEdit;     // Ширина столбца в листе (мм)
-    FEditColWidthAcad: TEdit;   // Ширина столбца в таблице ACAD
     FEditRowHeightWS: TEdit;    // Высота строки в листе (мм)
-    FEditRowHeightAcad: TEdit;  // Высота строки в таблице ACAD
     // Флаг: поля размеров обновляются программно (не записывать изменения
     // обратно в лист при синхронизации с выделенной ячейкой)
     FUpdatingDimensionFields: Boolean;
@@ -118,8 +117,7 @@ type
     procedure CreateDimensionFields;
     // Вспомогательные конструкторы элементов панели размеров (issue #1359)
     function CreateToolbarLabel(const ACaption: String): TLabel;
-    function CreateDimensionEdit(AReadOnly: Boolean;
-      const AHint: String): TEdit;
+    function CreateDimensionEdit(const AHint: String): TEdit;
     procedure CreateSpreadsheetComponents;
     procedure CreateCellInfoPanel;
     procedure BuildCommandBar;
@@ -336,25 +334,21 @@ begin
   Result.Width := DIMENSION_LABEL_WIDTH;
 end;
 
-{ Создаёт на панели инструментов поле ввода значения размера. AReadOnly —
-  поле только для чтения (значение таблицы ACAD). AHint — подсказка. }
-function TuzvSpreadsheetForm.CreateDimensionEdit(AReadOnly: Boolean;
-  const AHint: String): TEdit;
+{ Создаёт на панели инструментов редактируемое поле ввода размера.
+  AHint — подсказка. }
+function TuzvSpreadsheetForm.CreateDimensionEdit(const AHint: String): TEdit;
 begin
   Result := TEdit.Create(Self);
   Result.Parent := FToolBar;
   Result.Width := DIMENSION_EDIT_WIDTH;
-  Result.ReadOnly := AReadOnly;
   Result.Hint := AHint;
   Result.ShowHint := True;
-  if AReadOnly then
-    Result.TabStop := False;
 end;
 
 { Создаёт поля размеров ячейки на панели инструментов (issue #1359).
-  Для ширины столбца и высоты строки создаётся по два поля: значение листа
-  (редактируемое, мм) и значение таблицы ACAD_TABLE (только чтение). При
-  редактировании значения листа размер столбца/строки меняется в листе. }
+  По одному редактируемому полю на ширину столбца и высоту строки (мм листа).
+  При выделении ячейки поля заполняются её размерами; редактирование меняет
+  ширину столбца / высоту строки в листе для всего выделенного диапазона. }
 procedure TuzvSpreadsheetForm.CreateDimensionFields;
 var
   Separator: TToolButton;
@@ -365,23 +359,19 @@ begin
   Separator.Style := tbsSeparator;
   Separator.Width := 10;
 
-  // Поле ширины столбца: лист (мм, редактируемое) + ACAD (единицы, чтение)
+  // Поле ширины столбца (мм листа, редактируемое)
   CreateToolbarLabel('Ширина столбца:');
-  FEditColWidthWS := CreateDimensionEdit(False,
-    'Ширина столбца в листе (мм). Изменение меняет столбец листа');
+  FEditColWidthWS := CreateDimensionEdit(
+    'Ширина столбца в листе (мм). Изменение меняет выделенные столбцы');
   FEditColWidthWS.OnExit := @OnColWidthEditExit;
   FEditColWidthWS.OnKeyPress := @OnColWidthKeyPress;
-  FEditColWidthAcad := CreateDimensionEdit(True,
-    'Ширина столбца в таблице ACAD (единицы чертежа)');
 
-  // Поле высоты строки: лист (мм, редактируемое) + ACAD (единицы, чтение)
+  // Поле высоты строки (мм листа, редактируемое)
   CreateToolbarLabel('Высота строки:');
-  FEditRowHeightWS := CreateDimensionEdit(False,
-    'Высота строки в листе (мм). Изменение меняет строку листа');
+  FEditRowHeightWS := CreateDimensionEdit(
+    'Высота строки в листе (мм). Изменение меняет выделенные строки');
   FEditRowHeightWS.OnExit := @OnRowHeightEditExit;
   FEditRowHeightWS.OnKeyPress := @OnRowHeightKeyPress;
-  FEditRowHeightAcad := CreateDimensionEdit(True,
-    'Высота строки в таблице ACAD (единицы чертежа)');
 end;
 
 { Создание панели информации о ячейке }
@@ -649,9 +639,9 @@ begin
   Result := FWorkbookSource.Workbook.ActiveWorksheet;
 end;
 
-{ Обновление полей размеров (ширина столбца/высота строки) по выделенной
-  ячейке. В каждое поле выводится два значения: размер листа (мм) и
-  соответствующий ему размер таблицы ACAD_TABLE (единицы чертежа). }
+{ Обновление полей размеров (ширина столбца/высота строки) по активной
+  ячейке выделения: поля заполняются её шириной столбца и высотой строки
+  в миллиметрах листа. }
 procedure TuzvSpreadsheetForm.UpdateDimensionFields;
 var
   worksheet: TsWorksheet;
@@ -675,11 +665,7 @@ begin
   FUpdatingDimensionFields := True;
   try
     FEditColWidthWS.Text := Format(DIMENSION_VALUE_FORMAT, [widthMM]);
-    FEditColWidthAcad.Text :=
-      Format(DIMENSION_VALUE_FORMAT, [WorksheetToAcadSize(widthMM)]);
     FEditRowHeightWS.Text := Format(DIMENSION_VALUE_FORMAT, [heightMM]);
-    FEditRowHeightAcad.Text :=
-      Format(DIMENSION_VALUE_FORMAT, [WorksheetToAcadSize(heightMM)]);
   finally
     FUpdatingDimensionFields := False;
   end;
@@ -698,11 +684,14 @@ begin
   Result := TryStrToFloat(normalized, AValue, fmt);
 end;
 
-{ Записывает ширину столбца из поля FEditColWidthWS в лист (issue #1359). }
+{ Записывает ширину столбца из поля FEditColWidthWS в лист (issue #1359).
+  Изменение применяется ко всем выделенным столбцам; если выделение
+  недоступно, к столбцу активной ячейки. }
 procedure TuzvSpreadsheetForm.ApplyColWidthFromField;
 var
   worksheet: TsWorksheet;
-  col: Integer;
+  startRow, endRow, startCol, endCol: Integer;
+  changed: Integer;
   widthMM: Double;
 begin
   if FUpdatingDimensionFields or (FEditColWidthWS = nil) then
@@ -718,24 +707,34 @@ begin
     Exit;
   end;
 
-  col := FWorksheetGrid.Col - FWorksheetGrid.FixedCols;
-  if SetWorksheetColWidthMM(worksheet, col, widthMM) then
+  // Диапазон выделенных столбцов; при недоступном выделении — активный столбец
+  if not GetSelectedRange(startRow, endRow, startCol, endCol) then
+  begin
+    startCol := FWorksheetGrid.Col - FWorksheetGrid.FixedCols;
+    endCol := startCol;
+  end;
+
+  changed := SetWorksheetColWidthsMM(worksheet, startCol, endCol, widthMM);
+  if changed > 0 then
   begin
     programlog.LogOutFormatStr(
-      'Spreadsheet: ширина столбца %d изменена на %.2f мм',
-      [col, widthMM], LM_Info);
+      'Spreadsheet: ширина столбцов %d..%d изменена на %.2f мм (%d шт.)',
+      [startCol, endCol, widthMM, changed], LM_Info);
     if FWorksheetGrid <> nil then
       FWorksheetGrid.Invalidate;
   end;
 
-  UpdateDimensionFields;  // Пересчитываем значение ACAD
+  UpdateDimensionFields;  // Возвращаем отформатированное значение в поле
 end;
 
-{ Записывает высоту строки из поля FEditRowHeightWS в лист (issue #1359). }
+{ Записывает высоту строки из поля FEditRowHeightWS в лист (issue #1359).
+  Изменение применяется ко всем выделенным строкам; если выделение
+  недоступно, к строке активной ячейки. }
 procedure TuzvSpreadsheetForm.ApplyRowHeightFromField;
 var
   worksheet: TsWorksheet;
-  row: Integer;
+  startRow, endRow, startCol, endCol: Integer;
+  changed: Integer;
   heightMM: Double;
 begin
   if FUpdatingDimensionFields or (FEditRowHeightWS = nil) then
@@ -751,17 +750,24 @@ begin
     Exit;
   end;
 
-  row := FWorksheetGrid.Row - FWorksheetGrid.FixedRows;
-  if SetWorksheetRowHeightMM(worksheet, row, heightMM) then
+  // Диапазон выделенных строк; при недоступном выделении — активная строка
+  if not GetSelectedRange(startRow, endRow, startCol, endCol) then
+  begin
+    startRow := FWorksheetGrid.Row - FWorksheetGrid.FixedRows;
+    endRow := startRow;
+  end;
+
+  changed := SetWorksheetRowHeightsMM(worksheet, startRow, endRow, heightMM);
+  if changed > 0 then
   begin
     programlog.LogOutFormatStr(
-      'Spreadsheet: высота строки %d изменена на %.2f мм',
-      [row, heightMM], LM_Info);
+      'Spreadsheet: высота строк %d..%d изменена на %.2f мм (%d шт.)',
+      [startRow, endRow, heightMM, changed], LM_Info);
     if FWorksheetGrid <> nil then
       FWorksheetGrid.Invalidate;
   end;
 
-  UpdateDimensionFields;  // Пересчитываем значение ACAD
+  UpdateDimensionFields;  // Возвращаем отформатированное значение в поле
 end;
 
 { Обработчик выхода из поля ширины столбца }

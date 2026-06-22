@@ -77,6 +77,18 @@ function SetWorksheetColWidthMM(AWorksheet: TsWorksheet;
 function SetWorksheetRowHeightMM(AWorksheet: TsWorksheet;
   ARow: Integer; AHeightMM: Double): Boolean;
 
+{ Задаёт одинаковую ширину для диапазона столбцов листа [AStartCol..AEndCol].
+  Применяется к нескольким выделенным столбцам (issue #1359). Возвращает
+  количество фактически изменённых столбцов. }
+function SetWorksheetColWidthsMM(AWorksheet: TsWorksheet;
+  AStartCol, AEndCol: Integer; AWidthMM: Double): Integer;
+
+{ Задаёт одинаковую высоту для диапазона строк листа [AStartRow..AEndRow].
+  Применяется к нескольким выделенным строкам (issue #1359). Возвращает
+  количество фактически изменённых строк. }
+function SetWorksheetRowHeightsMM(AWorksheet: TsWorksheet;
+  AStartRow, AEndRow: Integer; AHeightMM: Double): Integer;
+
 { Собирает ширины столбцов листа в единицах чертежа (для передачи в
   GDBObjAcadTable.BuildFromCellTextsWithSizes). }
 function CollectColWidths(AWorksheet: TsWorksheet;
@@ -149,6 +161,28 @@ begin
     Exit;
   AWorksheet.WriteRowHeight(Cardinal(ARow), AHeightMM, suMillimeters);
   Result := True;
+end;
+
+function SetWorksheetColWidthsMM(AWorksheet: TsWorksheet;
+  AStartCol, AEndCol: Integer; AWidthMM: Double): Integer;
+var
+  ColIdx: Integer;
+begin
+  Result := 0;
+  for ColIdx := AStartCol to AEndCol do
+    if SetWorksheetColWidthMM(AWorksheet, ColIdx, AWidthMM) then
+      Inc(Result);
+end;
+
+function SetWorksheetRowHeightsMM(AWorksheet: TsWorksheet;
+  AStartRow, AEndRow: Integer; AHeightMM: Double): Integer;
+var
+  RowIdx: Integer;
+begin
+  Result := 0;
+  for RowIdx := AStartRow to AEndRow do
+    if SetWorksheetRowHeightMM(AWorksheet, RowIdx, AHeightMM) then
+      Inc(Result);
 end;
 
 function CollectColWidths(AWorksheet: TsWorksheet;
