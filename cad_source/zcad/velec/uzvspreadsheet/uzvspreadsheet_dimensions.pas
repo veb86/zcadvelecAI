@@ -183,20 +183,27 @@ end;
   Совпадает с логикой комбобокса выравнивания редактора (issue #1352). }
 function HorAlignToGroup(AHor: TsHorAlignment): Integer;
 begin
+  // Константы выравнивания квалифицируем именем модуля fpsTypes: модуль
+  // uzeacadtable_types объявляет одноимённые THorzAlign (haLeft/haCenter/
+  // haRight), которые перекрывают значения TsHorAlignment и без квалификации
+  // ломают сборку ("Constant and CASE types do not match").
   case AHor of
-    haCenter: Result := 1;
-    haRight:  Result := 2;
-    else      Result := 0;  // haLeft, haDefault
+    fpsTypes.haCenter: Result := 1;
+    fpsTypes.haRight:  Result := 2;
+    else               Result := 0;  // haLeft, haDefault
   end;
 end;
 
 { Группа вертикального выравнивания: 0 - верх, 1 - центр, 2 - низ. }
 function VertAlignToGroup(AVert: TsVertAlignment): Integer;
 begin
+  // Аналогично горизонтали: uzeacadtable_types объявляет TVertAlign
+  // (vaTop/vaMiddle/vaBottom), перекрывающий TsVertAlignment, поэтому
+  // квалифицируем константы именем модуля fpsTypes.
   case AVert of
-    vaCenter: Result := 1;
-    vaBottom: Result := 2;
-    else      Result := 0;  // vaTop, vaDefault
+    fpsTypes.vaCenter: Result := 1;
+    fpsTypes.vaBottom: Result := 2;
+    else               Result := 0;  // vaTop, vaDefault
   end;
 end;
 
@@ -234,7 +241,7 @@ begin
       Vert := AWorksheet.ReadVertAlignment(Cell);
       // Переносим выравнивание только если оно задано в ячейке листа явно;
       // иначе оставляем 0 (наследование от стиля таблицы).
-      if (Hor <> haDefault) or (Vert <> vaDefault) then
+      if (Hor <> fpsTypes.haDefault) or (Vert <> fpsTypes.vaDefault) then
         Result[RowIdx * AColCount + ColIdx] :=
           WorksheetAlignmentToAcad(Hor, Vert);
     end;
