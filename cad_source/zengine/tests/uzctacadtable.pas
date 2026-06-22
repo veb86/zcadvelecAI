@@ -158,6 +158,12 @@ type
     // issue #1363: выравнивание ячеек (код AutoCAD 1..9) переносится в
     // таблицу ACAD_TABLE; отсутствующие коды дают 0 (наследование от стиля).
     procedure BuildFromCellTextsAppliesCellAlignments;
+    // issue #1368: явные типы строк (SetRowStyleTypes) задают индекс базового
+    // стиля строки (0=Title, 1=Header, 2=Data); RowStyleTypeAt возвращает
+    // заданное значение либо -1 вне диапазона, а перестроение таблицы
+    // сбрасывает ранее заданные типы строк.
+    procedure SetRowStyleTypesAssignsRowStyles;
+    procedure RebuildResetsRowStyleTypes;
   end;
 
 implementation
@@ -2345,6 +2351,104 @@ begin
       'Ячейка [1,1] с явным 0 должна наследовать выравнивание (0)');
     CheckEquals(0, Table^.CellAlignmentAt(1, 2),
       'Ячейка [1,2] вне массива должна наследовать выравнивание (0)');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.SetRowStyleTypesAssignsRowStyles;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 9);
+    Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
+    Texts[3] := 'A2'; Texts[4] := 'B2'; Texts[5] := 'C2';
+    Texts[6] := 'A3'; Texts[7] := 'B3'; Texts[8] := 'C3';
+
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+    System.SetLength(Alignments, 0);
+
+    InsertPt := NulVertex;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(3, 3, Texts,
+      ColWidths, RowHeights, Alignments, InsertPt),
+      'BuildFromCellTextsWithSizesAndAlignments должен построить таблицу');
+
+    // До назначения типов строк все строки не имеют явного типа (-1).
+    CheckEquals(-1, Table^.RowStyleTypeAt(0),
+      'До SetRowStyleTypes строка 0 не должна иметь явного типа');
+
+    // Назначаем: строка 0 = Title (0), строка 1 = Header (1), строка 2 = Data (2).
+    Table^.SetRowStyleTypes([0, 1, 2]);
+
+    CheckEquals(0, Table^.RowStyleTypeAt(0),
+      'Строка 0 должна получить тип Title (0)');
+    CheckEquals(1, Table^.RowStyleTypeAt(1),
+      'Строка 1 должна получить тип Header (1)');
+    CheckEquals(2, Table^.RowStyleTypeAt(2),
+      'Строка 2 должна получить тип Data (2)');
+    CheckEquals(-1, Table^.RowStyleTypeAt(3),
+      'Строка вне диапазона должна вернуть -1');
+    CheckEquals(-1, Table^.RowStyleTypeAt(-1),
+      'Отрицательный индекс строки должен вернуть -1');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.RebuildResetsRowStyleTypes;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 4);
+    Texts[0] := 'A1'; Texts[1] := 'B1';
+    Texts[2] := 'A2'; Texts[3] := 'B2';
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+    System.SetLength(Alignments, 0);
+
+    InsertPt := NulVertex;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(2, 2, Texts,
+      ColWidths, RowHeights, Alignments, InsertPt),
+      'Первичное построение таблицы должно завершиться успешно');
+
+    Table^.SetRowStyleTypes([0, 1]);
+    CheckEquals(0, Table^.RowStyleTypeAt(0),
+      'Строка 0 должна иметь тип Title после назначения');
+
+    // Перестроение таблицы должно сбросить ранее заданные типы строк.
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(2, 2, Texts,
+      ColWidths, RowHeights, Alignments, InsertPt),
+      'Повторное построение таблицы должно завершиться успешно');
+
+    CheckEquals(-1, Table^.RowStyleTypeAt(0),
+      'После перестроения строка 0 не должна иметь явного типа');
+    CheckEquals(-1, Table^.RowStyleTypeAt(1),
+      'После перестроения строка 1 не должна иметь явного типа');
   finally
     Drawing.done;
   end;

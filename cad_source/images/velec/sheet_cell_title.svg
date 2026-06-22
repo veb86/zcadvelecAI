@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" version="1.1">
+  <defs>
+    <style>
+      .grid { fill: none; stroke: #5A5A5A; stroke-width: 6; stroke-linecap: square; }
+      .fill-title { fill: #D9E2F3; stroke: none; }
+    </style>
+  </defs>
+  <!-- Заголовок таблицы (Title): верхняя строка #D9E2F3 -->
+  <rect class="fill-title" x="40" y="40" width="176" height="58"/>
+  <rect class="grid" x="40" y="40" width="176" height="176"/>
+  <line class="grid" x1="128" y1="40" x2="128" y2="216"/>
+  <line class="grid" x1="40" y1="98" x2="216" y2="98"/>
+  <line class="grid" x1="40" y1="157" x2="216" y2="157"/>
+</svg>

@@ -121,6 +121,14 @@ type
     // электронных таблиц таблица состоит только из ячеек данных; отдельное
     // отображение строк Title/Header добавят будущие задачи.
     FForceDataStyleAllRows: Boolean;
+    // Явно заданные типы строк (issue #1368). Один элемент на строку,
+    // значение — индекс базового стиля строки (0=Title, 1=Header, 2=Data),
+    // либо -1, если тип строки для этой строки не задан. Заполняется через
+    // SetRowStyleTypes при экспорте из редактора электронных таблиц на
+    // основании цвета заливки ячеек: строка получает тип Title/Header только
+    // тогда, когда ВСЕ её ячейки относятся к соответствующему типу. Имеет
+    // приоритет над FForceDataStyleAllRows и позиционным выбором стиля.
+    FRowStyleTypes: array of Integer;
     // Хэндл DXF-стиля таблицы (group code 342)
     FTableStyleHandle: String;
     // Флаги свойств таблицы (group code 90)
@@ -384,6 +392,18 @@ type
       const AColWidths, ARowHeights: TTableSizeArray;
       const ACellAlignments: TTableAlignmentArray;
       const AInsertPoint: TzePoint3d): Boolean; virtual;
+
+    // Задаёт явные типы строк (issue #1368). ATypes индексируется по номеру
+    // строки; значение — индекс базового стиля строки (0=Title, 1=Header,
+    // 2=Data); значение < 0 означает «тип не задан» (используется
+    // позиционный/принудительный выбор стиля). Вызывается при экспорте из
+    // редактора электронных таблиц после построения геометрии, чтобы строки,
+    // целиком состоящие из ячеек Title/Header, получили соответствующий стиль.
+    procedure SetRowStyleTypes(const ATypes: array of Integer);
+    // Возвращает явно заданный индекс базового стиля для строки ARow
+    // (0=Title, 1=Header, 2=Data) либо -1, если тип строки не задан или
+    // строка вне диапазона (issue #1368).
+    function RowStyleTypeAt(ARow: Integer): Integer;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -653,8 +673,12 @@ begin
   // присваивается командой через SetTableStyleName)
   InitTableStyle(FTableStyle);
 
-  // Все строки отображаются как данные (Title/Header в этой задаче нет)
+  // Все строки по умолчанию отображаются как данные. Конкретные типы строк
+  // (Title/Header) задаются отдельно через SetRowStyleTypes при экспорте из
+  // редактора электронных таблиц (issue #1368). Сбрасываем ранее заданные
+  // типы строк, т.к. геометрия перестраивается с нуля.
   FForceDataStyleAllRows := True;
+  System.SetLength(FRowStyleTypes, 0);
 
   // Инициализируем строки, столбцы и ячейки (все ячейки — текстовые)
   System.SetLength(FRows, FRowCount);
@@ -714,6 +738,23 @@ begin
     Result := FCellTexts[CellIndex];
 end;
 
+procedure GDBObjAcadTable.SetRowStyleTypes(const ATypes: array of Integer);
+var
+  Idx: Integer;
+begin
+  System.SetLength(FRowStyleTypes, Length(ATypes));
+  for Idx := 0 to High(ATypes) do
+    FRowStyleTypes[Idx] := ATypes[Idx];
+end;
+
+function GDBObjAcadTable.RowStyleTypeAt(ARow: Integer): Integer;
+begin
+  if (ARow >= 0) and (ARow <= High(FRowStyleTypes)) then
+    Result := FRowStyleTypes[ARow]
+  else
+    Result := -1;
+end;
+
 // --- Конструктор и деструктор ---
 
 constructor GDBObjAcadTable.initnul(
@@ -728,6 +769,7 @@ begin
   System.SetLength(FCellTexts, 0);
   FGeometryBuilt := False;
   FForceDataStyleAllRows := False;
+  System.SetLength(FRowStyleTypes, 0);
   FTableStyleHandle := '';
   FTableFlags := 0;
   FBreakEnabled := False;
@@ -1244,10 +1286,15 @@ begin
         if CellStr <> '' then
         begin
           // По умолчанию базовый стиль строки выбирается по её позиции
-          // (0=Title, 1=Header, >=2=Data). Для программно созданной из
-          // редактора таблицы (issue #1357) все строки оформляются как
-          // данные — принудительно используем индекс строки данных.
-          if FForceDataStyleAllRows then
+          // (0=Title, 1=Header, >=2=Data). Приоритеты:
+          // 1) явно заданный тип строки через SetRowStyleTypes (issue #1368) —
+          //    строки, целиком состоящие из ячеек Title/Header, получают
+          //    соответствующий стиль при экспорте из редактора таблиц;
+          // 2) FForceDataStyleAllRows (issue #1357) — все строки как данные;
+          // 3) позиционный выбор стиля по номеру строки.
+          if RowStyleTypeAt(RowIdx) >= 0 then
+            StyleRowIndex := RowStyleTypeAt(RowIdx)
+          else if FForceDataStyleAllRows then
             StyleRowIndex := 2
           else
             StyleRowIndex := ARowBaseIndex + RowIdx;
