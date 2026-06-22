@@ -22,9 +22,10 @@
 
     Команда анализирует заполненную часть активного листа книги, строит по её
     содержимому AutoCAD-совместимую таблицу ACAD_TABLE со стилем "Standard" и
-    помещает её на чертёж. В этой задаче все ячейки оформляются как данные
-    (Data); отдельное отображение строк заголовка/названия (Title/Header)
-    добавят будущие задачи. }
+    помещает её на чертёж. Тип строки (Title/Header/Data) определяется по цвету
+    заливки ячеек редактора: строка получает тип Title/Header только если ВСЕ
+    её ячейки окрашены соответствующим цветом, иначе остаётся строкой данных
+    (issue #1368, цвета задаются командами модуля uzvspreadsheet_cmdcellstyle). }
 unit uzvspreadsheet_cmdcreateacadtable;
 
 {$INCLUDE zengineconfig.inc}
@@ -34,6 +35,7 @@ interface
 uses
   Classes,
   SysUtils,
+  Types,
   fpspreadsheet,
   fpsTypes,
   fpspreadsheetctrls,
@@ -55,6 +57,7 @@ uses
   uzegeometrytypes,
   uzgldrawcontext,
   uzvspreadsheet_dimensions,
+  uzvspreadsheet_cmdcellstyle,
   uzvspreadsheet_gui;
 
 const
@@ -171,6 +174,7 @@ var
   texts: TTableTextArray;
   colWidths, rowHeights: TTableSizeArray;
   cellAlignments: TTableAlignmentArray;
+  rowStyleTypes: TIntegerDynArray;
   rowCount, colCount: Integer;
   insPt: TzePoint3d;
   dc: TDrawContext;
@@ -237,6 +241,14 @@ begin
       'CreateAcadTableFromWorksheet: BuildFromCellTexts failed', [], LM_Info);
     Exit;
   end;
+
+  // Определяем тип каждой строки по цвету заливки ячеек редактора и переносим
+  // его в таблицу: строка становится Title/Header только если ВСЕ её ячейки
+  // окрашены соответствующим цветом (issue #1368). Строки без единогласия
+  // остаются строками данных. SetRowStyleTypes имеет приоритет над общим
+  // режимом «все строки — данные».
+  rowStyleTypes := CollectRowStyleTypes(worksheet, rowCount, colCount);
+  pt^.SetRowStyleTypes(rowStyleTypes);
 
   // Гарантируем наличие и применяем стиль "Standard" (issue #1357).
   // Если применение не удалось, остаётся стиль по умолчанию из
