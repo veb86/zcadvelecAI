@@ -691,7 +691,7 @@ procedure TuzvSpreadsheetForm.ApplyColWidthFromField;
 var
   worksheet: TsWorksheet;
   startRow, endRow, startCol, endCol: Integer;
-  changed: Integer;
+  changedCount: Integer;
   widthMM: Double;
 begin
   if FUpdatingDimensionFields or (FEditColWidthWS = nil) then
@@ -714,12 +714,12 @@ begin
     endCol := startCol;
   end;
 
-  changed := SetWorksheetColWidthsMM(worksheet, startCol, endCol, widthMM);
-  if changed > 0 then
+  changedCount := SetWorksheetColWidthsMM(worksheet, startCol, endCol, widthMM);
+  if changedCount > 0 then
   begin
     programlog.LogOutFormatStr(
       'Spreadsheet: ширина столбцов %d..%d изменена на %.2f мм (%d шт.)',
-      [startCol, endCol, widthMM, changed], LM_Info);
+      [startCol, endCol, widthMM, changedCount], LM_Info);
     if FWorksheetGrid <> nil then
       FWorksheetGrid.Invalidate;
   end;
@@ -734,7 +734,7 @@ procedure TuzvSpreadsheetForm.ApplyRowHeightFromField;
 var
   worksheet: TsWorksheet;
   startRow, endRow, startCol, endCol: Integer;
-  changed: Integer;
+  changedCount: Integer;
   heightMM: Double;
 begin
   if FUpdatingDimensionFields or (FEditRowHeightWS = nil) then
@@ -757,12 +757,12 @@ begin
     endRow := startRow;
   end;
 
-  changed := SetWorksheetRowHeightsMM(worksheet, startRow, endRow, heightMM);
-  if changed > 0 then
+  changedCount := SetWorksheetRowHeightsMM(worksheet, startRow, endRow, heightMM);
+  if changedCount > 0 then
   begin
     programlog.LogOutFormatStr(
       'Spreadsheet: высота строк %d..%d изменена на %.2f мм (%d шт.)',
-      [startRow, endRow, heightMM, changed], LM_Info);
+      [startRow, endRow, heightMM, changedCount], LM_Info);
     if FWorksheetGrid <> nil then
       FWorksheetGrid.Invalidate;
   end;
