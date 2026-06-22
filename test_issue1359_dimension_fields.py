@@ -72,8 +72,24 @@ def test_apply_uses_selection_range():
     assert gui.count("GetSelectedRange(startRow, endRow, startCol, endCol)") == 2
 
 
+def test_row_height_forces_grid_rebuild():
+    """Issue 1359 follow-up: changing a row height did not visually update
+    TsWorksheetGrid because its lniRow notification skips rhtCustom rows
+    (set by WriteRowHeight). The apply procedure must force a row-height
+    rebuild so the display matches the stored value."""
+    gui = read_text(GUI_PAS)
+    apply_start = gui.index("procedure TuzvSpreadsheetForm.ApplyRowHeightFromField")
+    apply_end = gui.index(
+        "procedure TuzvSpreadsheetForm.OnColWidthEditExit", apply_start
+    )
+    apply_body = gui[apply_start:apply_end]
+    # Row-height apply must rebuild grid row heights from the sheet records.
+    assert "FWorksheetGrid.UpdateRowHeights" in apply_body
+
+
 if __name__ == "__main__":
     test_duplicate_acad_fields_removed()
     test_dimensions_unit_exposes_range_setters()
     test_apply_uses_selection_range()
+    test_row_height_forces_grid_rebuild()
     print("ALL TESTS PASSED")

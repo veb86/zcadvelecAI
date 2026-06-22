@@ -764,7 +764,17 @@ begin
       'Spreadsheet: высота строк %d..%d изменена на %.2f мм (%d шт.)',
       [startRow, endRow, heightMM, changedCount], LM_Info);
     if FWorksheetGrid <> nil then
+    begin
+      // TsWorksheetGrid не перестраивает высоту строки по уведомлению при
+      // программной записи WriteRowHeight: его обработчик lniRow обновляет
+      // строку только для НЕ-rhtCustom строк (см. fpspreadsheetgrid.pas,
+      // ListenerNotification), а WriteRowHeight как раз помечает строку
+      // rhtCustom. Поэтому, в отличие от ширины столбца (lniCol всегда
+      // вызывает UpdateColWidth), высота визуально не менялась. Принудительно
+      // пересчитываем высоты строк сетки из записей листа (issue #1359).
+      FWorksheetGrid.UpdateRowHeights;
       FWorksheetGrid.Invalidate;
+    end;
   end;
 
   UpdateDimensionFields;  // Возвращаем отформатированное значение в поле
