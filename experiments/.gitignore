@@ -1,6 +1,7 @@
 # compiled artifacts
 test_drawarrow
 gen_beforeafter
+test_issue1368_classification
 *.o
 *.or
 *.ppu
