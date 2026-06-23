@@ -130,6 +130,10 @@ type
     constructor Create(const AText:string);
   end;
 
+  { Явные типы строк таблицы в соглашении ZCAD (0=Title, 1=Header, 2=Data;
+    -1 — тип не задан), прочитанные pre-scan'ом из AcDbTableContent (#1373). }
+  TDXFRowStyleTypeArray=array of integer;
+
   TIODXFLoadContext=record
     h2p:TDXFHandle2ZCObject;
     DWGVarsDict:TString2StringDictionary;
@@ -169,6 +173,17 @@ type
     TableBreakManualPosition:boolean;
     TableBreakManualHeight:boolean;
     TableBreakFlagsValid:boolean;
+
+    { Явные типы строк первой (главной) таблицы, прочитанные pre-scan'ом
+      из современного объекта AcDbTableContent (каждый TABLEROW_BEGIN
+      несёт group 90 = тип строки: 1=Title, 2=Header, 3=Data). Маппятся в
+      соглашение ZCAD (0=Title, 1=Header, 2=Data; иное -> -1) и передаются
+      в главную ACAD_TABLE через SetRowStyleTypes. Нужны для таблиц с
+      несколькими строками-заголовками, которые позиционная логика
+      legacy-парсера AcDbTable (ровно 1 Title + 1 Header) представить не
+      может (issue #1373). }
+    TableRowStyleTypes:TDXFRowStyleTypeArray;
+    TableRowStyleTypesValid:boolean;
 
     procedure InitRec;
     procedure Done;
@@ -424,6 +439,9 @@ begin
   TableBreakManualPosition:=False;
   TableBreakManualHeight:=False;
   TableBreakFlagsValid:=False;
+
+  SetLength(TableRowStyleTypes,0);
+  TableRowStyleTypesValid:=False;
 end;
 
 procedure TDXFHeaderInfo.InitRec;
@@ -447,6 +465,7 @@ begin
       TableRawAcadTableEntities.Objects[I].Free;
     FreeAndNil(TableRawAcadTableEntities);
   end;
+  SetLength(TableRowStyleTypes,0);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;

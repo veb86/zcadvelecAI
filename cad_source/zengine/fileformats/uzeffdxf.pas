@@ -455,6 +455,96 @@ begin
   end;
 end;
 
+{ Сканирует секцию OBJECTS и извлекает явные типы строк первой (главной)
+  таблицы из современного объекта AcDbTableContent.
+
+  Внутри AcDbTableContent данные строк хранятся повторяющимися блоками,
+  каждый из которых начинается строковым маркером TABLEROW_BEGIN (значение
+  группы 1). Сразу за маркером идёт группа 90 с типом строки в соглашении
+  AutoCAD: 1=Title, 2=Header, 3=Data. Эти типы — единственный надёжный
+  источник информации о числе строк-заголовков: позиционная логика legacy
+  AcDbTable-парсера жёстко предполагает ровно одну строку Title и одну
+  Header и не может представить таблицу с несколькими заголовками
+  (issue #1373).
+
+  Содержимое объекта распознаётся по маркеру подкласса (группа 100) =
+  'AcDbLinkedTableData'. Собираются строки только первого встретившегося
+  content-объекта (до начала следующего), что соответствует главной
+  таблице. Значения маппятся в соглашение ZCAD: 1->0, 2->1, 3->2, иное->-1.
+
+  ARowStyleTypes получает массив типов строк по порядку, AValid=True,
+  если собрана хотя бы одна строка. }
+procedure ScanTableRowStyleTypes(const RawObjectsSection: string;
+  out ARowStyleTypes: TDXFRowStyleTypeArray; out AValid: Boolean);
+var
+  Lines: TStringList;
+  I, Code, Count, DxfType, ZType: Integer;
+  Value: string;
+  InContent, PendingRowType: Boolean;
+begin
+  SetLength(ARowStyleTypes, 0);
+  AValid := False;
+  if RawObjectsSection = '' then
+    Exit;
+
+  Lines := TStringList.Create;
+  try
+    Lines.Text := RawObjectsSection;
+    InContent := False;
+    PendingRowType := False;
+    Count := 0;
+    I := 0;
+    while I < Lines.Count - 1 do
+    begin
+      if TryReadDxfPair(Lines, I, Code, Value) then
+      begin
+        if Code = 100 then
+        begin
+          if UpperCase(Value) = UpperCase('AcDbLinkedTableData') then
+          begin
+            { Начало следующего content-объекта — главная таблица собрана. }
+            if InContent then
+              Break;
+            InContent := True;
+          end;
+        end
+        else if InContent and (Code = 1) and (Value = 'TABLEROW_BEGIN') then
+          PendingRowType := True
+        else if InContent and PendingRowType and (Code = 90) then
+        begin
+          DxfType := StrToIntDef(Trim(Value), 0);
+          case DxfType of
+            1: ZType := 0; { Title  }
+            2: ZType := 1; { Header }
+            3: ZType := 2; { Data   }
+          else
+            ZType := -1;
+          end;
+          if Count > High(ARowStyleTypes) then
+            SetLength(ARowStyleTypes, (Count + 1) * 2);
+          ARowStyleTypes[Count] := ZType;
+          Inc(Count);
+          PendingRowType := False;
+        end;
+
+        Inc(I, 2);
+      end
+      else
+        Inc(I);
+    end;
+
+    SetLength(ARowStyleTypes, Count);
+    AValid := Count > 0;
+
+    if AValid then
+      programlog.LogOutFormatStr(
+        'uzeffdxf: ScanTableRowStyleTypes: найдено %d строк(и) с явным типом',
+        [Count], LM_Info);
+  finally
+    Lines.Free;
+  end;
+end;
+
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
   byt: Integer;
@@ -836,6 +926,12 @@ begin
             pLastMainTable^.SetBreakOptionFlags(
               context.TableBreakManualPosition,
               context.TableBreakManualHeight);
+          { Явные типы строк из современного объекта AcDbTableContent
+            (TABLEROW_BEGIN group 90). Позволяют корректно загружать
+            таблицы с несколькими строками-заголовками, которые позиционная
+            логика legacy AcDbTable-парсера представить не может (issue #1373). }
+          if context.TableRowStyleTypesValid then
+            pLastMainTable^.SetRowStyleTypes(context.TableRowStyleTypes);
         end;
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
@@ -1790,6 +1886,15 @@ begin
           fileCtx.TableBreakManualPosition,
           fileCtx.TableBreakManualHeight,
           fileCtx.TableBreakFlagsValid);
+
+        { Извлекаем явные типы строк (Title/Header/Data) из современного
+          объекта AcDbTableContent. Передаются в главную ACAD_TABLE через
+          SetRowStyleTypes, чтобы таблицы с несколькими строками-заголовками
+          загружались с правильным стилем строк (issue #1373). }
+        ScanTableRowStyleTypes(
+          dwgCtx.PDrawing^.RawObjectsSection,
+          fileCtx.TableRowStyleTypes,
+          fileCtx.TableRowStyleTypesValid);
 
         lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
         case fileCtx.Header.Version of

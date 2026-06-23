@@ -99,6 +99,13 @@ type
       ACAD_ROUNDTRIP_2008_TABLE_ENTITY. Base implementation does nothing;
       table entities override it (issue #1339). }
     procedure SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);virtual;
+    { Передаёт сущности явные типы строк, прочитанные загрузчиком DXF из
+      современного объекта AcDbTableContent (TABLEROW_BEGIN group 90).
+      ATypes индексируется по номеру строки (0=Title, 1=Header, 2=Data;
+      значение < 0 — тип не задан). Базовая реализация ничего не делает;
+      GDBObjAcadTable переопределяет метод, чтобы строки с несколькими
+      заголовками загружались с правильным стилем (issue #1373). }
+    procedure SetRowStyleTypes(const ATypes:array of integer);virtual;
     { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
       его для round-trip экспорта. Базовая реализация ничего не делает. }
     procedure SetDXFRawEntityText(const ARawText:string);virtual;
@@ -474,6 +481,10 @@ begin
 end;
 
 procedure GDBObjEntity.SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);
+begin
+end;
+
+procedure GDBObjEntity.SetRowStyleTypes(const ATypes:array of integer);
 begin
 end;
 
