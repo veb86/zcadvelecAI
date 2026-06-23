@@ -40,6 +40,7 @@ uses
   uzeentmtext,
   uzeentline,
   uzeentgenericsubentry,
+  uzeentsubordinated,
   uzeentcomplex,
   UGDBVisibleTreeArray,
   uzeenttext,

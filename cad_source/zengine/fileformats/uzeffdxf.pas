@@ -929,8 +929,14 @@ begin
           { Явные типы строк из современного объекта AcDbTableContent
             (TABLEROW_BEGIN group 90). Позволяют корректно загружать
             таблицы с несколькими строками-заголовками, которые позиционная
-            логика legacy AcDbTable-парсера представить не может (issue #1373). }
-          if context.TableRowStyleTypesValid then
+            логика legacy AcDbTable-парсера представить не может (issue #1373).
+            Применяем только к цельным (не разбитым) таблицам: у разбитой на
+            части таблицы строки в AcDbTableContent перечислены с повторами
+            заголовков по каждой части, поэтому их индексы не совпадают с
+            логическими строками склеенной таблицы (issue #1300/#1373). }
+          if context.TableRowStyleTypesValid and
+             ((context.TableContinuationHandles=nil) or
+              (context.TableContinuationHandles.Count=0)) then
             pLastMainTable^.SetRowStyleTypes(context.TableRowStyleTypes);
         end;
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin

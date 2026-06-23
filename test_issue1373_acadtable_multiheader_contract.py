@@ -45,9 +45,12 @@ def test_base_entity_declares_row_style_hook():
 
 
 def test_acadtable_model_overrides_row_style_hook():
+    # GDBObjAcadTable is an old-style Pascal `object`, which overrides a virtual
+    # base method by redeclaring it `virtual` (same as SetBreakOptionFlags), not
+    # with the `override` keyword used by classes.
     model = compact(read_text(ACADTABLE_MODEL))
     assert (
-        "proceduresetrowstyletypes(constatypes:arrayofinteger);override;" in model
+        "proceduresetrowstyletypes(constatypes:arrayofinteger);virtual;" in model
     )
 
 
@@ -61,6 +64,10 @@ def test_loader_scans_and_applies_row_style_types():
     assert "scantablerowstyletypes(" in loader
     assert "plastmaintable^.setrowstyletypes(context.tablerowstyletypes)" in loader
     assert "context.tablerowstyletypesvalid" in loader
+    # row styles are applied only to whole (non-broken) tables: a table split
+    # into continuation parts lists per-part repeated header rows in
+    # AcDbTableContent, so those indices don't match the merged table's rows.
+    assert "context.tablecontinuationhandles.count=0" in loader
 
 
 def test_context_stores_row_style_types():

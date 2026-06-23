@@ -399,7 +399,7 @@ type
     // позиционный/принудительный выбор стиля). Вызывается при экспорте из
     // редактора электронных таблиц после построения геометрии, чтобы строки,
     // целиком состоящие из ячеек Title/Header, получили соответствующий стиль.
-    procedure SetRowStyleTypes(const ATypes: array of Integer); override;
+    procedure SetRowStyleTypes(const ATypes: array of Integer); virtual;
     // Возвращает явно заданный индекс базового стиля для строки ARow
     // (0=Title, 1=Header, 2=Data) либо -1, если тип строки не задан или
     // строка вне диапазона (issue #1368).
