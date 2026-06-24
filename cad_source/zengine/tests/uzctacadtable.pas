@@ -83,6 +83,10 @@ type
     // issue #1332: временный клон для интерактивного редактирования должен
     // начинать отрисовку в текущем положении таблицы, а не в начале координат.
     procedure ClonedPreviewKeepsRenderedTableAtSourceLocation;
+    // issue #1375: временный клон для интерактивного редактирования должен
+    // сохранять явные типы строк Title/Header/Data, иначе предпросмотр ручки
+    // высоты разбиения возвращается к legacy-паре Title+Header.
+    procedure ClonedPreviewPreservesExplicitRowStyleTypes;
     // issue #1305, часть 2b: снятие признака разрыва объединяет
     // части-продолжения в единую непрерывную таблицу.
     procedure ClearingBreakMergesContinuationParts;
@@ -1290,6 +1294,37 @@ begin
         'Клон предпросмотра должен сохранить нижнюю границу таблицы');
       CheckEquals(SrcMaxY, CloneMaxY, 1e-6,
         'Клон предпросмотра должен сохранить верхнюю границу таблицы');
+    finally
+      PreviewTable^.done;
+      FreeMem(Pointer(PreviewTable));
+    end;
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.ClonedPreviewPreservesExplicitRowStyleTypes;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable, PreviewTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablebugheader.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(2),
+      'Исходная таблица должна иметь вторую строку Header');
+
+    PreviewTable := PGDBObjAcadTable(AcadTable^.Clone(nil));
+    AssertNotNull(
+      'AcadTable.Clone должен вернуть временный объект предпросмотра',
+      PreviewTable);
+    try
+      CheckEquals(1, PreviewTable^.RowStyleTypeAt(2),
+        'Клон предпросмотра должен сохранить вторую строку Header');
+      CheckEquals(2, PreviewTable^.RowStyleTypeAt(3),
+        'Клон предпросмотра должен сохранить первую строку Data');
     finally
       PreviewTable^.done;
       FreeMem(Pointer(PreviewTable));
