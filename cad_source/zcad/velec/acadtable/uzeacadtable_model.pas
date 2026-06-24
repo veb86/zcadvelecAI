@@ -3568,6 +3568,7 @@ begin
   NewTable^.FInsertPoint := FInsertPoint;
   NewTable^.FRowCount := FRowCount;
   NewTable^.FColCount := FColCount;
+  NewTable^.FForceDataStyleAllRows := FForceDataStyleAllRows;
   NewTable^.FTableStyleHandle := FTableStyleHandle;
   NewTable^.FTableFlags := FTableFlags;
   NewTable^.FBreakEnabled := FBreakEnabled;
@@ -3578,6 +3579,7 @@ begin
   NewTable^.FBreakManualPosition := FBreakManualPosition;
   NewTable^.FBreakManualPositionExplicit := FBreakManualPositionExplicit;
   NewTable^.FBreakManualHeight := FBreakManualHeight;
+  NewTable^.FBreakFlagsKnown := FBreakFlagsKnown;
   NewTable^.FBreakSpacing := FBreakSpacing;
   NewTable^.FBreakHeight := FBreakHeight;
   // Трансформация объекта (issue #1305, часть 1)
@@ -3597,6 +3599,10 @@ begin
     Length(FCellTexts));
   for Idx := 0 to High(FCellTexts) do
     NewTable^.FCellTexts[Idx] := FCellTexts[Idx];
+
+  System.SetLength(NewTable^.FRowStyleTypes, Length(FRowStyleTypes));
+  for Idx := 0 to High(FRowStyleTypes) do
+    NewTable^.FRowStyleTypes[Idx] := FRowStyleTypes[Idx];
 
   NewTable^.FTableStyle := FTableStyle;
   NewTable^.Local := Local;

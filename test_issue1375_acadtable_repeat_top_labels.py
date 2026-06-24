@@ -44,15 +44,25 @@ def test_compute_top_label_row_count_uses_explicit_row_styles():
     assert "length(frowstyletypes)=0" in body
 
 
+def test_clone_preserves_explicit_row_style_types_for_rt_preview():
+    body = compact(_extract_function(read_text(MODEL), "Clone"))
+
+    assert "frowstyletypes" in body
+    assert "system.setlength(newtable^.frowstyletypes,length(frowstyletypes))" in body
+    assert "newtable^.frowstyletypes[idx]:=frowstyletypes[idx]" in body
+
+
 def test_fpunit_covers_title_header_header_repeat_top_case():
     test_src = read_text(FPUNIT)
     assert "procedure BreakRepeatTopUsesAllLeadingTitleHeaderRows;" in test_src
     assert "Table^.SetRowStyleTypes([0, 1, 1, 2, 2, 2])" in test_src
     assert "Header 2" in test_src
     assert "ContinuationPartCellText(0, 2, 0)" in test_src
+    assert "procedure ClonedPreviewPreservesExplicitRowStyleTypes;" in test_src
 
 
 if __name__ == "__main__":
     test_compute_top_label_row_count_uses_explicit_row_styles()
+    test_clone_preserves_explicit_row_style_types_for_rt_preview()
     test_fpunit_covers_title_header_header_repeat_top_case()
     print("issue 1375 AcadTable repeat-top label checks passed")
