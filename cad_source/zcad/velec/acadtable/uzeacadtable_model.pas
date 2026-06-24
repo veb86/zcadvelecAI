@@ -261,8 +261,9 @@ type
       APartNumber: Integer; const ALocalOffset: TzePoint3d): Double;
     function DecodeBreakHeightGripVertex(
       AVertexNum: Integer; out APartNumber: Integer): Boolean;
-    // Верхняя граница зоны ведущих строк-меток (Title/Header) по индексу
-    // строки: 0, 1 или 2. Тип строки определяется индексом (issue #1309).
+    // Число ведущих строк-меток (Title/Header) до первой строки Data.
+    // При наличии явных типов строк они определяют зону повтора; иначе
+    // используется legacy-позиция Title+Header (issue #1309, #1375).
     function ComputeTopLabelRowCount: Integer;
     // Фактическое число ведущих строк-меток, одинаково повторяющихся во всех
     // частях-продолжениях; 0, если повтора нет (по содержимому, issue #1309).
@@ -2537,11 +2538,11 @@ end;
 
 // --- Повтор верхних строк-меток в частях разорванной таблицы (issue #1309) ---
 
-// Максимальное число ведущих строк-меток (Title/Header), которые могут
-// повторяться в начале каждой части разорванной таблицы. Тип строки в таблице
-// AutoCAD определяется её индексом: строка 0 — Title, строка 1 — Header,
-// строки >=2 — Data. Зона повтора — это ведущие строки Title/Header от начала
-// таблицы до первой строки Data, то есть не более двух строк (issue #1309).
+// Число ведущих строк-меток (Title/Header), которые могут повторяться в начале
+// каждой части разорванной таблицы. Если доступны явные типы строк
+// (SetRowStyleTypes: 0=Title, 1=Header, 2=Data), зона повтора идёт от начала
+// таблицы до первой строки Data и может содержать любое количество строк
+// Title/Header в любой последовательности (issue #1375).
 //
 // Прежняя реализация опиралась на биты подавления TableFlags (бит 2 — Title,
 // бит 4 — Header), но реальные DXF (например, test/tablerazdel.dxf) приходят с
@@ -2549,14 +2550,45 @@ end;
 // присутствуют и повторяются в каждой части. Поэтому признак повтора
 // определяется не флагами, а сравнением содержимого строк частей с главной
 // частью (см. EffectiveRepeatTopRowCount), а здесь возвращается лишь верхняя
-// граница зоны меток по индексу строки. Возвращает 0, 1 или 2.
+// граница зоны меток. Для старых таблиц без явных типов строк сохраняется
+// legacy-логика: строка 0 — Title, строка 1 — Header, строки >=2 — Data.
 function GDBObjAcadTable.ComputeTopLabelRowCount: Integer;
+var
+  RowIdx, StyleType: Integer;
 begin
   Result := 0;
-  if FRowCount > 0 then
-    Inc(Result);
-  if FRowCount > 1 then
-    Inc(Result);
+  if FRowCount <= 0 then
+    Exit;
+
+  if Length(FRowStyleTypes) = 0 then
+  begin
+    if FRowCount > 0 then
+      Inc(Result);
+    if FRowCount > 1 then
+      Inc(Result);
+    Exit;
+  end;
+
+  for RowIdx := 0 to FRowCount - 1 do
+  begin
+    StyleType := RowStyleTypeAt(RowIdx);
+    if StyleType < 0 then
+    begin
+      if RowIdx = 0 then
+        StyleType := 0
+      else if RowIdx = 1 then
+        StyleType := 1
+      else
+        StyleType := 2;
+    end;
+
+    if StyleType = 2 then
+      Break;
+    if (StyleType = 0) or (StyleType = 1) then
+      Inc(Result)
+    else
+      Break;
+  end;
 end;
 
 // Фактическое число ведущих строк-меток, которые ОДИНАКОВО повторяются в начале
