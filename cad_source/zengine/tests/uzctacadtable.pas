@@ -133,6 +133,10 @@ type
     // issue #1309, часть 2: снятие признака повтора удаляет повторяющиеся
     // строки-метки из всех частей, а возврат — добавляет их обратно.
     procedure TogglingBreakRepeatTopAddsAndRemovesLabelRows;
+    // issue #1375: повторяемая верхняя зона определяется всеми ведущими
+    // строками Title/Header до первой Data, а не фиксированной парой
+    // Title+Header.
+    procedure BreakRepeatTopUsesAllLeadingTitleHeaderRows;
     // issue #1311: строка данных, смещённая на место удалённых верхних меток,
     // должна сохранять своё форматирование.
     procedure ClearingBreakRepeatTopKeepsDataRowFormatting;
@@ -1985,6 +1989,62 @@ begin
       'После возврата повтора часть 0 снова начинается с «Zagolovok»');
     CheckEquals('A', AcadTable^.ContinuationPartCellText(0, 1, 0),
       'После возврата повтора часть 0 снова содержит шапку «A..E»');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1375. При повторе верхних меток зона повтора должна включать все
+// ведущие строки со стилями Title/Header до первой строки Data. Таблица
+// Title/Header/Header/Data раньше повторяла только первые две строки, потому
+// что ComputeTopLabelRowCount жёстко ограничивал зону парой Title+Header.
+procedure TAcadTableStyleTest.BreakRepeatTopUsesAllLeadingTitleHeaderRows;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 6);
+    Texts[0] := 'Title';
+    Texts[1] := 'Header 1';
+    Texts[2] := 'Header 2';
+    Texts[3] := 'Data 1';
+    Texts[4] := 'Data 2';
+    Texts[5] := 'Data 3';
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+    System.SetLength(Alignments, 0);
+
+    InsertPt := NulVertex;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(6, 1, Texts,
+      ColWidths, RowHeights, Alignments, InsertPt),
+      'Построение тестовой таблицы должно завершиться успешно');
+
+    Table^.SetRowStyleTypes([0, 1, 1, 2, 2, 2]);
+    Table^.BreakRepeatTopLabels := True;
+    Table^.BreakHeight := CAcadTableDefaultRowHeight * 4;
+    Table^.BreakEnabled := True;
+
+    CheckTrue(Table^.ContinuationPartCount > 0,
+      'Малая высота разбиения должна создать часть-продолжение');
+    CheckEquals('Title', Table^.ContinuationPartCellText(0, 0, 0),
+      'Часть-продолжение должна повторять строку Title');
+    CheckEquals('Header 1', Table^.ContinuationPartCellText(0, 1, 0),
+      'Часть-продолжение должна повторять первую строку Header');
+    CheckEquals('Header 2', Table^.ContinuationPartCellText(0, 2, 0),
+      'Часть-продолжение должна повторять вторую строку Header');
+    CheckEquals('Data 2', Table^.ContinuationPartCellText(0, 3, 0),
+      'Первая строка данных продолжения должна идти после всех верхних меток');
   finally
     Drawing.done;
   end;
