@@ -40,6 +40,7 @@ uses
   uzeentmtext,
   uzeentline,
   uzeentgenericsubentry,
+  uzeentsubordinated,
   uzeentcomplex,
   UGDBVisibleTreeArray,
   uzeenttext,
@@ -164,6 +165,11 @@ type
     // сбрасывает ранее заданные типы строк.
     procedure SetRowStyleTypesAssignsRowStyles;
     procedure RebuildResetsRowStyleTypes;
+    // issue #1373: таблица с несколькими строками-заголовками (tablebugheader.dxf:
+    // строка 0 = Title, строки 1 и 2 = Header, остальные = Data) должна
+    // загружаться с правильными типами строк, прочитанными из современного
+    // объекта AcDbTableContent (TABLEROW_BEGIN group 90).
+    procedure LoadsMultipleHeaderRowsFromDXF;
   end;
 
 implementation
@@ -2449,6 +2455,41 @@ begin
       'После перестроения строка 0 не должна иметь явного типа');
     CheckEquals(-1, Table^.RowStyleTypeAt(1),
       'После перестроения строка 1 не должна иметь явного типа');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1373. tablebugheader.dxf содержит одиночную таблицу 6×3, у которой
+// строка 0 — стиль Title, строки 1 И 2 — стиль Header, остальные — Data.
+// Позиционная логика legacy AcDbTable-парсера жёстко предполагает ровно одну
+// строку Title и одну Header, поэтому раньше третья строка (индекс 2) ошибочно
+// загружалась как Data. Числа строк-заголовков нет в legacy-потоке ячеек —
+// оно хранится только в современном объекте AcDbTableContent, где каждый
+// маркер TABLEROW_BEGIN несёт group 90 с типом строки (1=Title, 2=Header,
+// 3=Data). Загрузчик читает эти типы pre-scan'ом и передаёт в таблицу через
+// SetRowStyleTypes, так что RowStyleTypeAt отражает реальные типы строк.
+procedure TAcadTableStyleTest.LoadsMultipleHeaderRowsFromDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablebugheader.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    CheckEquals(0, AcadTable^.RowStyleTypeAt(0),
+      'Строка 0 должна загружаться со стилем Title (0)');
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(1),
+      'Строка 1 должна загружаться со стилем Header (1)');
+    // Ключевая проверка issue #1373: вторая строка-заголовок раньше ошибочно
+    // определялась как Data.
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(2),
+      'Строка 2 (вторая строка-заголовок) должна загружаться со стилем Header (1)');
+    CheckEquals(2, AcadTable^.RowStyleTypeAt(3),
+      'Строка 3 должна загружаться со стилем Data (2)');
   finally
     Drawing.done;
   end;
