@@ -92,6 +92,9 @@ type
     BreakHeight: Double;
     RawDXFEntity: String;
     RawDXFEntityValid: Boolean;
+    RawExtDictSubtree: String;
+    RawExtDictSubtreeValid: Boolean;
+    RawTextStyleHandleMap: String;
   end;
 
   TAcadTableBreakHeightArray = array of Double;
@@ -174,6 +177,11 @@ type
     // неизменённых ACAD_TABLE (issue #1317).
     FRawDXFEntity: String;
     FRawDXFEntityValid: Boolean;
+    // Сырой OBJECTS-поддерево extension dictionary (TABLECONTENT/TABLEGEOMETRY)
+    // для неизменённых таблиц AutoCAD (issues #1344, #1378).
+    FRawExtDictSubtree: String;
+    FRawExtDictSubtreeValid: Boolean;
+    FRawTextStyleHandleMap: String;
 
     // Обёртки для делегирования к модулю layout
     function GetRowHeightLocal(RowIndex: Integer): Double;
@@ -358,6 +366,8 @@ type
     function SetTableStyleName(
       const AValue: String; var ADrawing: TDrawingDef): Boolean; virtual;
     procedure SetDXFRawEntityText(const ARawText: string); virtual;
+    procedure SetDXFRawExtDictSubtree(
+      const ARawText, ARawTextStyleHandleMap: string); virtual;
     // Программно строит таблицу из текстов ячеек редактора электронных
     // таблиц (issue #1357). Все ячейки имеют тип cdtText и оформляются
     // стилем Data, объединения отсутствуют. ACellTexts индексируется как
@@ -794,6 +804,9 @@ begin
   System.SetLength(FContinuationParts, 0);
   FRawDXFEntity := '';
   FRawDXFEntityValid := False;
+  FRawExtDictSubtree := '';
+  FRawExtDictSubtreeValid := False;
+  FRawTextStyleHandleMap := '';
 end;
 
 destructor GDBObjAcadTable.done;
@@ -809,6 +822,9 @@ begin
   System.SetLength(FMerges, 0);
   FRawDXFEntity := '';
   FRawDXFEntityValid := False;
+  FRawExtDictSubtree := '';
+  FRawExtDictSubtreeValid := False;
+  FRawTextStyleHandleMap := '';
   for PartIdx := 0 to High(FContinuationParts) do
     ClearPart(FContinuationParts[PartIdx]);
   System.SetLength(FContinuationParts, 0);
@@ -821,10 +837,16 @@ var
 begin
   FRawDXFEntity := '';
   FRawDXFEntityValid := False;
+  FRawExtDictSubtree := '';
+  FRawExtDictSubtreeValid := False;
+  FRawTextStyleHandleMap := '';
   for PartIdx := 0 to High(FContinuationParts) do
   begin
     FContinuationParts[PartIdx].RawDXFEntity := '';
     FContinuationParts[PartIdx].RawDXFEntityValid := False;
+    FContinuationParts[PartIdx].RawExtDictSubtree := '';
+    FContinuationParts[PartIdx].RawExtDictSubtreeValid := False;
+    FContinuationParts[PartIdx].RawTextStyleHandleMap := '';
   end;
 end;
 
@@ -1471,6 +1493,9 @@ begin
 
   TmpRaw := FRawDXFEntity; FRawDXFEntity := APart.RawDXFEntity; APart.RawDXFEntity := TmpRaw;
   TmpRawValid := FRawDXFEntityValid; FRawDXFEntityValid := APart.RawDXFEntityValid; APart.RawDXFEntityValid := TmpRawValid;
+  TmpRaw := FRawExtDictSubtree; FRawExtDictSubtree := APart.RawExtDictSubtree; APart.RawExtDictSubtree := TmpRaw;
+  TmpRawValid := FRawExtDictSubtreeValid; FRawExtDictSubtreeValid := APart.RawExtDictSubtreeValid; APart.RawExtDictSubtreeValid := TmpRawValid;
+  TmpRaw := FRawTextStyleHandleMap; FRawTextStyleHandleMap := APart.RawTextStyleHandleMap; APart.RawTextStyleHandleMap := TmpRaw;
 end;
 
 // Строит визуальное представление всей таблицы: сначала главная часть
@@ -1542,6 +1567,9 @@ begin
   APart.BreakHeight := ASource.FBreakHeight;
   APart.RawDXFEntity := ASource.FRawDXFEntity;
   APart.RawDXFEntityValid := ASource.FRawDXFEntityValid;
+  APart.RawExtDictSubtree := ASource.FRawExtDictSubtree;
+  APart.RawExtDictSubtreeValid := ASource.FRawExtDictSubtreeValid;
+  APart.RawTextStyleHandleMap := ASource.FRawTextStyleHandleMap;
 
   APart.RowHeights.initnul;
   for Idx := 0 to ASource.FRowHeights.Count - 1 do
@@ -1598,6 +1626,9 @@ begin
   ADest.BreakHeight := ASource.BreakHeight;
   ADest.RawDXFEntity := ASource.RawDXFEntity;
   ADest.RawDXFEntityValid := ASource.RawDXFEntityValid;
+  ADest.RawExtDictSubtree := ASource.RawExtDictSubtree;
+  ADest.RawExtDictSubtreeValid := ASource.RawExtDictSubtreeValid;
+  ADest.RawTextStyleHandleMap := ASource.RawTextStyleHandleMap;
 
   ADest.RowHeights.initnul;
   for Idx := 0 to ASource.RowHeights.Count - 1 do
@@ -1638,6 +1669,9 @@ begin
   APart.RowBaseIndex := 0;
   APart.RawDXFEntity := '';
   APart.RawDXFEntityValid := False;
+  APart.RawExtDictSubtree := '';
+  APart.RawExtDictSubtreeValid := False;
+  APart.RawTextStyleHandleMap := '';
   APart.RowHeights.done;
   APart.ColWidths.done;
   System.SetLength(APart.CellTexts, 0);
@@ -1959,6 +1993,9 @@ begin
   ADest.BreakHeight := ASource.BreakHeight;
   ADest.RawDXFEntity := '';
   ADest.RawDXFEntityValid := False;
+  ADest.RawExtDictSubtree := '';
+  ADest.RawExtDictSubtreeValid := False;
+  ADest.RawTextStyleHandleMap := '';
 
   // Высоты строк диапазона
   ADest.RowHeights.initnul;
@@ -2831,6 +2868,9 @@ begin
   APart.BreakHeight := Src.BreakHeight;
   APart.RawDXFEntity := '';
   APart.RawDXFEntityValid := False;
+  APart.RawExtDictSubtree := '';
+  APart.RawExtDictSubtreeValid := False;
+  APart.RawTextStyleHandleMap := '';
 
   // Высоты строк: сверху L строк главной части, затем строки исходной части.
   APart.RowHeights.initnul;
@@ -3002,6 +3042,14 @@ procedure GDBObjAcadTable.SetDXFRawEntityText(const ARawText: string);
 begin
   FRawDXFEntity := ARawText;
   FRawDXFEntityValid := ARawText <> '';
+end;
+
+procedure GDBObjAcadTable.SetDXFRawExtDictSubtree(
+  const ARawText, ARawTextStyleHandleMap: string);
+begin
+  FRawExtDictSubtree := ARawText;
+  FRawExtDictSubtreeValid := ARawText <> '';
+  FRawTextStyleHandleMap := ARawTextStyleHandleMap;
 end;
 
 // --- Трансформация объекта (issue #1305, часть 1) ---
@@ -3414,6 +3462,7 @@ procedure GDBObjAcadTable.FillDXFWritePartFromSelf(
   var APart: TAcadTableDXFWritePart);
 begin
   APart.HandleKey := @Self;
+  APart.ExtDictHandle := '';
   if vp.Layer <> nil then
     APart.LayerName := vp.Layer^.Name
   else
@@ -3525,7 +3574,7 @@ var
   RawParts: array of String;
   PartIdx: Integer;
 begin
-  if CanSaveRawDXFEntity then
+  if FRawDXFEntityValid and (FRawDXFEntity <> '') then
   begin
     // Перед сохранением гарантируем, что имя стиля таблицы определено.
     // Для raw-таблиц (issue #1339) BuildGeometry мог ещё не выполняться
@@ -3537,18 +3586,38 @@ begin
       uzeacadtable_stylemanager.ApplyDXFTableStyle(
         FTableStyle, FTableStyleHandle, ADrawing);
 
-    System.SetLength(RawParts, Length(FContinuationParts));
-    for PartIdx := 0 to High(FContinuationParts) do
-      RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
     // Признаки ручного управления разрывами должны попасть в roundtrip-запись
     // (issue #1339), иначе при пересохранении BreakOption теряет манульные биты.
     DetectBreakManualPosition;
     DetectBreakManualHeight;
-    if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
-      AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
-      FBreakSpacing, FBreakHeight,
-      FBreakManualPosition, FBreakManualHeight, Self.TableStyleName) then
-      Exit;
+
+    if CanSaveRawDXFEntity then
+    begin
+      System.SetLength(RawParts, Length(FContinuationParts));
+      for PartIdx := 0 to High(FContinuationParts) do
+        RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
+      if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
+        AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
+        FRawExtDictSubtree, FRawTextStyleHandleMap,
+        FBreakSpacing, FBreakHeight,
+        FBreakManualPosition, FBreakManualHeight, Self.TableStyleName) then
+        Exit;
+    end
+    else if FRawExtDictSubtreeValid and (FRawExtDictSubtree <> '') then
+    begin
+      { AutoCAD 2007 can store a visually split ACAD_TABLE as one entity
+        whose extension dictionary owns TABLECONTENT/TABLEGEOMETRY (issue
+        #1378). ZCAD may synthesize continuation parts for display, but for
+        an unchanged raw table the safest save form is the original one-entity
+        representation with the preserved dictionary subtree. }
+      System.SetLength(RawParts, 0);
+      if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
+        AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
+        FRawExtDictSubtree, FRawTextStyleHandleMap,
+        FBreakSpacing, FBreakHeight,
+        FBreakManualPosition, FBreakManualHeight, Self.TableStyleName) then
+        Exit;
+    end;
   end;
 
   inherited DXFOut(AOutStream, ADrawing, AIODXFContext);
@@ -3587,6 +3656,9 @@ begin
   NewTable^.FRotate := FRotate;
   NewTable^.FRawDXFEntity := FRawDXFEntity;
   NewTable^.FRawDXFEntityValid := FRawDXFEntityValid;
+  NewTable^.FRawExtDictSubtree := FRawExtDictSubtree;
+  NewTable^.FRawExtDictSubtreeValid := FRawExtDictSubtreeValid;
+  NewTable^.FRawTextStyleHandleMap := FRawTextStyleHandleMap;
 
   for Idx := 0 to FRowHeights.Count - 1 do
     NewTable^.FRowHeights.PushBackData(
