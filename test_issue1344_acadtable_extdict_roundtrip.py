@@ -1,41 +1,28 @@
 #!/usr/bin/env python3
 """
-Regression checks for issue 1344 AcadTable AutoCAD extension dictionary round-trip.
+Documentation check for issue 1344 AcadTable AutoCAD extension dictionary round-trip.
+
+NOTE
+----
+The original issue-1344 work tried to preserve and remap AutoCAD's full
+extension-dictionary subtree (TABLECONTENT/TABLEGEOMETRY) verbatim on save.
+That heavy approach (PR #1379 and the preceding subtree-preservation commit)
+was reverted by the maintainer because it "broke a lot". The source-contract
+tests that asserted the presence of that reverted machinery were therefore
+removed — they referenced code that no longer exists.
+
+What remains here is the still-valid structural documentation of an AutoCAD
+gold-standard file: a split table reaches its round-trip XRECORD through the
+entity's extension dictionary, and that XRECORD points back at the table's
+TABLECONTENT/TABLEGEOMETRY objects. Issue 1378 reproduces the dictionary-chain
+linkage minimally (without copying the whole subtree).
 """
 
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-DXF_LOADER = ROOT / "cad_source" / "zengine" / "fileformats" / "uzeffdxf.pas"
-DXF_SUPPORT = ROOT / "cad_source" / "zengine" / "fileformats" / "uzeffdxfsupport.pas"
-DXF_OUT = ROOT / "cad_source" / "zengine" / "fileformats" / "uzeffdxfout.pas"
-ENTITY_BASE = ROOT / "cad_source" / "zengine" / "core" / "entities" / "uzeentity.pas"
-ACADTABLE_MODEL = (
-    ROOT
-    / "cad_source"
-    / "zcad"
-    / "velec"
-    / "acadtable"
-    / "uzeacadtable_model.pas"
-)
-ACADTABLE_WRITER = (
-    ROOT
-    / "cad_source"
-    / "zcad"
-    / "velec"
-    / "acadtable"
-    / "uzeacadtable_dxf_write.pas"
-)
 SAMPLE_DXF = ROOT / "cad_source" / "test" / "acadtablerazdel2007_1.dxf"
-
-
-def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
-def compact(text: str) -> str:
-    return "".join(text.split()).lower()
 
 
 def dxf_pairs(path: Path) -> list[tuple[str, str]]:
@@ -99,46 +86,6 @@ def test_sample_acad_table_contains_autocad_content_subtree():
     )
 
 
-def test_loader_prescans_table_extension_dictionary_subtrees():
-    loader = compact(read_text(DXF_LOADER))
-    support = compact(read_text(DXF_SUPPORT))
-    entity_base = compact(read_text(ENTITY_BASE))
-    model = compact(read_text(ACADTABLE_MODEL))
-
-    assert "tablerawacadtableextdictsubtrees:tstringlist" in support
-    assert "tablerawtextstylehandlenames:tstringlist" in support
-    assert "scantextstylehandlenames(" in loader
-    assert "scanacadtablerawextdictsubtrees(" in loader
-    assert "tablecontent" in loader
-    assert "tablegeometry" in loader
-    assert "setdxfrawextdictsubtree(" in entity_base
-    assert "proceduregdbobjacadtable.setdxfrawextdictsubtree(" in model
-    assert "frawextdictsubtreevalid:=arawtext<>''" in model
-
-
-def test_writer_preserves_and_remaps_tablecontent_subtree():
-    writer = compact(read_text(ACADTABLE_WRITER))
-    dxf_out = compact(read_text(DXF_OUT))
-    support = compact(read_text(DXF_SUPPORT))
-    model = compact(read_text(ACADTABLE_MODEL))
-
-    assert "textstylenamehandlemap:tstring2stringdictionary" in support
-    assert "textstylenamehandlemap.add(" in dxf_out
-    assert "frawextdictsubtree" in model
-    assert "amainextdictsubtree" in writer
-    assert "collectrawextdicthandleremaps(" in writer
-    assert "writerawextdictsubtreetodxf(" in writer
-    assert "remaprawextdicthandlevalue(" in writer
-    assert "rawacadtableextdicthandle(" in writer
-    assert "akeepextdict" in writer
-    assert "aextdicthandlenew" in writer
-    assert "findhandleremap(" in writer
-    assert "acadtablebreakoptionflags(" in writer
-    assert "aoutstream.txtaddstringeol(outvalue)" in writer
-
-
 if __name__ == "__main__":
     test_sample_acad_table_contains_autocad_content_subtree()
-    test_loader_prescans_table_extension_dictionary_subtrees()
-    test_writer_preserves_and_remaps_tablecontent_subtree()
     print("issue 1344 AcadTable extension dictionary round-trip checks passed")
