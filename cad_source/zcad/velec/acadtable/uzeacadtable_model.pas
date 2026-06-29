@@ -3447,9 +3447,6 @@ begin
   APart.BreakManualHeight := FBreakManualHeight;
   APart.BreakSpacing := FBreakSpacing;
   APart.BreakHeight := FBreakHeight;
-  { Главная часть таблицы с частями-продолжениями получает расширенный словарь
-    для привязки round-trip XRECORD (issue #1378). }
-  APart.HasContinuations := Length(FContinuationParts) > 0;
 end;
 
 procedure GDBObjAcadTable.FillDXFWritePartFromContinuation(
@@ -3475,9 +3472,6 @@ begin
   APart.BreakManualHeight := ASource.BreakManualHeight;
   APart.BreakSpacing := ASource.BreakSpacing;
   APart.BreakHeight := ASource.BreakHeight;
-  { Части-продолжения собственного расширенного словаря не получают —
-    он только у главной части (issue #1378). }
-  APart.HasContinuations := False;
 end;
 
 procedure GDBObjAcadTable.BuildDXFContinuationWriteParts(

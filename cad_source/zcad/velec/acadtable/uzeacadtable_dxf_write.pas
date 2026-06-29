@@ -65,11 +65,6 @@ type
     BreakManualHeight: Boolean;
     BreakSpacing: Double;
     BreakHeight: Double;
-    { Признак главной части разорванной таблицы (есть части-продолжения).
-      Только для такой части пишется расширенный словарь ACAD_XDICTIONARY,
-      через который round-trip XRECORD (ACAD_ROUNDTRIP_2008_TABLE_ENTITY)
-      привязывается к сущности (issue #1378). }
-    HasContinuations: Boolean;
   end;
 
   TAcadTableDXFWritePartArray = array of TAcadTableDXFWritePart;
@@ -123,18 +118,8 @@ type
     BreakManualHeight: Boolean;
   end;
 
-  { Связь главной сущности таблицы с её расширенным словарём (issue #1378).
-    Хэндл словаря выделяется при записи самой сущности (секция ENTITIES),
-    а используется позже при записи round-trip XRECORD (секция OBJECTS),
-    поэтому хранится между проходами в модульной таблице. }
-  TAcadTableMainEntityDict = record
-    MainHandle: TDWGHandle;
-    DictHandle: TDWGHandle;
-  end;
-
 var
   RoundTripRecords: array of TAcadTableRoundTripRecord;
-  MainEntityDicts: array of TAcadTableMainEntityDict;
 
 procedure ResetAcadTableDXFWriteState;
 var
@@ -143,50 +128,6 @@ begin
   for I := 0 to High(RoundTripRecords) do
     System.SetLength(RoundTripRecords[I].ContinuationHandles, 0);
   System.SetLength(RoundTripRecords, 0);
-  System.SetLength(MainEntityDicts, 0);
-end;
-
-{ Регистрирует пару «главная сущность таблицы -> её расширенный словарь».
-  Вызывается при записи главной сущности (issue #1378). }
-procedure RegisterMainEntityDict(AMainHandle, ADictHandle: TDWGHandle);
-var
-  Idx: Integer;
-begin
-  Idx := Length(MainEntityDicts);
-  System.SetLength(MainEntityDicts, Idx + 1);
-  MainEntityDicts[Idx].MainHandle := AMainHandle;
-  MainEntityDicts[Idx].DictHandle := ADictHandle;
-end;
-
-{ Возвращает хэндл расширенного словаря главной сущности, если он был
-  зарегистрирован при записи сущности (issue #1378). }
-function LookupMainEntityDict(
-  AMainHandle: TDWGHandle; out ADictHandle: TDWGHandle): Boolean;
-var
-  Idx: Integer;
-begin
-  Result := False;
-  ADictHandle := 0;
-  for Idx := 0 to High(MainEntityDicts) do
-    if MainEntityDicts[Idx].MainHandle = AMainHandle then
-    begin
-      ADictHandle := MainEntityDicts[Idx].DictHandle;
-      Result := True;
-      Exit;
-    end;
-end;
-
-{ Пишет ссылку на расширенный словарь сущности (issue #1378):
-    102 {ACAD_XDICTIONARY 360 <dict> 102 }
-  Через этот словарь AutoCAD находит round-trip XRECORD с высотой разбиения.
-  Без него запись остаётся «висячей», разрыв не применяется и таблица
-  открывается цельной «длинной простынёй». }
-procedure WriteExtensionDictionaryRef(
-  var AOutStream: TZctnrVectorBytes; ADictHandle: TDWGHandle);
-begin
-  dxfStringWithoutEncodeOut(AOutStream, 102, '{ACAD_XDICTIONARY');
-  dxfStringWithoutEncodeOut(AOutStream, 360, IntToHex(ADictHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 102, '}');
 end;
 
 function BoolToDXF(AValue: Boolean): Integer;
@@ -339,22 +280,11 @@ procedure WriteEntityPrefix(
   var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart;
   out AHandle: TDWGHandle);
-var
-  DictHandle: TDWGHandle;
 begin
   AHandle := EntityHandleForPart(APart, AIODXFContext);
 
   dxfStringWithoutEncodeOut(AOutStream, 0, 'ACAD_TABLE');
   dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(AHandle, 0));
-  { Главная часть разорванной таблицы получает расширенный словарь, к которому
-    привязывается round-trip XRECORD с высотой разбиения (issue #1378). Хэндл
-    словаря выделяется здесь и переиспользуется в секции OBJECTS. }
-  if APart.HasContinuations then
-  begin
-    DictHandle := NextAnonymousHandle(AIODXFContext);
-    WriteExtensionDictionaryRef(AOutStream, DictHandle);
-    RegisterMainEntityDict(AHandle, DictHandle);
-  end;
   dxfStringWithoutEncodeOut(AOutStream, 100, dxfName_AcDbEntity);
   if APart.LayerName <> '' then
     dxfStringout(AOutStream, 8, APart.LayerName,
@@ -550,18 +480,14 @@ end;
 //   330 — владелец сущности (*Model_Space);
 //   342 — стиль таблицы (по имени стиля ATableStyleName);
 //   343 — анонимный блок таблицы (по имени блока из предшествующей пары 2);
-//   исходный блок расширенного словаря 102/ACAD_XDICTIONARY всегда удаляется
-//        (его хэндлы не круглорейсятся). Если ADictHandle<>0 (главная часть
-//        разорванной таблицы, issue #1378), взамен пишется свежая ссылка на
-//        словарь, через который привязывается round-trip XRECORD с высотой
-//        разбиения — иначе AutoCAD открывает таблицу цельной.
+//   блок расширенного словаря 102/ACAD_XDICTIONARY удаляется, т.к. он не
+//        круглорейсится и иначе оставляет висячую ссылку (360).
 procedure WriteRawEntityText(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ATableStyleName: String;
   const ARawEntity: String;
-  ANewHandle: TDWGHandle;
-  ADictHandle: TDWGHandle);
+  ANewHandle: TDWGHandle);
 var
   Lines: TStringList;
   I: Integer;
@@ -620,17 +546,6 @@ begin
           код 5 (хэндл сущности), значения ячеек (302="5") не затрагиваем. }
         OutValue := IntToHex(ANewHandle, 0);
         HandleRewritten := True;
-        { Сразу после хэндла сущности — ссылка на расширенный словарь главной
-          части разорванной таблицы (issue #1378). Исходный 102/ACAD_XDICTIONARY
-          уже удалён выше, поэтому дубля не будет. }
-        if ADictHandle <> 0 then
-        begin
-          AOutStream.TXTAddStringEOL(Lines[I]);
-          AOutStream.TXTAddStringEOL(OutValue);
-          WriteExtensionDictionaryRef(AOutStream, ADictHandle);
-          Inc(I, 2);
-          Continue;
-        end;
       end
       else if Code = '330' then
       begin
@@ -739,7 +654,6 @@ function WriteRawAcadTablePartsToDXF(
   const ATableStyleName: String): Boolean;
 var
   MainHandle: TDWGHandle;
-  DictHandle: TDWGHandle;
   ContinuationHandles: array of TDWGHandle;
   PartIdx: Integer;
 begin
@@ -765,25 +679,14 @@ begin
     (issue #1344). Эти же значения попадают в round-trip XRECORD (360/330/
     361), оставаясь согласованными с группой 5 сущностей. }
   MainHandle := NextAnonymousHandle(AIODXFContext);
-  { Главная часть разорванной таблицы получает расширенный словарь, к которому
-    в секции OBJECTS привязывается round-trip XRECORD (issue #1378). Части без
-    продолжений (Length=0) обрабатываются обычным сохранением и сюда не
-    попадают, поэтому словарь нужен всегда, когда есть продолжения. }
-  if Length(AContinuationRawEntities) > 0 then
-  begin
-    DictHandle := NextAnonymousHandle(AIODXFContext);
-    RegisterMainEntityDict(MainHandle, DictHandle);
-  end
-  else
-    DictHandle := 0;
   WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-    AMainRawEntity, MainHandle, DictHandle);
+    AMainRawEntity, MainHandle);
 
   for PartIdx := 0 to High(AContinuationRawEntities) do
   begin
     ContinuationHandles[PartIdx] := NextAnonymousHandle(AIODXFContext);
     WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-      AContinuationRawEntities[PartIdx], ContinuationHandles[PartIdx], 0);
+      AContinuationRawEntities[PartIdx], ContinuationHandles[PartIdx]);
   end;
 
   AddRoundTripRecord(MainHandle, ContinuationHandles,
@@ -803,33 +706,10 @@ const
   cTableBreakAllowManualHeights = 16;
 var
   ObjectHandle: TDWGHandle;
-  DictHandle: TDWGHandle;
-  HasDict: Boolean;
   HandleIdx: Integer;
   BreakOptionFlags: Integer;
 begin
   ObjectHandle := NextAnonymousHandle(AIODXFContext);
-
-  { Если для главной сущности был выделен расширенный словарь (issue #1378),
-    пишем его как объект-владелец XRECORD и привязываем запись к сущности:
-      сущность --(102 ACAD_XDICTIONARY 360)--> DICTIONARY
-      DICTIONARY --(3 ACAD_XREC_ROUNDTRIP 360)--> XRECORD
-      XRECORD --(330 владелец)--> DICTIONARY.
-    Раньше XRECORD писался «висячим» (330 0), AutoCAD его не находил, высота
-    разбиения терялась и таблица открывалась цельной. }
-  HasDict := LookupMainEntityDict(ARecord.MainHandle, DictHandle);
-  if HasDict then
-  begin
-    dxfStringWithoutEncodeOut(AOutStream, 0, 'DICTIONARY');
-    dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(DictHandle, 0));
-    dxfStringWithoutEncodeOut(AOutStream, 330,
-      IntToHex(ARecord.MainHandle, 0));
-    dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbDictionary');
-    dxfIntegerout(AOutStream, 280, 1);
-    dxfIntegerout(AOutStream, 281, 1);
-    dxfStringWithoutEncodeOut(AOutStream, 3, 'ACAD_XREC_ROUNDTRIP');
-    dxfStringWithoutEncodeOut(AOutStream, 360, IntToHex(ObjectHandle, 0));
-  end;
 
   { Восстанавливаем BreakOption-флаг из признаков ручного управления
     разрывами (issue #1339). Раньше здесь была жёстко зашита 3, из-за чего
@@ -842,15 +722,7 @@ begin
 
   dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
   dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(ObjectHandle, 0));
-  if HasDict then
-  begin
-    dxfStringWithoutEncodeOut(AOutStream, 102, '{ACAD_REACTORS');
-    dxfStringWithoutEncodeOut(AOutStream, 330, IntToHex(DictHandle, 0));
-    dxfStringWithoutEncodeOut(AOutStream, 102, '}');
-    dxfStringWithoutEncodeOut(AOutStream, 330, IntToHex(DictHandle, 0));
-  end
-  else
-    dxfStringWithoutEncodeOut(AOutStream, 330, '0');
+  dxfStringWithoutEncodeOut(AOutStream, 330, '0');
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
   dxfIntegerout(AOutStream, 280, 1);
   dxfStringWithoutEncodeOut(AOutStream, 102,
