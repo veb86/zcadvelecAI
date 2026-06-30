@@ -186,9 +186,22 @@ begin
   end;
 end;
 
+{ Распознаёт маркер XRECORD'а, связывающего части разорванной таблицы
+  (issue #1381). Принимает оба варианта:
+    * CAcadTableRoundtripMarkerName — «родной» маркер AutoCAD в файлах
+      R2007/2008, экспортированных самим AutoCAD;
+    * CAcadTableSplitMarkerName — приватный маркер ZCAD, которым теперь
+      сохраняет ZCAD (AutoCAD его игнорирует и показывает части отдельными
+      таблицами).
+  Это обеспечивает обратную совместимость чтения при том, что запись
+  больше не использует распознаваемый AutoCAD маркер. }
 function IsAcadTableRoundtripMarker(const Value: string): Boolean;
+var
+  Normalized: string;
 begin
-  Result := UpperCase(Trim(Value)) = 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY';
+  Normalized := UpperCase(Trim(Value));
+  Result := (Normalized = UpperCase(CAcadTableRoundtripMarkerName)) or
+            (Normalized = UpperCase(CAcadTableSplitMarkerName));
 end;
 
 procedure StoreRawAcadTableEntity(

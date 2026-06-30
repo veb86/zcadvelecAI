@@ -169,6 +169,24 @@ const {as_normal=0;
   { Наименование типа для прокси-объекта AutoCAD }
   ObjN_GDBObjAcdProxy='GDBObjAcdProxy';
 
+  { Маркеры XRECORD'ов, связывающих части разорванной (split) таблицы
+    ACAD_TABLE (issue #1381).
+
+    CAcadTableRoundtripMarkerName — «родной» маркер AutoCAD. AutoCAD
+    распознаёт его и пересобирает части обратно в одну цельную таблицу,
+    из-за чего разорванная таблица открывается в AutoCAD как цельная
+    (баг issue #1381). Поэтому ZCAD больше НЕ записывает этот маркер,
+    но продолжает читать его при загрузке настоящих файлов AutoCAD
+    R2007/2008, где разорванная таблица представлена несколькими
+    ACAD_TABLE + этим XRECORD.
+
+    CAcadTableSplitMarkerName — приватный маркер ZCAD той же структуры.
+    AutoCAD его не распознаёт и поэтому показывает части как несколько
+    отдельных таблиц (как и было сохранено в ZCAD), а ZCAD по нему
+    восстанавливает единую разорванную таблицу, сохраняя функциональность. }
+  CAcadTableRoundtripMarkerName='ACAD_ROUNDTRIP_2008_TABLE_ENTITY';
+  CAcadTableSplitMarkerName='ZCAD_SPLIT_TABLE_ENTITY';
+
   DevicePrefix='DEVICE_';
   DrawingDeviceBaseUnitName='drawingdevicebase';
 
