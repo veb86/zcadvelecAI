@@ -56,6 +56,13 @@ type
     Cells: TTableCellArray;
     Merges: TMergeRangeArray;
     TableStyleHandle: String;
+    // Имя анонимного блока таблицы (group code 2 / связанный BLOCK_RECORD
+    // через group code 343). Для модельного пути записи (issue #1381) сюда
+    // подставляется имя сгенерированного перед сохранением блока с геометрией
+    // этой части, чтобы AutoCAD отрисовал каждую часть разорванной таблицы как
+    // самостоятельную таблицу. Пустая строка — блок не сгенерирован, тогда
+    // writer использует историческое имя *T<n> и не пишет group code 343.
+    BlockName: String;
     TableFlags: Integer;
     BreakEnabled: Boolean;
     BreakDirection: TAcadTableBreakDirection;
@@ -306,20 +313,41 @@ procedure WriteBlockReference(
   var AOutStream: TZctnrVectorBytes;
   const APart: TAcadTableDXFWritePart;
   APartIndex: Integer);
+var
+  BlockName: String;
 begin
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbBlockReference');
-  dxfStringWithoutEncodeOut(AOutStream, 2,
-    Format('*T%d', [APartIndex + 1]));
+  // Имя блока (group code 2). Если перед сохранением был сгенерирован
+  // персональный блок этой части (issue #1381), используем его имя — тогда
+  // AutoCAD отрисует часть по геометрии этого блока. Иначе — историческое
+  // имя *T<n> (part index + 1).
+  if APart.BlockName <> '' then
+    BlockName := APart.BlockName
+  else
+    BlockName := Format('*T%d', [APartIndex + 1]);
+  dxfStringWithoutEncodeOut(AOutStream, 2, BlockName);
   dxfvertexout(AOutStream, 10, APart.InsertPoint);
 end;
 
 procedure WriteTableHeader(
   var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart);
+var
+  BlockRecordHandle: String;
 begin
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbTable');
   if APart.TableStyleHandle <> '' then
     dxfStringWithoutEncodeOut(AOutStream, 342, APart.TableStyleHandle);
+  // Ссылка на BLOCK_RECORD анонимного блока таблицы (group code 343). AutoCAD
+  // отрисовывает proxy/roundtrip AcDbTable по связанному блоку, поэтому без
+  // 343 части разорванной таблицы открываются пустыми/битыми (issue #1381).
+  // Хэндл берём из карты «имя блока → хэндл BLOCK_RECORD», заполняемой при
+  // записи секции BLOCK_RECORD (до секции ENTITIES).
+  if APart.BlockName <> '' then
+    if AIODXFContext.BlockNameHandleMap.MyGetValue(
+         APart.BlockName, BlockRecordHandle) then
+      dxfStringWithoutEncodeOut(AOutStream, 343, BlockRecordHandle);
   dxfvertexout(AOutStream, 11, APart.Direction);
   dxfIntegerout(AOutStream, 90, APart.TableFlags);
   dxfIntegerout(AOutStream, 91, APart.RowCount);
@@ -587,7 +615,7 @@ begin
   WriteEntityPrefix(AOutStream, AIODXFContext, APart,
     AEntityHandle);
   WriteBlockReference(AOutStream, APart, APartIndex);
-  WriteTableHeader(AOutStream, APart);
+  WriteTableHeader(AOutStream, AIODXFContext, APart);
   WriteTableDimensions(AOutStream, APart);
   WriteTableCells(AOutStream, AIODXFContext, APart);
 

@@ -46,6 +46,8 @@ uses
   uzeenttext,
   uzeentblockinsert,
   uzeenttable,
+  UGDBObjBlockdefArray,
+  uzeblockdef,
   uzeacadtable_types,
   uzeacadtable_model,
   uzeacadtable_dxf_write;
@@ -71,6 +73,11 @@ type
     // issue #1317: сохранение AcadTable в DXF должно писать структурированные
     // ACAD_TABLE-сущности, включая части-продолжения разделённой таблицы.
     procedure SavesSplitAcadTableToStructuredDXF;
+    // issue #1381: при сохранении по модельному пути (raw-DXF инвалидирован
+    // редактированием) для главной части и каждой части-продолжения должен
+    // создаваться отдельный анонимный блок с геометрией этой части. Без него
+    // AutoCAD рисует части пустыми/«разорванной» цельной таблицей.
+    procedure GeneratesPerPartBlocksForModelPathSplitTable;
     // issue #1339: при сохранении сырой (raw) ACAD_TABLE ссылки на хэндлы
     // (330 владелец, 342 стиль таблицы, 343 анонимный блок) должны
     // перенумеровываться под актуальный файл, а блок расширенного словаря
@@ -1124,6 +1131,106 @@ begin
       CountDxfPairs(
         DXFText, '102', 'ZCAD_SPLIT_TABLE_ENTITY'),
       'Для разделённой таблицы должен сохраняться приватный split-XRECORD ZCAD');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1381. Разорванная таблица, отредактированная в ZCAD, теряет raw-DXF
+// и сохраняется по модельному пути. Раньше он писал только имена *T1/*T2/*T3
+// без реальных блоков, поэтому AutoCAD рисовал части пустыми или собирал их
+// в одну цельную таблицу. Теперь before-save обработчик (EnsureSplitPartBlocks)
+// генерирует для главной части и каждой части-продолжения отдельный анонимный
+// блок с её геометрией (линии + текст ячеек); сущность ACAD_TABLE ссылается на
+// него через group 2/343, и AutoCAD рисует каждую часть отдельной таблицей.
+// Проверяем именно генерацию блоков на уровне модели (без полного savedxf20XX,
+// требующего шаблон/LCL): сквозная запись проверяется harness'ом roundtrip1381.
+procedure TAcadTableStyleTest.GeneratesPerPartBlocksForModelPathSplitTable;
+
+  function CountLinesAndMText(var AArr: GDBObjEntityTreeArray): Integer;
+  var
+    IR: itrec;
+    PEntity: PGDBObjEntity;
+  begin
+    Result := 0;
+    PEntity := AArr.beginiterate(IR);
+    while PEntity <> nil do
+    begin
+      if (PEntity^.GetObjType = GDBLineID) or
+         (PEntity^.GetObjType = GDBMTextID) then
+        Inc(Result);
+      PEntity := AArr.iterate(IR);
+    end;
+  end;
+
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  BlockArr: PGDBObjBlockdefArray;
+  BlockDef: PGDBObjBlockdef;
+  IR: itrec;
+  NamesBefore: TStringList;
+  PartCount, NewBlocks, NewBlocksWithGeometry: Integer;
+  OrigDir, OtherDir: TAcadTableBreakDirection;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    PartCount := AcadTable^.ContinuationPartCount;
+    CheckEquals(2, PartCount,
+      'Тестовый DXF должен содержать две части-продолжения');
+
+    // Эмулируем редактирование таблицы в ZCAD: любой публичный сеттер
+    // (здесь — направление разбиения) инвалидирует raw-DXF, поэтому
+    // сохранение идёт по модельному пути. Меняем направление и возвращаем
+    // обратно, чтобы итоговая геометрия/раскладка не изменилась.
+    OrigDir := AcadTable^.BreakDirection;
+    if OrigDir = atbdRight then
+      OtherDir := atbdLeft
+    else
+      OtherDir := atbdRight;
+    AcadTable^.BreakDirection := OtherDir;
+    AcadTable^.BreakDirection := OrigDir;
+
+    BlockArr := PGDBObjBlockdefArray(Drawing.GetBlockDefArraySimple);
+    NamesBefore := TStringList.Create;
+    try
+      BlockDef := BlockArr^.beginiterate(IR);
+      while BlockDef <> nil do
+      begin
+        NamesBefore.Add(BlockDef^.Name);
+        BlockDef := BlockArr^.iterate(IR);
+      end;
+
+      // Генерация персональных блоков частей — это то, что делает
+      // before-save обработчик перед записью секции ENTITIES (issue #1381).
+      AcadTable^.EnsureSplitPartBlocks(Drawing);
+
+      NewBlocks := 0;
+      NewBlocksWithGeometry := 0;
+      BlockDef := BlockArr^.beginiterate(IR);
+      while BlockDef <> nil do
+      begin
+        if NamesBefore.IndexOf(BlockDef^.Name) < 0 then
+        begin
+          Inc(NewBlocks);
+          if CountLinesAndMText(BlockDef^.ObjArray) > 0 then
+            Inc(NewBlocksWithGeometry);
+        end;
+        BlockDef := BlockArr^.iterate(IR);
+      end;
+
+      CheckEquals(PartCount + 1, NewBlocks,
+        'Для главной части и каждой части-продолжения должен создаваться ' +
+        'отдельный анонимный блок (issue #1381)');
+      CheckEquals(PartCount + 1, NewBlocksWithGeometry,
+        'Каждый персональный блок части должен содержать геометрию ' +
+        '(линии/текст ячеек), иначе AutoCAD нарисует пустую таблицу');
+    finally
+      NamesBefore.Free;
+    end;
   finally
     Drawing.done;
   end;
