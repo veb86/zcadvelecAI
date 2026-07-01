@@ -133,6 +133,13 @@ type
     // тогда, когда ВСЕ её ячейки относятся к соответствующему типу. Имеет
     // приоритет над FForceDataStyleAllRows и позиционным выбором стиля.
     FRowStyleTypes: array of Integer;
+    // True, если типы строк заданы явно снаружи (SetRowStyleTypes из данных
+    // DXF AcDbTableContent или из редактора электронных таблиц). Для старых
+    // разорванных таблиц без объекта содержимого типы строк отсутствуют и
+    // восстанавливаются по числу повторяющихся ведущих строк-меток частей
+    // (issue #1373). Инференс не считается явной установкой, поэтому при
+    // повторном определении он пересчитывается заново.
+    FRowStyleTypesExplicit: Boolean;
     // Хэндл DXF-стиля таблицы (group code 342)
     FTableStyleHandle: String;
     // Флаги свойств таблицы (group code 90)
@@ -278,6 +285,11 @@ type
     // Фактическое число ведущих строк-меток, одинаково повторяющихся во всех
     // частях-продолжениях; 0, если повтора нет (по содержимому, issue #1309).
     function EffectiveRepeatTopRowCount: Integer;
+    // Максимальное число ведущих строк, одинаково повторяющихся в начале
+    // КАЖДОЙ части-продолжения, БЕЗ ограничения зоной меток
+    // ComputeTopLabelRowCount. Служит для восстановления типов строк старых
+    // разорванных таблиц (issue #1373): 0, если частей нет или повтора нет.
+    function DetectRepeatedTopRowCountRaw: Integer;
     // Проверяет, повторяет ли часть-продолжение первые L строк-меток главной
     // части (тексты ячеек первых L строк совпадают) (issue #1309).
     function PartRepeatsTopLabels(
@@ -704,6 +716,7 @@ begin
   // типы строк, т.к. геометрия перестраивается с нуля.
   FForceDataStyleAllRows := True;
   System.SetLength(FRowStyleTypes, 0);
+  FRowStyleTypesExplicit := False;
 
   // Инициализируем строки, столбцы и ячейки (все ячейки — текстовые)
   System.SetLength(FRows, FRowCount);
@@ -770,6 +783,9 @@ begin
   System.SetLength(FRowStyleTypes, Length(ATypes));
   for Idx := 0 to High(ATypes) do
     FRowStyleTypes[Idx] := ATypes[Idx];
+  // Явная установка снаружи (issue #1373): отключает автоматическое
+  // восстановление типов строк по повторяющимся меткам частей.
+  FRowStyleTypesExplicit := True;
 end;
 
 function GDBObjAcadTable.RowStyleTypeAt(ARow: Integer): Integer;
@@ -795,6 +811,7 @@ begin
   FGeometryBuilt := False;
   FForceDataStyleAllRows := False;
   System.SetLength(FRowStyleTypes, 0);
+  FRowStyleTypesExplicit := False;
   FTableStyleHandle := '';
   FTableFlags := 0;
   FBreakEnabled := False;
@@ -1313,12 +1330,15 @@ begin
         begin
           // По умолчанию базовый стиль строки выбирается по её позиции
           // (0=Title, 1=Header, >=2=Data). Приоритеты:
-          // 1) явно заданный тип строки через SetRowStyleTypes (issue #1368) —
-          //    строки, целиком состоящие из ячеек Title/Header, получают
-          //    соответствующий стиль при экспорте из редактора таблиц;
+          // 1) явно заданный или восстановленный тип строки (issue #1368,
+          //    #1373) — но только для главной части и повторяющих метки
+          //    частей-продолжений (ARowBaseIndex=0). У части-продолжения,
+          //    которая НЕ повторяет метки (ARowBaseIndex>0), локальные номера
+          //    строк не соответствуют типам строк главной части, поэтому там
+          //    используется позиционный стиль от логической базы (issue #1311);
           // 2) FForceDataStyleAllRows (issue #1357) — все строки как данные;
           // 3) позиционный выбор стиля по номеру строки.
-          if RowStyleTypeAt(RowIdx) >= 0 then
+          if (ARowBaseIndex = 0) and (RowStyleTypeAt(RowIdx) >= 0) then
             StyleRowIndex := RowStyleTypeAt(RowIdx)
           else if FForceDataStyleAllRows then
             StyleRowIndex := 2
@@ -2728,6 +2748,43 @@ begin
   end;
 end;
 
+// Максимальное число ведущих строк, одинаково повторяющихся в начале КАЖДОЙ
+// части-продолжения, БЕЗ ограничения зоной меток ComputeTopLabelRowCount.
+// Поиск идёт от максимально возможной длины (не больше числа строк главной
+// части и минимального числа строк среди частей) вниз до первого совпадения.
+// Используется для восстановления типов строк старой разорванной таблицы,
+// у которой нет объекта AcDbTableContent и, следовательно, явных типов строк
+// (issue #1373): число повторяющихся ведущих строк = число строк-меток
+// (Title + строки Header) перед первой строкой данных.
+function GDBObjAcadTable.DetectRepeatedTopRowCountRaw: Integer;
+var
+  L, MaxL, PartIdx: Integer;
+  AllRepeat: Boolean;
+begin
+  Result := 0;
+  if Length(FContinuationParts) = 0 then
+    Exit;
+  MaxL := FRowCount;
+  for PartIdx := 0 to High(FContinuationParts) do
+    if FContinuationParts[PartIdx].RowCount < MaxL then
+      MaxL := FContinuationParts[PartIdx].RowCount;
+  for L := MaxL downto 1 do
+  begin
+    AllRepeat := True;
+    for PartIdx := 0 to High(FContinuationParts) do
+      if not PartRepeatsTopLabels(FContinuationParts[PartIdx], L) then
+      begin
+        AllRepeat := False;
+        Break;
+      end;
+    if AllRepeat then
+    begin
+      Result := L;
+      Exit;
+    end;
+  end;
+end;
+
 // Проверяет, повторяет ли часть-продолжение первые L строк-меток главной
 // части: число столбцов должно совпадать, у части должно быть не меньше L
 // строк, а тексты ячеек первых L строк должны быть идентичны главной части.
@@ -2790,9 +2847,36 @@ end;
 // ведущие строки-метки главной части (issue #1309). Решение принимается по
 // содержимому строк, а не по флагам подавления заголовков.
 procedure GDBObjAcadTable.DetectBreakRepeatTopLabels;
+var
+  RepeatCount, Idx: Integer;
 begin
   if Length(FContinuationParts) = 0 then
     Exit;
+
+  // Старые разорванные таблицы приходят из DXF без объекта AcDbTableContent,
+  // поэтому явные типы строк отсутствуют, а legacy-логика ограничивает зону
+  // меток парой Title+Header. Из-за этого вторая (и последующие) строки
+  // заголовка ошибочно считались данными, зона повтора определялась неверно и
+  // при изменении высоты разбиения такие строки дублировались (issue #1373).
+  // Восстанавливаем типы ведущих строк по числу строк, реально повторяющихся
+  // в начале КАЖДОЙ части: строка 0 — Title, строки 1..L-1 — Header, далее —
+  // Data. Инференс выполняется только при отсутствии явных типов строк.
+  if not FRowStyleTypesExplicit then
+  begin
+    RepeatCount := DetectRepeatedTopRowCountRaw;
+    if (RepeatCount >= 2) and (RepeatCount < FRowCount) then
+    begin
+      System.SetLength(FRowStyleTypes, FRowCount);
+      for Idx := 0 to FRowCount - 1 do
+        if Idx = 0 then
+          FRowStyleTypes[Idx] := 0
+        else if Idx < RepeatCount then
+          FRowStyleTypes[Idx] := 1
+        else
+          FRowStyleTypes[Idx] := 2;
+    end;
+  end;
+
   FBreakRepeatTopLabels := EffectiveRepeatTopRowCount > 0;
   UpdateContinuationRowBaseIndexes;
 end;
@@ -3711,6 +3795,7 @@ begin
   System.SetLength(NewTable^.FRowStyleTypes, Length(FRowStyleTypes));
   for Idx := 0 to High(FRowStyleTypes) do
     NewTable^.FRowStyleTypes[Idx] := FRowStyleTypes[Idx];
+  NewTable^.FRowStyleTypesExplicit := FRowStyleTypesExplicit;
 
   NewTable^.FTableStyle := FTableStyle;
   NewTable^.Local := Local;
