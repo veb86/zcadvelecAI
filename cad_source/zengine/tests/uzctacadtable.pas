@@ -190,6 +190,14 @@ type
     // загружаться с правильными типами строк, прочитанными из современного
     // объекта AcDbTableContent (TABLEROW_BEGIN group 90).
     procedure LoadsMultipleHeaderRowsFromDXF;
+    // issue #1373: разорванная (составная) таблица без объекта AcDbTableContent
+    // (tablebugheader3.dxf: строка 0 = Title, строки 1 и 2 = Header, остальные
+    // = Data) хранит типы строк только косвенно — через строки-метки, которые
+    // одинаково повторяются в начале каждой части-продолжения. При загрузке
+    // типы ведущих строк должны восстанавливаться по числу повторяющихся меток,
+    // а зона повтора должна включать обе строки Header, иначе вторая строка
+    // Header считалась данными и дублировалась при изменении высоты разбиения.
+    procedure LoadsMultipleHeaderRowsFromSplitDXF;
   end;
 
 implementation
@@ -2765,6 +2773,47 @@ begin
       'Строка 2 (вторая строка-заголовок) должна загружаться со стилем Header (1)');
     CheckEquals(2, AcadTable^.RowStyleTypeAt(3),
       'Строка 3 должна загружаться со стилем Data (2)');
+  finally
+    Drawing.done;
+  end;
+end;
+
+// issue #1373. Разорванная (составная) таблица tablebugheader3.dxf хранится как
+// несколько сущностей ACAD_TABLE без современного объекта AcDbTableContent,
+// поэтому явных типов строк в DXF нет. Строка 0 = Title, строки 1 и 2 = Header,
+// остальные = Data. Раньше legacy-логика ограничивала зону меток парой
+// Title+Header, из-за чего вторая строка-заголовок (строка 2) определялась как
+// Data: при изменении высоты разбиения она не входила в повторяющиеся верхние
+// метки и дублировалась. После исправления типы ведущих строк восстанавливаются
+// по числу строк, одинаково повторяющихся в начале каждой части-продолжения, и
+// строка 2 корректно получает стиль Header.
+procedure TAcadTableStyleTest.LoadsMultipleHeaderRowsFromSplitDXF;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablebugheader3.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckTrue(AcadTable^.ContinuationPartCount > 0,
+      'Разорванная таблица должна содержать части-продолжения');
+    CheckTrue(AcadTable^.BreakRepeatTopLabels,
+      'Повтор верхних меток должен определяться как True');
+
+    // Восстановленные по повторяющимся меткам типы ведущих строк.
+    CheckEquals(0, AcadTable^.RowStyleTypeAt(0),
+      'Строка 0 должна восстанавливаться со стилем Title (0)');
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(1),
+      'Строка 1 должна восстанавливаться со стилем Header (1)');
+    // Ключевая проверка issue #1373: вторая строка-заголовок разорванной
+    // таблицы раньше ошибочно определялась как Data и дублировалась при
+    // изменении высоты разбиения.
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(2),
+      'Строка 2 (вторая строка-заголовок) должна восстанавливаться со стилем Header (1)');
+    CheckEquals(2, AcadTable^.RowStyleTypeAt(3),
+      'Строка 3 должна восстанавливаться со стилем Data (2)');
   finally
     Drawing.done;
   end;
