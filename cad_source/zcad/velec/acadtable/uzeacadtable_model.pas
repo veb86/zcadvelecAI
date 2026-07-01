@@ -38,7 +38,7 @@ interface
 uses
   uzgldrawcontext, uzedrawingdef, uzeentityfactory, uzeentcomplex,
   uzeentline, uzeentmtext, uzeentsubordinated, uzeentabstracttext,
-  uzeentity, UGDBSelectedObjArray, uzglviewareadata,
+  uzeentity, UGDBSelectedObjArray, uzglviewareadata, UGDBVisibleTreeArray,
   uzctnrVectorBytesStream, uzeTypes, uzeconsts,
   uzegeometry, uzegeometrytypes, uzeffdxfsupport, uzMVReader,
   uzbLogIntf, uzclog, SysUtils, Math, uzctnrvectordouble,
@@ -92,6 +92,10 @@ type
     BreakHeight: Double;
     RawDXFEntity: String;
     RawDXFEntityValid: Boolean;
+    // Имя сгенерированного перед сохранением анонимного блока с геометрией
+    // этой части (issue #1381). Используется модельным путём записи DXF для
+    // group code 2/343, чтобы AutoCAD отрисовал часть как отдельную таблицу.
+    BlockName: String;
   end;
 
   TAcadTableBreakHeightArray = array of Double;
@@ -174,6 +178,9 @@ type
     // неизменённых ACAD_TABLE (issue #1317).
     FRawDXFEntity: String;
     FRawDXFEntityValid: Boolean;
+    // Имя сгенерированного перед сохранением анонимного блока с геометрией
+    // главной части (issue #1381). См. EnsureSplitPartBlocks.
+    FMainPartBlockName: String;
 
     // Обёртки для делегирования к модулю layout
     function GetRowHeightLocal(RowIndex: Integer): Double;
@@ -182,12 +189,15 @@ type
     function GetTotalWidth: Double;
     function GetCellTextLocal(
       RowIdx, ColIdx: Integer): String;
-    // Строит визуальное представление текущих полей таблицы в
-    // ConstObjArray со смещением (ABaseX, ABaseY) в OCS.
-    // ARowBaseIndex задаёт логический индекс первой строки для выбора
-    // базового стиля строки.
+    // Строит визуальное представление текущих полей таблицы в целевом
+    // массиве ATarget со смещением (ABaseX, ABaseY) в OCS. AOwner —
+    // владелец создаваемых подпримитивов (Self при рендеринге в
+    // ConstObjArray, либо определение блока при генерации персональных
+    // блоков частей, issue #1381). ARowBaseIndex задаёт логический индекс
+    // первой строки для выбора базового стиля строки.
     procedure RenderCurrentTable(
       var ADrawing: TDrawingDef; var ADC: TDrawContext;
+      var ATarget: GDBObjEntityTreeArray; AOwner: Pointer;
       ABaseX, ABaseY: Double; ARowBaseIndex: Integer);
     // Строит визуальное представление всей таблицы (главная часть и
     // все продолжения) в ConstObjArray
@@ -303,6 +313,14 @@ type
     constructor initnul(
       AOwner: PGDBObjGenericWithSubordinated);
     destructor done; virtual;
+
+    // Генерирует перед сохранением DXF персональный анонимный блок с
+    // геометрией каждой части таблицы (главной и продолжений) и запоминает
+    // их имена в FMainPartBlockName / FContinuationParts[].BlockName. Нужно
+    // модельному пути записи, чтобы AutoCAD отрисовал каждую часть
+    // разорванной таблицы как самостоятельную таблицу (issue #1381).
+    // Публичный, чтобы before-save обработчик и тесты могли его вызвать.
+    procedure EnsureSplitPartBlocks(var ADrawing: TDrawingDef);
 
     procedure LoadFromDXF(var ARdr: TZMemReader;
       APtu: PExtensionData;
@@ -469,6 +487,12 @@ function AllocAndInitAcadTable(
   AOwner: PGDBObjGenericWithSubordinated): PGDBObjAcadTable;
 
 implementation
+
+uses
+  // Модули, нужные только для генерации персональных блоков частей таблицы
+  // перед сохранением DXF (issue #1381): реестр before-save callback'ов,
+  // тип TSimpleDrawing, массив и определение блоков.
+  uzedrawingsimple, uzeffdxfout, UGDBObjBlockdefArray, uzeblockdef;
 
 const
   CAcadTableBreakPositionTolerance = 1e-6;
@@ -1060,6 +1084,7 @@ end;
 
 procedure GDBObjAcadTable.RenderCurrentTable(
   var ADrawing: TDrawingDef; var ADC: TDrawContext;
+  var ATarget: GDBObjEntityTreeArray; AOwner: Pointer;
   ABaseX, ABaseY: Double; ARowBaseIndex: Integer);
 var
   RowIdx, ColIdx, SegmentIdx, SegmentCount: Integer;
@@ -1125,7 +1150,7 @@ begin
            RenderSegments[SegmentIdx].EndRow + 1) then
       begin
         pointer(PLine) :=
-          ConstObjArray.CreateInitObj(GDBLineID, @Self);
+          ATarget.CreateInitObj(GDBLineID, AOwner);
         PLine^.CoordInOCS.lBegin.x := SegmentOffsetX;
         PLine^.CoordInOCS.lBegin.y :=
           SegmentOffsetY - CurrentY;
@@ -1149,7 +1174,7 @@ begin
             RowIdx - 1, ColIdx, FMerges) then
           begin
             pointer(PLine) :=
-              ConstObjArray.CreateInitObj(GDBLineID, @Self);
+              ATarget.CreateInitObj(GDBLineID, AOwner);
             PLine^.CoordInOCS.lBegin.x :=
               SegmentOffsetX + CurrentX;
             PLine^.CoordInOCS.lBegin.y :=
@@ -1192,7 +1217,7 @@ begin
       if (ColIdx = 0) or (ColIdx = FColCount) then
       begin
         pointer(PLine) :=
-          ConstObjArray.CreateInitObj(GDBLineID, @Self);
+          ATarget.CreateInitObj(GDBLineID, AOwner);
         PLine^.CoordInOCS.lBegin.x :=
           SegmentOffsetX + CurrentX;
         PLine^.CoordInOCS.lBegin.y := SegmentOffsetY;
@@ -1217,8 +1242,8 @@ begin
             RowIdx, ColIdx - 1, FMerges) then
           begin
             pointer(PLine) :=
-              ConstObjArray.CreateInitObj(
-                GDBLineID, @Self);
+              ATarget.CreateInitObj(
+                GDBLineID, AOwner);
             PLine^.CoordInOCS.lBegin.x :=
               SegmentOffsetX + CurrentX;
             PLine^.CoordInOCS.lBegin.y :=
@@ -1305,7 +1330,7 @@ begin
             FRowCount, FColCount, FTableFlags);
 
           pointer(PMText) :=
-            ConstObjArray.CreateInitObj(GDBMTextID, @Self);
+            ATarget.CreateInitObj(GDBMTextID, AOwner);
           PMText^.Template := UTF8ToString(CellStr);
           ResolvedTextStyle :=
             uzeacadtable_stylemanager.ResolveTextStyle(
@@ -1490,7 +1515,7 @@ begin
   ConstObjArray.Free;
 
   // Главная часть в собственной системе координат
-  RenderCurrentTable(ADrawing, ADC, 0, 0, 0);
+  RenderCurrentTable(ADrawing, ADC, ConstObjArray, @Self, 0, 0, 0);
 
   // Части-продолжения со смещением относительно главной точки вставки
   for PartIdx := 0 to High(FContinuationParts) do
@@ -1506,7 +1531,7 @@ begin
     uzeacadtable_stylemanager.ApplyDXFTableStyle(
       FTableStyle, FContinuationParts[PartIdx].TableStyleHandle, ADrawing);
     RenderCurrentTable(
-      ADrawing, ADC, BaseX, BaseY,
+      ADrawing, ADC, ConstObjArray, @Self, BaseX, BaseY,
       FContinuationParts[PartIdx].RowBaseIndex);
     SwapTableData(FContinuationParts[PartIdx]);
   end;
@@ -1515,6 +1540,85 @@ begin
     'AcadTable: model: BuildVisualRepresentation OK ' +
     'parts=%d TotalObj=%d',
     [Length(FContinuationParts), ConstObjArray.Count], LM_Info);
+end;
+
+// Генерирует уникальное имя анонимного блока таблицы вида *T<N>, отсутствующее
+// в BlockDefArray чертежа. Именно так AutoCAD называет блоки таблиц, поэтому
+// сохраняем совместимую схему имён (issue #1381).
+function GenerateUniqueTableBlockName(var ADrawing: TDrawingDef): String;
+var
+  N: Integer;
+  Candidate: String;
+  BlockArr: PGDBObjBlockdefArray;
+begin
+  BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
+  N := 1;
+  while N < 1000000 do
+  begin
+    Candidate := '*T' + IntToStr(N);
+    if BlockArr^.getindex(Candidate) < 0 then
+      Exit(Candidate);
+    Inc(N);
+  end;
+  raise Exception.Create(
+    'GenerateUniqueTableBlockName: failed to generate unique name');
+end;
+
+// Генерирует персональный анонимный блок с геометрией каждой части таблицы
+// (главной и всех продолжений) и запоминает имена блоков. Вызывается из
+// before-save callback до записи секций BLOCKS/BLOCK_RECORD. AutoCAD
+// отрисовывает proxy/roundtrip-таблицу по связанному через group code 343
+// блоку, поэтому без такого блока части разорванной таблицы открываются
+// пустыми/битыми. С персональным блоком на часть AutoCAD видит каждую часть
+// как самостоятельную таблицу, а внешний вид совпадает с сохранённым в ZCAD
+// (issue #1381).
+procedure GDBObjAcadTable.EnsureSplitPartBlocks(var ADrawing: TDrawingDef);
+var
+  DC: TDrawContext;
+  BlockArr: PGDBObjBlockdefArray;
+  BlockDef: PGDBObjBlockdef;
+  BlockName: String;
+  PartIdx: Integer;
+begin
+  // RAW-путь пишет исходный DXF со своими блоками и ссылками 343 — тогда
+  // отрисовка в AutoCAD уже корректна, генерировать блоки заново не нужно.
+  if CanSaveRawDXFEntity then
+    Exit;
+  if (FRowCount <= 0) or (FColCount <= 0) then
+    Exit;
+
+  DC := ADrawing.CreateDrawingRC;
+
+  // --- Главная часть: рендерим в собственной системе координат (0,0) ---
+  BlockName := GenerateUniqueTableBlockName(ADrawing);
+  BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
+  BlockDef := BlockArr^.create(BlockName);
+  BlockDef^.Base := NulVertex;
+  // BlockDef валиден на протяжении всего вызова RenderCurrentTable: тот
+  // создаёт только сущности (не блоки), поэтому BlockDefArray не растёт и
+  // BlockDef не перемещается. Держать указатель через create() нельзя —
+  // именно поэтому имя генерируется и блок создаётся отдельно на каждую часть.
+  RenderCurrentTable(ADrawing, DC, BlockDef^.ObjArray, BlockDef, 0, 0, 0);
+  FMainPartBlockName := BlockName;
+
+  // --- Части-продолжения: каждая рендерится в (0,0) своего блока ---
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    SwapTableData(FContinuationParts[PartIdx]);
+    // Продолжение поглощается со стилем по умолчанию — применяем DXF-стиль
+    // части (тот же handle 342, что и у главной), иначе текст рендерится
+    // высотой по умолчанию и «разъезжается» (как в BuildVisualRepresentation).
+    uzeacadtable_stylemanager.ApplyDXFTableStyle(
+      FTableStyle, FContinuationParts[PartIdx].TableStyleHandle, ADrawing);
+    BlockName := GenerateUniqueTableBlockName(ADrawing);
+    BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
+    BlockDef := BlockArr^.create(BlockName);
+    BlockDef^.Base := NulVertex;
+    RenderCurrentTable(ADrawing, DC, BlockDef^.ObjArray, BlockDef, 0, 0,
+      FContinuationParts[PartIdx].RowBaseIndex);
+    SwapTableData(FContinuationParts[PartIdx]);
+    FContinuationParts[PartIdx].BlockName := BlockName;
+  end;
 end;
 
 // Глубокое копирование данных рендеринга исходной таблицы в
@@ -1598,6 +1702,7 @@ begin
   ADest.BreakHeight := ASource.BreakHeight;
   ADest.RawDXFEntity := ASource.RawDXFEntity;
   ADest.RawDXFEntityValid := ASource.RawDXFEntityValid;
+  ADest.BlockName := ASource.BlockName;
 
   ADest.RowHeights.initnul;
   for Idx := 0 to ASource.RowHeights.Count - 1 do
@@ -1638,6 +1743,7 @@ begin
   APart.RowBaseIndex := 0;
   APart.RawDXFEntity := '';
   APart.RawDXFEntityValid := False;
+  APart.BlockName := '';
   APart.RowHeights.done;
   APart.ColWidths.done;
   System.SetLength(APart.CellTexts, 0);
@@ -3438,6 +3544,7 @@ begin
   CopyCellArray(FCells, APart.Cells);
   CopyMergeArray(FMerges, APart.Merges);
   APart.TableStyleHandle := FTableStyleHandle;
+  APart.BlockName := FMainPartBlockName;
   APart.TableFlags := FTableFlags;
   APart.BreakEnabled := GetBreakEnabled;
   APart.BreakDirection := FBreakDirection;
@@ -3463,6 +3570,7 @@ begin
   CopyCellArray(ASource.Cells, APart.Cells);
   CopyMergeArray(ASource.Merges, APart.Merges);
   APart.TableStyleHandle := ASource.TableStyleHandle;
+  APart.BlockName := ASource.BlockName;
   APart.TableFlags := ASource.TableFlags;
   APart.BreakEnabled := ASource.BreakEnabled;
   APart.BreakDirection := ASource.BreakDirection;
@@ -3668,6 +3776,38 @@ begin
   Result^.bp.ListPos.Owner := AOwner;
 end;
 
+// Before-save callback: перед записью DXF генерирует персональные блоки для
+// частей каждой таблицы, идущей модельным путём записи, чтобы AutoCAD
+// отрисовал разорванную таблицу как несколько отдельных таблиц (issue #1381).
+// Указатели на таблицы собираем заранее: EnsureSplitPartBlocks вызывает
+// create() у BlockDefArray, что может привести к grow() и перевыделению
+// массива блоков; сами AcadTable-объекты при этом не перемещаются.
+procedure EnsureAcadTableSplitBlocksBeforeSave(var drawing: TSimpleDrawing);
+var
+  pArray: PGDBObjEntityTreeArray;
+  Ent: PGDBObjEntity;
+  I, N, Count: Integer;
+  Tables: array of PGDBObjAcadTable;
+begin
+  if drawing.pObjRoot = nil then
+    Exit;
+  pArray := @drawing.pObjRoot^.ObjArray;
+  N := pArray^.Count;
+  SetLength(Tables, N);
+  Count := 0;
+  for I := 0 to N - 1 do
+  begin
+    Ent := PGDBObjEntity(pArray^.GetData(I));
+    if (Ent <> nil) and (Ent^.GetObjType = GDBAcadTableID) then
+    begin
+      Tables[Count] := PGDBObjAcadTable(Ent);
+      Inc(Count);
+    end;
+  end;
+  for I := 0 to Count - 1 do
+    Tables[I]^.EnsureSplitPartBlocks(drawing);
+end;
+
 initialization
   // Регистрация сущности ACAD_TABLE с привязкой к DXF-имени
   RegisterDXFEntity(
@@ -3677,5 +3817,10 @@ initialization
     @AllocAcadTable,
     @AllocAndInitAcadTable
   );
+
+  // Регистрируем before-save callback генерации блоков частей таблицы
+  // (issue #1381). Выполняется до записи секций BLOCKS/BLOCK_RECORD, поэтому
+  // сгенерированные блоки попадают в файл и в карту «имя блока → хэндл».
+  RegisterBeforeSaveDxfProc(@EnsureAcadTableSplitBlocksBeforeSave);
 
 end.
