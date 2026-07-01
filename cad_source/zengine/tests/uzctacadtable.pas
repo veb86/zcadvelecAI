@@ -61,6 +61,11 @@ type
     procedure LoadsBreakSettingsFromSecondSample;
     procedure RendersBrokenTableAsSeparatedFragments;
     procedure LoadsSplitTableAsSingleMergedObject;
+    // issue #1381: ZCAD сохраняет части разорванной таблицы под приватным
+    // маркером ZCAD_SPLIT_TABLE_ENTITY (AutoCAD его не пересобирает). Чтение
+    // должно по этому маркеру восстанавливать единую разорванную таблицу, как
+    // и при «родном» маркере AutoCAD.
+    procedure ReadsSplitTableFromPrivateZcadMarker;
     procedure LoadsIssue1334BreakTableAsSingleMergedObject;
     procedure AppliesTableStyleToContinuationParts;
     // issue #1317: сохранение AcadTable в DXF должно писать структурированные
@@ -280,6 +285,34 @@ begin
         'Тестовый DXF должен содержать секцию AcDbTable');
     DXFText := StringReplace(
       DXFText, AcDbTableMarker, ManualHeightFlag, [rfReplaceAll]);
+    Lines.Text := DXFText;
+    Lines.SaveToFile(Result);
+  finally
+    Lines.Free;
+  end;
+end;
+
+// issue #1381: создаёт копию tablerazdel.dxf, в которой «родной» маркер
+// AutoCAD ACAD_ROUNDTRIP_2008_TABLE_ENTITY заменён на приватный маркер ZCAD
+// ZCAD_SPLIT_TABLE_ENTITY — так файл выглядит после сохранения из ZCAD.
+function CreateSplitMarkerAcadTableDXF: String;
+var
+  SourceName, DXFText: String;
+  Lines: TStringList;
+begin
+  SourceName := ExpandFileName('../../../cad_source/test/tablerazdel.dxf');
+  Result := IncludeTrailingPathDelimiter(GetTempDir(False)) +
+    'zcad_acadtable_split_marker.dxf';
+
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(SourceName);
+    DXFText := Lines.Text;
+    if Pos(CAcadTableRoundtripMarkerName, DXFText) = 0 then
+      raise Exception.Create(
+        'Тестовый DXF должен содержать round-trip маркер AutoCAD');
+    DXFText := StringReplace(DXFText,
+      CAcadTableRoundtripMarkerName, CAcadTableSplitMarkerName, [rfReplaceAll]);
     Lines.Text := DXFText;
     Lines.SaveToFile(Result);
   finally
@@ -919,6 +952,38 @@ begin
   end;
 end;
 
+// issue #1381: файл, сохранённый ZCAD, помечает связку частей разорванной
+// таблицы приватным маркером ZCAD_SPLIT_TABLE_ENTITY (AutoCAD его не
+// распознаёт и не пересобирает части). При открытии в ZCAD этот маркер должен
+// читаться так же, как «родной» round-trip маркер AutoCAD, и восстанавливать
+// единую разорванную таблицу — иначе теряется функциональность.
+procedure TAcadTableStyleTest.ReadsSplitTableFromPrivateZcadMarker;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  TableCount: Integer;
+  SplitDXF: String;
+begin
+  SplitDXF := CreateSplitMarkerAcadTableDXF;
+  try
+    LoadDrawingFromDXF(SplitDXF, Drawing);
+    try
+      TableCount := CountAcadTables(Drawing.pObjRoot);
+      CheckEquals(1, TableCount,
+        'Части, связанные приватным маркером ZCAD, должны загружаться как один объект AcadTable');
+
+      AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+      AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+      CheckEquals(2, AcadTable^.ContinuationPartCount,
+        'По приватному маркеру ZCAD в главную таблицу должны быть поглощены две части-продолжения');
+    finally
+      Drawing.done;
+    end;
+  finally
+    DeleteFile(SplitDXF);
+  end;
+end;
+
 // Разорванная на 11 частей таблица (bugbreaktable.dxf) хранит список
 // продолжений в OBJECTS/XRECORD. Эти части должны загружаться как один
 // логический AcadTable (issue #1334).
@@ -1047,10 +1112,18 @@ begin
       'Ячейки таблицы должны сохраняться как CELL_VALUE');
     CheckTrue(Pos('Zagolovok', DXFText) > 0,
       'DXF должен содержать текст ячейки из исходной таблицы');
-    CheckEquals(1,
+    // issue #1381: запись больше НЕ использует распознаваемый AutoCAD маркер
+    // ACAD_ROUNDTRIP_2008_TABLE_ENTITY (из-за него AutoCAD пересобирал части
+    // в одну цельную таблицу). Вместо него пишется приватный маркер ZCAD,
+    // который AutoCAD игнорирует и показывает части отдельными таблицами.
+    CheckEquals(0,
       CountDxfPairs(
         DXFText, '102', 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY'),
-      'Для разделённой таблицы должен сохраняться round-trip XRECORD');
+      'Распознаваемый AutoCAD round-trip маркер не должен записываться (issue #1381)');
+    CheckEquals(1,
+      CountDxfPairs(
+        DXFText, '102', 'ZCAD_SPLIT_TABLE_ENTITY'),
+      'Для разделённой таблицы должен сохраняться приватный split-XRECORD ZCAD');
   finally
     Drawing.done;
   end;

@@ -111,7 +111,7 @@ type
     BreakSpacing: Double;
     BreakHeight: Double;
     { Признаки ручного управления разрывами (issue #1339). Влияют на
-      BreakOption-флаг (первая группа 90) в ACAD_ROUNDTRIP_2008_TABLE_ENTITY:
+      BreakOption-флаг (первая группа 90) в split-XRECORD таблицы:
         8  (AllowManualPositions) <- BreakManualPosition,
         16 (AllowManualHeights)   <- BreakManualHeight. }
     BreakManualPosition: Boolean;
@@ -725,8 +725,13 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 330, '0');
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
   dxfIntegerout(AOutStream, 280, 1);
+  { Пишем приватный маркер ZCAD вместо «родного» ACAD-маркера (issue #1381).
+    AutoCAD не распознаёт его и показывает части разорванной таблицы как
+    несколько отдельных таблиц (как и было сохранено в ZCAD), а не
+    пересобирает их в одну цельную. ZCAD по этому маркеру восстанавливает
+    единую разорванную таблицу при повторной загрузке. }
   dxfStringWithoutEncodeOut(AOutStream, 102,
-    'ACAD_ROUNDTRIP_2008_TABLE_ENTITY');
+    CAcadTableSplitMarkerName);
   dxfStringWithoutEncodeOut(AOutStream, 360,
     IntToHex(ARecord.MainHandle, 0));
   dxfIntegerout(AOutStream, 70, 1);
