@@ -14,7 +14,7 @@ uses
   uzegeometry,math,gzctnrVector,uzeentity,uzsbVarmanDef,uzeTypes,
   uzegeometrytypes,uzeconsts,uzeffdxfsupport,sysutils,uzeentsubordinated,
   uzeentdevice,gzctnrVectorTypes,uzcenitiesvariablesextender,uzeentityfactory,
-  uzcLog,uzeblockdef;
+  uzcLog,uzeblockdef,UGDBOpenArrayOfPV;
 type
 {Повторное описание типа в Cableы}
   PTCableType=^TCableType;
@@ -165,7 +165,7 @@ begin
      repeat
            np.NextP:=ptvnext^;
            np.PrevP:=ptvprev^;
-           Representation.DrawLineWithLT(self,getmatrix^,DC,np.NextP,np.PrevP,vp);
+           Representation.CreateLine(DC,self,vp,getmatrix^,np.NextP,np.PrevP);
            ptvprev:=ptvnext;
            ptvnext:=vertexarrayInWCS.iterate(ir_inVertexArray);
            NodePropArray.PushBackData(np);
@@ -207,6 +207,7 @@ var
   pentvarext,pentvarextcirrobj:TVariablesExtender;
 
   ptn1,ptn2:PTNodeProp;
+  Objects:GDBObjOpenArrayOfPV;
 begin
   if EFCalcEntityCS in stage then begin
     inherited;
@@ -228,13 +229,12 @@ begin
       until ptv=nil;
     end;
 
-    CurrentObj:=PGDBObjGenericSubEntry(
-      drawing.GetCurrentRootSimple)^.ObjArray.beginiterate(ir_inGDB);
+    objects.init(100);
+    if PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.FindObjectsInVolume(Self.vp.BoundingBox,Objects) then begin
+    CurrentObj:=objects.beginiterate(ir_inGDB);
     if (CurrentObj<>nil) then
       repeat
         if (CurrentObj<>@self)and(CurrentObj^.GetObjType=GDBDeviceID) then begin
-          if boundingintersect(vp.BoundingBox,CurrentObj^.vp.BoundingBox)
-            and True then begin
             CurrentSubObj:=CurrentObj^.VarObjArray.beginiterate(ir_inDevice);
             if (CurrentSubObj<>nil) then
               repeat
@@ -303,13 +303,14 @@ begin
                 CurrentSubObj:=CurrentObj^.VarObjArray.iterate(ir_inDevice);
               until CurrentSubObj=nil;
 
-          end;
+
 
         end;
-        CurrentObj:=PGDBObjGenericSubEntry(
-          drawing.GetCurrentRootSimple)^.{gdb.GetCurrentROOT.}ObjArray.iterate(ir_inGDB);
+        CurrentObj:=objects.iterate(ir_inGDB);
       until CurrentObj=nil;
-
+    end;
+    objects.Clear;
+    objects.Done;
 
     //CreateCableNameProcess(@self,drawing);
 
@@ -432,7 +433,7 @@ begin
       ptn1:=NodePropArray.iterate(ir_inNodeArray);
       if ptn1<>nil then begin
         repeat
-          Representation.DrawLineWithLT(self,getmatrix^,DC,ptn2^.Nextp,ptn1^.PrevP,vp);
+          Representation.CreateLine(DC,self,vp,getmatrix^,ptn2^.Nextp,ptn1^.PrevP);
           //DC.Drawer.DrawLine3DInModelSpace(ptn2^.Nextp,ptn1^.PrevP,DC.DrawingContext.matrixs);
           ptn2:=ptn1;
           ptn1:=NodePropArray.iterate(ir_inNodeArray);

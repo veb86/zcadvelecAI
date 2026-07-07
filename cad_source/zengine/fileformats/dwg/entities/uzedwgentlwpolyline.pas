@@ -27,7 +27,8 @@ uses
   uzedwgloadcontext,
   uzedwgentityregistry,
   uzeffmanager,
-  uzedwgimport;
+  uzedwgimport,
+  uzeTypes;
 
 implementation
 
@@ -39,7 +40,7 @@ var
   Props: TDWGLWPolylineProps;
   i, n, wcount: Integer;
   pp: PzePoint2d;
-  pw: PGLLWWidth;
+  pw: PSegmentParams;
 begin
   pobj := AllocAndInitLWpolyline(nil);
   DWGCopyLWPolylineProps(PLWP^, Props);
@@ -53,16 +54,16 @@ begin
   // the trailing generated segment during draw, but CalcWidthSegment still
   // reads the last width slot while building its cached geometry.
   wcount := DWGLWPolylineWidthRecordCount(Props);
-  pobj^.Width2D_in_OCS_Array.SetCount(wcount);
+  pobj^.SgmntsParams.SetCount(wcount);
   for i := 0 to n - 1 do begin
     pp := pobj^.Vertex2D_in_OCS_Array.getDataMutable(i);
     pp^.x := Props.Vertices[i].X;
     pp^.y := Props.Vertices[i].Y;
     if i < wcount then begin
-      pw := pobj^.Width2D_in_OCS_Array.getDataMutable(i);
-      pw^.startw := Props.Vertices[i].StartWidth;
-      pw^.endw := Props.Vertices[i].EndWidth;
-      pw^.hw := (pw^.startw <> 0) or (pw^.endw <> 0);
+      pw := pobj^.SgmntsParams.getDataMutable(i);
+      pw^.data.startw := Props.Vertices[i].StartWidth;
+      pw^.data.endw := Props.Vertices[i].EndWidth;
+      pw^.data.hw := (pw^.data.startw <> 0) or (pw^.data.endw <> 0);
     end;
   end;
   if GetLoadCtx <> nil then
