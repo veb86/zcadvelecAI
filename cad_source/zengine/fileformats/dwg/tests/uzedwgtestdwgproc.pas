@@ -169,6 +169,7 @@ type
   published
     procedure CopyLWPolylineClosedFlagFromBit512;
     procedure CopyLWPolylineCopiesPoints;
+    procedure CopyLWPolylineMatchedBulgesArePreserved;
     procedure CopyLWPolylineMismatchedBulgesAreIgnored;
     procedure CopyLWPolylineExplicitWidthsOverrideConstWidth;
     procedure CopyLWPolylineWidthRecordCountMatchesVertices;
@@ -2055,6 +2056,32 @@ begin
     Props.Vertices[0].StartWidth, 0.0);
   AssertEquals('p0.endw fallback to const_width',   0.25,
     Props.Vertices[0].EndWidth, 0.0);
+end;
+
+procedure TFPDWGProcLWPolylineTest.CopyLWPolylineMatchedBulgesArePreserved;
+var
+  LWP: Dwg_Entity_LWPOLYLINE;
+  Props: TDWGLWPolylineProps;
+  Points: array[0..1] of BITCODE_2RD;
+  Bulges: array[0..1] of BITCODE_BD; // matched count
+begin
+  FillChar(LWP, SizeOf(LWP), 0);
+  FillChar(Points, SizeOf(Points), 0);
+  Bulges[0] := 0.5;
+  Bulges[1] := -0.25;
+  Points[0].x := 1.0; Points[0].y := 2.0;
+  Points[1].x := 3.0; Points[1].y := 4.0;
+  LWP.num_points := 2;
+  LWP.points := @Points[0];
+  // num_bulges=2 == num_points=2 -> bulges must be copied to every vertex
+  LWP.num_bulges := 2;
+  LWP.bulges := @Bulges[0];
+  DWGCopyLWPolylineProps(LWP, Props);
+  AssertEquals('count', 2, Length(Props.Vertices));
+  AssertEquals('p0.bulge preserved', 0.5,
+    Props.Vertices[0].Bulge, 0.0);
+  AssertEquals('p1.bulge preserved', -0.25,
+    Props.Vertices[1].Bulge, 0.0);
 end;
 
 procedure TFPDWGProcLWPolylineTest.CopyLWPolylineMismatchedBulgesAreIgnored;
