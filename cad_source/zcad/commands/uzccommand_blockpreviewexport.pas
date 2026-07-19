@@ -59,7 +59,7 @@ var
   PrintParam:TRasterizeParams;
   BlockName,imgsize:ansistring;
   sx,bmpw:integer;
-  tv:TzePoint3d;
+  tv:TzeVector3d;
   SAVEsysvarDISPLWDisplayScale,SAVEsysvarDISPmaxLWDisplayScale:integer;
   SAVELWDisplay:boolean;
   //plp:PGDBLayerProp;
@@ -96,7 +96,7 @@ begin
     pb^.init(drawings.GetCurrentROOT,drawings.GetCurrentDWG^.GetCurrentLayer,0);
     pb^.Name:=BlockName;
     zcSetEntPropFromCurrentDrawingProp(pb);
-    pb^.Local.p_insert:=NulVertex;
+    pb^.Local.p_insert:=NulPoint;
     pb^.scale:=ScaleOne;
     pb^.CalcObjMatrix;
     pb^.setrot(0);
@@ -148,9 +148,9 @@ begin
         if bb2.RTF.x>=bb2.LBN.x then
           ConcatBB(bb,bb2);
       end;}
-      tv:=VertexSub(bb.RTF,bb.LBN);
-      tv:=VertexMulOnSc(tv,0.15);
-      rasterize(cdwg,bmpw,bmpw,VertexSub(bb.LBN,tv),VertexAdd(bb.RTF,tv),
+      tv:=bb.RTF-bb.LBN;
+      tv:=VertexMulOnSc(tv.asPoint3d,0.15).asVector3d;
+      rasterize(cdwg,bmpw,bmpw,bb.LBN-tv,bb.RTF+tv,
         PrintParam,bmp.Canvas,PrinterDrawer);
 
       //PNG.Canvas.StretchDraw(Rect(0,0,bmpw,bmpw),bmp);

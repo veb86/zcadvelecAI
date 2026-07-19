@@ -144,7 +144,7 @@ begin
 
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDb3dPolyline',IODXFContext);
   dxfIntegerout(outStream,66,1);
-  dxfvertexout(outStream,10,uzegeometry.NulVertex);
+  dxfvertexout(outStream,10,uzegeometry.NulPoint);
   dxfIntegerout(outStream,70,8);
 
   vp.Layer:=pl;
@@ -194,7 +194,8 @@ procedure GDBObjCable.FormatEntity(var drawing:TDrawingDef;var DC:TDrawContext;S
 var
   ir_inGDB,ir_inVertexArray,ir_inNodeArray,ir_inDevice,ir_inDevice2:itrec;
   currentobj,CurrentSubObj,CurrentSubObj2,ptd:PGDBObjDevice;
-  devpoint,tp,tp2,tp3,_YWCS,_ZWCS:TzePoint3d;
+  devpoint,tp,tp2,tp3:TzePoint3d;
+  _YWCS,_ZWCS:TzeVector3d;
   ptv,ptvpred,ptvnext,ptlast,ptpred:PzePoint3d;
   ptn,ptnlastCutted,ptnlast2Cutted:PTNodeProp;
   tn:TNodeProp;
@@ -231,83 +232,83 @@ begin
 
     objects.init(100);
     if PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.FindObjectsInVolume(Self.vp.BoundingBox,Objects) then begin
-    CurrentObj:=objects.beginiterate(ir_inGDB);
-    if (CurrentObj<>nil) then
-      repeat
-        if (CurrentObj<>@self)and(CurrentObj^.GetObjType=GDBDeviceID) then begin
-            CurrentSubObj:=CurrentObj^.VarObjArray.beginiterate(ir_inDevice);
-            if (CurrentSubObj<>nil) then
-              repeat
-                if (CurrentSubObj^.GetObjType=GDBDeviceID) then begin
-                  if CurrentSubObj^.BlockDesc.BType=BT_Connector then begin
-                    devpoint:=CurrentSubObj^.P_insert_in_WCS;
-                    ptv:=vertexarrayInWCS.beginiterate(ir_inVertexArray);
-                    ptvpred:=nil;
-                    ptvnext:=vertexarrayInWCS.iterate(ir_inVertexArray);
-                    ptn:=NodePropArray.beginiterate(ir_inNodeArray);
-                    if ptv<>nil then begin
-                      repeat
-                        if SqrVertexlength(ptv^,devpoint)<sqreps then begin
-                          ptn^.DevLink:=CurrentSubObj;
-                          if
-                          CurrentSubObj.BlockDesc.BBorder<>BB_Empty then begin
-                            I3DPPrev.t1:=Infinity;
-                            I3DPPrev.isintercept:=False;
-                            I3DPNext.t1:=NegInfinity;
-                            I3DPNext.isintercept:=False;
-                            ptd:=CurrentSubObj;
-                            if CurrentSubObj.BlockDesc.BBorder=BB_owner then
-                              CurrentSubObj:=pointer(CurrentSubObj^.bp.ListPos.Owner);
-                            CurrentSubObj2:=CurrentSubObj^.VarObjArray.beginiterate(ir_inDevice2);
-                            if(CurrentSubObj2<>nil) then
-                              repeat
-                                begin
-                                  if CurrentSubObj2^.GetLayer=psldb then
-                                    if ptn<>nil then begin
-                                      if ptvpred<>nil then begin
-                                        I3DP:=CurrentSubObj2^.IsIntersect_Line(ptvpred^,ptv^);
-                                        if I3DP.isintercept then begin
-                                          if (I3DP.t1>0-bigeps)and(I3DP.t1<I3DPPrev.t1) then begin
-                                            I3DPPrev:=I3DP;
-                                            ptn.PrevP:=I3DP.interceptcoord;
+      CurrentObj:=objects.beginiterate(ir_inGDB);
+      if (CurrentObj<>nil) then
+        repeat
+          if (CurrentObj<>@self)and(CurrentObj^.GetObjType=GDBDeviceID) then begin
+              CurrentSubObj:=CurrentObj^.VarObjArray.beginiterate(ir_inDevice);
+              if (CurrentSubObj<>nil) then
+                repeat
+                  if (CurrentSubObj^.GetObjType=GDBDeviceID) then begin
+                    if CurrentSubObj^.BlockDesc.BType=BT_Connector then begin
+                      devpoint:=CurrentSubObj^.P_insert_in_WCS;
+                      ptv:=vertexarrayInWCS.beginiterate(ir_inVertexArray);
+                      ptvpred:=nil;
+                      ptvnext:=vertexarrayInWCS.iterate(ir_inVertexArray);
+                      ptn:=NodePropArray.beginiterate(ir_inNodeArray);
+                      if ptv<>nil then begin
+                        repeat
+                          if SqrVertexlength(ptv^,devpoint)<sqreps then begin
+                            ptn^.DevLink:=CurrentSubObj;
+                            if
+                            CurrentSubObj.BlockDesc.BBorder<>BB_Empty then begin
+                              I3DPPrev.t1:=Infinity;
+                              I3DPPrev.isintercept:=False;
+                              I3DPNext.t1:=NegInfinity;
+                              I3DPNext.isintercept:=False;
+                              ptd:=CurrentSubObj;
+                              if CurrentSubObj.BlockDesc.BBorder=BB_owner then
+                                CurrentSubObj:=pointer(CurrentSubObj^.bp.ListPos.Owner);
+                              CurrentSubObj2:=CurrentSubObj^.VarObjArray.beginiterate(ir_inDevice2);
+                              if(CurrentSubObj2<>nil) then
+                                repeat
+                                  begin
+                                    if CurrentSubObj2^.GetLayer=psldb then
+                                      if ptn<>nil then begin
+                                        if ptvpred<>nil then begin
+                                          I3DP:=CurrentSubObj2^.IsIntersect_Line(ptvpred^,ptv^);
+                                          if I3DP.isintercept then begin
+                                            if (I3DP.t1>0-bigeps)and(I3DP.t1<I3DPPrev.t1) then begin
+                                              I3DPPrev:=I3DP;
+                                              ptn.PrevP:=I3DP.interceptcoord;
+                                            end;
+                                          end;
+                                        end;
+                                        if ptvnext<>nil then begin
+                                          I3DP:=CurrentSubObj2^.IsIntersect_Line(ptv^,ptvnext^);
+                                          if I3DP.isintercept then begin
+                                            if (I3DP.t1<1+bigeps)and(I3DP.t1>I3DPNext.t1) then begin
+                                              I3DPNext:=I3DP;
+                                              ptn.NextP:=I3DP.interceptcoord;
+                                            end;
                                           end;
                                         end;
                                       end;
-                                      if ptvnext<>nil then begin
-                                        I3DP:=CurrentSubObj2^.IsIntersect_Line(ptv^,ptvnext^);
-                                        if I3DP.isintercept then begin
-                                          if (I3DP.t1<1+bigeps)and(I3DP.t1>I3DPNext.t1) then begin
-                                            I3DPNext:=I3DP;
-                                            ptn.NextP:=I3DP.interceptcoord;
-                                          end;
-                                        end;
-                                      end;
-                                    end;
-                                end;
-                                CurrentSubObj2:=CurrentSubObj^.VarObjArray.iterate(ir_inDevice2);
-                              until
-                                CurrentSubObj2=nil;
-                            CurrentSubObj:=ptd;
+                                  end;
+                                  CurrentSubObj2:=CurrentSubObj^.VarObjArray.iterate(ir_inDevice2);
+                                until
+                                  CurrentSubObj2=nil;
+                              CurrentSubObj:=ptd;
+                            end;
                           end;
-                        end;
 
 
-                        ptvpred:=ptv;
-                        ptv:=ptvnext;
-                        ptvnext:=vertexarrayInWCS.iterate(ir_inVertexArray);
-                        ptn:=NodePropArray.iterate(ir_inNodeArray);
-                      until ptv=nil;
+                          ptvpred:=ptv;
+                          ptv:=ptvnext;
+                          ptvnext:=vertexarrayInWCS.iterate(ir_inVertexArray);
+                          ptn:=NodePropArray.iterate(ir_inNodeArray);
+                        until ptv=nil;
+                      end;
                     end;
                   end;
-                end;
-                CurrentSubObj:=CurrentObj^.VarObjArray.iterate(ir_inDevice);
-              until CurrentSubObj=nil;
+                  CurrentSubObj:=CurrentObj^.VarObjArray.iterate(ir_inDevice);
+                until CurrentSubObj=nil;
 
 
 
-        end;
-        CurrentObj:=objects.iterate(ir_inGDB);
-      until CurrentObj=nil;
+          end;
+          CurrentObj:=objects.iterate(ir_inGDB);
+        until CurrentObj=nil;
     end;
     objects.Clear;
     objects.Done;
@@ -386,26 +387,26 @@ begin
       ptlast:=VertexArrayInWCS.getDataMutable(vertexarrayInWCS.Count-1);
       ptpred:=VertexArrayInWCS.getDataMutable(vertexarrayInWCS.Count-2);
 
-      tp:=vertexsub(ptlast^,ptpred^);
-      if uzegeometry.SqrOneVertexlength(tp)>sqreps then begin
+      tp:=(ptlast^-ptpred^).asPoint3d;
+      if uzegeometry.SqrOneVertexlength(tp.asVector3d)>sqreps then begin
         _YWCS:=YWCS;//gdb.GetCurrentDWG.pcamera.ydir;
         _ZWCS:=ZWCS;//gdb.GetCurrentDWG.pcamera.look;
 
         if (abs(tp.x)<1/64) and (abs(tp.y)<1/64) then
-          tp2:=VectorDot(_YWCS,tp)
+          tp2:=VectorDot(_YWCS,tp.asVector3d).asPoint3d
         else
-          tp2:=VectorDot(_ZWCS,tp);
-        tp3:=VectorDot(tp2,tp);
+          tp2:=VectorDot(_ZWCS,tp.asVector3d).asPoint3d;
+        tp3:=VectorDot(tp2.asVector3d,tp.asVector3d).asPoint3d;
         //tp3:=uzegeometry.VertexMulOnSc(tp3,-1);
-        tp3:=NormalizeVertex(tp3);
-        tp2:=NormalizeVertex(tp2);
-        tp:=NormalizeVertex(tp);
+        tp3.Normalize;
+        tp2.Normalize;
+        tp.Normalize;
 
         //rotmatr:=onematrix;
         //PzePoint3d(@rotmatr.mtr[0])^:=tp;
         //PzePoint3d(@rotmatr.mtr[1])^:=tp2;
         //PzePoint3d(@rotmatr.mtr[2])^:=tp3;
-        rotmatr:=CreateMatrixFromBasis(tp,tp2,tp3);
+        rotmatr:=CreateMatrixFromBasis(tp.asVector3d,tp2.asVector3d,tp3.asVector3d);
 
         //m:=onematrix;
         //PzePoint3d(@m.mtr[3])^:=ptnlastCutted.PrevP;

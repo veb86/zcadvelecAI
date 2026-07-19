@@ -167,7 +167,7 @@ procedure InteractiveConstructRootRotateManipulator(const PInteractiveData:PRota
 
 begin
 
-  v:=(Point-PInteractiveData^.Base).NormalizeVertex;
+  v:=(Point-PInteractiveData^.Base).Normalized;
   rotmatr:=CreateAffineRotationMatrix(PInteractiveData^.Axis,PInteractiveData^.ARefV,v);
 
   if click then begin
@@ -204,7 +204,7 @@ begin
     drawings.GetCurrentDWG^.ConstructObjRoot.FrustumPosition:=FrPos;
 
     {m:=CreateTranslationMatrix(-PInteractiveData^.Base);
-    a:=TwoVectorAngle(PInteractiveData^.Arefv,(Point-PInteractiveData^.Base).NormalizeVertex);
+    a:=TwoVectorAngle(PInteractiveData^.Arefv,(Point-PInteractiveData^.Base).Normalize);
     m:=MatrixMultiply(m,CreateAffineRotationMatrix(PInteractiveData^.Axis,a));
     drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=MatrixMultiply(m,CreateTranslationMatrix(PInteractiveData^.Base));}
     RC:=drawings.GetCurrentDWG^.CreateDrawingRC;
@@ -441,7 +441,7 @@ begin
         TCDM_2P,TCDM_3P:begin
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Local.p_insert:=
-            VertexMulOnSc(VertexAdd(PT3PointCircleModePentity(PInteractiveData)^.p1,point),0.5);
+            VertexMulOnSc(PT3PointCircleModePentity(PInteractiveData)^.p1+point,0.5);
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Radius:=
             uzegeometry.Vertexlength(PT3PointCircleModePentity(PInteractiveData)^.p1,point)/2;
@@ -508,14 +508,20 @@ begin
 
   stPoint:=TzePoint3d(polyObj^.VertexArrayInOCS.getDataMutable(0)^);
 
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(1))^.x:=Point.x;
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(1))^.y:=stPoint.y;
+  with polyObj^.VertexArrayInOCS.getDataMutable(1)^ do begin
+    x:=Point.x;
+    y:=stPoint.y;
+  end;
 
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(2))^.x:=Point.x;
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(2))^.y:=Point.y;
+  with polyObj^.VertexArrayInOCS.getDataMutable(2)^ do begin
+    x:=Point.x;
+    y:=Point.y;
+  end;
 
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(3))^.x:=stPoint.x;
-  PzePoint2d(polyObj^.VertexArrayInOCS.getDataMutable(3))^.y:=Point.y;
+  with polyObj^.VertexArrayInOCS.getDataMutable(3)^ do begin
+    x:=stPoint.x;
+    y:=Point.y;
+  end;
 
   if ESP<>nil then
     ESP(ESSSetConstructEntity,polyObj);
@@ -580,10 +586,14 @@ begin
     zcSetEntPropFromCurrentDrawingProp(obj.pentity);
     for i:=countVert-1 downto 0 do begin
       SinCos(alpha+(2*pi*i/countVert),sine,cosine);
-      PzePoint2d(obj.pentity^.VertexArrayInOCS.getDataMutable(i))^.x:=
+      with PzePoint2d(obj.pentity^.VertexArrayInOCS.getDataMutable(i))^ do begin
+        x:=stPoint.x+radius*cosine;
+        y:=stPoint.y+radius*sine;
+      end;
+      {PzePoint2d(obj.pentity^.VertexArrayInOCS.getDataMutable(i))^.x:=
         stPoint.x+radius*cosine;
       PzePoint2d(obj.pentity^.VertexArrayInOCS.getDataMutable(i))^.y:=
-        stPoint.y+radius*sine;
+        stPoint.y+radius*sine;}
     end;
     obj.pentity^.YouChanged(drawings.GetCurrentDWG^);
     //dc:=drawings.GetCurrentDWG^.CreateDrawingRC;

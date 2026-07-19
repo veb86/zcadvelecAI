@@ -107,10 +107,9 @@ var
   tv:TzeVector4d;
 begin
   objmatrix:=uzegeometry.MatrixMultiply(PGDBObjWithLocalCS(p)^.objmatrix,t_matrix^);
-
-  tv:=PzeVector4d(@t_matrix.mtr.v[3])^;
-  PzeVector4d(@t_matrix.mtr.v[3])^:=NulVertex4D;
-  PzeVector4d(@t_matrix.mtr.v[3])^:=tv;
+  tv:=t_matrix.mtr.v[3];
+  t_matrix.mtr.v[3]:=NulVertex4D;
+  t_matrix.mtr.v[3]:=tv;
   ReCalcFromObjMatrix;
 end;
 
@@ -137,7 +136,7 @@ begin
   dir:=VectorTransform3D(posr.worldcoord,m1);
 
   processaxis(posr,dir);
-  tv:=uzegeometry.vectordot(dir,zwcs);
+  tv:=uzegeometry.vectordot(dir.asVector3d,zwcs).asPoint3d;
   processaxis(posr,tv);
 end;
 
@@ -158,7 +157,7 @@ var
   // Мировые координаты точек дуги после трансформации
   newStartPoint, newEndPoint, newCenter: TzePoint3d;
   // Оси новой локальной СК (Arbitrary Axis Algorithm)
-  newOcsX, newOcsY: TzePoint3d;
+  newOcsX, newOcsY: TzeVector3d;
   // Нормализованные направления от нового центра к точкам дуги
   dirToStart, dirToEnd: TzePoint3d;
   // Определитель матрицы трансформации (знак указывает на зеркальность)
@@ -209,16 +208,16 @@ begin
   newCenter := Local.P_insert;
 
   // Шаг 7. Вычисляем нормализованные направления от нового центра к точкам дуги
-  dirToStart := NormalizeVertex(VertexSub(newStartPoint, newCenter));
-  dirToEnd   := NormalizeVertex(VertexSub(newEndPoint, newCenter));
+  dirToStart := VertexSub(newStartPoint, newCenter).Normalized;
+  dirToEnd   := VertexSub(newEndPoint, newCenter).Normalized;
 
   // Шаг 8. Проецируем направления на оси локальной СК и вычисляем новые углы.
   // scalardot — скалярное произведение; оно даёт косинус и синус угла в плоскости дуги
-  StartAngle := ArcTan2(scalardot(dirToStart, newOcsY), scalardot(dirToStart, newOcsX));
+  StartAngle := ArcTan2(scalardot(dirToStart.asVector3d, newOcsY), scalardot(dirToStart.asVector3d, newOcsX));
   if StartAngle < 0 then
     StartAngle := 2 * pi + StartAngle;
 
-  EndAngle := ArcTan2(scalardot(dirToEnd, newOcsY), scalardot(dirToEnd, newOcsX));
+  EndAngle := ArcTan2(scalardot(dirToEnd.asVector3d, newOcsY), scalardot(dirToEnd.asVector3d, newOcsX));
   if EndAngle < 0 then
     EndAngle := 2 * pi + EndAngle;
 
@@ -240,14 +239,14 @@ begin
   // В GDBObjARC.CalcObjMatrixWithoutOwner: ObjMatrix = rot * disp(p_insert),
   // строка 3 результата равна Local.P_insert (без искажения поворотом).
   // GDBObjARC.CalcObjMatrix масштабирует только строки 0–2 (оси), не строку 3.
-  Local.P_insert := PzePoint3d(@objmatrix.mtr.v[3])^;
+  Local.P_insert:=objmatrix.mtr.v[3].Slice.asPoint3d;
 
   // P_insert_in_WCS также обновляем из строки 3 ObjMatrix.
   // Это эквивалентно VectorTransform3D(nulvertex, objmatrix), но без лишних вычислений.
-  P_insert_in_WCS := Local.P_insert;
+  P_insert_in_WCS:=Local.P_insert;
 
   // Радиус — длина первого вектора-оси в ObjMatrix (масштаб по оси X)
-  self.R := oneVertexLength(PzePoint3d(@objmatrix.mtr.v[0])^);
+  self.R:=oneVertexLength(objmatrix.mtr.v[0].Slice);
 
 end;
 
@@ -400,17 +399,17 @@ begin
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q0:=PzePoint3d(@v)^;
+  q0:=v.Slice.asPoint3d;
   SinCos(startangle+angle/2,v.y,v.x);
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q1:=PzePoint3d(@v)^;
+  q1:=v.Slice.asPoint3d;
   SinCos(endangle,v.y,v.x);
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q2:=PzePoint3d(@v)^;
+  q2:=v.Slice.asPoint3d;
 end;
 
 procedure GDBObjARC.FormatEntity(var drawing:TDrawingDef;

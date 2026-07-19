@@ -518,12 +518,12 @@ begin
     if HandlerResult.TextItem.Height > 0 then
     begin
       LinearMatrix := CurrentMatrix;
-      PzePoint3d(@LinearMatrix.mtr.v[3])^ := NulVertex;
+      LinearMatrix.mtr.v[3].Slice := NulVertex;
       LinearMatrix.t := CMTTransform;
       ScaledVec := VectorTransform3D(
         CreateVertex(0, HandlerResult.TextItem.Height, 0),
         LinearMatrix);
-      NewHeight := oneVertexlength(ScaledVec);
+      NewHeight := (ScaledVec).Length;
       if NewHeight > 0 then
         HandlerResult.TextItem.Height := NewHeight;
     end;

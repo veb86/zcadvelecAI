@@ -257,8 +257,8 @@ begin
   t:=getTextTangent(pEntity);
   if PGDBObjMText(pEntity).textprop.justify in [jsbc,jsmc,jstc] then begin
     dx:=PGDBObjText(pEntity).obj_width*getTextHeight(pEntity)*getTextWFactor(pEntity)*getOwnerScale(pEntity)/2;
-    if -sign((PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity))*getTextTangent(pEntity))<0 then begin
-      result:=result-t*dx;
+    if -sign((PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity)).asPoint3d*getTextTangent(pEntity))<0 then begin
+      result:=(result-t*dx).asPoint3d;
     end else begin
       result:=result+t*dx;
       t:=-t;
@@ -268,8 +268,8 @@ begin
     if PGDBObjMText(pEntity).textprop.justify in [jsbr,jsmr,jstr] then
       result:=result+t*x
     else
-      result:=result-t*x;
-    result:=result-getTextNormal(pEntity)*y;
+      result:=(result-t*x).asPoint3d;
+    result:=(result-getTextNormal(pEntity)*y).asPoint3d;
   end;
 end;
 
@@ -298,9 +298,9 @@ begin
     p2:=getTextInsertPoint(pEntity);
   scl:=FExtensionLineStartShift*abs(getOwnerScale(pEntity));
   if FExtensionLineStartShift>0 then
-    result:=p1+(p2-p1).NormalizeVertex*scl
+    result:=p1+(p2-p1).Normalized*scl
   else begin
-    result:=p2-p1;
+    result:=(p2-p1).asPoint3d;
     if abs(result.x)>abs(result.y)then begin
       result.y:=-result.y*(scl/abs(result.x));
       result.x:=-result.x*(scl/abs(result.x));
@@ -319,12 +319,12 @@ end;
 
 function TSmartTextEntExtender.getTextTangent(pEntity:Pointer):TzePoint3d;
 begin
-  Result:=PzePoint3d(@PGDBObjMText(pEntity)^.ObjMatrix.mtr.v[0])^.NormalizeVertex;
+  Result:=PGDBObjMText(pEntity)^.ObjMatrix.mtr.v[0].Slice.Normalized.asPoint3d;
 end;
 
 function TSmartTextEntExtender.getTextNormal(pEntity:Pointer):TzePoint3d;
 begin
-  Result:=PzePoint3d(@PGDBObjMText(pEntity)^.ObjMatrix.mtr.v[1])^.NormalizeVertex;
+  Result:=PGDBObjMText(pEntity)^.ObjMatrix.mtr.v[1].Slice.Normalized.asPoint3d;
 end;
 
 function TSmartTextEntExtender.getTextHeight(pEntity:Pointer):Double;
@@ -363,7 +363,7 @@ begin
             dx:=PGDBObjText(pEntity).obj_width*getTextHeight(pEntity)*getTextWFactor(pEntity)*getOwnerScale(pEntity);
             offs:=getBaseLineOffset(pEntity);
             if PGDBObjMText(pEntity).textprop.justify in [jsmc] then begin
-              if -sign((PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity))*getTextTangent(pEntity))<0 then
+              if -sign((PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity)).asPoint3d*getTextTangent(pEntity))<0 then
                 dx:=dx+2*offs.x
               else
                 dx:=-dx-2*offs.x;
@@ -372,14 +372,14 @@ begin
             else
               dx:=dx+2*offs.x;
             dir:=getTextTangent(pEntity)*dx;
-            tdd(IODXFContext,outStream,pEntity,p,VertexAdd(p,{CreateVertex(dx,0,0)}dir),drawing,DC);
+            tdd(IODXFContext,outStream,pEntity,p,p+dir,drawing,DC);
             if typeof(PGDBObjEntity(pEntity)^)=TypeOf(GDBObjMText) then
               if PGDBObjMText(pEntity).text.Count>2 then begin
                 normal:=getTextNormal(pEntity)*pGDBObjMText(pEntity).linespace*getOwnerScale(pEntity);
                 for i:=2 to PGDBObjMText(pEntity).text.Count do begin
-                  pnew:=VertexAdd(p,normal);
+                  pnew:=p+normal;
                   tdd(IODXFContext,outStream,pEntity,p,pnew,drawing,DC);
-                  tdd(IODXFContext,outStream,pEntity,pnew,VertexAdd(pnew,dir),drawing,DC);
+                  tdd(IODXFContext,outStream,pEntity,pnew,pnew+dir,drawing,DC);
                   p:=pnew;
                 end;
               end;
@@ -413,10 +413,10 @@ begin
       if PGDBObjEntity(pEntity)^.bp.ListPos.owner<>nil then begin
 
         if PGDBObjEntity(pEntity)^.bp.ListPos.owner<>nil then begin
-          V1:=PzePoint3d(@PGDBObjEntity(pEntity)^.bp.ListPos.owner^.GetMatrix^.mtr.v[0])^;
+          V1:=PGDBObjEntity(pEntity)^.bp.ListPos.owner^.GetMatrix^.mtr.v[0].Slice.asPoint3d;
           a:=FRotateOverrideValue*pi/180;
           SinCos(a,sine,cosine);
-          l0:=scalardot(NormalizeVertex(V1),createvertex(cosine,sine,0));
+          l0:=scalardot(V1.Normalized.asVector3d,CreateVector(cosine,sine,0));
           l0:=arccos(l0);
           if v1.y<-eps then l0:=2*pi-l0;
         end else
@@ -433,7 +433,7 @@ begin
     if FHJOverride or FVJOverride then begin
       currXDir:=j2hdir[PGDBObjMText(pEntity).textprop.justify];
       currYDir:=j2vdir[PGDBObjMText(pEntity).textprop.justify];
-      v1:=PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity);
+      v1:=(PGDBObjText(pEntity).P_insert_in_WCS-getOwnerInsertPoint(pEntity)).asPoint3d;
       newXDir:=-sign(v1*getTextTangent(pEntity));//getXsign({PGDBObjText(pEntity).Local.P_insert}v1);
       newYDir:=-sign(v1*getTextNormal(pEntity));//getYsign({PGDBObjText(pEntity).Local.P_insert}v1);
       if isNeedLeadert(pEntity) then begin

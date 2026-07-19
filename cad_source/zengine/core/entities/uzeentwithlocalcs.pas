@@ -86,9 +86,9 @@ end;
 
 procedure GDBObjWithLocalCS.ReCalcFromObjMatrix;
 begin
-  Local.basis.ox:=PzePoint3d(@objmatrix.mtr.v[0])^;
-  Local.basis.oy:=PzePoint3d(@objmatrix.mtr.v[1])^;
-  Local.basis.oz:=PzePoint3d(@objmatrix.mtr.v[2])^;
+  Local.basis.ox:=objmatrix.mtr.v[0].Slice;
+  Local.basis.oy:=objmatrix.mtr.v[1].Slice;
+  Local.basis.oz:=objmatrix.mtr.v[2].Slice;
 
   Local.basis.ox:=normalizevertex(Local.basis.ox);
   Local.basis.oy:=normalizevertex(Local.basis.oy);
@@ -116,8 +116,8 @@ end;
 procedure GDBObjWithLocalCS.createfield;
 begin
   inherited;
-  Local.P_insert:=nulvertex;
-  P_insert_in_WCS:=nulvertex;
+  Local.P_insert:=NulPoint;
+  P_insert_in_WCS:=NulPoint;
   lod:=0;
 end;
 
@@ -132,7 +132,7 @@ begin
   Local.basis.ox:=XWCS;
   Local.basis.oy:=YWCS;
   Local.basis.oz:=ZWCS;
-  local.p_insert:=nulvertex;
+  local.p_insert:=NulPoint;
   inherited initnul(owner);
 end;
 
@@ -143,9 +143,9 @@ begin
   inherited init(own,layeraddres,LW);
   powner:=bp.ListPos.owner;
   if powner<>nil then begin
-    Local.basis.ox:=PzePoint3d(@powner^.GetMatrix^.mtr.v[0])^;
-    Local.basis.oy:=PzePoint3d(@powner^.GetMatrix^.mtr.v[1])^;
-    Local.basis.oz:=PzePoint3d(@powner^.GetMatrix^.mtr.v[2])^;
+    Local.basis.ox:=powner^.GetMatrix^.mtr.v[0].Slice;
+    Local.basis.oy:=powner^.GetMatrix^.mtr.v[1].Slice;
+    Local.basis.oz:=powner^.GetMatrix^.mtr.v[2].Slice;
   end else begin
     Local.basis.ox:=XWCS;
     Local.basis.oy:=YWCS;
@@ -195,7 +195,7 @@ begin
     objmatrix:=CalcObjMatrixWithoutOwner;
 
 
-  P_insert_in_WCS:=VectorTransform3D(nulvertex,objmatrix);
+  P_insert_in_WCS:=VectorTransform3D(NulPoint,objmatrix);
 end;
 
 procedure GDBObjWithLocalCS.transform;
@@ -208,7 +208,7 @@ procedure GDBObjWithLocalCS.SaveToDXFObjPostfix;
 begin
   if (abs(local.basis.oz.x)>eps)or(abs(local.basis.oz.y)>eps)or
     (abs(local.basis.oz.z-1)>eps) then
-    dxfvertexout(outStream,210,local.basis.oz);
+    dxfvertexout(outStream,210,local.basis.oz.asPoint3d);
 end;
 
 function GDBObjWithLocalCS.LoadFromDXFObjShared;

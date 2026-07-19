@@ -95,37 +95,35 @@ var
   tv:TzeVector4d;
 begin
   objmatrix:=uzegeometry.MatrixMultiply(PGDBObjWithLocalCS(p)^.objmatrix,t_matrix^);
-
-  tv:=PzeVector4d(@t_matrix.mtr.v[3])^;
-  PzeVector4d(@t_matrix.mtr.v[3])^:=NulVertex4D;
+  tv:=t_matrix.mtr.v[3];
+  t_matrix.mtr.v[3]:=NulVertex4D;
   MajorAxis:=VectorTransform3D(PGDBObjEllipse(p)^.MajorAxis,t_matrix^);
-  PzeVector4d(@t_matrix.mtr.v[3])^:=tv;
+  t_matrix.mtr.v[3]:=tv;
   ReCalcFromObjMatrix;
 end;
 
 procedure GDBObjEllipse.transform;
 var
-  tv2:TzeVector4d;
+  mtr:TzeTypedMatrix4d;
 begin
   inherited;
-  tv2:=PzeVector4d(@t_matrix.mtr.v[3])^;
-  PzeVector4d(@t_matrix.mtr.v[3])^:=NulVertex4D;
-  MajorAxis:=VectorTransform3D(MajorAxis,t_matrix);
-  PzeVector4d(@t_matrix.mtr.v[3])^:=tv2;
+  mtr:=t_matrix;
+  mtr.mtr.v[3]:=NulVertex4D;
+  MajorAxis:=VectorTransform3D(MajorAxis,mtr);
   ReCalcFromObjMatrix;
 end;
 
 procedure GDBObjEllipse.ReCalcFromObjMatrix;
 begin
   inherited;
-  Local.P_insert:=PzePoint3d(@objmatrix.mtr.v[3])^;
+  Local.P_insert:=objmatrix.mtr.v[3].Slice.asPoint3d;
 end;
 
 function GDBObjEllipse.CalcObjMatrixWithoutOwner;
 var
   rotmatr,dispmatr:TzeTypedMatrix4d;
 begin
-  Local.basis.ox:=MajorAxis;
+  Local.basis.ox:=MajorAxis.asVector3d;
   Local.basis.oy:=VectorDot(Local.basis.oz,Local.basis.ox);
 
   Local.basis.ox:=NormalizeVertex(Local.basis.ox);
@@ -214,10 +212,10 @@ var
   l:double;
 begin
   inherited CalcObjMatrix;
-  l:=onevertexlength(majoraxis);
+  l:=onevertexlength(majoraxis.asVector3d);
   m1:=CreateScaleMatrix(l,ratio*l,1);
   objmatrix:=matrixmultiply(m1,objmatrix);
-  PzePoint3d(@v)^:=local.p_insert;
+  v.Slice.Slice:=local.p_insert.Slice.asVector2d;
   v.z:=0;
   v.w:=1;
   m1:=objMatrix;
@@ -234,9 +232,9 @@ begin
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
 
   if self.Ratio<=1 then
-    rr:=uzegeometry.oneVertexlength(majoraxis)
+    rr:=uzegeometry.oneVertexlength(majoraxis.asVector3d)
   else
-    rr:=uzegeometry.oneVertexlength(majoraxis)*ratio;
+    rr:=uzegeometry.oneVertexlength(majoraxis.asVector3d)*ratio;
 
   calcObjMatrix;
   angle:=endangle-startangle;
@@ -248,17 +246,17 @@ begin
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q0:=PzePoint3d(@v)^;
+  q0:=v.Slice.asPoint3d;
   SinCos(startangle+angle/2,v.y,v.x);
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q1:=PzePoint3d(@v)^;
+  q1:=v.Slice.asPoint3d;
   SinCos(endangle,v.y,v.x);
   v.z:=0;
   v.w:=1;
   v:=VectorTransform(v,objMatrix);
-  q2:=PzePoint3d(@v)^;
+  q2:=v.Slice.asPoint3d;
 
   calcbb(dc);
   createpoint;

@@ -95,25 +95,25 @@ end;
   Использует алгоритм произвольной оси AutoCAD. }
 function TransformPointToOCS(const Point, Normal: TzePoint3d): TzePoint3d;
 const
-  AuxX: TzePoint3d = (x: 1.0; y: 0.0; z: 0.0);
-  AuxY: TzePoint3d = (x: 0.0; y: 1.0; z: 0.0);
+  AuxX: TzeVector3d = (x: 1.0; y: 0.0; z: 0.0);
+  AuxY: TzeVector3d = (x: 0.0; y: 1.0; z: 0.0);
 var
-  ZAxis, XAxis, YAxis: TzePoint3d;
+  ZAxis, XAxis, YAxis: TzeVector3d;
 begin
-  ZAxis := NormalizeVertex(Normal);
+  ZAxis := (Normal).Normalized.asVector3d;
 
   { Выбираем вспомогательную ось для построения OCS }
   if Abs(ZAxis.x) < ARC_AXIS_THRESHOLD then
-    XAxis := NormalizeVertex(AuxX * ZAxis.z - ZAxis * AuxX.z)
+    XAxis := (AuxX * ZAxis.z - ZAxis * AuxX.z).Normalized
   else
-    XAxis := NormalizeVertex(AuxY * ZAxis.z - ZAxis * AuxY.z);
+    XAxis := (AuxY * ZAxis.z - ZAxis * AuxY.z).Normalized;
 
-  YAxis := NormalizeVertex(ZAxis * XAxis.x - XAxis * ZAxis.x);
+  YAxis := (ZAxis * XAxis.x - XAxis * ZAxis.x).Normalized;
 
   { Проекция точки на оси OCS }
-  Result.x := scalarDot(Point, XAxis);
-  Result.y := scalarDot(Point, YAxis);
-  Result.z := scalarDot(Point, ZAxis);
+  Result.x := scalarDot(Point.asVector3d, XAxis);
+  Result.y := scalarDot(Point.asVector3d, YAxis);
+  Result.z := scalarDot(Point.asVector3d, ZAxis);
 end;
 
 { Вычисляет BBox дуги приблизительно: как BBox круга с тем же центром
@@ -255,7 +255,7 @@ begin
   pArc^.EndAngle := HandlerResult.ArcItem.EndAngle;
   { Нормаль (ось Z локальной СК) — из примитива; ox/oy восстановит
     CalcObjMatrixWithoutOwner через алгоритм Arbitrary Axis. }
-  pArc^.Local.basis.oz := NormalizeVertex(HandlerResult.ArcItem.Normal);
+  pArc^.Local.basis.oz := (HandlerResult.ArcItem.Normal).Normalized.asVector3d;
 
   ActualLW := ResolveLineWeight(Context, Context.PrimitiveLineWeight);
 

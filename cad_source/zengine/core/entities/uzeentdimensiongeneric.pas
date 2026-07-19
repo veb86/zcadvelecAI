@@ -130,7 +130,7 @@ procedure GDBObjGenericDimension.LoadFromDXF;
 var
   byt,dtype:integer;
   style:string;
-  d13,d14:TzePoint3d;
+  d13,d14:TzeVector3d;
 begin
   byt:=rdr.ParseInteger;
   dtype:=-1;

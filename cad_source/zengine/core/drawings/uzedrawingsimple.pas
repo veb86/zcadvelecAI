@@ -96,7 +96,7 @@ type
                        function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;
                        function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
                        procedure RotateCameraInLocalCSXY(ux,uy:Double);virtual;
-                       procedure MoveCameraInLocalCSXY(oldx,oldy:Double;ax:TzePoint3d);virtual;
+                       procedure MoveCameraInLocalCSXY(oldx,oldy:Double;ax:TzeVector3d);virtual;
                        procedure SetCurrentDWG;virtual;
                        function StoreOldCamerapPos:Pointer;virtual;
                        procedure StoreNewCamerapPos(command:Pointer);virtual;
@@ -677,7 +677,7 @@ begin
 
 end;
 
-procedure TSimpleDrawing.MoveCameraInLocalCSXY(oldx,oldy:Double;ax:TzePoint3d);
+procedure TSimpleDrawing.MoveCameraInLocalCSXY(oldx,oldy:Double;ax:TzeVector3d);
 var
     uc:pointer;
 begin
@@ -747,13 +747,13 @@ begin
 end;
 procedure TSimpleDrawing.myGluProject2;
 begin
-      objcoord:=vertexadd(objcoord,pcamera^.CamCSOffset);
+      objcoord:=objcoord+pcamera^.CamCSOffset;
      _myGluProject(objcoord.x,objcoord.y,objcoord.z,@pcamera^.modelMatrixLCS,@pcamera^.projMatrixLCS,@pcamera^.viewport,wincoord.x,wincoord.y,wincoord.z);
 end;
 procedure TSimpleDrawing.myGluUnProject(const win:TzePoint3d;out obj:TzePoint3d);
 begin
      _myGluUnProject(win.x,win.y,win.z,@pcamera^.modelMatrixLCS,@pcamera^.projMatrixLCS,@pcamera^.viewport, obj.x,obj.y,obj.z);
-     OBJ:=vertexsub(OBJ,pcamera^.CamCSOffset);
+     OBJ:=OBJ-pcamera^.CamCSOffset;
 end;
 destructor TSimpleDrawing.done;
 begin

@@ -125,11 +125,11 @@ end;
 procedure TZEntityRepresentation.DrawGeometry(var rc:TDrawContext;
   const aabb:TBoundingBox;const inFrustumState:TInBoundingVolume);
 var
-  v:TzePoint3d;
+  v:TzeVector3d;
   simplydraw:boolean;
 begin
   if rc.lod=LODCalculatedDetail then begin
-    v:=uzegeometry.VertexSub(aabb.RTF,aabb.LBN);
+    v:=aabb.RTF-aabb.LBN;
     simplydraw:=not SqrCanSimplyDrawInWCS(rc,uzegeometry.SqrOneVertexlength(v),49);
   end else
     simplydraw:=rc.lod=LODLowDetail;
@@ -399,12 +399,13 @@ procedure TZEntityRepresentation.CreateLWPolyLineWdh(var DC:TDrawContext;var Ent
 
   procedure CalcSegment(const p1,p2:TzePoint2d;const plw:TSegmentParams;var quad:TQuadData);
   var
-    vtangent,vnormal,vtemp:TzePoint2d;
+    vtangent,vnormal,vtemp:TzeVector2d;
   begin
     vtangent:=p2-p1;
-    vnormal.x:=-vtangent.y;
-    vnormal.y:=vtangent.x;
-    vnormal:=vnormal.NormalizeVertex;
+    vnormal:=vtangent.Turned90L;
+    {vnormal.x:=-vtangent.y;
+    vnormal.y:=vtangent.x;}
+    vnormal.Normalize;
 
     quad.hasStartWidth:=abs(plw.data.startw)>eps;
     quad.hasEndWidth:=abs(plw.data.endw)>eps;
@@ -730,9 +731,11 @@ begin
     ltgen:=ltgen and (VariableWidthSegmentsCount=0);
     //толстая полилиния с дугами
     if VariableWidthSegmentsCount=0 then
-      CreateBulgedLWPolyLineWdh(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen)
+      //CreateBulgedLWPolyLineWdh(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen)
+      CreateBulgedPolyLine2d(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen,BulgedSegmentsCount)
     else
-      CreateBulgedLWPolyLineVariableWdh(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen)
+      //CreateBulgedLWPolyLineVariableWdh(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen)
+      CreateBulgedPolyLine2d(DC,Ent,vp,Mtx,pts,Segments[0..c],closed,ltgen,BulgedSegmentsCount);
   end
 end;
 

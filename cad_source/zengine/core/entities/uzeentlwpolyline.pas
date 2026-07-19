@@ -134,7 +134,7 @@ begin
 
       if found>0 then begin
         Result:=vertexsub(ptv^,ppredtv^);
-        Result:=uzegeometry.NormalizeVertex(Result);
+        Result.Normalize;
         exit;
         Dec(found);
       end;
@@ -336,7 +336,7 @@ begin
 
   tv:=rtmod.dist;
   wwc:=rtmod.point.worldcoord;
-  wwc:=VertexAdd(wwc,tv);
+  wwc:=wwc+tv;
   wwc:=uzegeometry.VectorTransform3D(wwc,m);
 
 
@@ -449,7 +449,7 @@ begin
 
   if dc.lod=LODCalculatedDetail then begin
     v:=uzegeometry.VertexSub(vp.BoundingBox.RTF,vp.BoundingBox.LBN);
-    simplydraw:=not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v),49);
+    simplydraw:=not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v.asVector3d),49);
   end else
     simplydraw:=dc.lod=LODLowDetail;
 
@@ -543,9 +543,9 @@ begin
   widthload:=False;
   closed:=False;
   if bp.ListPos.owner<>nil then
-    local.p_insert:=PzePoint3d(@bp.ListPos.owner^.GetMatrix^.mtr.v[3])^
+    local.p_insert:=bp.ListPos.owner^.GetMatrix^.mtr.v[3].Slice.asPoint3d
   else
-    local.P_insert:=nulvertex;
+    local.P_insert:=NulPoint;
 
   byt:=rdr.ParseInteger;
   while byt<>0 do begin
@@ -730,19 +730,22 @@ procedure GDBObjLWpolyline.createpoint;
 var
   i:integer;
   v:TzeVector4d;
-  v3d:TzePoint3d;
-  pv:PzePoint2d;
+  v3d:TzeVector3d;
+  pv:PzeVector2d;
 begin
   Vertex3D_in_WCS_Array.Clear;
   pv:=Vertex2D_in_OCS_Array.GetParrayAsPointer;
   for i:=0 to Vertex2D_in_OCS_Array.Count-1 do begin
-    v.x:=pv.x;
-    v.y:=pv.y;
-    v.z:=0;
-    v.w:=1;
+    v.Slice.Slice:=pv^;
+    {v.x:=pv.x;
+    v.y:=pv.y;}
+    v.Slice.CutOff:=0;
+    //v.z:=0;
+    v.CutOff:=0;
+    //v.w:=1;
     v:=VectorTransform(v,objMatrix);
-    v3d:=PzePoint3d(@v)^;
-    Vertex3D_in_WCS_Array.PushBackData(v3d);
+    v3d:=v.Slice;
+    Vertex3D_in_WCS_Array.PushBackData(v3d.asPoint3d);
     Inc(pv);
   end;
   Vertex3D_in_WCS_Array.Shrink;
@@ -750,14 +753,15 @@ end;
 procedure GDBObjLWpolyline.CalcWidthSegment(var p1,p2:TzePoint2d;var plw:TSegmentParams);
 var
   k:integer;
-  vtangent,vnormal,vtemp:TzePoint2d;
+  vtangent,vnormal,vtemp:TzeVector2d;
   q3d:GDBQuad3d;
   v:TzeVector4d;
 begin
   vtangent:=p2-p1;
-  vnormal.x:=-vtangent.y;
-  vnormal.y:=vtangent.x;
-  vnormal:=vnormal.NormalizeVertex;
+  vnormal:=vtangent.Turned90L;
+  {vnormal.x:=-vtangent.y;
+  vnormal.y:=vtangent.x;}
+  vnormal.Normalize;
 
   if (plw.data.startw=0) and (plw.data.endw=0) then
     plw.data.hw:=False
@@ -773,12 +777,15 @@ begin
   plw.quad[2]:=p2-vtemp;
 
   for k:=0 to 3 do begin
-    v.x:=plw.quad[k].x;
-    v.y:=plw.quad[k].y;
-    v.z:=0;
-    v.w:=1;
+    v.Slice.Slice:=plw.quad[k].asVector2d;
+    //v.x:=plw.quad[k].x;
+    //v.y:=plw.quad[k].y;
+    v.Slice.CutOff:=0;
+    //v.z:=0;
+    v.CutOff:=1;
+    //v.w:=1;
     v:=VectorTransform(v,objMatrix);
-    q3d[k]:=PzePoint3d(@v)^;
+    q3d[k]:=v.Slice.asPoint3d;
   end;
 
   Width3D_in_WCS_Array.PushBackData(q3d);
@@ -835,7 +842,7 @@ begin
         if ip.isintercept and ip2.isintercept then
           if (ip.t1>0) and (ip.t2>0) then
             if (ip2.t1>0) and (ip2.t2>0) then begin
-              v2:=PzePoint3d(Vertex3D_in_WCS_Array.getDataMutable(j));
+              v2:=Vertex3D_in_WCS_Array.getDataMutable(j);
               if SqrVertexlength(v2^,ip.interceptcoord)<l then
                 if SqrVertexlength(v2^,ip2.interceptcoord)<l then begin
                   pq3d^[1]:=ip.interceptcoord;

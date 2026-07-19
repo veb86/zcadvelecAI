@@ -50,17 +50,17 @@ begin
     else
       exit(false);
   end;
-  v01:=(APolyLine.getDataMutable(1)^-APolyLine.getDataMutable(0)^).asVector2d;
-  v12:=(APolyLine.getDataMutable(2)^-APolyLine.getDataMutable(1)^).asVector2d;
+  v01:=APolyLine.getDataMutable(1)^-APolyLine.getDataMutable(0)^;
+  v12:=APolyLine.getDataMutable(2)^-APolyLine.getDataMutable(1)^;
   l01:=v01.Length;
   l12:=v12.Length;
   if l01>l12 then begin
     v12:=v12/2;
-    p1:=APolyLine.getPFirst^+v12;
-    p2:=APolyLine.getDataMutable(1)^+v12;
+    p1:=APolyLine.getPFirst^+v12.asPoint2d;
+    p2:=APolyLine.getDataMutable(1)^+v12.asPoint2d;
   end else begin
     v01:=v01/2;
-    p1:=APolyLine.getPFirst^+v01;
+    p1:=APolyLine.getPFirst^+v01.asPoint2d;
     p2:=APolyLine.getDataMutable(2)^-v01;
   end;
   result:=true;

@@ -617,7 +617,7 @@ function TLLProxyLine.draw(drawer:TZGLAbstractDrawer;var rc:TDrawContext;var Geo
     TStack=array[Low(TzeFrustum.v)..high(TzeFrustum.v)]of Double;
   var
     p:TStoredCoordType;
-    dir:TzePoint3d;
+    dir:TzeVector3d;
     i:integer;
     t:double;
     Stack:tstack;
@@ -645,7 +645,7 @@ function TLLProxyLine.draw(drawer:TZGLAbstractDrawer;var rc:TDrawContext;var Geo
     p:=geomdata.Vertex3S.getData(FirstIndex);
     StackIndex:=low(Stack);
     for i:=Low(rc.DrawingContext.pcamera.frustum.v) to high(rc.DrawingContext.pcamera.frustum.v) do
-      if PointOfRayPlaneIntersect(p,dir,rc.DrawingContext.pcamera.frustum.v[i],t)then
+      if PointOfRayPlaneIntersect(p,dir.asPoint3d,rc.DrawingContext.pcamera.frustum.v[i],t)then
         if t<=1 then begin
           Stack[StackIndex]:=t;
           inc(StackIndex);
@@ -1005,7 +1005,7 @@ begin
                  +m.mtr.v[0].v[0]*m.mtr.v[1].v[1]*m.mtr.v[3].v[2])
                /t);
   end else
-    Result:=NulVertex;
+    Result:=NulPoint;
 end;
 
 function CorrectLCS(const m:TzeTypedMatrix4d;LCS:TzePoint3d):TzePoint3d;
@@ -1052,7 +1052,7 @@ begin
                  -lcs.x*m.mtr.v[0].v[1]*m.mtr.v[1].v[2])
               /t);
   end else
-    Result:=NulVertex;
+    Result:=NulPoint;
 end;
 
 procedure TLLSymbol.drawSymbol(drawer:TZGLAbstractDrawer;var rc:TDrawContext;var GeomData:ZGLGeomData;var LLPArray:TLLPrimitivesArray;var OptData:ZGLOptimizerData;const PSymbolsParam:PTSymbolSParam;const inFrustumState:TInBoundingVolume);

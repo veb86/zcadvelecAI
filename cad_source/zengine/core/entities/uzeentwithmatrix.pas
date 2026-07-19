@@ -70,7 +70,7 @@ var
   ImInFrustum:TInBoundingVolume;
   pobj:PGDBObjEntity;
   ir:itrec;
-  v1:TzePoint3d;
+  v1:TzeVector3d;
   tx:double;
   inFrustomEnts:integer;
 begin
@@ -132,7 +132,7 @@ begin
     end else
       enttree.FulDraw:=True;}
 
-    v1:=uzegeometry.VertexSub(enttree.BoundingBox.RTF,enttree.BoundingBox.LBN);
+    v1:=enttree.BoundingBox.RTF-enttree.BoundingBox.LBN;
     tx:=uzegeometry.oneVertexlength(v1);
     if tx/zoom<currentdegradationfactor then
       enttree.NodeData.FulDraw:=TDTSimpleDraw
