@@ -2248,7 +2248,7 @@ begin
     System.SetLength(RowHeights, 0);
     System.SetLength(Alignments, 0);
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(6, 1, Texts,
       ColWidths, RowHeights, Alignments, InsertPt),
       'Построение тестовой таблицы должно завершиться успешно');
@@ -2453,7 +2453,7 @@ begin
     Texts[0] := 'A1'; Texts[1] := 'B1'; Texts[2] := 'C1';
     Texts[3] := 'A2'; Texts[4] := '';   Texts[5] := 'C2';
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     Ok := Table^.BuildFromCellTexts(2, 3, Texts, InsertPt);
     CheckTrue(Ok, 'BuildFromCellTexts должен успешно построить таблицу');
 
@@ -2493,7 +2493,7 @@ begin
     Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
 
     System.SetLength(Texts, 0);
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckFalse(Table^.BuildFromCellTexts(0, 0, Texts, InsertPt),
       'Пустой диапазон не должен создавать таблицу');
     CheckEquals(0, Table^.RowCount,
@@ -2535,7 +2535,7 @@ begin
     System.SetLength(RowHeights, 2);
     RowHeights[0] := 20; RowHeights[1] := 30;
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     Ok := Table^.BuildFromCellTextsWithSizes(2, 3, Texts,
       ColWidths, RowHeights, InsertPt);
     CheckTrue(Ok, 'BuildFromCellTextsWithSizes должен построить таблицу');
@@ -2576,7 +2576,7 @@ begin
     ColWidths[0] := 45; ColWidths[1] := 0;
     System.SetLength(RowHeights, 0);
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckTrue(Table^.BuildFromCellTextsWithSizes(1, 3, Texts,
       ColWidths, RowHeights, InsertPt),
       'BuildFromCellTextsWithSizes должен построить таблицу');
@@ -2623,7 +2623,7 @@ begin
     Alignments[0] := 1; Alignments[1] := 5; Alignments[2] := 9;
     Alignments[3] := 4; Alignments[4] := 0;
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(2, 3, Texts,
       ColWidths, RowHeights, Alignments, InsertPt),
       'BuildFromCellTextsWithSizesAndAlignments должен построить таблицу');
@@ -2670,7 +2670,7 @@ begin
     System.SetLength(RowHeights, 0);
     System.SetLength(Alignments, 0);
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(3, 3, Texts,
       ColWidths, RowHeights, Alignments, InsertPt),
       'BuildFromCellTextsWithSizesAndAlignments должен построить таблицу');
@@ -2720,7 +2720,7 @@ begin
     System.SetLength(RowHeights, 0);
     System.SetLength(Alignments, 0);
 
-    InsertPt := NulVertex;
+    InsertPt := NulPoint;
     CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(2, 2, Texts,
       ColWidths, RowHeights, Alignments, InsertPt),
       'Первичное построение таблицы должно завершиться успешно');

@@ -44,6 +44,11 @@ begin
   Result := Format('X=%.6f, Y=%.6f, Z=%.6f', [p.x, p.y, p.z]);
 end;
 
+function Vector3DToStr(const p:TzeVector3d):string;
+begin
+  Result := Format('X=%.6f, Y=%.6f, Z=%.6f', [p.x, p.y, p.z]);
+end;
+
 function AngleToDeg(angle:double):double;
 begin
   Result := angle * 180.0 / PI;
@@ -83,9 +88,9 @@ begin
   LogMatrix(prefix + ' ', pa^.objmatrix);
 
   // Вывод локальной СК
-  LogMessage(Format('   %s Local.basis.OX: %s', [prefix, Point3DToStr(pa^.Local.basis.ox)]));
-  LogMessage(Format('   %s Local.basis.OY: %s', [prefix, Point3DToStr(pa^.Local.basis.oy)]));
-  LogMessage(Format('   %s Local.basis.OZ: %s', [prefix, Point3DToStr(pa^.Local.basis.oz)]));
+  LogMessage(Format('   %s Local.basis.OX: %s', [prefix, Vector3DToStr(pa^.Local.basis.ox)]));
+  LogMessage(Format('   %s Local.basis.OY: %s', [prefix, Vector3DToStr(pa^.Local.basis.oy)]));
+  LogMessage(Format('   %s Local.basis.OZ: %s', [prefix, Vector3DToStr(pa^.Local.basis.oz)]));
 
   // Проверка: радиус должен соответствовать масштабу по осям
   LogMessage(Format('   %s Проверка масштаба: OX.x=%.6f, OY.y=%.6f, R=%.6f', [prefix, pa^.Local.basis.ox.x, pa^.Local.basis.oy.y, pa^.R]));
