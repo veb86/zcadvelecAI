@@ -139,7 +139,7 @@ begin
   Center := FTransformer.Transform(Ellipse^.Local.P_insert);
   
   // Большая полуось (длина вектора MajorAxis)
-  MajorRadius := oneVertexlength(Ellipse^.MajorAxis);
+  MajorRadius := oneVertexlength(Ellipse^.MajorAxis.asVector3d);
   // Малая полуось (через Ratio)
   MinorRadius := MajorRadius * Ellipse^.Ratio;
   

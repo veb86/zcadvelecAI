@@ -802,7 +802,7 @@ constructor GDBObjAcadTable.initnul(
   AOwner: PGDBObjGenericWithSubordinated);
 begin
   inherited initnul;
-  FInsertPoint := NulVertex;
+  FInsertPoint := NulPoint;
   FRowCount := 0;
   FColCount := 0;
   FRowHeights.initnul;
@@ -1613,7 +1613,7 @@ begin
   BlockName := GenerateUniqueTableBlockName(ADrawing);
   BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
   BlockDef := BlockArr^.create(BlockName);
-  BlockDef^.Base := NulVertex;
+  BlockDef^.Base := NulPoint;
   // BlockDef валиден на протяжении всего вызова RenderCurrentTable: тот
   // создаёт только сущности (не блоки), поэтому BlockDefArray не растёт и
   // BlockDef не перемещается. Держать указатель через create() нельзя —
@@ -1633,7 +1633,7 @@ begin
     BlockName := GenerateUniqueTableBlockName(ADrawing);
     BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
     BlockDef := BlockArr^.create(BlockName);
-    BlockDef^.Base := NulVertex;
+    BlockDef^.Base := NulPoint;
     RenderCurrentTable(ADrawing, DC, BlockDef^.ObjArray, BlockDef, 0, 0,
       FContinuationParts[PartIdx].RowBaseIndex);
     SwapTableData(FContinuationParts[PartIdx]);
@@ -3203,14 +3203,15 @@ end;
 // Раскладывает objmatrix на точку вставки, базис и масштаб.
 procedure GDBObjAcadTable.decomposite;
 var
-  BX, BY, BZ, T: TzePoint3d;
+  BX, BY, BZ: TzeVector3d;
+  T: TzePoint3d;
   Mtr: TzeTypedMatrix4d;
 begin
   Mtr := objMatrix;
-  BX := PzePoint3d(@Mtr.mtr.v[0])^;
-  BY := PzePoint3d(@Mtr.mtr.v[1])^;
-  BZ := PzePoint3d(@Mtr.mtr.v[2])^;
-  T := PzePoint3d(@Mtr.mtr.v[3])^;
+  BX := Mtr.mtr.v[0].Slice;
+  BY := Mtr.mtr.v[1].Slice;
+  BZ := Mtr.mtr.v[2].Slice;
+  T := Mtr.mtr.v[3].Slice.asPoint3d;
   Local := GetPointInOCSByBasis(BX, BY, BZ, T, FScale);
 end;
 
@@ -3227,15 +3228,14 @@ end;
 // после трансформации (перенос/поворот/масштабирование).
 procedure GDBObjAcadTable.ReCalcFromObjMatrix;
 var
-  ox: TzePoint3d;
-  tv: TzePoint3d;
+  ox, tv: TzeVector3d;
 begin
   inherited;
   decomposite;
   ox := GetXfFromZ(Local.basis.oz);
   tv := Local.basis.ox;
   if FScale.x < -eps then
-    tv := VertexMulOnSc(tv, -1);
+    tv := tv * -1;
   FRotate := scalardot(tv, ox);
   FRotate := arccos(FRotate);
   if scalardot(tv, VectorDot(Local.basis.oz,
@@ -3294,7 +3294,7 @@ begin
   PDesc.selected := False;
   PDesc.PDrawable := nil;
   PDesc.attr := [];
-  PDesc.dcoord := NulVertex;
+  PDesc.dcoord := NulPoint;
   PDesc.vn := 0;
   PDesc.pointtype := os_point;
   PDesc.worldcoord := self.P_insert_in_WCS;
