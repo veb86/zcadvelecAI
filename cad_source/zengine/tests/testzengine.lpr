@@ -10,7 +10,8 @@ uses
   uzctentpolyfacemesh, uzctentleader, uzctdwgblockreserve, uzctdwgentleader,
   uzctenttextnilstyle,
   uzctmtextcontentsave,
-  uzctenttransformscalars;
+  uzctenttransformscalars,
+  uzctentityvisibility;
 
 var
   Application: TTestRunner;

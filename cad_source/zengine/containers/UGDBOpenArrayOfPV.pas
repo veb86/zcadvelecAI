@@ -69,7 +69,7 @@ begin
      pobj:=beginiterate(ir);
      if pobj<>nil then
      repeat
-           if pobj^.onpoint(Objects,point) then
+           if pobj^.IsActualy and pobj^.onpoint(Objects,point) then
            begin
                 result:=true;
                 //Objects.Add(@pobj);
@@ -85,22 +85,21 @@ function GDBObjOpenArrayOfPV.calcbb:TBoundingBox;
 var pobj:pGDBObjEntity;
     ir:itrec;
 begin
+  result.LBN:=cP3d__0__0__0;
+  result.RTF:=cP3d_m1_m1_m1;
   pobj:=beginiterate(ir);
-  if pobj=nil then
-                  begin
-                       result.LBN:=cP3d__0__0__0;
-                       result.RTF:=cP3d__0__0__0;
-                  end
-              else
-                  begin
+  while (pobj<>nil) and (not pobj^.IsActualy) do
+    pobj:=iterate(ir);
+  if pobj<>nil then begin
                        result:=pobj^.vp.BoundingBox;
                        pobj:=iterate(ir);
                        if pobj<>nil then
                        repeat
-                             concatbb(result,pobj^.vp.BoundingBox);
+                             if pobj^.IsActualy then
+                               concatbb(result,pobj^.vp.BoundingBox);
                              pobj:=iterate(ir);
                        until pobj=nil;
-                  end;
+  end;
 end;
 function GDBObjOpenArrayOfPV.calcvisbb(infrustumactualy:TActuality):TBoundingBox;
 var pobj:pGDBObjEntity;
@@ -202,7 +201,7 @@ begin
                        //pobj:=iterate(ir);
                        if pobj<>nil then
                        repeat
-                         if (pobj.vp.Layer<>nil)and(pobj.vp.Layer^._on) then begin
+                         if pobj^.IsActualy then begin
                            bb:=pobj^.getonlyvisibleoutbound(dc);
                            if bb.RTF.x>=bb.LBN.x then begin
                              if result.RTF.x>=result.LBN.x then
@@ -364,7 +363,7 @@ begin
   begin
   repeat
         //if p^.Visible=visibleactualy then
-    if p^.vp.Layer^._on then
+    if p^.IsActualy then
         begin
              inc(objcount);
              q:=p^.CalcTrueInFrustum(frustum);

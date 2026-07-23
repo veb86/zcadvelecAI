@@ -258,7 +258,7 @@ begin
   pobj:=objarray.beginiterate(ir);
   if pobj<>nil then
     repeat
-      if pobj^.onpoint(Objects,point) then begin
+      if pobj^.IsActualy and pobj^.onpoint(Objects,point) then begin
         Result:=True;
       end;
 
@@ -290,7 +290,7 @@ begin
   pobj:=Node.nulbeginiterate(ir);
   if pobj<>nil then
     repeat
-      if pobj^.onpoint(Objects,point) then begin
+      if pobj^.IsActualy and pobj^.onpoint(Objects,point) then begin
         Result:=True;
       end;
 
@@ -632,7 +632,7 @@ begin
   for i:=0 to ObjArray.Count-1 do begin
     p:=Pointer(ObjArray.getDataMutable(i));
     if p<>nil then begin
-      ot:=p^.onpoint(objects,point);
+      ot:=p^.IsActualy and p^.onpoint(objects,point);
       if ot then begin
         Result:=True;
       end;
@@ -650,7 +650,7 @@ begin
   for i:=0 to ObjArray.Count-1 do begin
     p:=Pointer(ObjArray.getDataMutable(i));
     if p<>nil then begin
-      ot:=p^.onmouse(popa,mf,InSubEntry);
+      ot:=p^.isonmouse(popa,mf,InSubEntry);
       if ot then begin
         lstonmouse:=p;
         popa.PushBackData(p);
