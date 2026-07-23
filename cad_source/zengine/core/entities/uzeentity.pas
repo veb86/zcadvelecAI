@@ -39,7 +39,7 @@ type
   TSelect2Stage=procedure(PEntity,PGripsCreator:PGDBObjEntity;
     var SelectedObjCount:integer) of object;
   TDeSelect2Stage=procedure(PV:PGDBObjEntity;var SelectedObjCount:integer) of object;
-  TEntityState=(ESCalcWithoutOwner,ESTemp,ESConstructProxy,ESInvisible);
+  TEntityState=(ESCalcWithoutOwner,ESTemp,ESConstructProxy);
   TEntityStates=set of TEntityState;
   PTExtAttrib=^TExtAttrib;
 
@@ -351,7 +351,7 @@ begin
   toObj.vp.color:=vp.color;
   toObj.vp.Layer:=vp.Layer;
   toObj.vp.LineWeight:=vp.LineWeight;
-  toObj.State:=State;
+  toObj.vp.Visibility:=vp.Visibility;
 end;
 
 procedure GDBObjEntity.correctsublayers(var la:GDBLayerArray);
@@ -443,6 +443,7 @@ begin
   self.PExtAttrib:=nil;
   vp.LastCameraPos:=NotActual;
   vp.color:=ClByLayer;
+  vp.Visibility:=EVVisible;
   State:=[];
 end;
 
@@ -940,7 +941,7 @@ end;
 function GDBObjEntity.IsActualy:boolean;
 begin
   Result:=(vp.Layer<>nil) and vp.Layer^._on and
-    not (ESInvisible in State);
+    (vp.Visibility=EVVisible);
 end;
 
 function GDBObjEntity.isonmouse;
@@ -1154,9 +1155,9 @@ begin
     end;
     60:begin
       if rdr.ParseInteger=1 then
-        Include(State,ESInvisible)
+        vp.Visibility:=EVInvisible
       else
-        Exclude(State,ESInvisible);
+        vp.Visibility:=EVVisible;
       Result:=True;
     end;
     370:begin

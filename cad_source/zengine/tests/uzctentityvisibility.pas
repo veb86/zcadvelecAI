@@ -11,6 +11,7 @@ uses
   testregistry,
   uzeentity,
   uzeffdxf,
+  uzeentitiesprop,
   uzegeometrytypes,
   uzedrawingsimple,
   uzgldrawcontext,
@@ -22,6 +23,7 @@ type
   published
     procedure DXFCode60PersistsOnEntityAndControlsCommonBehavior;
     procedure DXFCode60ZeroAndMissingRemainVisible;
+    procedure VisibilityIsCopiedWithVisualProperties;
   end;
 
 implementation
@@ -112,8 +114,8 @@ begin
     CheckEquals(3,BlockDef^.ObjArray.Count,
       'invisible entity must be retained with its persistent state');
     Entity:=PGDBObjEntity(BlockDef^.ObjArray.GetData(0));
-    CheckTrue(ESInvisible in Entity^.State,
-      'group code 60=1 must set the base entity state');
+    CheckEquals(Ord(EVInvisible),Ord(Entity^.vp.Visibility),
+      'group code 60=1 must set the visual visibility property');
     CheckTrue(Entity^.PExtAttrib=nil,
       'visibility must not allocate temporary DXF extension attributes');
     CheckFalse(Entity^.IsActualy,'invisible entity must not be drawable');
@@ -121,6 +123,9 @@ begin
     CheckFalse(Entity^.select(SelectedCount,nil),
       'invisible entity must not be selectable');
     DC:=Drawing.CreateDrawingRC;
+    Bounds:=BlockDef^.ObjArray.calcbb;
+    CheckTrue(Bounds.RTF.x<100,
+      'invisible geometry must not affect block bounds');
     Bounds:=BlockDef^.ObjArray.getonlyvisibleoutbound(DC);
     CheckTrue(Bounds.RTF.x<100,
       'invisible geometry must not affect visible bounds');
@@ -139,13 +144,32 @@ begin
   try
     BlockDef:=Drawing.BlockDefArray.getblockdef('*U1');
     Entity:=PGDBObjEntity(BlockDef^.ObjArray.GetData(1));
-    CheckFalse(ESInvisible in Entity^.State);
+    CheckEquals(Ord(EVVisible),Ord(Entity^.vp.Visibility));
     CheckTrue(Entity^.IsActualy,'group code 60=0 must remain visible');
     Entity:=PGDBObjEntity(BlockDef^.ObjArray.GetData(2));
-    CheckFalse(ESInvisible in Entity^.State);
+    CheckEquals(Ord(EVVisible),Ord(Entity^.vp.Visibility));
     CheckTrue(Entity^.IsActualy,'missing group code 60 must remain visible');
   finally
     Drawing.done;
+  end;
+end;
+
+procedure TEntityVisibilityTest.VisibilityIsCopiedWithVisualProperties;
+var
+  SourceEntity,TargetEntity:PGDBObjEntity;
+begin
+  SourceEntity:=GDBObjEntity.CreateInstance;
+  TargetEntity:=GDBObjEntity.CreateInstance;
+  try
+    SourceEntity^.vp.Visibility:=EVInvisible;
+    SourceEntity^.CopyVPto(TargetEntity^);
+    CheckEquals(Ord(EVInvisible),Ord(TargetEntity^.vp.Visibility),
+      'visibility must be copied with the other visual properties');
+  finally
+    SourceEntity^.done;
+    Freemem(SourceEntity);
+    TargetEntity^.done;
+    Freemem(TargetEntity);
   end;
 end;
 
