@@ -802,7 +802,7 @@ constructor GDBObjAcadTable.initnul(
   AOwner: PGDBObjGenericWithSubordinated);
 begin
   inherited initnul;
-  FInsertPoint := NulPoint;
+  FInsertPoint := cP3d__0__0__0;
   FRowCount := 0;
   FColCount := 0;
   FRowHeights.initnul;
@@ -825,7 +825,7 @@ begin
   FBreakSpacing := 0;
   FBreakHeight := 0;
   // Трансформация по умолчанию: единичный масштаб, без поворота (issue #1305)
-  FScale := ScaleOne;
+  FScale := cV3d__1__1__1;
   FRotate := 0;
   InitTableStyle(FTableStyle);
   System.SetLength(FRows, 0);
@@ -1613,7 +1613,7 @@ begin
   BlockName := GenerateUniqueTableBlockName(ADrawing);
   BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
   BlockDef := BlockArr^.create(BlockName);
-  BlockDef^.Base := NulPoint;
+  BlockDef^.Base := cP3d__0__0__0;
   // BlockDef валиден на протяжении всего вызова RenderCurrentTable: тот
   // создаёт только сущности (не блоки), поэтому BlockDefArray не растёт и
   // BlockDef не перемещается. Держать указатель через create() нельзя —
@@ -1633,7 +1633,7 @@ begin
     BlockName := GenerateUniqueTableBlockName(ADrawing);
     BlockArr := PGDBObjBlockdefArray(ADrawing.GetBlockDefArraySimple);
     BlockDef := BlockArr^.create(BlockName);
-    BlockDef^.Base := NulPoint;
+    BlockDef^.Base := cP3d__0__0__0;
     RenderCurrentTable(ADrawing, DC, BlockDef^.ObjArray, BlockDef, 0, 0,
       FContinuationParts[PartIdx].RowBaseIndex);
     SwapTableData(FContinuationParts[PartIdx]);
