@@ -226,10 +226,8 @@ var
   combined: TzeTypedMatrix4d;
 begin
   // Порядок операций аналогичен uzccommand_rotate.pas
-  translateToOrigin := CreateTranslationMatrix(
-    CreateVertex(-ACenter.x, -ACenter.y, -ACenter.z)
-  );
-  translateBack := CreateTranslationMatrix(ACenter);
+  translateToOrigin := CreateTranslationMatrix(-ACenter.asVector);
+  translateBack := CreateTranslationMatrix(ACenter.asVector);
 
   // Матрицы вращения по осям
   rotX := CreateRotationMatrixX(AAngleX);
