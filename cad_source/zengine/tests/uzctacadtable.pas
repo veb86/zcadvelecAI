@@ -179,6 +179,10 @@ type
     // issue #1363: выравнивание ячеек (код AutoCAD 1..9) переносится в
     // таблицу ACAD_TABLE; отсутствующие коды дают 0 (наследование от стиля).
     procedure BuildFromCellTextsAppliesCellAlignments;
+    // issue #1396: после интерактивного переноса программно созданной таблицы
+    // DXF должен содержать фактическую точку вставки и явное выравнивание
+    // ячеек в позиции group 170, совместимой с форматом AutoCAD.
+    procedure SavesTransformedInsertPointAndCellAlignmentToDXF;
     // issue #1368: явные типы строк (SetRowStyleTypes) задают индекс базового
     // стиля строки (0=Title, 1=Header, 2=Data); RowStyleTypeAt возвращает
     // заданное значение либо -1 вне диапазона, а перестроение таблицы
@@ -2640,6 +2644,71 @@ begin
       'Ячейка [1,1] с явным 0 должна наследовать выравнивание (0)');
     CheckEquals(0, Table^.CellAlignmentAt(1, 2),
       'Ячейка [1,2] вне массива должна наследовать выравнивание (0)');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.SavesTransformedInsertPointAndCellAlignmentToDXF;
+const
+  InsertX = 125.5;
+  InsertY = -42.25;
+  InsertZ = 7.0;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+  MoveMatrix: TzeTypedMatrix4d;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  DXFText: String;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 1);
+    Texts[0] := 'Aligned';
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+    System.SetLength(Alignments, 1);
+    Alignments[0] := 9;
+    InsertPt := NulPoint;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(
+      1, 1, Texts, ColWidths, RowHeights, Alignments, InsertPt),
+      'Таблица для проверки round-trip должна быть построена');
+
+    // Повторяем финальный перенос из ConstructObjRoot при выборе точки.
+    MoveMatrix := CreateTranslationMatrix(InsertX, InsertY, InsertZ);
+    Table^.transform(MoveMatrix);
+
+    OutStream.init(8 * 1024);
+    SaveContext.InitRec;
+    SaveContext.Header.Version := AC1021;
+    SaveContext.Header.iVersion := 1021;
+    try
+      Table^.DXFOut(OutStream, Drawing, SaveContext);
+      DXFText := DxfStreamToText(OutStream);
+    finally
+      SaveContext.Done;
+      OutStream.done;
+    end;
+
+    CheckTrue(HasDxfSequence(DXFText, [
+      '100', 'AcDbBlockReference', '2', '*T1',
+      '10', '125.5', '20', '-42.25', '30', '7.0']),
+      'DXF должен сохранять фактическую точку вставки после переноса');
+    CheckTrue(HasDxfSequence(DXFText, [
+      '171', '1', '172', '0', '173', '0', '174', '0',
+      '175', '1', '176', '1', '91', '262144', '178', '0',
+      '145', '0', '170', '9', '92', '0']),
+      'Group 170 должен сохранять выравнивание в AutoCAD-совместимой позиции');
   finally
     Drawing.done;
   end;
