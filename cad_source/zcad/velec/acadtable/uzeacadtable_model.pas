@@ -167,7 +167,7 @@ type
     // из OZ и теряет поворот в плоскости и масштаб. Благодаря этим полям
     // перенос, поворот и масштабирование таблицы отображаются корректно
     // (issue #1305).
-    FScale: TzePoint3d;
+    FScale: TzeVector3d;
     FRotate: Double;
     // Стиль таблицы
     FTableStyle: TTableStyle;
