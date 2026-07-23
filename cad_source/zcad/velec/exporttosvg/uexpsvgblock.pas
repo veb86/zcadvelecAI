@@ -139,7 +139,7 @@ begin
   Center := FTransformer.Transform(Ellipse^.Local.P_insert);
   
   // Большая полуось (длина вектора MajorAxis)
-  MajorRadius := oneVertexlength(Ellipse^.MajorAxis.asVector3d);
+  MajorRadius := oneVertexlength(Ellipse^.MajorAxis);
   // Малая полуось (через Ratio)
   MinorRadius := MajorRadius * Ellipse^.Ratio;
   
@@ -297,7 +297,7 @@ begin
     end;
 
     // Сбрасываем трансформер в identity - экспортируем в локальных координатах блока
-    FTransformer.SetFromBlockInsert(OneMatrix);
+    FTransformer.SetFromBlockInsert(cOneMatrix);
 
     // Перебираем примитивы в определении блока (как в getPointConnector из uzvcom)
     // BlockDef.ObjArray содержит примитивы блока
@@ -374,7 +374,7 @@ begin
     end;
 
     // Сбрасываем трансформер в identity - экспортируем в локальных координатах устройства
-    FTransformer.SetFromBlockInsert(OneMatrix);
+    FTransformer.SetFromBlockInsert(cOneMatrix);
 
     // 1. Перебираем примитивы в определении блока устройства
     for i := 0 to BlockDef^.ObjArray.Count - 1 do
