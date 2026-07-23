@@ -125,8 +125,8 @@ def test_rotation_centers_use_point_zero_constant():
 def test_svg_ellipse_axis_is_converted_to_vector_for_length():
     source = compact(read_svg_block())
 
-    assert "onevertexlength(ellipse^.majoraxis.asvector3d)" in source
-    assert "onevertexlength(ellipse^.majoraxis)" not in source
+    assert "onevertexlength(ellipse^.majoraxis)" in source
+    assert "ellipse^.majoraxis.asvector3d" not in source
 
 
 def test_matrix_decomposition_keeps_basis_vectors_and_translation_point():
