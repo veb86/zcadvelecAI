@@ -263,7 +263,7 @@ begin
       MTextObj^.textprop.wfactor;
 
   lineTranslation := CreateTranslationMatrix(
-    CreateVertex(LinePtr^.x - obliqueOffset, LinePtr^.y, 0));
+    CreateVector(LinePtr^.x - obliqueOffset, LinePtr^.y, 0));
   Result := MatrixMultiply(lineTranslation, Result);
 end;
 
