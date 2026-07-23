@@ -156,7 +156,7 @@ begin
   RotationData.AngleX := 0;
   RotationData.AngleY := 0;
   RotationData.AngleZ := 0;
-  RotationData.Center := NulPoint;
+  RotationData.Center := cP3d__0__0__0;
 end;
 
 {**Вычислить центр вращения (геометрический центр bounding box)}
@@ -168,7 +168,7 @@ var
   firstObject: Boolean;
   dc: TDrawContext;
 begin
-  Result := NulPoint;
+  Result := cP3d__0__0__0;
   firstObject := True;
 
   dc := drawings.GetCurrentDWG^.CreateDrawingRC;

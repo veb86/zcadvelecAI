@@ -233,7 +233,7 @@ begin
   // Строим таблицу из текстов ячеек с переносом размеров столбцов/строк
   // и выравнивания ячеек (точка вставки временная, нулевая — окончательное
   // положение пользователь укажет при перемещении из root)
-  insPt := NulPoint;
+  insPt := cP3d__0__0__0;
   if not pt^.BuildFromCellTextsWithSizesAndAlignments(rowCount, colCount,
        texts, colWidths, rowHeights, cellAlignments, insPt) then
   begin

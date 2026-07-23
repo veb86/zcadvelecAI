@@ -3294,7 +3294,7 @@ begin
   PDesc.selected := False;
   PDesc.PDrawable := nil;
   PDesc.attr := [];
-  PDesc.dcoord := NulPoint;
+  PDesc.dcoord := cP3d__0__0__0;
   PDesc.vn := 0;
   PDesc.pointtype := os_point;
   PDesc.worldcoord := self.P_insert_in_WCS;
@@ -3339,7 +3339,7 @@ begin
     begin
       pdesc^.worldcoord := BreakHeightGripPointInWCS(PartNumber);
       ProjectProc(pdesc^.worldcoord, TV);
-      pdesc^.dispcoord := ToTzePoint2i(TV);
+      pdesc^.dispcoord := TV.Slice.asPoint2i;
       Exit;
     end;
 
@@ -3348,7 +3348,7 @@ begin
     begin
       pdesc^.worldcoord := ContinuationPartGripPointInWCS(PartIdx);
       ProjectProc(pdesc^.worldcoord, TV);
-      pdesc^.dispcoord := ToTzePoint2i(TV);
+      pdesc^.dispcoord := TV.Slice.asPoint2i;
       Exit;
     end;
   end;
