@@ -45,7 +45,7 @@ begin
     Exit;
   PObj^.Local.basis.ox := GetXfFromZ(PObj^.Local.basis.oz);
   PObj^.Local.basis.ox := VectorTransform3D(PObj^.Local.basis.ox.asPoint3d,
-    CreateAffineRotationMatrix(PObj^.Local.basis.oz, -Rotation)).asVector3d;
+    CreateAffineRotationMatrix(PObj^.Local.basis.oz, -Rotation)).asVector;
 end;
 
 procedure AddTextEntity(var ZContext: TZDrawingContext;
@@ -61,7 +61,7 @@ begin
   pobj^.Local.p_insert.x := TextX;
   pobj^.Local.p_insert.y := TextY;
   pobj^.Local.p_insert.z := TextZ;
-  pobj^.P_drawInOCS := NulPoint;
+  pobj^.P_drawInOCS := cP3d__0__0__0;
   pobj^.textprop.size := Props.Height;
   if Props.WidthFactor <> 0 then
     pobj^.textprop.wfactor := Props.WidthFactor

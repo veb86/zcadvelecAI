@@ -144,7 +144,7 @@ begin
 
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDb3dPolyline',IODXFContext);
   dxfIntegerout(outStream,66,1);
-  dxfvertexout(outStream,10,uzegeometry.NulPoint);
+  dxfvertexout(outStream,10,uzegeometry.cP3d__0__0__0);
   dxfIntegerout(outStream,70,8);
 
   vp.Layer:=pl;
@@ -194,7 +194,8 @@ procedure GDBObjCable.FormatEntity(var drawing:TDrawingDef;var DC:TDrawContext;S
 var
   ir_inGDB,ir_inVertexArray,ir_inNodeArray,ir_inDevice,ir_inDevice2:itrec;
   currentobj,CurrentSubObj,CurrentSubObj2,ptd:PGDBObjDevice;
-  devpoint,tp,tp2,tp3:TzePoint3d;
+  devpoint:TzePoint3d;
+  tp,tp2,tp3:TzeVector3d;
   _YWCS,_ZWCS:TzeVector3d;
   ptv,ptvpred,ptvnext,ptlast,ptpred:PzePoint3d;
   ptn,ptnlastCutted,ptnlast2Cutted:PTNodeProp;
@@ -248,7 +249,7 @@ begin
                       ptn:=NodePropArray.beginiterate(ir_inNodeArray);
                       if ptv<>nil then begin
                         repeat
-                          if SqrVertexlength(ptv^,devpoint)<sqreps then begin
+                          if ptv^.SqrLengthTo(devpoint)<sqreps then begin
                             ptn^.DevLink:=CurrentSubObj;
                             if
                             CurrentSubObj.BlockDesc.BBorder<>BB_Empty then begin
@@ -387,30 +388,30 @@ begin
       ptlast:=VertexArrayInWCS.getDataMutable(vertexarrayInWCS.Count-1);
       ptpred:=VertexArrayInWCS.getDataMutable(vertexarrayInWCS.Count-2);
 
-      tp:=(ptlast^-ptpred^).asPoint3d;
-      if uzegeometry.SqrOneVertexlength(tp.asVector3d)>sqreps then begin
-        _YWCS:=YWCS;//gdb.GetCurrentDWG.pcamera.ydir;
-        _ZWCS:=ZWCS;//gdb.GetCurrentDWG.pcamera.look;
+      tp:=ptlast^-ptpred^;
+      if uzegeometry.SqrOneVertexlength(tp)>sqreps then begin
+        _YWCS:=cV3d__0__1__0;//gdb.GetCurrentDWG.pcamera.ydir;
+        _ZWCS:=cV3d__0__0__1;//gdb.GetCurrentDWG.pcamera.look;
 
-        if (abs(tp.x)<1/64) and (abs(tp.y)<1/64) then
-          tp2:=VectorDot(_YWCS,tp.asVector3d).asPoint3d
+        if IsNearToZ(tp)then
+          tp2:=VectorDot(_YWCS,tp)
         else
-          tp2:=VectorDot(_ZWCS,tp.asVector3d).asPoint3d;
-        tp3:=VectorDot(tp2.asVector3d,tp.asVector3d).asPoint3d;
+          tp2:=VectorDot(_ZWCS,tp);
+        tp3:=VectorDot(tp2,tp);
         //tp3:=uzegeometry.VertexMulOnSc(tp3,-1);
         tp3.Normalize;
         tp2.Normalize;
         tp.Normalize;
 
-        //rotmatr:=onematrix;
+        //rotmatr:=cOneMatrix;
         //PzePoint3d(@rotmatr.mtr[0])^:=tp;
         //PzePoint3d(@rotmatr.mtr[1])^:=tp2;
         //PzePoint3d(@rotmatr.mtr[2])^:=tp3;
-        rotmatr:=CreateMatrixFromBasis(tp.asVector3d,tp2.asVector3d,tp3.asVector3d);
+        rotmatr:=CreateMatrixFromBasis(tp,tp2,tp3);
 
-        //m:=onematrix;
+        //m:=cOneMatrix;
         //PzePoint3d(@m.mtr[3])^:=ptnlastCutted.PrevP;
-        m:=CreateTranslationMatrix(ptnlastCutted.PrevP);
+        m:=CreateTranslationMatrix(ptnlastCutted.PrevP.asVector);
 
         m:=MatrixMultiply(rotmatr,m);
 

@@ -127,7 +127,7 @@ type
       Поддерживают перемещение/масштабирование/поворот/зеркализацию
       прокси-объекта. Хранятся отдельно, чтобы пережить пересборку
       матрицы objmatrix в CalcObjMatrix. }
-    scale: TzePoint3d;
+    scale: TzeVector3d;
     rotate: double;
   private
     { Сырые байты Proxy Graphic (код 310 из DXF) }
@@ -314,7 +314,7 @@ begin
   inherited init(own, layeraddres, LW);
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
-  FProxyGripOffset := NulPoint;
+  FProxyGripOffset := cP3d__0__0__0;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -322,7 +322,7 @@ begin
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
   FDXFFileVersion := 0;
-  scale := ScaleOne;
+  scale := cV3d__1__1__1;
   rotate := 0;
   FConvertedBlockName := '';
 end;
@@ -333,7 +333,7 @@ begin
   bp.ListPos.Owner := owner;
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
-  FProxyGripOffset := NulPoint;
+  FProxyGripOffset := cP3d__0__0__0;
   FProxyClassID := 498;
   FAppClassID := 499;
   FEntityDataSize := 0;
@@ -341,7 +341,7 @@ begin
   FDrawingFormat := 15;
   FOriginalDataFormat := 0;
   FDXFFileVersion := 0;
-  scale := ScaleOne;
+  scale := cV3d__1__1__1;
   rotate := 0;
   FConvertedBlockName := '';
 end;
@@ -430,7 +430,7 @@ begin
   FDXFFileVersion := ADXFFileVersion;
   FSubEntitiesBuilt := False;
   FProxyBBoxLoaded := False;
-  FProxyGripOffset := NulPoint;
+  FProxyGripOffset := cP3d__0__0__0;
   FConvertedBlockName := '';
 end;
 
@@ -555,7 +555,7 @@ begin
       FProxyBBoxLoaded := True;
       FProxyGripOffset := Vertexmorph(
         FProxyBBoxMin, FProxyBBoxMax, 0.5);
-      if IsVectorNul(Local.P_insert.asVector3d) then
+      if IsVectorNul(Local.P_insert.asVector) then
         Local.P_insert := FProxyGripOffset;
       vp.BoundingBox.LBN := FProxyBBoxMin;
       vp.BoundingBox.RTF := FProxyBBoxMax;
@@ -705,7 +705,7 @@ begin
     objMatrix := MatrixMultiply(m1, objMatrix);
   end;
 
-  P_insert_in_WCS := VectorTransform3D(NulPoint, objMatrix);
+  P_insert_in_WCS := VectorTransform3D(cP3d__0__0__0, objMatrix);
 end;
 
 { Декомпозиция objMatrix в Local.p_insert/basis/scale/rotate, чтобы после
@@ -722,14 +722,14 @@ begin
   ox := GetXfFromZ(Local.basis.oz);
   tv := Local.basis.ox.asPoint3d;
   if scale.x < -eps then
-    tv := VertexMulOnSc(tv, -1);
-  rotate := scalardot(tv.asVector3d, ox);
+    tv := {VertexMulOnSc}(-tv{, -1});
+  rotate := scalardot(tv.asVector, ox);
   if rotate > 1.0 then
     rotate := 1.0
   else if rotate < -1.0 then
     rotate := -1.0;
   rotate := arccos(rotate);
-  if scalardot(tv.asVector3d, VectorDot(Local.basis.oz,
+  if scalardot(tv.asVector, VectorDot(Local.basis.oz,
     GetXfFromZ(Local.basis.oz))) < -eps then
     rotate := 2 * pi - rotate;
 end;
@@ -790,7 +790,7 @@ begin
   begin
     pdesc.worldcoord := GetCenterPoint;
     ProjectProc(pdesc.worldcoord, tv);
-    pdesc.dispcoord := ToTzePoint2i(tv);
+    pdesc.dispcoord := {ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 
@@ -928,7 +928,7 @@ begin
 
   BlockArr := PGDBObjBlockdefArray(drawing.GetBlockDefArraySimple);
   BlockDef := BlockArr^.create(FConvertedBlockName);
-  BlockDef^.Base := NulPoint;
+  BlockDef^.Base := cP3d__0__0__0;
 
   { Копируем подпримитивы из ConstObjArray в ObjArray блока.
     Каждый подпримитив клонируется — владелец клона теперь BlockDef. }

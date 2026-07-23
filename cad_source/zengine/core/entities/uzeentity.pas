@@ -381,7 +381,7 @@ end;
 
 function GDBObjEntity.GetTangentInPoint(const point:TzePoint3d):TzePoint3d;
 begin
-  Result:=NulPoint;
+  Result:=cP3d__0__0__0;
 end;
 
 function GDBObjEntity.IsHaveLCS:boolean;
@@ -391,7 +391,7 @@ end;
 
 function GDBObjEntity.CalcObjMatrixWithoutOwner:TzeTypedMatrix4d;
 begin
-  Result:=onematrix;
+  Result:=cOneMatrix;
 end;
 
 procedure GDBObjEntity.SetInFrustumFromTree;
@@ -463,7 +463,7 @@ end;
 
 function GDBObjEntity.GetCenterPoint;
 begin
-  Result:=NulPoint;
+  Result:=cP3d__0__0__0;
 end;
 
 procedure GDBObjEntity.FromDXFPostProcessAfterAdd;
@@ -906,7 +906,7 @@ begin
     d:=GetLTCorrectH(dc.DrawingContext.globalltscale);
     cv:=createvertex(d,d,d);
     vp.BoundingBox.LBN:=VertexSUB(vp.BoundingBox.LBN,cv);
-    vp.BoundingBox.RTF:=vp.BoundingBox.RTF+cv;
+    vp.BoundingBox.RTF:=vp.BoundingBox.RTF+cv.asVector;
   end;
 end;
 

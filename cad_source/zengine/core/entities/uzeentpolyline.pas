@@ -83,7 +83,7 @@ begin
   if closed and (VertexArrayInWCS.Count>0) then begin
     ptpv0:=VertexArrayInWCS.GetParrayAsPointer;
     ptpv1:=VertexArrayInWCS.getDataMutable(VertexArrayInWCS.Count-1);
-    Result:=Result+uzegeometry.Vertexlength(ptpv0^,ptpv1^);
+    Result:=Result+ptpv0^.LengthTo(ptpv1^);
   end;
 end;
 
@@ -136,7 +136,7 @@ begin
   if (not (ESTemp in State))and(DCODrawable in DC.Options) then
     Representation.Clear;
     if VertexArrayInWCS.Count>1 then
-      Representation.CreatePolyLine(dc,self,vp,OneMatrix,VertexArrayInWCS.getPFirst[0..VertexArrayInWCS.GetLastIndex],closed,False);
+      Representation.CreatePolyLine(dc,self,vp,cOneMatrix,VertexArrayInWCS.getPFirst[0..VertexArrayInWCS.GetLastIndex],closed,False);
 
 
   if assigned(EntExtensions) then
@@ -182,7 +182,7 @@ procedure GDBObjPolyline.SaveToDXF;
 begin
   SaveToDXFObjPrefix(outStream,'POLYLINE','AcDb3dPolyline',IODXFContext);
   dxfIntegerout(outStream,66,1);
-  dxfvertexout(outStream,10,uzegeometry.NulPoint);
+  dxfvertexout(outStream,10,uzegeometry.cP3d__0__0__0);
   if closed then
     dxfIntegerout(outStream,70,9)
   else
@@ -200,7 +200,7 @@ begin
   closed:=False;
   vertexgo:=False;
   hlGDBWord:=0;
-  tv:=NulVertex;
+  tv:=cV3d__0__0__0;
   byt:=rdr.ParseInteger;
   while True do begin
     s:='';
@@ -306,14 +306,14 @@ begin
       v2:=vertexarrayinocs.getDataMutable(0);
        // Calculate half-vector (from center to each endpoint)
     halfVector:=uzegeometry.VertexSub(v2^,v1^);
-    halfVector:=uzegeometry.VertexMulOnSc(halfVector,0.5);
+    halfVector:={uzegeometry.VertexMulOnSc}(halfVector*0.5);
 
     // Calculate new center position
-    newCenter:=rtmod.point.worldcoord+rtmod.dist;
+    newCenter:=rtmod.point.worldcoord+rtmod.dist.asVector;
 
     // Set both vertices relative to new center
     v1^:=VertexSub(newCenter,halfVector);
-    v2^:=newCenter+halfVector;
+    v2^:=newCenter+halfVector.asVector;
     //offset:=rtmod.dist;
     //v1^:=VertexAdd(v1^,offset);
     //v2^:=VertexAdd(v2^,offset);
@@ -339,7 +339,7 @@ begin
 
     pdesc.worldcoord:=Vertexmorph(v1^,v2^,0.5);
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 

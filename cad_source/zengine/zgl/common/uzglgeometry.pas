@@ -232,7 +232,7 @@ begin
     end;
     if sym<>1 then
     begin
-      m1.CreateRec(OneMtr,CMTTranslate);
+      m1.CreateRec(cOneMtr,CMTTranslate);
       m1.mtr.v[3].v[0] := pgdbfont(pfont)^.GetOrReplaceSymbolInfo({ach2uch}{(ord(content[i]))}sym{//-ttf-//,tdinfo}).NextSymX;
       matr:=MatrixMultiply(m1,matr);
     end;
@@ -331,7 +331,7 @@ begin
      segment.startpoint:=startpoint;
      segment.endpoint:=endpoint;
      segment.dir:=VertexSub(endpoint,startpoint);
-     segment.length:=Vertexlength(startpoint,endpoint);
+     segment.length:={Vertexlength}startpoint.LengthTo(endpoint);
      segment.accumlength:=prevlength+segment.length;
      segment.naccumlength:=segment.accumlength;
      result:=segment.accumlength;
@@ -495,11 +495,11 @@ begin
     if param.AD=TACRel then
                            mentrot:=CreateRotationMatrixZ(LineAngle)
                        else
-                           mentrot:=onematrix;
-    madd:=CreateTranslationMatrix(createvertex(param.x*Scale,param.y*Scale,0));
-    mtrans:=CreateTranslationMatrix(createvertex(PInsert.x,PInsert.y,PInsert.z));
-    mscale:=CreateScaleMatrix(createvertex(param.Height*Scale,param.Height*Scale,param.Height*Scale));
-    result:=onematrix;
+                           mentrot:=cOneMatrix;
+    madd:=CreateTranslationMatrix(CreateVector(param.x*Scale,param.y*Scale,0));
+    mtrans:=CreateTranslationMatrix(CreateVector(PInsert.x,PInsert.y,PInsert.z));
+    mscale:=CreateScaleMatrix(CreateVector(param.Height*Scale,param.Height*Scale,param.Height*Scale));
+    result:=cOneMatrix;
     result:=MatrixMultiply(result,mscale);
     result:=MatrixMultiply(result,mrot);
     result:=MatrixMultiply(result,madd);
@@ -519,19 +519,19 @@ begin
     if (param.AD<>TACAbs) then
                            mentrot:=CreateRotationMatrixZ(LineAngle)
                        else
-                           mentrot:=onematrix;
-    madd:=CreateTranslationMatrix(createvertex(param.x*Scale,param.y*Scale,0));
-    mtrans:=CreateTranslationMatrix(createvertex(PInsert.x,PInsert.y,PInsert.z));
-    mscale:=CreateScaleMatrix(createvertex(param.Height*Scale,param.Height*Scale,param.Height*Scale));
-    result:=onematrix;
+                           mentrot:=cOneMatrix;
+    madd:=CreateTranslationMatrix(CreateVector(param.x*Scale,param.y*Scale,0));
+    mtrans:=CreateTranslationMatrix(CreateVector(PInsert.x,PInsert.y,PInsert.z));
+    mscale:=CreateScaleMatrix(CreateVector(param.Height*Scale,param.Height*Scale,param.Height*Scale));
+    result:=cOneMatrix;
     result:=MatrixMultiply(result,mscale);
 
     if sysvarDWGRotateTextInLT then
     if (param.AD<>TACAbs) then
     if isNotReadableAngle(LineAngle) then
     begin
-    madd2:=CreateTranslationMatrix(createvertex(dx*Scale,dy*Scale,0));
-    madd3:=CreateTranslationMatrix(createvertex(-dx*Scale,-dy*Scale,0));
+    madd2:=CreateTranslationMatrix(CreateVector(dx*Scale,dy*Scale,0));
+    madd3:=CreateTranslationMatrix(CreateVector(-dx*Scale,-dy*Scale,0));
     mrot2:=CreateRotationMatrixZ(pi);
     result:=MatrixMultiply(result,madd3);
     result:=MatrixMultiply(result,mrot2);
@@ -552,9 +552,9 @@ var
 begin
 { TODO : убрать двойное преобразование номера символа }
 objmatrix:=creatematrix(StartPatternPoint,PSP^.param,angle,scale);
-matr:=onematrix;
-Bound.LB:=NulVertex2D;
-Bound.RT:=NulVertex2D;
+matr:=cOneMatrix;
+Bound.LB:=cP2d__0__0;
+Bound.RT:=cP2d__0__0;
 sli:=-1;
 if PSP.Psymbol<> nil then
                     PSP^.param.PStyle.pfont.CreateSymbol(drawer,1,self,PSP.Psymbol.Number,objmatrix,matr,Bound,sli);
@@ -570,9 +570,9 @@ var
 begin
 { TODO : убрать двойное преобразование номера символа }
 objmatrix:={creatematrix}CreateReadableMatrix(StartPatternPoint,PTP^.param,angle,scale,PTP.txtL,PTP.txtH);
-matr:=onematrix;
-Bound.LB:=NulVertex2D;
-Bound.RT:=NulVertex2D;
+matr:=cOneMatrix;
+Bound.LB:=cP2d__0__0;
+Bound.RT:=cP2d__0__0;
 sli:=-1;
 for j:=1 to (system.length(PTP^.Text)) do
 begin
@@ -675,8 +675,8 @@ begin
     if (cdp>=-eps)and(tcdp>eps) then begin
       if tcdp<=(pcurrsegment.naccumlength+eps) then begin
         oldcp:=cp;
-        tv:=VertexMulOnSc(dir,length/pcurrsegment.nlength);
-        cp:=cp+tv;
+        tv:={VertexMulOnSc}(dir*(length/pcurrsegment.nlength));
+        cp:=cp+tv.asVector;
         if paint then
           self.PGeom.DrawLineWithoutLT(rc,oldcp,cp,dr);
         cdp:=tcdp;
@@ -804,7 +804,7 @@ begin
   end else begin
     //LT:=getLTfromVP(vp);
     FirstLinePrimitiveindex:=LLprimitives.Count;
-    length:=Vertexlength(startpoint,endpoint);//длина линии
+    length:={Vertexlength}startpoint.LengthTo(endpoint);//длина линии
     scale:=DC.DrawingContext.GlobalLTScale*vp.LineTypeScale;//фактический масштаб линии
     num:=trunc(Length/(scale*LT.strokesarray.LengthFact));//количество повторений шаблона
     if ((num<1)and(not LT^.WithoutLines))or(num>SysVarRDMaxLTPatternsInEntity) then begin

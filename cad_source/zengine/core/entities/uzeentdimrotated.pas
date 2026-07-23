@@ -52,15 +52,15 @@ implementation
 constructor GDBObjRotatedDimension.initnul;
 begin
   inherited initnul(owner);
-  vectorD:=XWCS;
-  vectorN:=YWCS;
+  vectorD:=cV3d__1__0__0;
+  vectorN:=cV3d__0__1__0;
 end;
 
 constructor GDBObjRotatedDimension.init;
 begin
   inherited init(own,layeraddres,lw);
-  vectorD:=XWCS;
-  vectorN:=YWCS;
+  vectorD:=cV3d__1__0__0;
+  vectorN:=cV3d__0__1__0;
 end;
 
 function GDBObjRotatedDimension.GetObjType;
@@ -91,11 +91,11 @@ var
   tm:TzeTypedMatrix4d;
 begin
   tm:=t_matrix;
-  tm.mtr.v[3]:=NulVector4D2;
-  vectorD:=VectorTransform3D(vectorD.asPoint3d,tm).asVector3d;
-  vectorN:=VectorTransform3D(vectorN.asPoint3d,tm).asVector3d;
-  vectorD:=normalizevertex(vectorD);
-  vectorN:=normalizevertex(vectorN);
+  tm.mtr.v[3]:=cV4d__0__0__0__1;
+  vectorD:=VectorTransform3D(vectorD.asPoint3d,tm).asVector;
+  vectorN:=VectorTransform3D(vectorN.asPoint3d,tm).asVector;
+  vectorD.Normalize;//:=normalizevertex(vectorD);
+  vectorN.Normalize;//:=normalizevertex(vectorN);
   inherited;
 end;
 
@@ -104,11 +104,11 @@ var
   tm:TzeTypedMatrix4d;
 begin
   tm:=t_matrix^;
-  tm.mtr.v[3]:=NulVector4D2;
-  vectorD:=VectorTransform3D(PGDBObjRotatedDimension(p)^.vectorD.asPoint3d,tm).asVector3d;
-  vectorN:=VectorTransform3D(PGDBObjRotatedDimension(p)^.vectorN.asPoint3d,tm).asVector3d;
-  vectorD:=normalizevertex(vectorD);
-  vectorN:=normalizevertex(vectorN);
+  tm.mtr.v[3]:=cV4d__0__0__0__1;
+  vectorD:=VectorTransform3D(PGDBObjRotatedDimension(p)^.vectorD.asPoint3d,tm).asVector;
+  vectorN:=VectorTransform3D(PGDBObjRotatedDimension(p)^.vectorN.asPoint3d,tm).asVector;
+  vectorD.Normalize;//:=normalizevertex(vectorD);
+  vectorN.Normalize;//:=normalizevertex(vectorN);
   inherited;
 end;
 

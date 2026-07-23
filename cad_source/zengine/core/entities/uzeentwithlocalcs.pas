@@ -90,9 +90,9 @@ begin
   Local.basis.oy:=objmatrix.mtr.v[1].Slice;
   Local.basis.oz:=objmatrix.mtr.v[2].Slice;
 
-  Local.basis.ox:=normalizevertex(Local.basis.ox);
-  Local.basis.oy:=normalizevertex(Local.basis.oy);
-  Local.basis.oz:=normalizevertex(Local.basis.oz);
+  Local.basis.ox.Normalize;//:=normalizevertex(Local.basis.ox);
+  Local.basis.oy.Normalize;//:=normalizevertex(Local.basis.oy);
+  Local.basis.oz.Normalize;//:=normalizevertex(Local.basis.oz);
 end;
 
 procedure GDBObjWithLocalCS.higlight;
@@ -116,8 +116,8 @@ end;
 procedure GDBObjWithLocalCS.createfield;
 begin
   inherited;
-  Local.P_insert:=NulPoint;
-  P_insert_in_WCS:=NulPoint;
+  Local.P_insert:=cP3d__0__0__0;
+  P_insert_in_WCS:=cP3d__0__0__0;
   lod:=0;
 end;
 
@@ -128,11 +128,11 @@ end;
 
 constructor GDBObjWithLocalCS.initnul;
 begin
-  ObjMatrix:=OneMatrix;
-  Local.basis.ox:=XWCS;
-  Local.basis.oy:=YWCS;
-  Local.basis.oz:=ZWCS;
-  local.p_insert:=NulPoint;
+  ObjMatrix:=cOneMatrix;
+  Local.basis.ox:=cV3d__1__0__0;
+  Local.basis.oy:=cV3d__0__1__0;
+  Local.basis.oz:=cV3d__0__0__1;
+  local.p_insert:=cP3d__0__0__0;
   inherited initnul(owner);
 end;
 
@@ -147,9 +147,9 @@ begin
     Local.basis.oy:=powner^.GetMatrix^.mtr.v[1].Slice;
     Local.basis.oz:=powner^.GetMatrix^.mtr.v[2].Slice;
   end else begin
-    Local.basis.ox:=XWCS;
-    Local.basis.oy:=YWCS;
-    Local.basis.oz:=ZWCS;
+    Local.basis.ox:=cV3d__1__0__0;
+    Local.basis.oy:=cV3d__0__1__0;
+    Local.basis.oz:=cV3d__0__0__1;
   end;
 end;
 
@@ -173,16 +173,16 @@ var
 begin
   if IsVectorNul(Local.basis.oz) then begin
     ReportLocalOZIsNul;
-    exit(EmptyMatrix);
+    exit(cEmptyMatrix);
   end;
   Local.basis.ox:=GetXfFromZ(Local.basis.oz);
   Local.basis.oy:=VectorDot(Local.basis.oz,Local.basis.ox);
 
-  Local.basis.oy:=NormalizeVertex(Local.basis.oy);
-  Local.basis.oz:=NormalizeVertex(Local.basis.oz);
+  Local.basis.oy.Normalize;//:=NormalizeVertex(Local.basis.oy);
+  Local.basis.oz.Normalize;//:=NormalizeVertex(Local.basis.oz);
 
   rotmatr:=CreateMatrixFromBasis(Local.basis.ox,Local.basis.oy,Local.basis.oz);
-  dispmatr:=CreateTranslationMatrix(Local.p_insert);
+  dispmatr:=CreateTranslationMatrix(Local.p_insert.asVector);
   Result:=MatrixMultiply(dispmatr,rotmatr);
 end;
 
@@ -195,7 +195,7 @@ begin
     objmatrix:=CalcObjMatrixWithoutOwner;
 
 
-  P_insert_in_WCS:=VectorTransform3D(NulPoint,objmatrix);
+  P_insert_in_WCS:=VectorTransform3D(cP3d__0__0__0,objmatrix);
 end;
 
 procedure GDBObjWithLocalCS.transform;

@@ -161,7 +161,7 @@ begin
   if IsObjectIt(TypeOf(pent^),typeof(GDBObjWithLocalCS)) then
     pt:=PGDBObjWithLocalCS(pent)^.P_insert_in_WCS
   else
-    pt:=(pent^.vp.BoundingBox.LBN+pent^.vp.BoundingBox.RTF)/2;
+    pt:=(pent^.vp.BoundingBox.LBN+pent^.vp.BoundingBox.RTF.asVector)/2;
   result:=true;
 end;
 
@@ -271,9 +271,9 @@ var
   sav:TzePoint3d;
   a,aa:double;
 begin
-  CenterPoint:=NulPoint;
+  CenterPoint:=cP3d__0__0__0;
   for i:=0 to mpd.Size-1 do
-    CenterPoint:=CenterPoint+mpd.Mutable[i]^.coord;
+    CenterPoint:=CenterPoint+mpd.Mutable[i]^.coord.asVector;
   CenterPoint:=CenterPoint/mpd.Size;
   aa:=PerimetrParam.StartAngle*pi/180;
   dcwa:=TDevCoordwithAngleVector.Create;
@@ -282,7 +282,7 @@ begin
     with dcwa.Mutable[i]^ do begin
       DevCoord:=mpd[i];
       sav:=(DevCoord.coord-CenterPoint).asPoint3d.Normalized;
-      a:=uzegeometry.TwoVectorAngle(_X_yzVertex.asVector3d,sav.asVector3d);
+      a:=uzegeometry.TwoVectorAngle(cV3d__1__0__0,sav.asVector);
       if sav.y<-eps then
         a:=2*pi-a;
       a:=a-aa;

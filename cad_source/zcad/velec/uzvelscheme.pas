@@ -289,7 +289,7 @@ function TestModul_com(operands:TCommandOperands):TCommandResult;
 
          //drawings.GetCurrentDWG^.wa.SetMouseMode((MGet3DPoint) or (MMoveCamera) or (MRotateCamera));
 
-  //coord:=uzegeometry.NulVertex;
+  //coord:=uzegeometry.cV3d__0__0__0;
   //coord.y:=0;
   //coord.x:=0;
   //prevname:='';
@@ -384,7 +384,7 @@ begin
      if name<>'' then
      begin
      pt:=pointer(AllocEnt(GDBMtextID));
-     pt^.init({drawings.GetCurrentROOT}@root,sysvar.dwg.DWG_CLayer^,sysvar.dwg.DWG_CLinew^,TDXFEntsInternalStringType(name),tv,2.5,0,0.65,RightAngle,jsbc,1,1);
+     pt^.init({drawings.GetCurrentROOT}@root,sysvar.dwg.DWG_CLayer^,sysvar.dwg.DWG_CLinew^,TDXFEntsInternalStringType(name),tv,2.5,0,0.65,cRightAngle,jsbc,1,1);
      pt^.TXTStyle:=pointer(drawings.GetCurrentDWG^.GetTextStyleTable^.getDataMutable(0));
      root.ObjArray.AddPEntity(pt^);
      zcSetEntPropFromCurrentDrawingProp(pt);
@@ -968,9 +968,9 @@ var
 
       //выставляем клону точку вставки, ориентируем по осям, вращаем
       pnevdev^.Local.P_insert:=currentcoord;
-      pnevdev^.scale:=createvertex(1,1,1);
-      //pnevdev.Local.Basis.ox:=_X_yzVertex;
-      //pnevdev.Local.Basis.oy:=x_Y_zVertex;
+      pnevdev^.scale:=CreateVector(1,1,1);
+      //pnevdev.Local.Basis.ox:=cV3d__1__0__0;
+      //pnevdev.Local.Basis.oy:=cV3d__0__1__0;
       //pnevdev.rotate:=0;
 
       //форматируем клон
@@ -2111,7 +2111,7 @@ var
          //zcUI.TextMessage('getVertexGraphIndexCoo(oGraph:TGraph;vertex:TzePoint3d):integer  oGraph.VertexCount=' + inttostr(oGraph.VertexCount),TMWOHistoryOut);
          for i:= 0 to oGraph.VertexCount-1 do begin
            //zcUI.TextMessage('i='+inttostr(i)+'   dev = '+booltostr(TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).isDev)+ 'ccor oGraph.Vertices[i].AsPointer[vpTVertexTree]^).vertex x=' + floattostr(TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).vertex.x),TMWOHistoryOut);
-           if vertexeq(TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).vertex,vertex) then begin
+           if {vertexeq}IsPointEqual(TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).vertex,vertex,bigeps) then begin
              //if TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).dev <> nil then
                  //zcUI.TextMessage(TVertexTree(oGraph.Vertices[i].AsPointer[vpTVertexTree]^).dev^.Name + '---gggggggggggggggggggg',TMWOHistoryOut);
                //zcUI.TextMessage(inttostr(i)+ '---hhhhhhhhhhhhhhhhhh',TMWOHistoryOut);
@@ -2344,7 +2344,7 @@ begin
   //** Строим структурную схему
   graphVizPt:=createvertex(0,0,0);
 
-  //coord:=uzegeometry.NulVertex;
+  //coord:=uzegeometry.cV3d__0__0__0;
   //coord.y:=0;
   //coord.x:=0;
   //prevname:='';

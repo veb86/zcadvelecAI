@@ -100,7 +100,7 @@ var
 begin
   tv:=CreateVertex(Width,0,0);
   m:=t_matrix;
-  m.mtr.v[3].Slice:=NulVertex;
+  m.mtr.v[3].Slice:=cV3d__0__0__0;
   tv:=VectorTransform3d(tv,m);
   Width:={oneVertexlength}(tv.Length);
   inherited;
@@ -143,7 +143,7 @@ begin
   {TODO: тут расчет AAA ненужен}
   Local.basis.ox:=GetXfFromZ(Local.basis.oz);
 
-  local.basis.OX:=VectorTransform3D(local.basis.OX.asPoint3d,uzegeometry.CreateAffineRotationMatrix(Local.basis.oz,-a)).asVector3d;
+  local.basis.OX:=VectorTransform3D(local.basis.OX.asPoint3d,uzegeometry.CreateAffineRotationMatrix(Local.basis.oz,-a)).asVector;
   Text.init(10);
 end;
 
@@ -351,7 +351,7 @@ begin
   Text.Free;
   lod:=0;
 
-  P_drawInOCS:=NulPoint;
+  P_drawInOCS:=cP3d__0__0__0;
 
   //обрезание перевода строки в конце строки
   //странно что в автокаде он обрезается только один
@@ -369,7 +369,7 @@ begin
 
   h:=GetLinesH(linespace,textprop.size,Text);
 
-  P_drawInOCS:=NulPoint;
+  P_drawInOCS:=cP3d__0__0__0;
   angle:=0;
 
   if textprop.justify=jsbtl then
@@ -620,7 +620,7 @@ begin
       ln:=-1;
       matr:=DrawMatrix;
 
-      m1.CreateRec(OneMtr,CMTShear);
+      m1.CreateRec(cOneMtr,CMTShear);
       m1.mtr.v[3].v[0]:=pswp^.x-(pswp^.y)*cotan(pi/2-textprop.oblique)/textprop.wfactor;
       m1.mtr.v[3].v[1]:=pswp^.y;
       matr:=MatrixMultiply(m1,matr);
@@ -771,7 +771,7 @@ begin
   Content:=utf8tostring(ttemplate);
   textprop.justify:=b2j[j];
   P_drawInOCS:=Local.p_insert;
-  Local.basis.ox:=ux.asVector3d;
+  Local.basis.ox:=ux.asVector;
 end;
 
 function z2dxfmtext(s:string;var ul:boolean):string;

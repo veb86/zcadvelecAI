@@ -96,10 +96,10 @@ var
 begin
   tv:=CreateVertex(0,textprop.size,0);
   m:=t_matrix;
-  m.mtr.v[3].Slice:=NulVertex;
+  m.mtr.v[3].Slice:=cV3d__0__0__0;
 
   tv:=VectorTransform3d(tv,m);
-  textprop.size:=oneVertexlength(tv.asVector3d);
+  textprop.size:=oneVertexlength(tv.asVector);
   inherited;
 end;
 
@@ -118,9 +118,9 @@ begin
   Local.basis.ox:=objmatrix.mtr.v[0].slice;
   Local.basis.oy:=objmatrix.mtr.v[1].slice;
 
-  Local.basis.ox:=normalizevertex(Local.basis.ox);
-  Local.basis.oy:=normalizevertex(Local.basis.oy);
-  Local.basis.oz:=normalizevertex(Local.basis.oz);
+  Local.basis.ox.Normalize;//:=normalizevertex(Local.basis.ox);
+  Local.basis.oy.Normalize;//:=normalizevertex(Local.basis.oy);
+  Local.basis.oz.Normalize;//:=normalizevertex(Local.basis.oz);
 
   Local.P_insert:=objmatrix.mtr.v[3].slice.asPoint3d;
 end;
@@ -133,7 +133,7 @@ begin
 
   if bp.ListPos.owner<>nil then begin
     V1:=bp.ListPos.owner^.GetMatrix^.mtr.v[0].Slice.asPoint3d;
-    l0:=scalardot(NormalizeVertex(V1.asVector3d),_X_yzVertex.asVector3d);
+    l0:=scalardot(V1.asVector.Normalized,cV3d__1__0__0);
     l0:=arccos(l0);
     if v1.y<-eps then
       l0:=2*pi-l0;
@@ -142,7 +142,7 @@ begin
 
   V1:=Local.basis.ox.asPoint3d;
   V2:=GetXfFromZ(Local.basis.oz).asPoint3d;
-  l1:=scalardot(v1.asVector3d,v2.asVector3d);
+  l1:=scalardot(v1.asVector,v2.asVector);
   l1:=arccos(l1);
   if v1.y<-eps then
     l1:=2*pi-l1;
@@ -160,7 +160,7 @@ begin
   if pdesc^.pointtype=os_point then begin
     pdesc.worldcoord:=P_insert_in_WCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 
@@ -243,17 +243,17 @@ begin
     PzePoint3d(@objmatrix.mtr.v[0])^.y:=-Local.basis.ox.y;
     PzePoint3d(@objmatrix.mtr.v[0])^.z:=-Local.basis.ox.z;}
   end;
-  m1:=OneMatrix;
+  m1:=cOneMatrix;
   objMatrix:=MatrixMultiply(m1,objMatrix);
 
   angle:=(pi/2-textprop.oblique);
   if abs(angle-pi/2)>eps then begin
-    m1.CreateRec(OneMtr,CMTShear);
+    m1.CreateRec(cOneMtr,CMTShear);
     m1.mtr.v[1].v[0]:=cotan(angle);
   end else
-    m1:=OneMatrix;
+    m1:=cOneMatrix;
 
-  m2:=CreateTranslationMatrix(P_drawInOCS);
+  m2:=CreateTranslationMatrix(P_drawInOCS.asVector);
 
   m3:=CreateScaleMatrix(textprop.wfactor*textprop.size,textprop.size,textprop.size);
 

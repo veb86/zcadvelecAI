@@ -63,7 +63,7 @@ begin
      V1:=PzePoint3d(ChangedData.PGetDataInEtity)^;
      inc(ChangedData.PGetDataInEtity,sizeof(TzePoint3d));
      V2:=PzePoint3d(ChangedData.PGetDataInEtity)^;
-     l1:=Vertexlength(v1,v2);
+     l1:=v1.LengthTo(v2);
      ChangedData.PGetDataInEtity:=@l1;
      GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
@@ -80,7 +80,7 @@ begin
      V1:=PzePoint3d(ChangedData.PGetDataInEtity)^;
      inc(ChangedData.PGetDataInEtity,sizeof(TzePoint3d));
      V2:=PzePoint3d(ChangedData.PGetDataInEtity)^;
-     l1:=Vertexlength(v1,v2);
+     l1:=v1.LengthTo(v2);
      if @ecp=nil then pvd^.attrib:=pvd^.attrib or vda_RO;
      if fistrun then
                     mp.MPType^.CopyValueToInstance(@l1,pvdata)
@@ -98,7 +98,7 @@ begin
      V2:=PzePoint3d(ChangedData.PGetDataInEtity)^;
      v1:=VertexSub(v2,v1);
      v1.Normalize;
-     l1:=scalardot(v1.asVector3d,_X_yzVertex.asVector3d);
+     l1:=scalardot(v1.asVector,cV3d__1__0__0);
      l1:=arccos(l1){*180/pi};
      if v1.y<-eps then l1:={360}2*pi-l1;
      ChangedData.PGetDataInEtity:=@l1;
@@ -128,7 +128,7 @@ begin
 
      if PGDBObjEntity(ChangedData.PGetDataInEtity)^.bp.ListPos.owner<>nil then begin
        V1:=PGDBObjEntity(ChangedData.PGetDataInEtity)^.bp.ListPos.owner^.GetMatrix^.mtr.v[0].Slice;
-       l0:=scalardot(NormalizeVertex(V1),_X_yzVertex.asVector3d);
+       l0:=scalardot(V1.Normalized,cV3d__1__0__0);
        l0:=arccos(l0);
        if v1.y<-eps then l0:=2*pi-l0;
        //a0:=l0*180/pi
@@ -340,7 +340,7 @@ begin
   l1:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   V2:=VertexSub(V2,V1);
   V2.Normalize;
-  V2:=VertexMulOnSc(V2,l1);
+  V2:={VertexMulOnSc}(V2*l1);
   ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 
   PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
@@ -349,7 +349,7 @@ begin
                                  TSharedPEntityData.CreateRec(ChangedData.PEntity),
                                  TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
 
-  PzePoint3d(ChangedData.PSetDataInEtity)^:=v1+v2;
+  PzePoint3d(ChangedData.PSetDataInEtity)^:=v1+v2.asVector;
 end;
 procedure DoubleAngleEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
 var
@@ -361,11 +361,11 @@ begin
   V1:=PzePoint3d(ChangedData.PSetDataInEtity)^;
   inc(ChangedData.PSetDataInEtity,sizeof(TzePoint3d));
   V2:=PzePoint3d(ChangedData.PSetDataInEtity)^;
-  d:=vertexlength(v2,v1);
+  d:=v2.LengthTo(v1);
   l1:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   SinCos(l1,V2.y,V2.x);
   V2.z:=0;
-  V2:=VertexMulOnSc(V2,d);
+  V2:={VertexMulOnSc}(V2*d);
   ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
 
   PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
@@ -374,7 +374,7 @@ begin
                                  TSharedPEntityData.CreateRec(ChangedData.PEntity),
                                  TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
 
-  PzePoint3d(ChangedData.PSetDataInEtity)^:=v1+v2;
+  PzePoint3d(ChangedData.PSetDataInEtity)^:=v1+v2.asVector;
 end;
 procedure CurrentAngleFormat2DegEntChangeProc(var UMPlaced:boolean;pu:PTEntityUnit;pdata:PVarDesk;ChangedData:TChangedData;mp:TMultiProperty);
 var
@@ -520,10 +520,6 @@ begin
                                  TAfterChangePDrawing.CreateRec(drawings.GetCurrentDWG));
 
   PGDBObjText(ChangedData.PEntity)^.Local.basis.ox:=GetXfFromZ(PGDBObjText(ChangedData.PEntity)^.Local.basis.oz);
-  //if (abs (PGDBObjText(ChangedData.PEntity)^.Local.basis.oz.x) < 1/64) and (abs (PGDBObjText(ChangedData.PEntity)^.Local.basis.oz.y) < 1/64) then
-  //  PGDBObjText(ChangedData.PEntity)^.Local.basis.ox:=VectorDot(YWCS,PGDBObjText(ChangedData.PEntity)^.Local.basis.oz)
-  //else
-  //  PGDBObjText(ChangedData.PEntity)^.Local.basis.ox:=VectorDot(ZWCS,PGDBObjText(ChangedData.PEntity)^.Local.basis.oz);
   PGDBObjText(ChangedData.PEntity)^.local.basis.OX:=VectorTransform3D(PGDBObjText(ChangedData.PEntity)^.local.basis.OX,uzegeometry.CreateAffineRotationMatrix(PGDBObjText(ChangedData.PEntity)^.Local.basis.oz,-a));
 end;
 

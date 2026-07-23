@@ -95,13 +95,13 @@ end;
 procedure GDBObjDiametricDimension.CalcDNVectors;
 begin
   vectorD:=DimData.P15InWCS-DimData.P10InWCS;
-  vectorD:=normalizevertex(vectorD);
+  vectorD.Normalize;//:=normalizevertex(vectorD);
   vectorN.Slice:=vectorD.Slice.Turned90L;
   vectorN.CutOff:=0;
   {vectorN.x:=-vectorD.y;
   vectorN.y:=vectorD.x;
   vectorN.z:=0;}
-  vectorN:=normalizevertex(vectorN);
+  vectorN.Normalize;//:=normalizevertex(vectorN);
 end;
 
 procedure GDBObjDiametricDimension.DrawCenterMarker(const cp:TzePoint3d;r:double;
@@ -112,18 +112,18 @@ begin
   if PDimStyle.Lines.DIMCEN<>0 then begin
     ls:=abs(PDimStyle.Lines.DIMCEN);
     DrawExtensionLineLinePart(VertexSub(cp,createvertex(ls,0,0)),
-      cp+createvertex(ls,0,0),drawing,0).FormatEntity(drawing,dc);
+      cp+CreateVector(ls,0,0),drawing,0).FormatEntity(drawing,dc);
     DrawExtensionLineLinePart(VertexSub(cp,createvertex(0,ls,0)),
-      cp+createvertex(0,ls,0),drawing,0).FormatEntity(drawing,dc);
+      cp+CreateVector(0,ls,0),drawing,0).FormatEntity(drawing,dc);
     if PDimStyle.Lines.DIMCEN<0 then begin
       DrawExtensionLineLinePart(VertexSub(cp,createvertex(2*ls,0,0)),
         VertexSub(cp,createvertex(r+ls,0,0)),drawing,0).FormatEntity(drawing,dc);
       DrawExtensionLineLinePart(VertexSub(cp,createvertex(0,2*ls,0)),
         VertexSub(cp,createvertex(0,r+ls,0)),drawing,0).FormatEntity(drawing,dc);
-      DrawExtensionLineLinePart(cp+createvertex(2*ls,0,0),
-        cp+createvertex(r+ls,0,0),drawing,0).FormatEntity(drawing,dc);
-      DrawExtensionLineLinePart(cp+createvertex(0,2*ls,0),
-        cp+createvertex(0,r+ls,0),drawing,0).FormatEntity(drawing,dc);
+      DrawExtensionLineLinePart(cp+CreateVector(2*ls,0,0),
+        cp+CreateVector(r+ls,0,0),drawing,0).FormatEntity(drawing,dc);
+      DrawExtensionLineLinePart(cp+CreateVector(0,2*ls,0),
+        cp+CreateVector(0,r+ls,0),drawing,0).FormatEntity(drawing,dc);
     end;
   end;
 end;
@@ -133,14 +133,14 @@ var
   dirv,center:TzePoint3d;
   d:double;
 begin
-  center:=VertexMulOnSc(DimData.P15InWCS+DimData.P10InWCS,0.5);
-  d:=Vertexlength(center,tv);
+  center:=(DimData.P15InWCS+DimData.P10InWCS.asVector)*0.5;
+  d:=center.LengthTo(tv);
   dirv:=vertexsub(tv,center);
   dirv.Normalize;
 
   Result:=VertexDmorph(center,dirv,d);
   DimData.P15InWCS:=VertexDmorph(center,dirv,-d);
-  d:=Vertexlength(center,DimData.P11InOCS);
+  d:=center.LengthTo(DimData.P11InOCS);
   DimData.P11InOCS:=VertexDmorph(center,dirv,-d);
 end;
 
@@ -149,14 +149,14 @@ var
   dirv,center:TzePoint3d;
   d:double;
 begin
-  center:=VertexMulOnSc(DimData.P15InWCS+DimData.P10InWCS,0.5);
-  d:=Vertexlength(DimData.P15InWCS,DimData.P10InWCS)/2;
+  center:=(DimData.P15InWCS+DimData.P10InWCS.asVector)*0.5;
+  d:=DimData.P15InWCS.LengthTo(DimData.P10InWCS)/2;
   dirv:=vertexsub(tv,center);
   dirv.Normalize;
 
   Result:=VertexDmorph(center,dirv,d);
   DimData.P10InWCS:=VertexDmorph(center,dirv,-d);
-  d:=Vertexlength(center,DimData.P11InOCS);
+  d:=center.LengthTo(DimData.P11InOCS);
   DimData.P11InOCS:=VertexDmorph(center,dirv,d);
 end;
 
@@ -165,8 +165,8 @@ var
   dirv,center:TzePoint3d;
   d:double;
 begin
-  center:=VertexMulOnSc(DimData.P15InWCS+DimData.P10InWCS,0.5);
-  d:=Vertexlength(DimData.P15InWCS,DimData.P10InWCS)/2;
+  center:=(DimData.P15InWCS+DimData.P10InWCS.asVector)*0.5;
+  d:=DimData.P15InWCS.LengthTo(DimData.P10InWCS)/2;
   dirv:=vertexsub(tv,center);
   dirv.Normalize;
   DimData.P10InWCS:=VertexDmorph(center,dirv,-d);
@@ -216,18 +216,17 @@ end;
 function GDBObjDiametricDimension.GetDimStr(
   var drawing:TDrawingDef):TDXFEntsInternalStringType;
 begin
-  Result:='%%C'+GetLinearDimStr(
-    Vertexlength(DimData.P10InWCS,DimData.P15InWCS),drawing);
+  Result:='%%C'+GetLinearDimStr(DimData.P10InWCS.LengthTo(DimData.P15InWCS),drawing);
 end;
 
 function GDBObjDiametricDimension.GetCenterPoint:TzePoint3d;
 begin
-  Result:=VertexMulOnSc(DimData.P15InWCS+DimData.P10InWCS,0.5);
+  Result:=(DimData.P15InWCS+DimData.P10InWCS.asVector)*0.5;
 end;
 
 function GDBObjDiametricDimension.GetRadius:double;
 begin
-  Result:=Vertexlength(DimData.P15InWCS,DimData.P10InWCS)/2;
+  Result:=DimData.P15InWCS.LengthTo(DimData.P10InWCS)/2;
 end;
 
 procedure GDBObjDiametricDimension.FormatEntity(var drawing:TDrawingDef;
@@ -271,8 +270,8 @@ end;
 
 procedure GDBObjDiametricDimension.CalcTextInside;
 begin
-  if SqrVertexlength(DimData.P15InWCS,DimData.P10InWCS)>
-     SqrVertexlength(DimData.P10InWCS,DimData.P11InOCS) then
+  if DimData.P15InWCS.SqrLengthTo(DimData.P10InWCS)>
+     DimData.P10InWCS.SqrLengthTo(DimData.P11InOCS) then
     TextInside:=True
   else
     TextInside:=False;

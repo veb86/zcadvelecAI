@@ -140,7 +140,7 @@ function isPointInAreaLine(linePt1,linePt2,vertexPt:TzePoint3d;accuracy:double):
 //** ptdev-точка поиска
 //** insertDev - мировая точка вставленного блока
 //** scale - масштаб блока
-function getRealPointDevice(ptdev,insertDev,scale:TzePoint3d):TzePoint3d;
+function getRealPointDevice(ptdev,insertDev:TzePoint3d;scale:TzeVector3d):TzePoint3d;
 
 implementation
 
@@ -148,7 +148,7 @@ implementation
   //** ptdev-точка поиска
   //** insertDev - мировая точка вставленного блока
   //**scale - масштаб блока
-  function getRealPointDevice(ptdev,insertDev,scale:TzePoint3d):TzePoint3d;
+  function getRealPointDevice(ptdev,insertDev:TzePoint3d;scale:TzeVector3d):TzePoint3d;
   begin
        result.x:=(ptdev.x * scale.x) + insertDev.x;
        zcUI.TextMessage('result-х = ' + FloatToStr(result.x),TMWOHistoryOut);
@@ -267,11 +267,11 @@ end;
   begin
 
       result:=false;
-       xyline:=uzegeometry.Vertexlength(linePt1,linePt2) ;
+       xyline:=linePt1.LengthTo(linePt2);
        tempVertex.x:=linePt2.x;
        tempVertex.y:=linePt1.y;
        tempVertex.z:=0;
-       xline:=uzegeometry.Vertexlength(linePt1,tempVertex);
+       xline:=linePt1.LengthTo(tempVertex);
 
        anglePerpendCos:=xline/xyline;
 
@@ -448,7 +448,7 @@ begin
 
      //получаем центр между двумя точками
      centerPt:=uzegeometry.Vertexmorph(pt1new,pt2new,0.5);
-     centerline:=uzegeometry.Vertexlength(pline11,centerPt);
+     centerline:=pline11.LengthTo(centerPt);
 
 
      //result:=offsetOfFirstPointInSecondPointToLine(pt1new,pt2new,xlinenew2,ylinenew2);

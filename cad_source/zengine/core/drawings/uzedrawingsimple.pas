@@ -353,7 +353,7 @@ begin
   ConstructObjRoot.ObjArray.free;
   ConstructObjRoot.ObjCasheArray.Clear;
   //ConstructObjRoot.ObjToConnectedArray.Clear;
-  ConstructObjRoot.ObjMatrix:=onematrix;
+  ConstructObjRoot.ObjMatrix:=cOneMatrix;
 end;
 
 function TSimpleDrawing.GetMouseEditorMode:Byte;
@@ -542,7 +542,7 @@ begin
                if PSelectedObjDesc(md).objaddr^.IsHaveLCS then
                begin
                m2:=PGDBObjWithLocalCS(PSelectedObjDesc(md).objaddr)^.CalcObjMatrixWithoutOwner;
-               //PzePoint3d(@m)^:=uzegeometry.NulVertex;
+               //PzePoint3d(@m)^:=uzegeometry.cV3d__0__0__0;
                MatrixInvert(m2);
                t:=VectorTransform3D({dist}t,m2);
 
@@ -598,7 +598,7 @@ begin
                                                                         begin
                                                                              comit;
                                                                              rtmod.wc:=rtmod.point.worldcoord;
-                                                                             rtmod.dist:=nulvertex;
+                                                                             rtmod.dist:=cV3d__0__0__0;
                                                                              StoreUndoData(rtmod);
                                                                         end;}
                                                                         {obj^.rtmodifyonepoint(rtmod);

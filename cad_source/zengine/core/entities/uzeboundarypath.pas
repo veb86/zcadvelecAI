@@ -173,7 +173,7 @@ function TBoundaryPath.LoadFromDXF(var rdr:TZMemReader;DXFCode:integer;var conte
     d:=p2-p1;
     l:=d.Length;
     h:=l*bulge/2;
-    pc:=(p1+p2)/2;
+    pc:=(p1+p2.asVector)/2;
     n:=d.Turned90L;
     {n.x:=-d.y;
     n.y:=d.x;}
@@ -319,7 +319,8 @@ function TBoundaryPath.LoadFromDXF(var rdr:TZMemReader;DXFCode:integer;var conte
         if dxfLoadGroupCodeFloat(rdr,42,currDXFGroupCode,PCurrCP^.w) then
           currDXFGroupCode:=rdr.ParseInteger;
         if PPrevCP<>nil then begin
-          L:=vertexlen2df(PPrevCP^.x,PPrevCP^.y,PCurrCP^.x,PCurrCP^.y);
+          //L:=vertexlen2df(PPrevCP^.x,PPrevCP^.y,PCurrCP^.x,PCurrCP^.y);
+          L:=(PPrevCP^-PCurrCP^).Length;
           if L>currL then
             currL:=L;
         end;
@@ -327,8 +328,8 @@ function TBoundaryPath.LoadFromDXF(var rdr:TZMemReader;DXFCode:integer;var conte
         Inc(PCurrCP);
       end;
     end;
-    startTg:=NulVertex2D;
-    endTg:=NulVertex2D;
+    startTg:=cP2d__0__0;
+    endTg:=cP2d__0__0;
     if dxfLoadGroupCodeDouble(rdr,12,currDXFGroupCode,startTg.x) then
       currDXFGroupCode:=rdr.ParseInteger;
     if dxfLoadGroupCodeDouble(rdr,22,currDXFGroupCode,startTg.y) then
@@ -382,7 +383,7 @@ function TBoundaryPath.LoadFromDXF(var rdr:TZMemReader;DXFCode:integer;var conte
     end;
     for k:=1 to 16 do begin
       SinCos(sa+k/16*a,p.y,p.x);
-      p:=cp+p*r;
+      p:=cp+(p*r).asVector;
       currpath.PushBackData(p);
     end;
   end;

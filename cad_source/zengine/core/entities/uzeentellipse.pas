@@ -37,7 +37,7 @@ type
 
   GDBObjEllipse=object(GDBObjPlain)
     RR:double;
-    MajorAxis:TzePoint3d;
+    MajorAxis:TzeVector3d;
     Ratio:double;
     StartAngle:double;
     EndAngle:double;
@@ -46,7 +46,7 @@ type
     length:double;
     q0,q1,q2:TzePoint3d;
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
-      LW:smallint;p:TzePoint3d;{RR,}S,E:double;majaxis:TzePoint3d);
+      LW:smallint;p:TzePoint3d;S,E:double;majaxis:TzeVector3d);
     constructor initnul;
     procedure LoadFromDXF(var rdr:TZMemReader;ptu:PExtensionData;
       var drawing:TDrawingDef;var context:TIODXFLoadContext);virtual;
@@ -96,7 +96,7 @@ var
 begin
   objmatrix:=uzegeometry.MatrixMultiply(PGDBObjWithLocalCS(p)^.objmatrix,t_matrix^);
   tv:=t_matrix.mtr.v[3];
-  t_matrix.mtr.v[3]:=NulVertex4D;
+  t_matrix.mtr.v[3]:=cV4d__0__0__0__1;
   MajorAxis:=VectorTransform3D(PGDBObjEllipse(p)^.MajorAxis,t_matrix^);
   t_matrix.mtr.v[3]:=tv;
   ReCalcFromObjMatrix;
@@ -108,7 +108,7 @@ var
 begin
   inherited;
   mtr:=t_matrix;
-  mtr.mtr.v[3]:=NulVertex4D;
+  mtr.mtr.v[3]:=cV4d__0__0__0__1;
   MajorAxis:=VectorTransform3D(MajorAxis,mtr);
   ReCalcFromObjMatrix;
 end;
@@ -123,14 +123,14 @@ function GDBObjEllipse.CalcObjMatrixWithoutOwner;
 var
   rotmatr,dispmatr:TzeTypedMatrix4d;
 begin
-  Local.basis.ox:=MajorAxis.asVector3d;
+  Local.basis.ox:=MajorAxis;
   Local.basis.oy:=VectorDot(Local.basis.oz,Local.basis.ox);
 
-  Local.basis.ox:=NormalizeVertex(Local.basis.ox);
-  Local.basis.oy:=NormalizeVertex(Local.basis.oy);
-  Local.basis.oz:=NormalizeVertex(Local.basis.oz);
+  Local.basis.ox.Normalize;//:=NormalizeVertex(Local.basis.ox);
+  Local.basis.oy.Normalize;//:=NormalizeVertex(Local.basis.oy);
+  Local.basis.oz.Normalize;//:=NormalizeVertex(Local.basis.oz);
   rotmatr:=CreateMatrixFromBasis(Local.basis.ox,Local.basis.oy,Local.basis.oz);
-  dispmatr:=CreateTranslationMatrix(Local.p_insert);
+  dispmatr:=CreateTranslationMatrix(Local.p_insert.asVector);
 
   Result:=MatrixMultiply({dispmatr,}rotmatr,dispmatr);
 end;
@@ -185,7 +185,7 @@ constructor GDBObjEllipse.initnul;
 begin
   startangle:=0;
   endangle:=2*pi;
-  majoraxis:=onevertex;
+  majoraxis:=cV3d__1__1__1;
   inherited initnul(nil);
   Vertex3D_in_WCS_Array.init(4);
 end;
@@ -212,10 +212,10 @@ var
   l:double;
 begin
   inherited CalcObjMatrix;
-  l:=onevertexlength(majoraxis.asVector3d);
+  l:=onevertexlength(majoraxis);
   m1:=CreateScaleMatrix(l,ratio*l,1);
   objmatrix:=matrixmultiply(m1,objmatrix);
-  v.Slice.Slice:=local.p_insert.Slice.asVector2d;
+  v.Slice.Slice:=local.p_insert.Slice.asVector;
   v.z:=0;
   v.w:=1;
   m1:=objMatrix;
@@ -232,9 +232,9 @@ begin
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
 
   if self.Ratio<=1 then
-    rr:=uzegeometry.oneVertexlength(majoraxis.asVector3d)
+    rr:=uzegeometry.oneVertexlength(majoraxis)
   else
-    rr:=uzegeometry.oneVertexlength(majoraxis.asVector3d)*ratio;
+    rr:=uzegeometry.oneVertexlength(majoraxis)*ratio;
 
   calcObjMatrix;
   angle:=endangle-startangle;
@@ -392,15 +392,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=q0;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_midle then begin
     pdesc.worldcoord:=q1;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=q2;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 

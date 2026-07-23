@@ -141,12 +141,12 @@ end;
 procedure GDBObjElLeader.transform;
 var tv:TzeVector4d;
 begin
-  tv.Slice:=MainLine.CoordInOCS.lbegin.asVector3d;
+  tv.Slice:=MainLine.CoordInOCS.lbegin.asVector;
   tv.CutOff:=1;
   tv:=vectortransform(tv,t_matrix);
   MainLine.CoordInOCS.lbegin:=tv.Slice.asPoint3d;
 
-  tv.Slice:=MainLine.CoordInOCS.lend.asVector3d;
+  tv.Slice:=MainLine.CoordInOCS.lend.asVector;
   tv.CutOff:=1;
   tv:=vectortransform(tv,t_matrix);
   MainLine.CoordInOCS.lend:=tv.Slice.asPoint3d;
@@ -245,7 +245,7 @@ begin
          //pvc^.bp.ListPos.Owner:=@gdbtrash;
          p:=pv^.bp.ListPos.Owner;
          pv^.bp.ListPos.Owner:=@gdbtrash;
-         self.ObjMatrix:=onematrix;
+         self.ObjMatrix:=cOneMatrix;
          if pvc^.IsHaveLCS then
                                pvc^.Formatentity(drawing,dc);
          pvc^.transform(m4);
@@ -554,36 +554,36 @@ begin
   if {(pdev=nil)and}(pcable<>nil) then begin
     tv:=uzegeometry.vectordot(mainline.CoordInWCS.lEnd-mainline.CoordInWCS.lBegin,Local.basis.OZ).asPoint3d;
     tv.Normalize;
-    tv:=uzegeometry.VertexMulOnSc(tv,scale);
+    tv:={uzegeometry.VertexMulOnSc}(tv*scale);
 
     if pcable<>nil then begin
       tv2:=GetDirInPoint(pcable^.VertexArrayInWCS,
         mainline.CoordInWCS.lBegin,False);
       //tv3:=uzegeometry.vectordot(tv2,VertexSub(mainline.CoordInWCS.lEnd,mainline.CoordInWCS.lBegin));
-      if {tv3.z}scalardot(tv2.asVector3d,mainline.CoordInWCS.lEnd-mainline.CoordInWCS.lBegin)>0 then
-        tv2:=uzegeometry.vectordot(tv2.asVector3d,Local.basis.OZ).asPoint3d
+      if {tv3.z}scalardot(tv2.asVector,mainline.CoordInWCS.lEnd-mainline.CoordInWCS.lBegin)>0 then
+        tv2:=uzegeometry.vectordot(tv2.asVector,Local.basis.OZ).asPoint3d
       else
-        tv2:=uzegeometry.vectordot(Local.basis.OZ,tv2.asVector3d).asPoint3d;
+        tv2:=uzegeometry.vectordot(Local.basis.OZ,tv2.asVector).asPoint3d;
       //tv2:=uzegeometry.vectordot(tv2,Local.OZ);
       tv2.Normalize;
-      tv2:=uzegeometry.VertexMulOnSc(tv2,scale);
+      tv2:={uzegeometry.VertexMulOnSc}(tv2*scale);
 
-      tv:=tv2+tv;
+      tv:=tv2+tv.asVector;
       tv.Normalize;
-      tv:=uzegeometry.VertexMulOnSc(tv,scale);
+      tv:={uzegeometry.VertexMulOnSc}(tv*scale);
 
       //tv:=tv2;
     end;
 
   end else
-    tv:=NulPoint;
+    tv:=cP3d__0__0__0;
   //MarkLine.done;
   //MarkLine.init(@self,vp.Layer,vp.LineWeight,VertexSub(MainLine.CoordInOCS.lBegin,tv),VertexAdd(MainLine.CoordInOCS.lBegin,tv));
   CopyVPto(MarkLine);
   //MarkLine.vp.Layer:=vp.Layer;
   //MarkLine.vp.LineWeight:=vp.LineWeight;
   MarkLine.CoordInOCS.lBegin:=(MainLine.CoordInOCS.lBegin-tv).asPoint3d;
-  MarkLine.CoordInOCS.lEnd:=MainLine.CoordInOCS.lBegin+tv;
+  MarkLine.CoordInOCS.lEnd:=MainLine.CoordInOCS.lBegin+tv.asVector;
 
   MarkLine.FormatEntity(drawing,dc);
 
@@ -898,12 +898,12 @@ begin
      ShowTable:=true;
      ShowHeader:=true;
      //vp.ID:=GDBElLeaderID;
-     MainLine.init(@self,vp.Layer,vp.LineWeight,uzegeometry.VertexMulOnSc(onevertex,-10),NulPoint);
+     MainLine.init(@self,vp.Layer,vp.LineWeight,{uzegeometry.VertexMulOnSc}(cP3d__1__1__1*-10),cP3d__0__0__0);
      //MainLine.Format;
      tv:=vectordot(mainline.CoordInWCS.lEnd-mainline.CoordInWCS.lBegin,Local.basis.OZ).asPoint3d;
-     if not IsVectorNul(tv.asVector3d) then
+     if not IsVectorNul(tv.asVector) then
        tv.Normalize;
-     MarkLine.init(@self,vp.Layer,vp.LineWeight,(MainLine.CoordInOCS.lBegin-tv).asPoint3d,MainLine.CoordInOCS.lBegin+tv);
+     MarkLine.init(@self,vp.Layer,vp.LineWeight,(MainLine.CoordInOCS.lBegin-tv).asPoint3d,MainLine.CoordInOCS.lBegin+tv.asVector);
      //MarkLine.Format;
 
      tbl.initnul;

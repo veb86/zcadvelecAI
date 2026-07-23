@@ -301,49 +301,49 @@ begin
 
   PointOfRayPlaneIntersect(param.md.mouseray.lbegin+PDWG.Getpcamera^.CamCSOffset,param.md.mouseray.dir.asPoint3d,tempplane,mvertex);
   plx:=PlaneFrom3Pont(sv1,param.md.mouse3dcoord+PDWG.Getpcamera^.CamCSOffset,
-                      param.md.mouse3dcoord+xWCS.asPoint3d+PDWG.Getpcamera^.CamCSOffset);
+                      param.md.mouse3dcoord+cV3d__1__0__0+PDWG.Getpcamera^.CamCSOffset);
   //if assigned(sysvar.DISP.DISP_ColorAxis)then
   if sysvarDISPColorAxis then dc.drawer.SetColor(255, 0, 0,255);
   tv1:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[0],plx,Tempplane);
   tv2:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[1],plx,Tempplane);
   dvertex:=uzegeometry.VertexSub(tv2,tv1);
-  dvertex:=uzegeometry.VertexMulOnSc(dvertex,SysVarDISPCrosshairSize);
+  dvertex:={uzegeometry.VertexMulOnSc}(dvertex*SysVarDISPCrosshairSize);
   tv1:=VertexSub(mvertex,dvertex);
-  tv2:=mvertex+dvertex;
+  tv2:=mvertex+dvertex.asVector;
   dc.drawer.DrawLine3DInModelSpace(tv1,tv2,dc.DrawingContext.matrixs);
 
   ply:=PlaneFrom3Pont(sv1,param.md.mouse3dcoord+PDWG.Getpcamera^.CamCSOffset,
-                      param.md.mouse3dcoord+yWCS.asPoint3d+PDWG.Getpcamera^.CamCSOffset);
+                      param.md.mouse3dcoord+cV3d__0__1__0+PDWG.Getpcamera^.CamCSOffset);
   //if assigned(sysvar.DISP.DISP_ColorAxis)then
   if sysvarDISPColorAxis then dc.drawer.SetColor(0, 255, 0,255);
   tv1:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[2],ply,Tempplane);
   tv2:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[3],ply,Tempplane);
   dvertex:=uzegeometry.VertexSub(tv2,tv1);
-  dvertex:=uzegeometry.VertexMulOnSc(dvertex,SysVarDISPCrosshairSize*{gdb.GetCurrentDWG.OGLwindow1.}getviewcontrol.ClientWidth/{gdb.GetCurrentDWG.OGLwindow1.}getviewcontrol.ClientHeight);
+  dvertex:={uzegeometry.VertexMulOnSc}(dvertex*(SysVarDISPCrosshairSize*getviewcontrol.ClientWidth/getviewcontrol.ClientHeight));
   tv1:=VertexSub(mvertex,dvertex);
-  tv2:=mvertex+dvertex;
+  tv2:=mvertex+dvertex.asVector;
   dc.drawer.DrawLine3DInModelSpace(tv1,tv2,dc.DrawingContext.matrixs);
 
   //if assigned(sysvar.DISP.DISP_DrawZAxis)then
   if sysvarDISPDrawZAxis then
   begin
   plz:=PlaneFrom3Pont(sv1,param.md.mouse3dcoord+PDWG.Getpcamera^.CamCSOffset,
-                      param.md.mouse3dcoord+zWCS.asPoint3d+PDWG.Getpcamera^.CamCSOffset);
+                      param.md.mouse3dcoord+cV3d__0__0__1+PDWG.Getpcamera^.CamCSOffset);
   //if assigned(sysvar.DISP.DISP_ColorAxis)then
   if sysvarDISPColorAxis then dc.drawer.SetColor(0, 0, 255,255);
   tv1:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[0],plz,Tempplane);
   tv2:=PointOf3PlaneIntersect(PDWG.Getpcamera.frustumLCS.v[1],plz,Tempplane);
   dvertex:=uzegeometry.VertexSub(tv2,tv1);
-  dvertex:=uzegeometry.VertexMulOnSc(dvertex,SysVarDISPCrosshairSize);
+  dvertex:={uzegeometry.VertexMulOnSc}(dvertex*SysVarDISPCrosshairSize);
   tv1:=VertexSub(mvertex,dvertex);
-  tv2:=mvertex+dvertex;
+  tv2:=mvertex+dvertex.asVector;
   dc.drawer.DrawLine3DInModelSpace(tv1,tv2,dc.DrawingContext.matrixs);
   end;
   end;
   dc.drawer.SetColor(palette[ForeGroundColorIndex].RGB);
   //dc.drawer.SetColor(255, 255, 255,255);
-  d1:=param.md.mouseray.lbegin+param.md.mouseray.lend;
-  d1:=uzegeometry.VertexMulOnSc(d1,0.5);
+  d1:=param.md.mouseray.lbegin+param.md.mouseray.lend.asVector;
+  d1:={uzegeometry.VertexMulOnSc}(d1*0.5);
 
 
   dc.drawer.startrender(TRM_DisplaySpace,dc.DrawingContext.matrixs);
@@ -499,17 +499,17 @@ begin
  //LCS.NotUseLCS:=_NotUseLCS;
   //oglsm.myglMatrixMode(GL_PROJECTION);
   //glLoadIdentity;
-  //gdb.GetCurrentDWG.pcamera^.projMatrix:=onematrix;
+  //gdb.GetCurrentDWG.pcamera^.projMatrix:=cOneMatrix;
   if PDWG<>nil then
   begin
 {    if wa.param.projtype = Projparalel then
   begin
     gdb.GetCurrentDWG.pcamera^.projMatrix:=ortho(-clientwidth * wa.param.zoom / 2, clientwidth * wa.param.zoom / 2,
             -clientheight * wa.param.zoom / 2, clientheight * wa.param.zoom / 2,
-             gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@onematrix);
+             gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@cOneMatrix);
   end;
   if wa.param.projtype = Projperspective then
-    gdb.GetCurrentDWG.pcamera^.projMatrix:=Perspective(gdb.GetCurrentDWG.pcamera^.fovy, Width / Height, gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@onematrix);
+    gdb.GetCurrentDWG.pcamera^.projMatrix:=Perspective(gdb.GetCurrentDWG.pcamera^.fovy, Width / Height, gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@cOneMatrix);
     glLoadMatrixD(@gdb.GetCurrentDWG.pcamera^.projMatrix);
    glulookat(-gdb.GetCurrentDWG.pcamera^.point.x, -gdb.GetCurrentDWG.pcamera^.point.y, -gdb.GetCurrentDWG.pcamera^.point.z,
              -gdb.GetCurrentDWG.pcamera^.point.x + gdb.GetCurrentDWG.pcamera^.look.x,
@@ -585,7 +585,7 @@ begin
     dc.drawer.SetColor(0, 0, 255,255);
     dc.drawer.DrawLine3DInModelSpace(param.CSIcon.CSIconCoord,param.CSIcon.CSIconZ,dc.DrawingContext.matrixs);
 
-    if IsVectorNul(vectordot(pdwg.GetPcamera.prop.look,ZWCS)) then begin
+    if IsVectorNul(vectordot(pdwg.GetPcamera.prop.look,cV3d__0__0__1)) then begin
         dc.drawer.SetColor(255, 255, 255,255);
         dc.drawer.DrawLine3DInModelSpace(createvertex(param.CSIcon.CSIconCoord.x + td2, param.CSIcon.CSIconCoord.y , param.CSIcon.CSIconCoord.z),createvertex(param.CSIcon.CSIconCoord.x + td2, param.CSIcon.CSIconCoord.y+ td2 , param.CSIcon.CSIconCoord.z),dc.DrawingContext.matrixs);
         dc.drawer.DrawLine3DInModelSpace(createvertex(param.CSIcon.CSIconCoord.x + td2, param.CSIcon.CSIconCoord.y+ td2 , param.CSIcon.CSIconCoord.z),createvertex(param.CSIcon.CSIconCoord.x, param.CSIcon.CSIconCoord.y+ td2 , param.CSIcon.CSIconCoord.z),dc.DrawingContext.matrixs);
@@ -1137,10 +1137,10 @@ procedure TGeneralViewArea.ZoomToVolume(Volume:TBoundingBox);
 
     CalcOptimalMatrix;
 
-    dcsLBN:=InfinityVertex;
-    dcsRTF:=MinusInfinityVertex;
-    wcsLBN:=InfinityVertex;
-    wcsRTF:=MinusInfinityVertex;
+    dcsLBN:=cP3d_Inf_nf_Inf;
+    dcsRTF:=cP3d_mInf_mnf_mInf;
+    wcsLBN:=cP3d_Inf_nf_Inf;
+    wcsRTF:=cP3d_mInf_mnf_mInf;
     {tp:=}ProjectPoint(Volume.LBN.x,Volume.LBN.y,Volume.LBN.Z,wcsLBN,wcsRTF,dcsLBN,dcsRTF);
     {tp:=}ProjectPoint(Volume.RTF.x,Volume.LBN.y,Volume.LBN.Z,wcsLBN,wcsRTF,dcsLBN,dcsRTF);
     {tp:=}ProjectPoint(Volume.RTF.x,Volume.RTF.y,Volume.LBN.Z,wcsLBN,wcsRTF,dcsLBN,dcsRTF);
@@ -1180,7 +1180,7 @@ procedure TGeneralViewArea.ZoomToVolume(Volume:TBoundingBox);
                                                                            exit;
                                                                       end;
     //без этого разделения камера уползает по Z
-    if IsPointEqual(pdwg.Getpcamera^.prop.look.asPoint3d,xy_MinusZ_Vertex) then
+    if IsPointEqual(pdwg.Getpcamera^.prop.look.asPoint3d,cP3d__0__0_m1) then
       //добавоено чтоб не уполжала камера
       target:=createvertex(-(wcsLBN.x+(wcsRTF.x-wcsLBN.x)/2),-(wcsLBN.y+(wcsRTF.y-wcsLBN.y)/2),pdwg.Getpcamera^.prop.point.z)
     else
@@ -1196,7 +1196,7 @@ procedure TGeneralViewArea.ZoomToVolume(Volume:TBoundingBox);
     pucommand:=PDWG^.StoreOldCamerapPos;
     if sysvarRDEnableAnimation then begin
       for i:=1 to steps do begin
-        SetCameraPosZoom(camerapos+uzegeometry.VertexMulOnSc(target,i/steps),PDWG.Getpcamera^.prop.zoom+tzoom{*i}/steps,i=steps);
+        SetCameraPosZoom(camerapos+(target*(i/steps)).asVector,PDWG.Getpcamera^.prop.zoom+tzoom{*i}/steps,i=steps);
         if (sysvarRDLastRenderTime<30)and(i<>steps) then
           sleep(30-sysvarRDLastRenderTime);
       end;
@@ -1205,7 +1205,7 @@ procedure TGeneralViewArea.ZoomToVolume(Volume:TBoundingBox);
       draw;
       doCameraChanged;
     end else begin
-      SetCameraPosZoom(camerapos+target,PDWG.Getpcamera^.prop.zoom+tzoom,true);
+      SetCameraPosZoom(camerapos+target.asVector,PDWG.Getpcamera^.prop.zoom+tzoom,true);
       PDWG^.StoreNewCamerapPos(pucommand);
       calcgrid;
       draw;
@@ -1890,12 +1890,12 @@ begin
                              begin
                                   param.md.mouseray.lbegin:=tv1;
                                   param.md.mouseray.lend:=tv2;
-                                  param.md.mouseray.dir:=vertexsub(tv2,tv1).asVector3d;
+                                  param.md.mouseray.dir:=vertexsub(tv2,tv1).asVector;
                              end;
      end
      else
      begin
-         d:=VertexSub(param.ospoint.worldcoord,pdwg.getpcamera^.prop.point).asVector3d;
+         d:=VertexSub(param.ospoint.worldcoord,pdwg.getpcamera^.prop.point).asVector;
          //d:=gdb.GetCurrentDWG.pcamera^.prop.look;
          b1:=PointOfRayPlaneIntersect(param.ospoint.worldcoord,d.asPoint3d,pdwg.getpcamera^.frustum.v[4],tv1);
          b2:=PointOfRayPlaneIntersect(param.ospoint.worldcoord,d.asPoint3d,pdwg.getpcamera^.frustum.v[5],tv2);
@@ -1903,7 +1903,7 @@ begin
                             begin
                                  param.md.mouseray.lbegin:=tv1;
                                  param.md.mouseray.lend:=tv2;
-                                 param.md.mouseray.dir:=vertexsub(tv2,tv1).asVector3d;
+                                 param.md.mouseray.dir:=vertexsub(tv2,tv1).asVector;
                             end;
          pdwg^.myGluUnProject(createvertex(param.ospoint.dispcoord.x, param.ospoint.dispcoord.y, 0),param.md.mouseray.lbegin);
          pdwg^.myGluUnProject(createvertex(param.ospoint.dispcoord.x, param.ospoint.dispcoord.y, 1),param.md.mouseray.lend);
@@ -2252,13 +2252,13 @@ begin
   tm:=lookat(param.md.mouseray.lbegin,
              gdb.GetCurrentDWG.pcamera^.xdir,
              gdb.GetCurrentDWG.pcamera^.ydir,
-             normalizevertex(param.md.mouseray.dir),@onematrix);
+             normalizevertex(param.md.mouseray.dir),@cOneMatrix);
   if param.projtype = ProjParalel then
                                       begin
 
                                       param.mouseclipmatrix:=ortho(-sysvar.DISP.DISP_CursorSize^*param.zoom*2,sysvar.DISP.DISP_CursorSize^*param.zoom*2,
                                                                    -sysvar.DISP.DISP_CursorSize^*param.zoom*2,sysvar.DISP.DISP_CursorSize^*param.zoom*2,
-                                                                   gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@onematrix);
+                                                                   gdb.GetCurrentDWG.pcamera^.zmin, gdb.GetCurrentDWG.pcamera^.zmax,@cOneMatrix);
                                       param.mouseclipmatrix:=MatrixMultiply(tm,param.mouseclipmatrix);
                                       param.mousefrustum:=calcfrustum(@param.mouseclipmatrix);
                                       end;
@@ -2342,7 +2342,7 @@ begin
   Pcamera^.modelMatrix:=lookat(Pcamera^.prop.point,
                                                Pcamera^.prop.xdir,
                                                Pcamera^.prop.ydir,
-                                               Pcamera^.prop.look,@onematrix);
+                                               Pcamera^.prop.look,@cOneMatrix);
   //glGetDoublev(GL_MODELVIEW_MATRIX, @pdwg.pcamera^.modelMatrix);
 
   {pdwg.pcamera^.modelMatrix[0][0]:=pdwg.pcamera^.modelMatrix[0][0]/1e5;
@@ -2355,8 +2355,8 @@ begin
 
   pdwg.pcamera^.modelMatrix[3][3]:=pdwg.pcamera^.modelMatrix[3][3]*1e5;}
 
-  ccsLBN:=InfinityVertex;
-  ccsRTF:=MinusInfinityVertex;
+  ccsLBN:=cP3d_Inf_nf_Inf;
+  ccsRTF:=cP3d_mInf_mnf_mInf;
   {ProjectPoint2(proot.vp.BoundingBox.LBN.x,proot.vp.BoundingBox.LBN.y,proot.vp.BoundingBox.LBN.Z,pdwg.pcamera^.modelMatrix,ccsLBN,ccsRTF);
   ProjectPoint2(proot.vp.BoundingBox.RTF.x,proot.vp.BoundingBox.LBN.y,proot.vp.BoundingBox.LBN.Z,pdwg.pcamera^.modelMatrix,ccsLBN,ccsRTF);
   ProjectPoint2(proot.vp.BoundingBox.RTF.x,proot.vp.BoundingBox.RTF.y,proot.vp.BoundingBox.LBN.Z,pdwg.pcamera^.modelMatrix,ccsLBN,ccsRTF);
@@ -2379,8 +2379,8 @@ begin
 
   if IsBBNul(tbb) then
   begin
-       {tbb.LBN:=uzegeometry.VertexAdd(pdwg.tpcamera^.prop.point,MinusOneVertex);
-       tbb.RTF:=uzegeometry.VertexAdd(pdwg.tpcamera^.prop.point,OneVertex);}
+       {tbb.LBN:=uzegeometry.VertexAdd(pdwg.tpcamera^.prop.point,cV3d_m1_m1_m1);
+       tbb.RTF:=uzegeometry.VertexAdd(pdwg.tpcamera^.prop.point,cP3d__1__1__1);}
        concatBBandPoint(tbb,param.CSIcon.CSIconCoord);
        concatBBandPoint(tbb,param.CSIcon.CSIconX);
        concatBBandPoint(tbb,param.CSIcon.CSIconY);
@@ -2404,8 +2404,8 @@ begin
 
   if IsBBNul(tbb) then
   begin
-       tbb.LBN:=pcamera^.prop.point+MinusOneVertex;
-       tbb.RTF:=pcamera^.prop.point+OneVertex;
+       tbb.LBN:=pcamera^.prop.point-cV3d__1__1__1;
+       tbb.RTF:=pcamera^.prop.point+cV3d__1__1__1;
   end;
 
   //if param.CSIcon.AxisLen>eps then
@@ -2467,11 +2467,11 @@ begin
                                       begin
                                       pcamera^.projMatrix:=ortho(-getviewcontrol.clientwidth*pcamera^.prop.zoom/2,getviewcontrol.clientwidth*pcamera^.prop.zoom/2,
                                                                                  -getviewcontrol.clientheight*pcamera^.prop.zoom/2,getviewcontrol.clientheight*pcamera^.prop.zoom/2,
-                                                                                 pcamera^.zmin, pcamera^.zmax,@onematrix);
+                                                                                 pcamera^.zmin, pcamera^.zmax,@cOneMatrix);
                                       end
                                   else
                                       BEGIN
-                                           pcamera^.projMatrix:=Perspective(pcamera^.fovy, getviewcontrol.Width / getviewcontrol.Height, pcamera^.zmin, pcamera^.zmax,@onematrix);
+                                           pcamera^.projMatrix:=Perspective(pcamera^.fovy, getviewcontrol.Width / getviewcontrol.Height, pcamera^.zmin, pcamera^.zmax,@cOneMatrix);
   //glGetDoublev(GL_PROJECTION_MATRIX, @pdwg.pcamera^.projMatrix);
                                       end;
 
@@ -2480,7 +2480,7 @@ begin
 
 
 
-  pcamera^.CamCSOffset:=NulVertex;
+  pcamera^.CamCSOffset:=cV3d__0__0__0;
   pcamera^.CamCSOffset.z:=(pcamera^.zmax+pcamera^.zmin)/2;
   pcamera^.CamCSOffset.z:=(pcamera^.zmin);
 
@@ -2490,16 +2490,16 @@ begin
   pcamera^.CamCSOffset:=pcamera^.prop.point-(pcamera^.prop.look*(pcamera^.zmax+pcamera^.zmin)/2).asPoint3d;
 
   {получение центра виевфрустума}
-  tm:=uzegeometry.CreateTranslationMatrix(NulPoint);
+  tm:=uzegeometry.CreateTranslationMatrix(cV3d__0__0__0);
 
   //pdwg.pcamera^.modelMatrixLCS:=tm;
-  pcamera^.modelMatrixLCS:=lookat(NulPoint,
+  pcamera^.modelMatrixLCS:=lookat(cP3d__0__0__0,
                                                pcamera^.prop.xdir,
                                                pcamera^.prop.ydir,
-                                               pcamera^.prop.look,{@tm}@onematrix);
+                                               pcamera^.prop.look,{@tm}@cOneMatrix);
   pcamera^.modelMatrixLCS:=uzegeometry.MatrixMultiply(tm,pcamera^.modelMatrixLCS);
-  ccsLBN:=InfinityVertex;
-  ccsRTF:=MinusInfinityVertex;
+  ccsLBN:=cP3d_Inf_nf_Inf;
+  ccsRTF:=cP3d_mInf_mnf_mInf;
   tbb:=proot.InFrustumAABB;
   if IsBBNul(tbb) then
   begin
@@ -2535,9 +2535,9 @@ begin
   end
   else
   begin
-       LBN:=uzegeometry.VertexMulOnSc(OneVertex,50);
+       LBN:={uzegeometry.VertexMulOnSc}(cP3d__1__1__1*50);
        //LBN:=vertexadd(LBN,pdwg.pcamera^.CamCSOffset);
-       RTF:=uzegeometry.VertexMulOnSc(OneVertex,100);
+       RTF:={uzegeometry.VertexMulOnSc}(cP3d__1__1__1*100);
        //RTF:=vertexadd(RTF,pdwg.pcamera^.CamCSOffset);
   end;
   ProjectPoint2(LBN.x,LBN.y,LBN.Z,pcamera^.modelMatrixLCS,ccsLBN,ccsRTF);
@@ -2586,16 +2586,16 @@ begin
   pcamera^.zmaxLCS:=pcamera^.zmaxLCS;//+pdwg.pcamera^.CamCSOffset.z;
 
   //glLoadIdentity;
-  //pdwg.pcamera^.projMatrix:=onematrix;
+  //pdwg.pcamera^.projMatrix:=cOneMatrix;
   if param.projtype = ProjParallel then
                                       begin
                                       pcamera^.projMatrixLCS:=ortho(-getviewcontrol.clientwidth*pcamera^.prop.zoom/2,getviewcontrol.clientwidth*pcamera^.prop.zoom/2,
                                                                                  -getviewcontrol.clientheight*pcamera^.prop.zoom/2,getviewcontrol.clientheight*pcamera^.prop.zoom/2,
-                                                                                 pcamera^.zminLCS, pcamera^.zmaxLCS,@onematrix);
+                                                                                 pcamera^.zminLCS, pcamera^.zmaxLCS,@cOneMatrix);
                                       end
                                   else
                                       BEGIN
-                                           pcamera^.projMatrixLCS:=Perspective(pcamera^.fovy, getviewcontrol.Width / getviewcontrol.Height, pcamera^.zminLCS, pcamera^.zmaxLCS,@onematrix);
+                                           pcamera^.projMatrixLCS:=Perspective(pcamera^.fovy, getviewcontrol.Width / getviewcontrol.Height, pcamera^.zminLCS, pcamera^.zmaxLCS,@cOneMatrix);
   //glGetDoublev(GL_PROJECTION_MATRIX, @pdwg.pcamera^.projMatrix);
                                       end;
   if param.projtype = ProjParallel then
@@ -2603,7 +2603,7 @@ begin
                                            //if uzegeometry.oneVertexlength(pcamera^.CamCSOffset)>1000000 then
                                            begin
                                                 LCS.CurrentCamCSOffset:=pcamera^.CamCSOffset.asPoint3d;
-                                                LCS.CurrentCamCSOffsetS:=VertexD2S(LCS.CurrentCamCSOffset);
+                                                LCS.CurrentCamCSOffsetS:={VertexD2S}(LCS.CurrentCamCSOffset.asPoint3s);
                                                 LCS.notuseLCS:=pcamera^.notuseLCS;
                                            end
                                            //else LCS.notuseLCS:=true;
@@ -2617,8 +2617,8 @@ begin
         pcamera^.projMatrixLCS:=pcamera^.projMatrix;
         pcamera^.modelMatrixLCS:=pcamera^.modelMatrix;
         pcamera^.frustumLCS:=pcamera^.frustum;
-        pcamera^.CamCSOffset:=NulVertex;
-        LCS.CurrentCamCSOffset:=NulPoint;
+        pcamera^.CamCSOffset:=cV3d__0__0__0;
+        LCS.CurrentCamCSOffset:=cP3d__0__0__0;
   end;
 
 
@@ -2627,8 +2627,8 @@ begin
         pcamera^.projMatrixLCS:=pcamera^.projMatrix;
         pcamera^.modelMatrixLCS:=pcamera^.modelMatrix;
         pcamera^.frustumLCS:=pcamera^.frustum;
-        pcamera^.CamCSOffset:=NulVertex;
-        LCS.CurrentCamCSOffset:=nulvertex;
+        pcamera^.CamCSOffset:=cV3d__0__0__0;
+        LCS.CurrentCamCSOffset:=cV3d__0__0__0;
   end;}
   LCSSave:=LCS;
   SetOGLMatrix;
@@ -2953,7 +2953,7 @@ begin
           pt.dispraycoord.x:=param.ontrackarray.otrackarray[j].dispcoord.x+pt.tmouse*pt.dir.x;
           pt.dispraycoord.y:=param.ontrackarray.otrackarray[j].dispcoord.y+pt.tmouse*pt.dir.y;
           pt.dispraycoord.z:=0;
-          pt.worldraycoord:=param.ontrackarray.otrackarray[j].worldcoord+t;
+          pt.worldraycoord:=param.ontrackarray.otrackarray[j].worldcoord+t.asVector;
           {pt.worldraycoord.x:=param.ontrackarray.otrackarray[j].worldcoord.x+tx;
           pt.worldraycoord.y:=param.ontrackarray.otrackarray[j].worldcoord.y+ty;
           pt.worldraycoord.z:=param.ontrackarray.otrackarray[j].worldcoord.z+tz;}
@@ -2973,16 +2973,16 @@ begin
             if (pt.dmouse<lastontracdist) then
               if (param.ospoint.ostype=os_blockinsert)or(param.ospoint.ostype=os_insert)or(param.ospoint.ostype=os_textinsert)or
                 (param.ospoint.ostype=os_none)or(param.ospoint.ostype={os_intersection}os_trace) then begin
-                if uzegeometry.vertexlen2df(param.ontrackarray.otrackarray[j].dispcoord.x,
+                if {vertexlen2df(param.ontrackarray.otrackarray[j].dispcoord.x,
                   param.ontrackarray.otrackarray[j].dispcoord.y,param.md.glmouse.x,
-                  param.md.glmouse.y)>ontracignoredist then
+                  param.md.glmouse.y)}(param.ontrackarray.otrackarray[j].dispcoord.Slice-param.md.glmouse).Length>ontracignoredist then
                 begin
                   if param.polarlinetrace=0 then
                     test:=True
                   else
                     test:=False;
                   if not(test) then begin
-                    if not uzegeometry.vertexeq(pt.worldraycoord,param.ospoint.worldcoord) then
+                    if not {vertexeq}IsPointEqual(pt.worldraycoord,param.ospoint.worldcoord,bigeps) then
                       test:=True;
                   end;
                   if test then
@@ -3028,7 +3028,8 @@ begin
                   if ip.isintercept then
                     if not IsPointEqual(ip.interceptcoord,param.ontrackarray.otrackarray[i].worldcoord,bigeps) then begin
                       PDWG.myGluProject2(ip.interceptcoord,temp);
-                      currentontracdist:=vertexlen2df(temp.x,temp.y,param.md.glmouse.x,param.md.glmouse.y);
+                      //currentontracdist:=vertexlen2df(temp.x,temp.y,param.md.glmouse.x,param.md.glmouse.y);
+                      currentontracdist:=(temp.Slice-param.md.glmouse).Length;
                       if currentontracdist<lastontracdist then //if currentontracdist<sysvar.DISP.DISP_CursorSize^*sysvar.DISP.DISP_CursorSize^+1 then
                       begin
                         param.ospoint.worldcoord:=ip.interceptcoord;
@@ -3073,10 +3074,9 @@ begin
                   //ip:=intercept3dmy(createvertex(0,0,0),createvertex(0,2,0),createvertex(-1,1,0),createvertex(1,1,0));
                   begin
                     if ip.isintercept then begin
-                      PDWG.myGluProject2(ip.interceptcoord,
-                        temp);
-
-                      currentontracdist:=vertexlen2df(temp.x,temp.y,param.md.glmouse.x,param.md.glmouse.y);
+                      PDWG.myGluProject2(ip.interceptcoord,temp);
+                      //currentontracdist:=vertexlen2df(temp.x,temp.y,param.md.glmouse.x,param.md.glmouse.y);
+                      currentontracdist:=(temp.Slice-param.md.glmouse).Length;
                       if currentontracdist<lastontracdist then
                         if currentontracdist<sysvarDISPCursorSize*sysvarDISPCursorSize+1 then begin
                           param.ospoint.worldcoord:=ip.interceptcoord;
@@ -3159,7 +3159,7 @@ begin
   pdwg^.myGluUnProject(createvertex(x, y, 0),param.md.mouseray.lbegin);
   pdwg^.myGluUnProject(createvertex(x, y, 1),param.md.mouseray.lend);
 
-  param.md.mouseray.dir:=vertexsub(param.md.mouseray.lend,param.md.mouseray.lbegin).asVector3d;
+  param.md.mouseray.dir:=vertexsub(param.md.mouseray.lend,param.md.mouseray.lbegin).asVector;
   cv:=param.md.workplane.v[0]*param.md.mouseray.dir.x +
       param.md.workplane.v[1]*param.md.mouseray.dir.y +
       param.md.workplane.v[2]*param.md.mouseray.dir.z;
@@ -3241,15 +3241,14 @@ begin
      param.ViewHeight:=cav.y-param.BLPoint.y;
 
 
-     pdwg^.myGluProject2(NulPoint,param.CSIcon.CSIconCoord);
+     pdwg^.myGluProject2(cP3d__0__0__0,param.CSIcon.CSIconCoord);
      param.CSIcon.CS0.x:=param.CSIcon.CSIconCoord.x;
      param.CSIcon.CS0.y:=param.CSIcon.CSIconCoord.y;
 
      if (param.CSIcon.CSIconCoord.x>0)and(param.CSIcon.CSIconCoord.y>0)and(param.CSIcon.CSIconCoord.x<getviewcontrol.clientwidth)and(param.CSIcon.CSIconCoord.y<getviewcontrol.clientheight)
      then
      begin
-          pdwg^.myGluProject2(x_Y_zVertex,
-                                  cav);
+          pdwg^.myGluProject2(cP3d__0__1__0,cav);
 
           cav.x:=param.CSIcon.CSIconCoord.x-cav.x;
           cav.y:=param.CSIcon.CSIconCoord.y-cav.y;
@@ -3299,10 +3298,10 @@ begin
      param.md.WPPointUR:=PointOf3PlaneIntersect(pdwg.getpcamera.frustum.v[3],pdwg.getpcamera.frustum.v[1],param.md.workplane);
      param.md.WPPointRB:=PointOf3PlaneIntersect(pdwg.getpcamera.frustum.v[1],pdwg.getpcamera.frustum.v[2],param.md.workplane);
      param.md.WPPointBL:=PointOf3PlaneIntersect(pdwg.getpcamera.frustum.v[2],pdwg.getpcamera.frustum.v[0],param.md.workplane);
-     l:=Vertexlength(param.md.WPPointLU,param.md.WPPointBL);
-     r:=Vertexlength(param.md.WPPointUR,param.md.WPPointRB);
-     u:=Vertexlength(param.md.WPPointLU,param.md.WPPointUR);
-     b:=Vertexlength(param.md.WPPointRB,param.md.WPPointBL);
+     l:={Vertexlength}param.md.WPPointLU.LengthTo(param.md.WPPointBL);
+     r:={Vertexlength}param.md.WPPointUR.LengthTo(param.md.WPPointRB);
+     u:={Vertexlength}param.md.WPPointLU.LengthTo(param.md.WPPointUR);
+     b:={Vertexlength}param.md.WPPointRB.LengthTo(param.md.WPPointBL);
      if r>l then
                 maxh:=r
             else
@@ -3323,8 +3322,8 @@ begin
                                                           zDebugLn('{WH}'+rsGridTooDensity);
                                                         param.md.WPPointUR.z:=-1;
                                                    end;
-     param.md.WPPointLU:=vertexmulonsc(vertexsub(param.md.WPPointLU,param.md.WPPointBL),1/pv);
-     param.md.WPPointRB:=vertexmulonsc(vertexsub(param.md.WPPointRB,param.md.WPPointBL),1/ph);
+     param.md.WPPointLU:={vertexmulonsc}(vertexsub(param.md.WPPointLU,param.md.WPPointBL)/pv);
+     param.md.WPPointRB:={vertexmulonsc}(vertexsub(param.md.WPPointRB,param.md.WPPointBL)/ph);
 
      param.md.WPPointBL.x:=round((param.md.WPPointBL.x-pdwg^.Snap.Base.x)/pdwg^.GridSpacing.x)*pdwg^.GridSpacing.x+pdwg^.GridSpacing.x+pdwg^.Snap.Base.x;
      param.md.WPPointBL.y:=round((param.md.WPPointBL.y-pdwg^.Snap.Base.y)/pdwg^.GridSpacing.y)*pdwg^.GridSpacing.y-pdwg^.GridSpacing.y+pdwg^.Snap.Base.y;

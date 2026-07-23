@@ -48,7 +48,7 @@ begin
     Exit;
   PObj^.Local.basis.ox := GetXfFromZ(PObj^.Local.basis.oz);
   PObj^.Local.basis.ox := VectorTransform3D(PObj^.Local.basis.ox.asPoint3d,
-    CreateAffineRotationMatrix(PObj^.Local.basis.oz, -Rotation)).asVector3d;
+    CreateAffineRotationMatrix(PObj^.Local.basis.oz, -Rotation)).asVector;
 end;
 
 procedure ApplyAttribText(PObj: PGDBObjText; var DWGContext: TDWGCtx;
@@ -66,7 +66,7 @@ begin
     PObj^.Local.p_insert.y := InsertPoint.y;
   end;
   PObj^.Local.p_insert.z := Elevation;
-  PObj^.P_drawInOCS := NulPoint;
+  PObj^.P_drawInOCS := cP3d__0__0__0;
   PObj^.textprop.size := Height;
   if WidthFactor <> 0 then
     PObj^.textprop.wfactor := WidthFactor

@@ -77,7 +77,7 @@ function GDBObjAlignedDimension.GetDimStr(
   var drawing:TDrawingDef):TDXFEntsInternalStringType;
 begin
   Result:=GetLinearDimStr(abs(
-    scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector3d,vectorD)),drawing);
+    scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector,vectorD)),drawing);
 end;
 
 function CorrectPointLine(const q:TzePoint3d;p1:TzePoint3d;const p2:TzePoint3d;
@@ -89,18 +89,18 @@ begin
   //расстояние от точки до линии
   w:=VertexSub(q,p1);
   l:=VertexSub(p2,p1);
-  llength:=scalardot(l.asVector3d,l.asVector3d);
+  llength:=scalardot(l.asVector,l.asVector);
   if llength<sqreps then begin
     d:=0;
     Result:=p2;
     exit;
   end;
-  dist:=scalardot(w.asVector3d,l.asVector3d)/llength;
+  dist:=scalardot(w.asVector,l.asVector)/llength;
   p1:=Vertexmorph(p1,p2,dist);
-  d:=Vertexlength(q,p1);
+  d:=q.LengthTo(p1);
   if d>eps then begin
     Result:=
-      p2+VertexSub(uzegeometry.Vertexmorphabs2(p1,q,d),p1);
+      p2+(Vertexmorphabs2(p1,q,d)-p1);
   end else
     Result:=p2;
 end;
@@ -112,7 +112,7 @@ var
 begin
   w:=VertexSub(q,p1);
   l:=VertexSub(p2,p1);
-  dist:=scalardot(w.asVector3d,l.asVector3d)/scalardot(l.asVector3d,l.asVector3d);
+  dist:=scalardot(w.asVector,l.asVector)/scalardot(l.asVector,l.asVector);
   Result:=uzegeometry.Vertexmorphabs2(Vertexmorph(p1,p2,dist),q,d);
 end;
 
@@ -122,7 +122,7 @@ var
 begin
   w:=VertexSub(q,p1);
   l:=VertexSub(p2,p1);
-  Result:=scalardot(w.asVector3d,l.asVector3d)/scalardot(l.asVector3d,l.asVector3d);
+  Result:=scalardot(w.asVector,l.asVector)/scalardot(l.asVector,l.asVector);
 end;
 
 function GetTFromDirNormalizedPoint(const q:TzePoint3d;
@@ -131,7 +131,7 @@ var
   w:TzePoint3d;
 begin
   w:=VertexSub(q,p1);
-  Result:=scalardot(w.asVector3d,dirNormalized.asVector3d);
+  Result:=scalardot(w.asVector,dirNormalized.asVector);
 end;
 
 procedure GDBObjAlignedDimension.SaveToDXF;
@@ -152,8 +152,8 @@ end;
 procedure GDBObjAlignedDimension.CalcDefaultPlaceText(dlStart,dlEnd:TzePoint3d;
   var drawing:TDrawingDef);
 begin
-  DimData.P11InOCS:=VertexMulOnSc(dlStart+dlEnd,0.5);
-  DimData.P11InOCS:=DimData.P11InOCS+getTextOffset(drawing);
+  DimData.P11InOCS:=(dlStart+dlEnd.asVector)*0.5;
+  DimData.P11InOCS:=DimData.P11InOCS+getTextOffset(drawing).asVector;
 end;
 
 function GDBObjAlignedDimension.P10ChangeTo(const tv:TzePoint3d):TzePoint3d;
@@ -161,8 +161,8 @@ var
   t,tl:double;
   temp:TzePoint3d;
 begin
-  if uzegeometry.sqrVertexlength(tv,DimData.P14InWCS)>sqreps then begin
-    tl:=scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector3d,vectorD);
+  if tv.SqrLengthTo(DimData.P14InWCS)>sqreps then begin
+    tl:=scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector,vectorD);
     temp:=VertexDmorph(DimData.P13InWCS,self.vectorD.asPoint3d,tl);
     Result:=CorrectPointLine(tv,DimData.P13InWCS,temp,t);
   end else
@@ -182,13 +182,13 @@ begin
   Result:=tv;
   DimData.TextMoved:=True;
   if PDimStyle.Placing.DIMTMOVE=DTMMoveDimLine then begin
-    tl:=scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector3d,vectorD);
+    tl:=scalardot(vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector,vectorD);
     temp:=VertexDmorph(DimData.P13InWCS,self.vectorD.asPoint3d,tl);
 
     t:=GettFromLinePoint(tv,DimData.P13InWCS,temp);
     tvertex:=uzegeometry.Vertexmorph(DimData.P13InWCS,temp,t);
     tvertex:=vertexsub(tv,tvertex);
-    DimData.P10InWCS:=temp+tvertex;
+    DimData.P10InWCS:=temp+tvertex.asVector;
   end;
 end;
 (*
@@ -214,14 +214,14 @@ begin
     tvertex:=
       uzegeometry.Vertexmorph(tv,DimData.P14InWCS,t);
     tvertex:=vertexsub(DimData.P11InOCS,tvertex);
-    DimData.P10InWCS:=DimData.P14InWCS+tvertex;
+    DimData.P10InWCS:=DimData.P14InWCS+tvertex.asVector;
   end else begin
     t:=
-      vertexlength(DimData.P10InWCS,DimData.P14InWCS);
+      DimData.P10InWCS.LengthTo(DimData.P14InWCS);
     dir:=-1;
     if GetCSDirFrom0x0y2D(
-      vertexsub(DimData.P13InWCS,DimData.P14InWCS).asVector3d,vertexsub(
-      DimData.P10InWCS,DimData.P14InWCS).asVector3d)=TCSDRight then begin
+      vertexsub(DimData.P13InWCS,DimData.P14InWCS).asVector,vertexsub(
+      DimData.P10InWCS,DimData.P14InWCS).asVector)=TCSDRight then begin
       t:=-t;
       dir:=-dir;
     end;
@@ -230,15 +230,15 @@ begin
       tvertex:=
         vertexsub(DimData.P14InWCS,tv);
       tvertex:=
-        uzegeometry.vectordot(tvertex.asVector3d,self.Local.Basis.oz).asPoint3d;
+        uzegeometry.vectordot(tvertex.asVector,self.Local.Basis.oz).asPoint3d;
       tvertex:=tvertex.Normalized;
     end
     //else
-    //    tvertex:=uzegeometry.VertexMulOnSc(uzegeometry.x_Y_zVertex,dir);
+    //    tvertex:=uzegeometry.VertexMulOnSc(uzegeometry.cV3d__0__1__0,dir);
 
     ;
-    tvertex:=VertexMulOnSc(tvertex,t);
-    DimData.P10InWCS:=DimData.P14InWCS+tvertex;
+    tvertex:={VertexMulOnSc}(tvertex*t);
+    DimData.P10InWCS:=DimData.P14InWCS+tvertex.asVector;
     DimData.P13InWCS:=tv;
   end;
 end;
@@ -255,28 +255,27 @@ begin
     tvertex:=
       uzegeometry.Vertexmorph(DimData.P13InWCS,tv,t);
     tvertex:=vertexsub(DimData.P11InOCS,tvertex);
-    DimData.P10InWCS:=tv+tvertex;
+    DimData.P10InWCS:=tv+tvertex.asVector;
   end else begin
-    t:=
-      vertexlength(DimData.P10InWCS,DimData.P14InWCS);
+    t:=DimData.P10InWCS.LengthTo(DimData.P14InWCS);
     dir:=-1;
     if GetCSDirFrom0x0y2D(
-      vertexsub(DimData.P13InWCS,DimData.P14InWCS).asVector3d,vertexsub(
-      DimData.P10InWCS,DimData.P14InWCS).asVector3d)=TCSDRight then begin
+      vertexsub(DimData.P13InWCS,DimData.P14InWCS).asVector,vertexsub(
+      DimData.P10InWCS,DimData.P14InWCS).asVector)=TCSDRight then begin
       t:=-t;
       dir:=-dir;
     end;
     begin
       tvertex:=vertexsub(tv,DimData.P13InWCS);
-      tvertex:=uzegeometry.vectordot(tvertex.asVector3d,self.Local.Basis.oz).asPoint3d;
+      tvertex:=uzegeometry.vectordot(tvertex.asVector,self.Local.Basis.oz).asPoint3d;
       tvertex:=tvertex.Normalized;
     end
     //else
-    //tvertex:=uzegeometry.VertexMulOnSc(uzegeometry.x_Y_zVertex,dir);
+    //tvertex:=uzegeometry.VertexMulOnSc(uzegeometry.cV3d__0__1__0,dir);
 
     ;
-    tvertex:=VertexMulOnSc(tvertex,t);
-    DimData.P10InWCS:=tv+tvertex;
+    tvertex:={VertexMulOnSc}(tvertex*t);
+    DimData.P10InWCS:=tv+tvertex.asVector;
     DimData.P14InWCS:=tv;
     //CalcDefaultPlaceText(DimData.P13InWCS,DimData.P14InWCS);
   end;
@@ -363,7 +362,7 @@ begin
   pp.P_insertInOCS:=p1;
   pp.FormatEntity(drawing,dc);
 
-  if vertexeq(p1,p2) then
+  if {vertexeq}IsPointEqual(p1,p2,bigeps) then
     pl:=DrawExtensionLineLinePart(p1,p2,drawing,part)
   else
     pl:=DrawExtensionLineLinePart(
@@ -374,10 +373,10 @@ end;
 
 procedure GDBObjAlignedDimension.CalcDNVectors;
 begin
-  vectorD:=vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector3d;
-  vectorD:=normalizevertex(vectorD);
+  vectorD:=vertexsub(DimData.P14InWCS,DimData.P13InWCS).asVector;
+  vectorD.Normalize;//:=normalizevertex(vectorD);
 
-  if uzegeometry.sqrVertexlength(DimData.P10InWCS,DimData.P14InWCS)>sqreps then begin
+  if DimData.P10InWCS.SqrLengthTo(DimData.P14InWCS)>sqreps then begin
     vectorN:=DimData.P10InWCS-DimData.P14InWCS;
   end else begin
     vectorN.Slice:=vectorD.Slice.Turned90L;
@@ -386,7 +385,7 @@ begin
     vectorN.CutOff:=0;
     {vectorN.z:=0;}
   end;
-  vectorN:=normalizevertex(vectorN);
+  vectorN.Normalize;//:=normalizevertex(vectorN);
 end;
 
 procedure GDBObjAlignedDimension.FormatEntity(var drawing:TDrawingDef;
@@ -407,7 +406,7 @@ begin
   l:=GetTFromDirNormalizedPoint(DimData.P10InWCS,DimData.P13InWCS,vectorN.asPoint3d);
   tv:=VertexDmorph(DimData.P13InWCS,self.vectorN.asPoint3d,l);
   DrawExtensionLine(DimData.P13InWCS,tv,0,drawing,dc,2);
-  DimData.MidPoint:=(tv+DimData.P10InWCS)/2;
+  DimData.MidPoint:=(tv+DimData.P10InWCS.asVector)/2;
 
   CalcTextAngle;
   if not self.DimData.TextMoved then

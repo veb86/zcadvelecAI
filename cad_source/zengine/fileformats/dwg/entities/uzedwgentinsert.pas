@@ -49,17 +49,17 @@ end;
 function DWGNormalOrDefault(const P: TDWGPoint3D): TzePoint3d;
 begin
   Result := DWGPointToVertex(P);
-  if IsVectorNul(Result.asVector3d) then
-    Result := ZWCS.asPoint3d;
+  if IsVectorNul(Result.asVector) then
+    Result := cP3d__0__0__1;
 end;
 
 procedure ApplyInsertTransform(PObj: PGDBObjBlockInsert;
   const Props: TDWGInsertProps);
 begin
   PObj^.Local.p_insert := DWGPointToVertex(Props.InsertPoint);
-  PObj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion).asVector3d;
+  PObj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion).asVector;
 
-  PObj^.scale := DWGPointToVertex(Props.Scale);
+  PObj^.scale := DWGPointToVertex(Props.Scale).asVector;
   if PObj^.scale.x = 0 then
     PObj^.scale.x := 1;
   if PObj^.scale.y = 0 then

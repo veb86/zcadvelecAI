@@ -171,11 +171,11 @@ begin
   rotmatr:=CreateAffineRotationMatrix(PInteractiveData^.Axis,PInteractiveData^.ARefV,v);
 
   if click then begin
-    t_matrix:=CreateTranslationMatrix(-PInteractiveData^.Base);
+    t_matrix:=CreateTranslationMatrix(-PInteractiveData^.Base.asVector);
     t_matrix:=MatrixMultiply(t_matrix,rotmatr);
-    t_matrix:=MatrixMultiply(t_matrix,CreateTranslationMatrix(PInteractiveData^.Base));
+    t_matrix:=MatrixMultiply(t_matrix,CreateTranslationMatrix(PInteractiveData^.Base.asVector));
 
-    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=OneMatrix;
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=cOneMatrix;
     p:=drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.beginiterate(ir);
     if p<>nil then
       repeat
@@ -189,15 +189,15 @@ begin
     else
       tr:=PInteractiveData^.Base+drawings.GetCurrentDWG^.GetPcamera^.CamCSOffset;
 
-    tempmatr:=uzegeometry.CreateTranslationMatrix(-PInteractiveData^.Base);
+    tempmatr:=uzegeometry.CreateTranslationMatrix(-PInteractiveData^.Base.asVector);
     tempmatr:=uzegeometry.MatrixMultiply(tempmatr,rotmatr);
     FrPos.x:=PInteractiveData^.Base.x+tempmatr.mtr.v[3].x;
     FrPos.y:=PInteractiveData^.Base.y+tempmatr.mtr.v[3].y;
     FrPos.z:=PInteractiveData^.Base.z+tempmatr.mtr.v[3].z;
 
-    dispmatr:=uzegeometry.CreateTranslationMatrix(-tr);
+    dispmatr:=uzegeometry.CreateTranslationMatrix((-tr).asVector);
     tmatr:=uzegeometry.MatrixMultiply(dispmatr,rotmatr);
-    dispmatr:=uzegeometry.CreateTranslationMatrix(tr);
+    dispmatr:=uzegeometry.CreateTranslationMatrix(tr.asVector);
     dispmatr:=uzegeometry.MatrixMultiply(tmatr,dispmatr);
 
     drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=dispmatr;
@@ -223,9 +223,9 @@ var
   RC:TDrawContext;
 begin
   if click then begin
-    t_matrix:=CreateTranslationMatrix(Point);
+    t_matrix:=CreateTranslationMatrix(Point.asVector);
     drawings.GetCurrentDWG^.ConstructObjRoot.transform(t_matrix);
-    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=OneMatrix;
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=cOneMatrix;
     p:=drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.beginiterate(ir);
     if p<>nil then
       repeat
@@ -233,7 +233,7 @@ begin
         p:=drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.iterate(ir);
       until p=nil;
   end else begin
-    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=CreateTranslationMatrix(Point);
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=CreateTranslationMatrix(Point.asVector);
     RC:=drawings.GetCurrentDWG^.CreateDrawingRC;
     drawings.GetCurrentDWG^.ConstructObjRoot.FormatEntity(drawings.GetCurrentDWG^,RC);
   end;
@@ -340,12 +340,12 @@ begin
         DimData.P10InWCS,Point)
       of
       1:begin
-        vectorD:=XWCS;
-        vectorN:=YWCS;
+        vectorD:=cV3d__1__0__0;
+        vectorN:=cV3d__0__1__0;
       end;
       2:begin
-        vectorD:=YWCS;
-        vectorN:=XWCS;
+        vectorD:=cV3d__0__1__0;
+        vectorN:=cV3d__1__0__0;
       end;
     end;
     DimData.P10InWCS:=Point;
@@ -428,7 +428,7 @@ begin
             PT3PointCircleModePentity(PInteractiveData)^.p1;
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Radius:=
-            uzegeometry.Vertexlength(PT3PointCircleModePentity(PInteractiveData)^.p1,point);
+            PT3PointCircleModePentity(PInteractiveData)^.p1.LengthTo(point);
         end;
         TCDM_CD:begin
           PGDBObjCircle(PT3PointCircleModePentity(
@@ -436,15 +436,15 @@ begin
             PT3PointCircleModePentity(PInteractiveData)^.p1;
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Radius:=
-            uzegeometry.Vertexlength(PT3PointCircleModePentity(PInteractiveData)^.p1,point)/2;
+            PT3PointCircleModePentity(PInteractiveData)^.p1.LengthTo(point)/2;
         end;
         TCDM_2P,TCDM_3P:begin
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Local.p_insert:=
-            VertexMulOnSc(PT3PointCircleModePentity(PInteractiveData)^.p1+point,0.5);
+            (PT3PointCircleModePentity(PInteractiveData)^.p1+point.asVector)*0.5;
           PGDBObjCircle(PT3PointCircleModePentity(
             PInteractiveData)^.pentity)^.Radius:=
-            uzegeometry.Vertexlength(PT3PointCircleModePentity(PInteractiveData)^.p1,point)/2;
+            PT3PointCircleModePentity(PInteractiveData)^.p1.LengthTo(point)/2;
         end;
 
       end;
@@ -543,14 +543,14 @@ begin
 
   countVert:=obj.npoint;
   stPoint:=obj.p1;
-  xyline:=uzegeometry.Vertexlength(stPoint,Point);
+  xyline:=stPoint.LengthTo(Point);
 
   if xyline<eps then
     exit;
 
-  xline:=uzegeometry.Vertexlength(stPoint,CreateVertex(Point.x,stPoint.y,0));
+  xline:=stPoint.LengthTo(CreateVertex(Point.x,stPoint.y,0));
 
-  radius:=Vertexlength(stPoint,Point);
+  radius:=stPoint.LengthTo(Point);
   stalpha:=0;
 
   if obj.cdm=TPDM_CC then begin

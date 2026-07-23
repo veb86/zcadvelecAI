@@ -34,7 +34,7 @@ type
   GDBObj3DFace=object(GDBObj3d)
     PInOCS:OutBound4V;
     PInWCS:OutBound4V;
-    normal:TzePoint3d;
+    normal:TzeVector3d;
     triangle:boolean;
     n,p1,p2,p3:TzePoint3s;
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
@@ -111,11 +111,11 @@ begin
     PInWCS[I]:=VectorTransform3D(
       PInOCS[I],bp.ListPos.owner^.GetMatrix^);
   end;
-  v:=vectordot(VertexSub(PInWCS[0],PInWCS[1]).asVector3d,VertexSub(PInWCS[2],PInWCS[1]).asVector3d).asPoint3d;
-  if IsVectorNul(v.asVector3d) then
-    normal:=xy_Z_Vertex
+  v:=vectordot(VertexSub(PInWCS[0],PInWCS[1]).asVector,VertexSub(PInWCS[2],PInWCS[1]).asVector).asPoint3d;
+  if IsVectorNul(v.asVector) then
+    normal:=cV3d__0__0__1
   else
-    normal:=(v).Normalized;
+    normal:=v.Normalized.asVector;
   if IsPointEqual(PInOCS[2],PInOCS[3],sqreps) then
     triangle:=True
   else
@@ -156,7 +156,7 @@ constructor GDBObj3DFace.initnul;
 begin
   inherited initnul(owner);
   bp.ListPos.Owner:=owner;
-  PInOCS[1]:=NulPoint;
+  PInOCS[1]:=cP3d__0__0__0;
 end;
 
 function GDBObj3DFace.GetObjType;
@@ -192,10 +192,10 @@ end;
 procedure GDBObj3DFace.DrawGeometry;
 begin
   if triangle then
-    dc.drawer.DrawTriangle3DInModelSpace(normal,PInwCS[0],PInwCS[1],
+    dc.drawer.DrawTriangle3DInModelSpace(normal.asPoint3d,PInwCS[0],PInwCS[1],
       PInwCS[2],dc.DrawingContext.matrixs)
   else
-    dc.drawer.DrawQuad3DInModelSpace(normal,PInwCS[0],PInwCS[1],
+    dc.drawer.DrawQuad3DInModelSpace(normal.asPoint3d,PInwCS[0],PInwCS[1],
       PInwCS[2],PInwCS[3],dc.DrawingContext.matrixs);
   inherited;
 end;
@@ -304,7 +304,7 @@ begin
   vertexnumber:=pdesc^.vertexnum;
   pdesc.worldcoord:=PInWCS[vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:=ToTzePoint2i(tv);
+  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
 end;
 
 procedure GDBObj3DFace.addcontrolpoints(tdesc:Pointer);
@@ -328,7 +328,7 @@ var
   vertexnumber:integer;
 begin
   vertexnumber:=rtmod.point.vertexnum;
-  PInOCS[vertexnumber]:=rtmod.point.worldcoord+rtmod.dist;
+  PInOCS[vertexnumber]:=rtmod.point.worldcoord+rtmod.dist.asVector;
 end;
 
 function GDBObj3DFace.Clone;
@@ -336,7 +336,7 @@ var
   tvo:PGDBObj3DFace;
 begin
   Getmem(Pointer(tvo),sizeof(GDBObj3DFace));
-  tvo^.init(bp.ListPos.owner,vp.Layer,vp.LineWeight,NulPoint);
+  tvo^.init(bp.ListPos.owner,vp.Layer,vp.LineWeight,cP3d__0__0__0);
   CopyVPto(tvo^);
   CopyExtensionsTo(tvo^);
   tvo^.bp.ListPos.Owner:=own;

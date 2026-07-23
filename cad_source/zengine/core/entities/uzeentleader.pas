@@ -138,8 +138,8 @@ begin
   Leader.AnnotationHandle:=0;
   Leader.NormalVector:=CreateVertex(0,0,1);
   Leader.HorizontalDirection:=CreateVertex(1,0,0);
-  Leader.BlockOffset:=NulPoint;
-  Leader.AnnotationOffset:=NulPoint;
+  Leader.BlockOffset:=cP3d__0__0__0;
+  Leader.AnnotationOffset:=cP3d__0__0__0;
   Leader.ArrowStyleIndex:=LeaderArrowStyleInherit;
   Leader.ArrowSize:=LeaderArrowSizeInherit;
   Leader.DimLineWeight:=LeaderLineWeightInherit;
@@ -247,7 +247,7 @@ begin
     exit;
   p1:=Leader.VertexArrayInOCS.getDataMutable(SegmentIndex);
   p2:=Leader.VertexArrayInOCS.getDataMutable(SegmentIndex+1);
-  Result:=uzegeometry.Vertexlength(p1^,p2^);
+  Result:=p1^.LengthTo(p2^);
 end;
 
 function LeaderHasTextTailSegment(const Leader:GDBObjLeader;
@@ -499,14 +499,14 @@ var
   begin
     if HasCurrentVertex then begin
       VertexArrayInOCS.PushBackData(CurrentVertex);
-      CurrentVertex:=NulPoint;
+      CurrentVertex:=cP3d__0__0__0;
       HasCurrentVertex:=False;
     end;
   end;
 
 begin
   VertexArrayInOCS.Clear;
-  CurrentVertex:=NulPoint;
+  CurrentVertex:=cP3d__0__0__0;
   HasCurrentVertex:=False;
   VertexCount:=0;
 
@@ -530,7 +530,7 @@ begin
         case DXFGroupCode of
           10:begin
             PushCurrentVertex;
-            CurrentVertex:=NulPoint;
+            CurrentVertex:=cP3d__0__0__0;
             CurrentVertex.x:=rdr.ParseDouble;
             HasCurrentVertex:=True;
           end;
@@ -615,7 +615,7 @@ begin
   if bp.ListPos.Owner<>nil then
     OwnerMatrix:=bp.ListPos.Owner^.GetMatrix^
   else
-    OwnerMatrix:=OneMatrix;
+    OwnerMatrix:=cOneMatrix;
   ptv:=VertexArrayInOCS.beginiterate(ir);
   if ptv<>nil then
     repeat
@@ -770,7 +770,7 @@ begin
   ptv:=VertexArrayInWCS.iterate(ir);
   if ptv<>nil then
     repeat
-      Result:=Result+uzegeometry.Vertexlength(ptv^,ptvprev^);
+      Result:=Result+ptv^.LengthTo(ptvprev^);
       ptvprev:=ptv;
       ptv:=VertexArrayInWCS.iterate(ir);
     until ptv=nil;
@@ -836,7 +836,7 @@ var
 begin
   VertexNumber:=rtmod.point.vertexnum;
   GDBPoint3dArray.PTArr(VertexArrayInOCS.parray)^[VertexNumber]:=
-    rtmod.point.worldcoord+rtmod.dist;
+    rtmod.point.worldcoord+rtmod.dist.asVector;
 end;
 
 procedure GDBObjLeader.remaponecontrolpoint(pdesc:pcontrolpointdesc;
@@ -849,7 +849,7 @@ begin
   pdesc^.worldcoord:=
     GDBPoint3dArray.PTArr(VertexArrayInWCS.parray)^[VertexNumber];
   ProjectProc(pdesc^.worldcoord,tv);
-  pdesc^.dispcoord:=ToTzePoint2i(tv);
+  pdesc^.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
 end;
 
 procedure GDBObjLeader.addcontrolpoints(tdesc:Pointer);

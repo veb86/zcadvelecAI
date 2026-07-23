@@ -91,9 +91,9 @@ begin
   Local.basis.ox:=objmatrix.mtr.v[0].Slice;
   Local.basis.oy:=objmatrix.mtr.v[1].Slice;
 
-  Local.basis.ox:=normalizevertex(Local.basis.ox);
-  Local.basis.oy:=normalizevertex(Local.basis.oy);
-  Local.basis.oz:=normalizevertex(Local.basis.oz);
+  Local.basis.ox.Normalize;//:=normalizevertex(Local.basis.ox);
+  Local.basis.oy.Normalize;//:=normalizevertex(Local.basis.oy);
+  Local.basis.oz.Normalize;//:=normalizevertex(Local.basis.oz);
 
   Local.P_insert:=objmatrix.mtr.v[3].Slice.asPoint3d;
 end;
@@ -205,7 +205,7 @@ begin
       pvc:=pv^.Clone(@self);
       pvc2:=pv^.Clone(@self);
       pvc^.bp.ListPos.Owner:=@self;
-      self.ObjMatrix:=onematrix;
+      self.ObjMatrix:=cOneMatrix;
       if pvc^.IsHaveLCS then
         pvc^.FormatEntity(drawing,dc);
       pvc^.transform(m4);

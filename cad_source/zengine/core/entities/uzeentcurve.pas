@@ -181,7 +181,7 @@ begin
         tv:=vertexsub(ptv^,ppredtv^);
         tv.Normalize;
         processaxis(posr,tv);
-        tv:=VectorDot(tv.asVector3d,zwcs).asPoint3d;
+        tv:=VectorDot(tv.asVector,cV3d__0__0__1).asPoint3d;
         processaxis(posr,tv);
         Dec(found);
       end;
@@ -304,7 +304,7 @@ begin
   ptv:=VertexArrayInWCS.iterate(ir);
   if ptv<>nil then
     repeat
-      Result:=Result+uzegeometry.Vertexlength(ptv^,ptvprev^);
+      Result:=Result+ptv^.LengthTo(ptvprev^);
       ptvprev:=ptv;
       ptv:=VertexArrayInWCS.iterate(ir);
     until ptv=nil;
@@ -320,7 +320,7 @@ begin
   VertexArrayInWCS.Clear;
   VertexArrayInWCS.SetSize(VertexArrayInOCS.Count);
   if bp.ListPos.owner=nil then
-    pmtx:=@OneMatrix
+    pmtx:=@cOneMatrix
   else
     pmtx:=bp.ListPos.owner^.GetMatrix;
   ptv:=VertexArrayInOCS.beginiterate(ir);
@@ -427,7 +427,7 @@ var
   vertexnumber:integer;
 begin
   vertexnumber:=rtmod.point.vertexnum;
-  GDBPoint3dArray.PTArr(vertexarrayinocs.parray)^[vertexnumber]:=rtmod.point.worldcoord+rtmod.dist;
+  GDBPoint3dArray.PTArr(vertexarrayinocs.parray)^[vertexnumber]:=rtmod.point.worldcoord+rtmod.dist.asVector;
 end;
 
 procedure GDBObjCurve.remaponecontrolpoint(pdesc:pcontrolpointdesc;
@@ -439,7 +439,7 @@ begin
   vertexnumber:=pdesc^.vertexnum;
   pdesc.worldcoord:=GDBPoint3dArray.PTArr(VertexArrayInWCS.parray)^[vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:=ToTzePoint2i(tv);
+  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
 end;
 
 procedure GDBObjCurve.addcontrolpoints;
@@ -541,10 +541,10 @@ begin
             pv2:=VertexArrayInWCS.getDataMutable(0);
           end;
           dir:=uzegeometry.VertexSub(pv2^,pv1^);
-          tv:=vectordot(dir.asVector3d,param.md.mouseray.dir).asPoint3d;
+          tv:=vectordot(dir.asVector,param.md.mouseray.dir).asPoint3d;
           t:=-((pv1.x-param.lastpoint.x)*dir.x+
             (pv1.y-param.lastpoint.y)*dir.y+(pv1.z-param.lastpoint.z)*dir.z)/
-            (SqrVertexlength(pv2^,pv1^));
+            (pv2^.SqrLengthTo(pv1^));
           if (t>=0) and (t<=1) then begin
             osp.worldcoord.x:=pv1^.x+t*dir.x;
             osp.worldcoord.y:=pv1^.y+t*dir.y;
@@ -569,14 +569,14 @@ begin
             pv2:=VertexArrayInWCS.getDataMutable(0);
           end;
           dir:=uzegeometry.VertexSub(pv2^,pv1^);
-          tv:=vectordot(dir.asVector3d,param.md.mouseray.dir).asPoint3d;
-          n:=vectordot(param.md.mouseray.dir,tv.asVector3d).asPoint3d;
+          tv:=vectordot(dir.asVector,param.md.mouseray.dir).asPoint3d;
+          n:=vectordot(param.md.mouseray.dir,tv.asVector).asPoint3d;
           n.Normalize;
           v.x:=param.md.mouseray.lbegin.x-pv1^.x;
           v.y:=param.md.mouseray.lbegin.y-pv1^.y;
           v.z:=param.md.mouseray.lbegin.z-pv1^.z;
-          d:=scalardot(n.asVector3d,v.asVector3d);
-          e:=scalardot(n.asVector3d,dir.asVector3d);
+          d:=scalardot(n.asVector,v.asVector);
+          e:=scalardot(n.asVector,dir.asVector);
           if e<eps then
             osp.ostype:=os_none
           else begin

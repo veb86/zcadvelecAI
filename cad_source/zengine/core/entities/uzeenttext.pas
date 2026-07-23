@@ -164,7 +164,7 @@ begin
     if (content='')and(template='') then
       content:=str_empty;
     lod:=0;
-    P_drawInOCS:=NulPoint;
+    P_drawInOCS:=cP3d__0__0__0;
     CalcGabarit(drawing);
     case textprop.justify of
       jstl:
@@ -359,7 +359,7 @@ end;
 procedure GDBObjText.rtmodifyonepoint(const rtmod:TRTModifyData);
 begin
   if rtmod.point.pointtype=os_point then
-    Local.p_insert:=rtmod.point.worldcoord+rtmod.dist;
+    Local.p_insert:=rtmod.point.worldcoord+rtmod.dist.asVector;
 end;
 
 procedure GDBObjText.SaveToDXFObjXData;
@@ -504,11 +504,11 @@ begin
   textprop.justify:=jt[vv,gv];
   if doublepoint then begin
     Local.p_Insert:=P_drawInOCS;
-    P_drawInOCS:=NulPoint;
+    P_drawInOCS:=cP3d__0__0__0;
   end;
   if angleload then begin
     Local.basis.ox:=GetXfFromZ(Local.basis.oz);
-    local.basis.OX:=VectorTransform3D(local.basis.OX.asPoint3d,CreateAffineRotationMatrix(Local.basis.oz,-angle)).asVector3d;
+    local.basis.OX:=VectorTransform3D(local.basis.OX.asPoint3d,CreateAffineRotationMatrix(Local.basis.oz,-angle)).asVector;
   end;
 end;
 

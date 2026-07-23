@@ -176,7 +176,7 @@ var
   dist:TzeVector3d;
 begin
   dist:=p2-p1;
-  Result:=CreateTranslationMatrix(dist.asPoint3d);
+  Result:=CreateTranslationMatrix(dist);
 end;
 
 function Move_com.Move(const dispmatr:TzeTypedMatrix4d;UndoMaker:string):integer;
@@ -224,7 +224,7 @@ begin
   if (button and MZW_LBUTTON)<>0 then begin
     move(dispmatr,self.CommandName);
 
-    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=onematrix;
+    drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix:=cOneMatrix;
     drawings.GetCurrentDWG^.ConstructObjRoot.ObjArray.Free;
     drawings.GetCurrentROOT^.FormatAfterEdit(drawings.GetCurrentDWG^,dc);
 

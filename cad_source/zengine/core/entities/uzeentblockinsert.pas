@@ -36,7 +36,7 @@ type
   PGDBObjBlockInsert=^GDBObjBlockInsert;
 
   GDBObjBlockInsert=object(GDBObjComplex)
-    scale:TzePoint3d;
+    scale:TzeVector3d;
     rotate:double;
     index:integer;
     Name:ansistring;
@@ -104,17 +104,17 @@ end;
 procedure GDBObjBlockInsert.rtmodifyonepoint(const rtmod:TRTModifyData);
 var
   m:TzeTypedMatrix4d;
-  scl:TzePoint3d;
+  scl:TzeVector3d;
 begin
-  m:=onematrix;
+  m:=cOneMatrix;
   if rtmod.point.pointtype=os_point then begin
     if rtmod.point.PDrawable=nil then
       Local:=GetPointInOCSByBasis(objmatrix.mtr.v[0].Slice,
-        objmatrix.mtr.v[1].Slice,objmatrix.mtr.v[2].Slice,rtmod.point.worldcoord+rtmod.dist,scl)
+        objmatrix.mtr.v[1].Slice,objmatrix.mtr.v[2].Slice,rtmod.point.worldcoord+rtmod.dist.asVector,scl)
     else
       Local:=GetPointInOCSByBasis(objmatrix.mtr.v[0].Slice,
         objmatrix.mtr.v[1].Slice,objmatrix.mtr.v[2].Slice,VertexSub(
-        rtmod.point.worldcoord+rtmod.dist,rtmod.point.dcoord),scl);
+        rtmod.point.worldcoord+rtmod.dist.asVector,rtmod.point.dcoord),scl);
   end;
 end;
 
@@ -126,7 +126,7 @@ var
   mtr:TzeTypedMatrix4d;
 begin
   if PDef<>nil then begin
-    Mtr:=MatrixMultiply(CreateTranslationMatrix(PDef.Base),objMatrix);
+    Mtr:=MatrixMultiply(CreateTranslationMatrix(PDef.Base.asVector),objMatrix);
   end else
     Mtr:=objMatrix;
 
@@ -215,7 +215,7 @@ begin
       index:=PGDBObjBlockdefArray(pdrawing^.GetBlockDefArraySimple).getindex(Name);
     PDef:=PGDBObjBlockdefArray(pdrawing^.GetBlockDefArraySimple).getDataMutable(index);
     if PDef<>nil then begin
-      m1:=CreateTranslationMatrix(VertexMulOnSc(PDef.Base,-1));
+      m1:=CreateTranslationMatrix((-PDef.Base).asVector);
       objMatrix:=MatrixMultiply(m1,objMatrix);
     end;
   end;
@@ -252,7 +252,7 @@ begin
   inherited init(own,layeraddres,LW);
   POINTER(Name):=nil;
   bp.ListPos.Owner:=own;
-  scale:=ScaleOne;
+  scale:=cV3d__1__1__1;
   rotate:=0;
   index:=-1;
   pattrib:=nil;
@@ -263,7 +263,7 @@ begin
   inherited initnul;
   POINTER(Name):=nil;
   bp.ListPos.Owner:=nil;
-  scale:=ScaleOne;
+  scale:=cV3d__1__1__1;
   rotate:=0;
   index:=-1;
   Pointer(Name):=nil;

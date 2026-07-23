@@ -111,13 +111,13 @@ procedure GDBObjComplex.rtmodifyonepoint;
 var
   m:TzeTypedMatrix4d;
 begin
-  m:=onematrix;
+  m:=cOneMatrix;
   if rtmod.point.pointtype=os_point then begin
     if rtmod.point.PDrawable=nil then
-      Local.p_insert:=vectortransform3d(rtmod.point.worldcoord+rtmod.dist,m)
+      Local.p_insert:=vectortransform3d(rtmod.point.worldcoord+rtmod.dist.asVector,m)
     else
       Local.p_insert:=vectortransform3d(
-        VertexSub(rtmod.point.worldcoord+rtmod.dist,rtmod.point.dcoord),m);
+        VertexSub(rtmod.point.worldcoord+rtmod.dist.asVector,rtmod.point.dcoord),m);
   end;
 end;
 
@@ -130,11 +130,11 @@ begin
     if pdesc.PDrawable=nil then begin
       pdesc.worldcoord:=self.P_insert_in_WCS;
       ProjectProc(pdesc.worldcoord,tv);
-      pdesc.dispcoord:=ToTzePoint2i(tv);
+      pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
     end else begin
       pdesc.worldcoord:=PGDBObjComplex(pdesc.PDrawable).P_insert_in_WCS;
       ProjectProc(pdesc.worldcoord,tv);
-      pdesc.dispcoord:=ToTzePoint2i(tv);
+      pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
       pdesc.dcoord:=vertexsub(PGDBObjComplex(pdesc.PDrawable).P_insert_in_WCS,
         P_insert_in_WCS);
     end;

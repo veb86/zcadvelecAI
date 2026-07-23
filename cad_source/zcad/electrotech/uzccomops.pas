@@ -308,9 +308,9 @@ begin
                                              TARDM_Nothing:;//заглушка на варнинг
   end;
   end;
-  if (Vertexlength(FirstLine.lbegin, FirstLine.lend) - 2 * ShortSD)>0 then FirstCount := round(abs(Vertexlength(FirstLine.lbegin, FirstLine.lend) - 2 * ShortSD) / ShortDD- eps + 1.5)
+  if (FirstLine.lbegin.LengthTo(FirstLine.lend) - 2 * ShortSD)>0 then FirstCount := round(abs(FirstLine.lbegin.LengthTo(FirstLine.lend) - 2 * ShortSD) / ShortDD- eps + 1.5)
                                                          else FirstCount := 1;
-  if (Vertexlength(SecondLine.lbegin, SecondLine.lend) - 2 * LongSD)>0 then SecondCount := round(abs(Vertexlength(SecondLine.lbegin, SecondLine.lend) - 2 * LongSD) / LongDD-eps + 1.5)
+  if (SecondLine.lbegin.LengthTo(SecondLine.lend) - 2 * LongSD)>0 then SecondCount := round(abs(SecondLine.lbegin.LengthTo(SecondLine.lend) - 2 * LongSD) / LongDD-eps + 1.5)
                                                          else SecondCount := 1;
   mincount:=2;
   case OPSPlaceSmokeDetectorOrtoParam.DMC of
@@ -336,7 +336,7 @@ begin
                              end;
                          end;
   SecondLineLength:={oneVertexlength}(dir).Length;
-  FirstLineLength:=Vertexlength(FirstLine.lbegin, FirstLine.lend);
+  FirstLineLength:=FirstLine.lbegin.LengthTo(FirstLine.lend);
 
   d:=GetPlaceParam(FirstCount,FirstLineLength,ShortSD,ShortDD,TOPSMDC_1_2,ps);
 
@@ -897,7 +897,7 @@ begin
      if name<>'' then
      begin
      pt:=pointer(AllocEnt(GDBMtextID));
-     pt^.init({drawings.GetCurrentROOT}@root,sysvar.dwg.DWG_CLayer^,sysvar.dwg.DWG_CLinew^,UTF8Decode(name),tv,2.5,0,0.65,RightAngle,jsbc,1,1);
+     pt^.init({drawings.GetCurrentROOT}@root,sysvar.dwg.DWG_CLayer^,sysvar.dwg.DWG_CLinew^,UTF8Decode(name),tv,2.5,0,0.65,cRightAngle,jsbc,1,1);
      pt^.TXTStyle:=pointer(drawings.GetCurrentDWG.GetTextStyleTable^.getDataMutable(0));
      root.ObjArray.AddPEntity(pt^);
      zcSetEntPropFromCurrentDrawingProp(pt);
@@ -997,7 +997,7 @@ begin
 
          drawings.GetCurrentDWG.wa.SetMouseMode((MGet3DPoint) or (MMoveCamera) or (MRotateCamera));
 
-  coord:=NulPoint;
+  coord:=cP3d__0__0__0;
   coord.y:=0;
   coord.x:=0;
   prevname:='';
@@ -1241,7 +1241,7 @@ begin
     sdd:=dy/nmin/2;
     //ddd:=dy/nmin;
     if aa then
-              angle:=angle+RightAngle;
+              angle:=angle+cRightAngle;
 
   end;
   dir.x := line2.lend.x - line2.lbegin.x;
@@ -1250,7 +1250,7 @@ begin
 
   l1:=nmin;
   l2:=nmax;
-  Linelength:=Vertexlength(line1.lbegin, line1.lend);
+  Linelength:=line1.lbegin.LengthTo(line1.lend);
   case l1 of
     1: begin
         place2(pva,Vertexmorph(line1.lbegin, line1.lend, 0.5), dir, l2, Linelength,sd,sd*2, name,angle,norm,OrtoDevPlaceParam.ScaleBlock,TPSS_Proportional);

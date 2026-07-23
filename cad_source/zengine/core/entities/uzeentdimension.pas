@@ -114,7 +114,7 @@ var
   pp1,pp2:TzePoint3d;
   zangle:double;
 begin
-  l:=uzegeometry.Vertexlength(p1,p2);
+  l:=p1.LengthTo(p2);
   tbp0:=PDimStyle.GetDimBlockParam(0);
   tbp1:=PDimStyle.GetDimBlockParam(1);
   if supress1 then
@@ -222,7 +222,7 @@ begin
       DTMCreateLeader:
       begin
         if self.DimData.TextMoved then begin
-          pl:=DrawDimensionLineLinePart(VertexMulOnSc(p1+p2,0.5),
+          pl:=DrawDimensionLineLinePart((p1+p2.asVector)*0.5,
             DimData.P11InOCS,drawing);
           pl.FormatEntity(drawing,dc);
           pl:=DrawDimensionLineLinePart(DimData.P11InOCS,VertexDmorph(
@@ -248,12 +248,11 @@ var
 begin
   CalcTextAngle;
 
-  ip:=uzegeometry.intercept3dmy2(dlStart,dlEnd,DimData.P11InOCS,
-    DimData.P11InOCS+vectorN.asPoint3d);
+  ip:=uzegeometry.intercept3dmy2(dlStart,dlEnd,DimData.P11InOCS,DimData.P11InOCS+vectorN);
   TextTParam:=ip.t1;
   CalcTextInside;
   ip:=uzegeometry.intercept3dmy2(dlStart,dlEnd,DimData.P11InOCS,
-    DimData.P11InOCS+vectorN.asPoint3d);
+    DimData.P11InOCS+vectorN);
   if TextInside then begin
     if PDimStyle.Text.DIMTIH then
       TextAngle:=0;
@@ -267,7 +266,7 @@ end;
 
 procedure GDBObjDimension.CalcTextAngle;
 begin
-  DimAngle:=vertexangle(NulVertex2D,CreateVertex2D(vectorD.x,vectorD.y));
+  DimAngle:=vertexangle(cP2d__0__0,CreateVertex2D(vectorD.x,vectorD.y));
   TextAngle:=CorrectAngleIfNotReadable(DimAngle);
 end;
 
@@ -321,17 +320,17 @@ begin
   txtlines.done;
   if GetCSDirFrom0x0y2D(vectorD,vectorN)=TCSDLeft then
     dimdir:=
-      uzegeometry.VertexMulOnSc(vectorN.asPoint3d,-1)
+      {uzegeometry.VertexMulOnSc}(-vectorN.asPoint3d{,-1})
   else
     dimdir:=vectorN.asPoint3d;
   if PDimStyle.Text.DIMTAD<>DTVPBellov then begin
     if dimdir.x>0 then
-      dimdir:=uzegeometry.VertexMulOnSc(dimdir,-1);
+      dimdir:={uzegeometry.VertexMulOnSc}(-dimdir{,-1});
   end else if dimdir.x<0 then
-    dimdir:=uzegeometry.VertexMulOnSc(dimdir,-1);
+    dimdir:={uzegeometry.VertexMulOnSc}(-dimdir{,-1});
 
   if (textangle=0)and((DimData.TextMoved)or TextAlwaysMoved) then
-    dimdir:=x_Y_zVertex;
+    dimdir:=cP3d__0__1__0;
   if TextNeedOffset(dimdir) then begin
     if PDimStyle.Text.DIMGAP>0 then
       l:=
@@ -341,23 +340,23 @@ begin
     if not DimData.TextMoved then
       l:=l+dimtexth/2;
     case PDimStyle.Text.DIMTAD of
-      DTVPCenters:dimdir:=NulPoint;
+      DTVPCenters:dimdir:=cP3d__0__0__0;
       DTVPAbove:begin
         if dimdir.y<-eps then
           dimdir:=
-            uzegeometry.VertexMulOnSc(dimdir,-1);
+            {uzegeometry.VertexMulOnSc}(-dimdir{,-1});
       end;
-      DTVPJIS:dimdir:=NulPoint;
+      DTVPJIS:dimdir:=cP3d__0__0__0;
       DTVPBellov:begin
         if dimdir.y>eps then
           dimdir:=
-            uzegeometry.VertexMulOnSc(dimdir,-1);
+            {uzegeometry.VertexMulOnSc}(-dimdir{,-1});
       end;
       DTVPOutside:;//заглушка
     end;
-    Result:=uzegeometry.VertexMulOnSc(dimdir,l);
+    Result:={uzegeometry.VertexMulOnSc}(dimdir*l);
   end else
-    Result:=NulPoint;
+    Result:=cP3d__0__0__0;
 end;
 
 function GDBObjDimension.GetDIMTMOVE:TDimTextMove;
@@ -398,7 +397,7 @@ begin
         p:=VertexDmorph(p,VectorT.asPoint3d,GetPSize/2);
         DimData.NeedTextLeader:=True;
       end;
-    p:=p+TextOffset;
+    p:=p+TextOffset.asVector;
   end;
   ptext.Local.P_insert:=p;
   ptext.linespacef:=1;
@@ -489,19 +488,19 @@ end;
 procedure GDBObjDimension.rtmodifyonepoint(const rtmod:TRTModifyData);
 begin
   if rtmod.point.pointtype=os_p10 then begin
-    DimData.P10InWCS:=P10ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P10InWCS:=P10ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p11 then begin
-    DimData.P11InOCS:=P11ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P11InOCS:=P11ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p12 then begin
-    DimData.P12InOCS:=P12ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P12InOCS:=P12ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p13 then begin
-    DimData.P13InWCS:=P13ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P13InWCS:=P13ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p14 then begin
-    DimData.P14InWCS:=P14ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P14InWCS:=P14ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p15 then begin
-    DimData.P15InWCS:=P15ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P15InWCS:=P15ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end else if rtmod.point.pointtype=os_p16 then begin
-    DimData.P16InOCS:=P16ChangeTo(rtmod.point.worldcoord+rtmod.dist);
+    DimData.P16InOCS:=P16ChangeTo(rtmod.point.worldcoord+rtmod.dist.asVector);
   end;
 end;
 
@@ -561,31 +560,31 @@ begin
   if pdesc^.pointtype=os_p10 then begin
     pdesc.worldcoord:=DimData.P10InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p11 then begin
     pdesc.worldcoord:=DimData.P11InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p12 then begin
     pdesc.worldcoord:=DimData.P12InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p13 then begin
     pdesc.worldcoord:=DimData.P13InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p14 then begin
     pdesc.worldcoord:=DimData.P14InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p15 then begin
     pdesc.worldcoord:=DimData.P15InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_p16 then begin
     pdesc.worldcoord:=DimData.P16InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 

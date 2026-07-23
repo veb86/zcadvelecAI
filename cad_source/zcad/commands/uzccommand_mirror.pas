@@ -62,8 +62,8 @@ var
 begin
   dist:=p2-p1;
   d:=dist.Length;
-  p3:=uzegeometry.VertexMulOnSc(ZWCS.asPoint3d,d);
-  p3:=p3+t3dp;
+  p3:=cP3d__0__0__1*d;
+  p3:=p3+t3dp.asVector;
 
   plane:=PlaneFrom3Pont(p1,p2,p3);
   normalizeplane(plane);
@@ -89,15 +89,15 @@ begin
     end else begin
       with drawings.GetCurrentDWG^.ConstructObjRoot do begin
 
-        tempmatr:=uzegeometry.MatrixMultiply(OneMatrix,MirrMatr);
+        tempmatr:=uzegeometry.MatrixMultiply(cOneMatrix,MirrMatr);
         FrPos.x:=tempmatr.mtr.v[3].x;
         FrPos.y:=tempmatr.mtr.v[3].y;
         FrPos.z:=tempmatr.mtr.v[3].z;
 
-        ObjMatrix:=uzegeometry.CreateTranslationMatrix(-drawings.GetCurrentDWG^.GetPcamera^.CamCSOffset.asPoint3d);
+        ObjMatrix:=uzegeometry.CreateTranslationMatrix(-drawings.GetCurrentDWG^.GetPcamera^.CamCSOffset);
         ObjMatrix:=uzegeometry.MatrixMultiply(ObjMatrix,MirrMatr);
         ObjMatrix:=uzegeometry.MatrixMultiply(
-          ObjMatrix,CreateTranslationMatrix(drawings.GetCurrentDWG^.GetPcamera^.CamCSOffset.asPoint3d));
+          ObjMatrix,CreateTranslationMatrix(drawings.GetCurrentDWG^.GetPcamera^.CamCSOffset));
         FrustumPosition:=FrPos;
       end;
     end;

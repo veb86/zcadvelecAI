@@ -108,8 +108,8 @@ begin
   calcObjMatrix;
   createpoint;
   normal:=(vectordot(
-    VertexSub(PInWCS[0],PInWCS[1]).asVector3d,
-    VertexSub(PInWCS[2],PInWCS[1]).asVector3d)).Normalized.asPoint3d;
+    VertexSub(PInWCS[0],PInWCS[1]).asVector,
+    VertexSub(PInWCS[2],PInWCS[1]).asVector)).Normalized.asPoint3d;
   if uzegeometry.IsPointEqual(PInOCS[2],PInOCS[3],sqreps) then
     triangle:=True
   else
@@ -143,7 +143,7 @@ constructor GDBObjSolid.initnul;
 begin
   inherited initnul(owner);
   bp.ListPos.Owner:=owner;
-  PInOCS[1]:=NulPoint;
+  PInOCS[1]:=cP3d__0__0__0;
 end;
 
 function GDBObjSolid.GetObjType;
@@ -238,7 +238,7 @@ begin
   vertexnumber:=pdesc^.vertexnum;
   pdesc.worldcoord:=PInWCS[vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:=ToTzePoint2i(tv);
+  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
 end;
 
 procedure GDBObjSolid.addcontrolpoints(tdesc:Pointer);
@@ -273,7 +273,7 @@ begin
   tv:=rtmod.dist;
   wwc:=rtmod.point.worldcoord;
 
-  wwc:=wwc+tv;
+  wwc:=wwc+tv.asVector;
   wwc:=uzegeometry.VectorTransform3D(wwc,m);
 
   PInOCS[vertexnumber]:=wwc;
@@ -284,7 +284,7 @@ var
   tvo:PGDBObjSolid;
 begin
   Getmem(Pointer(tvo),sizeof(GDBObjSolid));
-  tvo^.init(bp.ListPos.owner,vp.Layer,vp.LineWeight,NulPoint);
+  tvo^.init(bp.ListPos.owner,vp.Layer,vp.LineWeight,cP3d__0__0__0);
   tvo^.Local:=local;
   CopyVPto(tvo^);
   CopyExtensionsTo(tvo^);

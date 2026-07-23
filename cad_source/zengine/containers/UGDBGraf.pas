@@ -98,12 +98,12 @@ begin
      begin
      pvd:=pentvarext.entityunit.FindVariable('LengthOverrider');
      if pvd=nil then
-                    result:=Vertexlength(pv^.CoordInWCS.lbegin,pv^.CoordInWCS.lend)
+                    result:=pv^.CoordInWCS.lbegin.LengthTo(pv^.CoordInWCS.lend)
                 else
                     result:=PDouble(pvd.data.Addr.Instance)^;
      end
         else
-            result:=Vertexlength(pv^.CoordInWCS.lbegin,pv^.CoordInWCS.lend);
+            result:=pv^.CoordInWCS.lbegin.LengthTo(pv^.CoordInWCS.lend);
 end;
 procedure GDBGraf.FindPath;
 var
@@ -125,7 +125,7 @@ begin
         if pgfe^.link.IsDataExistWithCompareProc(l1,EqualFuncPGDBaseEntity)<>-1 then
         begin
              pgfe^.step:=step;
-             pgfe^.pathlength:=Vertexlength(point1,pgfe^.point);
+             pgfe^.pathlength:=point1.LengthTo(pgfe^.point);
         end;
         pgfe:=iterate(ir);
   until pgfe=nil;
@@ -174,7 +174,7 @@ begin
   repeat
         if pgfe^.link.IsDataExistWithCompareProc(l2,EqualFuncPGDBaseEntity)<>-1 then
         begin
-             npath:=pgfe^.pathlength+Vertexlength(pgfe^.point,point2);
+             npath:=pgfe^.pathlength+pgfe^.point.LengthTo(point2);
              if npath<=npathmin then
              begin
                   pgfe2:=pgfe;
@@ -215,7 +215,7 @@ begin
         pgfe2:=pgfe3;
         if getlinktype(mainlinkline)=LT_OnlyLink then
         begin
-             pa.PushBackData(InfinityVertex);
+             pa.PushBackData(cP3d_Inf_nf_Inf);
         end;
         pa.PushBackData(pgfe2.point);
   end;
@@ -246,7 +246,7 @@ begin
 end;
 constructor grafelement.initnul;
 begin
-     point:=NulPoint;
+     point:=cP3d__0__0__0;
      link.init(100);
      linkcount:=0;
      connected:=0;
@@ -398,7 +398,7 @@ begin
     for i := 0 to count - 1 do
     begin
       tgf:=pgrafelement(self.getDataMutable(i));
-      if vertexeq(tgf^.point,v) then
+      if {vertexeq}IsPointEqual(tgf^.point,v,bigeps) then
         begin
              result:=tgf;
              system.exit;
@@ -424,7 +424,7 @@ begin
     for i := 0 to count - 1 do
     begin
       tgf:=pgrafelement(self.getDataMutable(i));
-      tgf^.point:=nulvertex;
+      tgf^.point:=cV3d__0__0__0;
       tgf^.link.Count:=0;
       tgf^.linkcount:=0;
       tgf^.connected:=0;

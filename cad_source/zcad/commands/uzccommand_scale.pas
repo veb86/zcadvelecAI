@@ -79,16 +79,16 @@ begin
   if a<eps then
     a:=1;
 
-  dispmatr:=uzegeometry.CreateTranslationMatrix(-t3dp);
+  dispmatr:=uzegeometry.CreateTranslationMatrix(-t3dp.asVector);
 
-  //rotmatr:=onematrix;
+  //rotmatr:=cOneMatrix;
   //rotmatr.mtr[0].v[0]:=a;
   //rotmatr.mtr[1].v[1]:=a;
   //rotmatr.mtr[2].v[2]:=a;
   rotmatr:=CreateScaleMatrix(a);
 
   rotmatr:=uzegeometry.MatrixMultiply(dispmatr,rotmatr);
-  dispmatr:=uzegeometry.CreateTranslationMatrix(t3dp);
+  dispmatr:=uzegeometry.CreateTranslationMatrix(t3dp.asVector);
   dispmatr:=uzegeometry.MatrixMultiply(rotmatr,dispmatr);
   dc:=drawings.GetCurrentDWG^.CreateDrawingRC;
 {pcd:=pcoa^.beginiterate(ir);
@@ -150,7 +150,7 @@ function scale_com.AfterClick(const Context:TZCADCommandContext;wc:TzePoint3d;
 var
   a:double;
 begin
-  a:=uzegeometry.Vertexlength(t3dp,wc);
+  a:=t3dp.LengthTo(wc);
   scale(a,button);
   Result:=cmd_ok;
 end;

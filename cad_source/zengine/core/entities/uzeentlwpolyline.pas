@@ -336,7 +336,7 @@ begin
 
   tv:=rtmod.dist;
   wwc:=rtmod.point.worldcoord;
-  wwc:=wwc+tv;
+  wwc:=wwc+tv.asVector;
   wwc:=uzegeometry.VectorTransform3D(wwc,m);
 
 
@@ -354,7 +354,7 @@ begin
   pdesc.worldcoord:=GDBPoint3dArray.PTArr(Vertex3D_in_WCS_Array.parray)^
     [vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:=ToTzePoint2i(tv);
+  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
 end;
 
 procedure GDBObjLWpolyline.AddControlpoints;
@@ -449,7 +449,7 @@ begin
 
   if dc.lod=LODCalculatedDetail then begin
     v:=uzegeometry.VertexSub(vp.BoundingBox.RTF,vp.BoundingBox.LBN);
-    simplydraw:=not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v.asVector3d),49);
+    simplydraw:=not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v.asVector),49);
   end else
     simplydraw:=dc.lod=LODLowDetail;
 
@@ -545,7 +545,7 @@ begin
   if bp.ListPos.owner<>nil then
     local.p_insert:=bp.ListPos.owner^.GetMatrix^.mtr.v[3].Slice.asPoint3d
   else
-    local.P_insert:=NulPoint;
+    local.P_insert:=cP3d__0__0__0;
 
   byt:=rdr.ParseInteger;
   while byt<>0 do begin
@@ -777,7 +777,7 @@ begin
   plw.quad[2]:=p2-vtemp;
 
   for k:=0 to 3 do begin
-    v.Slice.Slice:=plw.quad[k].asVector2d;
+    v.Slice.Slice:=plw.quad[k].asVector;
     //v.x:=plw.quad[k].x;
     //v.y:=plw.quad[k].y;
     v.Slice.CutOff:=0;
@@ -843,8 +843,8 @@ begin
           if (ip.t1>0) and (ip.t2>0) then
             if (ip2.t1>0) and (ip2.t2>0) then begin
               v2:=Vertex3D_in_WCS_Array.getDataMutable(j);
-              if SqrVertexlength(v2^,ip.interceptcoord)<l then
-                if SqrVertexlength(v2^,ip2.interceptcoord)<l then begin
+              if v2^.SqrLengthTo(ip.interceptcoord)<l then
+                if v2^.SqrLengthTo(ip2.interceptcoord)<l then begin
                   pq3d^[1]:=ip.interceptcoord;
                   pq3d^[2]:=ip2.interceptcoord;
                   pq3dnext^[0]:=ip.interceptcoord;

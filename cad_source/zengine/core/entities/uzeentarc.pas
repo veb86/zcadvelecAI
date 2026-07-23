@@ -108,7 +108,7 @@ var
 begin
   objmatrix:=uzegeometry.MatrixMultiply(PGDBObjWithLocalCS(p)^.objmatrix,t_matrix^);
   tv:=t_matrix.mtr.v[3];
-  t_matrix.mtr.v[3]:=NulVertex4D;
+  t_matrix.mtr.v[3]:=cV4d__0__0__0__1;
   t_matrix.mtr.v[3]:=tv;
   ReCalcFromObjMatrix;
 end;
@@ -136,7 +136,7 @@ begin
   dir:=VectorTransform3D(posr.worldcoord,m1);
 
   processaxis(posr,dir);
-  tv:=uzegeometry.vectordot(dir.asVector3d,zwcs).asPoint3d;
+  tv:=uzegeometry.vectordot(dir.asVector,cV3d__0__0__1).asPoint3d;
   processaxis(posr,tv);
 end;
 
@@ -196,12 +196,12 @@ begin
   // Шаг 5. Строим канонические оси новой локальной СК (Arbitrary Axis Algorithm).
   // Алгоритм DXF определяет ось X из нормали oz; углы дуги отсчитываются от неё.
   newOcsX := GetXfFromZ(Local.basis.oz);
-  newOcsY := NormalizeVertex(VectorDot(Local.basis.oz, newOcsX));
+  newOcsY := {NormalizeVertex}(VectorDot(Local.basis.oz, newOcsX)).Normalized;
 
   // Шаг 5.1. Обновляем Local.basis.ox и Local.basis.oy для согласованности
   // с CalcObjMatrixWithoutOwner, который также использует Arbitrary Axis Algorithm.
-  Local.basis.ox := NormalizeVertex(newOcsX);
-  Local.basis.oy := NormalizeVertex(newOcsY);
+  Local.basis.ox := {NormalizeVertex}(newOcsX).Normalized;
+  Local.basis.oy := {NormalizeVertex}(newOcsY).Normalized;
 
   // Шаг 6. Используем Local.P_insert (извлечённый из ObjMatrix) как новый центр
   // для согласованности с дальнейшими вычислениями.
@@ -213,11 +213,11 @@ begin
 
   // Шаг 8. Проецируем направления на оси локальной СК и вычисляем новые углы.
   // scalardot — скалярное произведение; оно даёт косинус и синус угла в плоскости дуги
-  StartAngle := ArcTan2(scalardot(dirToStart.asVector3d, newOcsY), scalardot(dirToStart.asVector3d, newOcsX));
+  StartAngle := ArcTan2(scalardot(dirToStart.asVector, newOcsY), scalardot(dirToStart.asVector, newOcsX));
   if StartAngle < 0 then
     StartAngle := 2 * pi + StartAngle;
 
-  EndAngle := ArcTan2(scalardot(dirToEnd.asVector3d, newOcsY), scalardot(dirToEnd.asVector3d, newOcsX));
+  EndAngle := ArcTan2(scalardot(dirToEnd.asVector, newOcsY), scalardot(dirToEnd.asVector, newOcsX));
   if EndAngle < 0 then
     EndAngle := 2 * pi + EndAngle;
 
@@ -242,7 +242,7 @@ begin
   Local.P_insert:=objmatrix.mtr.v[3].Slice.asPoint3d;
 
   // P_insert_in_WCS также обновляем из строки 3 ObjMatrix.
-  // Это эквивалентно VectorTransform3D(nulvertex, objmatrix), но без лишних вычислений.
+  // Это эквивалентно VectorTransform3D(cV3d__0__0__0, objmatrix), но без лишних вычислений.
   P_insert_in_WCS:=Local.P_insert;
 
   // Радиус — длина первого вектора-оси в ObjMatrix (масштаб по оси X)
@@ -344,14 +344,14 @@ begin
   // Пересчитываем нормализованные оси из текущего oz
   Local.basis.ox := GetXfFromZ(Local.basis.oz);
   Local.basis.oy := VectorDot(Local.basis.oz, Local.basis.ox);
-  Local.basis.ox := NormalizeVertex(Local.basis.ox);
-  Local.basis.oy := NormalizeVertex(Local.basis.oy);
-  Local.basis.oz := NormalizeVertex(Local.basis.oz);
+  Local.basis.ox.Normalize;// := NormalizeVertex(Local.basis.ox);
+  Local.basis.oy.Normalize;// := NormalizeVertex(Local.basis.oy);
+  Local.basis.oz.Normalize;// := NormalizeVertex(Local.basis.oz);
 
   // Матрица поворота из базисных векторов OCS
   rotmatr  := CreateMatrixFromBasis(Local.basis.ox, Local.basis.oy, Local.basis.oz);
   // Матрица переноса на центр дуги в WCS
-  dispmatr := CreateTranslationMatrix(Local.p_insert);
+  dispmatr := CreateTranslationMatrix(Local.p_insert.asVector);
 
   // Порядок: сначала поворот, затем перенос — строка 3 результата = Local.p_insert
   Result := MatrixMultiply(rotmatr, dispmatr);
@@ -429,7 +429,7 @@ begin
   if EFDraw in stage then begin
     Representation.Clear;
     if not (ESTemp in State)and(DCODrawable in DC.Options) then
-      Representation.CreatePolyLine(dc,self,vp,OneMatrix,Vertex3D_in_WCS_Array.getPFirst[0..Vertex3D_in_WCS_Array.GetLastIndex],False,False);
+      Representation.CreatePolyLine(dc,self,vp,cOneMatrix,Vertex3D_in_WCS_Array.getPFirst[0..Vertex3D_in_WCS_Array.GetLastIndex],False,False);
     if assigned(EntExtensions) then
       EntExtensions.RunOnAfterEntityFormat(@self,drawing,DC);
   end;
@@ -624,15 +624,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=q0;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_midle then begin
     pdesc.worldcoord:=q1;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=q2;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 
@@ -737,7 +737,7 @@ var
 begin
   m:=ObjMatrix;
   MatrixInvert(m);
-  m.mtr.v[3]:=NulVector4D;
+  m.mtr.v[3]:=cV4d__0__0__0__0;
 
   tq0:=VectorTransform3D(q0*R,m);
   tq1:=VectorTransform3D(q1*R,m);

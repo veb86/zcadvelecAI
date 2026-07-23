@@ -66,7 +66,7 @@ end;
                 );
          PTBlockScaleParams=^TBlockScaleParams;
          TBlockScaleParams=record
-                             Scale:TzePoint3d;(*'New scale'*)
+                             Scale:TzeVector3d;(*'New scale'*)
                              Absolutely:Boolean;(*'Absolutely'*)
                            end;
          PTBlockRotateParams=^TBlockRotateParams;
@@ -466,7 +466,7 @@ begin
                 pobj^.FormatEntity(drawings.GetCurrentDWG^,dc);
 
                 //pobj^.VarObjArray.free;
-           {powner^.objmatrix:=onematrix;
+           {powner^.objmatrix:=cOneMatrix;
            pvisible:=pobj^.Clone(@powner^);
                     if pvisible^.IsHaveLCS then
                                pvisible^.Format;
@@ -747,7 +747,7 @@ begin
            if pobj^.Selected then
            if pobj<>pointer(powner) then
            begin
-           powner^.objmatrix:=onematrix;
+           powner^.objmatrix:=cOneMatrix;
            pvisible:=pobj^.Clone(@powner^);
                     if pvisible^.IsHaveLCS then
                                pvisible^.Formatentity(drawings.GetCurrentDWG^,dc);
@@ -1185,7 +1185,7 @@ begin
 
   BlockScale.init('BlockScale',0,0);
   BlockScale.CEndActionAttr:=[];
-  BlockScaleParams.Scale:=uzegeometry.CreateVertex(1,1,1);
+  BlockScaleParams.Scale:=uzegeometry.CreateVector(1,1,1);
   BlockScaleParams.Absolutely:=true;
   BlockScale.SetCommandParam(@BlockScaleParams,'PTBlockScaleParams');
 

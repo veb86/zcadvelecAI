@@ -128,7 +128,7 @@ begin
 
   if Count = 0 then
   begin
-    Result := NulPoint;
+    Result := cP3d__0__0__0;
     Exit;
   end;
 
@@ -175,7 +175,7 @@ function CalculateEntityCenter(
 var
   ObjType: Integer;
 begin
-  Result := NulPoint;
+  Result := cP3d__0__0__0;
 
   if Entity = nil then
     Exit;
@@ -272,7 +272,7 @@ begin
   // Настраивает
   result^.Name := blockName;
   result^.Local.P_insert := pt;
-  result^.scale := uzegeometry.CreateVertex(scalex, scaley, 1);
+  result^.scale := uzegeometry.CreateVector(scalex, scaley, 1);
   result^.rotate := iRotate;
 
   // Строим переменную часть примитива (та что может редактироваться)

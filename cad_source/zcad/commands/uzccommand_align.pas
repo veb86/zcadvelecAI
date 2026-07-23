@@ -126,7 +126,7 @@ begin
   if axisLen < ALIGN_MIN_DISTANCE then begin
     if cosAngle > 0 then begin
       // Угол ≈ 0°: возвращаем единичную матрицу
-      Result := onematrix;
+      Result := cOneMatrix;
       Exit;
     end;
     // Угол ≈ 180°: выбираем произвольную перпендикулярную ось
@@ -139,7 +139,7 @@ begin
     rotAxis := uzegeometry.VectorDot(srcVec, perpAxis);
     axisLen := Sqrt(rotAxis.x * rotAxis.x + rotAxis.y * rotAxis.y + rotAxis.z * rotAxis.z);
     if axisLen < ALIGN_MIN_DISTANCE then begin
-      Result := onematrix;
+      Result := cOneMatrix;
       Exit;
     end;
     rotAxis.x := rotAxis.x / axisLen;
@@ -147,7 +147,7 @@ begin
     rotAxis.z := rotAxis.z / axisLen;
     // Поворот на 180°: cos(π)=-1, sin(π)=0
     kx := rotAxis.x; ky := rotAxis.y; kz := rotAxis.z;
-    m := onematrix;
+    m := cOneMatrix;
     m.mtr.v[0].v[0] := 2.0 * kx * kx - 1.0;
     m.mtr.v[0].v[1] := 2.0 * kx * ky;
     m.mtr.v[0].v[2] := 2.0 * kx * kz;
@@ -180,7 +180,7 @@ begin
   // Строим матрицу Родригеса в строчно-мажорном порядке ZCAD (v' = v * M).
   // Строки матрицы — это новые образы базисных векторов X, Y, Z.
   // R[i][j] = δ(i,j)*c + ki*kj*(1-c) + ε(i,k,j)*kk*s
-  m := onematrix;
+  m := cOneMatrix;
   m.mtr.v[0].v[0] := cosAngle + kx * kx * c1;
   m.mtr.v[0].v[1] := kx * ky * c1 + kz * sinAngle;
   m.mtr.v[0].v[2] := kx * kz * c1 - ky * sinAngle;
@@ -219,11 +219,11 @@ var
   resultMatrix: TzeTypedMatrix4d;
 begin
   // Шаг 1: Трансляция — смещаем srcPoint1 в dstPoint1
-  resultMatrix := uzegeometry.CreateTranslationMatrix((dstPoint1-srcPoint1).asPoint3d);
+  resultMatrix := uzegeometry.CreateTranslationMatrix(dstPoint1-srcPoint1);
 
   // Шаг 2: Поворот — применяем только при ненулевых расстояниях
-  srcLen := uzegeometry.Vertexlength(srcPoint1, srcPoint2);
-  dstLen := uzegeometry.Vertexlength(dstPoint1, dstPoint2);
+  srcLen := srcPoint1.LengthTo(srcPoint2);
+  dstLen := dstPoint1.LengthTo(dstPoint2);
 
   if (srcLen > ALIGN_MIN_DISTANCE) and (dstLen > ALIGN_MIN_DISTANCE) then begin
     // Нормализуем направляющие векторы для 3D-поворота
@@ -237,14 +237,14 @@ begin
 
     // Матрица 3D-поворота вокруг dstPoint1:
     //   T(-dstPoint1) * R3D(srcVec→dstVec) * T(dstPoint1)
-    rotationMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1);
+    rotationMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1.asVector);
     rotationMatrix := uzegeometry.MatrixMultiply(
       rotationMatrix,
       Calc3DRotationMatrix(srcVec, dstVec)
     );
     rotationMatrix := uzegeometry.MatrixMultiply(
       rotationMatrix,
-      uzegeometry.CreateTranslationMatrix(dstPoint1)
+      uzegeometry.CreateTranslationMatrix(dstPoint1.asVector)
     );
 
     resultMatrix := uzegeometry.MatrixMultiply(resultMatrix, rotationMatrix);
@@ -256,14 +256,14 @@ begin
 
       // Матрица масштабирования относительно точки dstPoint1:
       //   T(-dstPoint1) * Scale(scaleValue) * T(dstPoint1)
-      scaleMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1);
+      scaleMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1.asVector);
       scaleMatrix := uzegeometry.MatrixMultiply(
         scaleMatrix,
         CreateScaleMatrix(scaleValue)
       );
       scaleMatrix := uzegeometry.MatrixMultiply(
         scaleMatrix,
-        uzegeometry.CreateTranslationMatrix(dstPoint1)
+        uzegeometry.CreateTranslationMatrix(dstPoint1.asVector)
       );
 
       resultMatrix := uzegeometry.MatrixMultiply(resultMatrix, scaleMatrix);
@@ -324,7 +324,7 @@ begin
   transformedSrc3 := uzegeometry.VectorTransform3D(srcPoint3, twoPointMatrix);
 
   // Шаг 3: вычисляем поворот «крен» вокруг оси dst1→dst2
-  rollAxisLen := uzegeometry.Vertexlength(dstPoint1, dstPoint2);
+  rollAxisLen := dstPoint1.LengthTo(dstPoint2);
 
   if rollAxisLen > ALIGN_MIN_DISTANCE then begin
     // Нормализованная ось поворота
@@ -370,14 +370,14 @@ begin
       // Матрица «крена» вокруг dst1→dst2 через Calc3DRotationMatrix,
       // дополнительно ограничиваем вращение вокруг нужной оси:
       //   T(-dst1) * R_roll(perpSrc→perpDst, вокруг rollAxis) * T(dst1)
-      rollMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1);
+      rollMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1.asVector);
       rollMatrix := uzegeometry.MatrixMultiply(
         rollMatrix,
         Calc3DRotationMatrix(perpSrc, perpDst)
       );
       rollMatrix := uzegeometry.MatrixMultiply(
         rollMatrix,
-        uzegeometry.CreateTranslationMatrix(dstPoint1)
+        uzegeometry.CreateTranslationMatrix(dstPoint1.asVector)
       );
 
       twoPointMatrix := uzegeometry.MatrixMultiply(twoPointMatrix, rollMatrix);
@@ -388,18 +388,18 @@ begin
   if applyScale then begin
     // Применяем масштабирование относительно dstPoint1
     // Масштаб = |dst1→dst2| / |src1→src2|, третья точка не участвует
-    rollAxisLen := uzegeometry.Vertexlength(dstPoint1, dstPoint2);
+    rollAxisLen := dstPoint1.LengthTo(dstPoint2);
     if rollAxisLen > ALIGN_MIN_DISTANCE then begin
-      perpSrcLen := uzegeometry.Vertexlength(srcPoint1, srcPoint2);
+      perpSrcLen := srcPoint1.LengthTo(srcPoint2);
       if perpSrcLen > ALIGN_MIN_DISTANCE then begin
-        rollMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1);
+        rollMatrix := uzegeometry.CreateTranslationMatrix(-dstPoint1.asVector);
         rollMatrix := uzegeometry.MatrixMultiply(
           rollMatrix,
           CreateScaleMatrix(rollAxisLen / perpSrcLen)
         );
         rollMatrix := uzegeometry.MatrixMultiply(
           rollMatrix,
-          uzegeometry.CreateTranslationMatrix(dstPoint1)
+          uzegeometry.CreateTranslationMatrix(dstPoint1.asVector)
         );
         twoPointMatrix := uzegeometry.MatrixMultiply(twoPointMatrix, rollMatrix);
       end;

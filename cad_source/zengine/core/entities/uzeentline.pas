@@ -106,7 +106,7 @@ var
 begin
   dir:=CoordInWCS.lEnd-CoordInWCS.lBegin;
   processaxis(posr,dir.asPoint3d);
-  tv:=uzegeometry.vectordot(dir,zwcs);
+  tv:=uzegeometry.vectordot(dir,cV3d__0__0__1);
   processaxis(posr,tv.asPoint3d);
 end;
 
@@ -152,13 +152,13 @@ var
   dc:TDrawContext;
 begin
   Result:=False;
-  if Vertexlength(CoordInWCS.lbegin,CoordInWCS.lend)<Vertexlength(
-    pl^.CoordInWCS.lbegin,pl^.CoordInWCS.lend) then begin
+  if CoordInWCS.lbegin.LengthTo(CoordInWCS.lend)<
+     pl^.CoordInWCS.lbegin.LengthTo(pl^.CoordInWCS.lend) then begin
     Result:=pl^.jointoline(@self,drawing);
     exit;
   end;
   dir:=CoordInWCS.lEnd-CoordInWCS.lBegin;
-  u:=NormalizeVertex(dir);
+  u:={NormalizeVertex}(dir).Normalized;
   w:=pl.CoordInWCS.lbegin-CoordInWCS.lbegin;
   t1:=(scalardot(w,dir))/SqrOneVertexlength(dir);
   q:=online(w,u);
@@ -194,8 +194,8 @@ constructor GDBObjLine.initnul;
 begin
   inherited initnul(owner);
   bp.ListPos.Owner:=owner;
-  CoordInOCS.lBegin:=NulPoint;
-  CoordInOCS.lEnd:=NulPoint;
+  CoordInOCS.lBegin:=cP3d__0__0__0;
+  CoordInOCS.lEnd:=cP3d__0__0__0;
 end;
 
 constructor GDBObjLine.init;
@@ -426,7 +426,7 @@ begin
         t:=-((CoordInWCS.lbegin.x-param.lastpoint.x)*dir.x+
           (CoordInWCS.lbegin.y-param.lastpoint.y)*dir.y+
           (CoordInWCS.lbegin.z-param.lastpoint.z)*dir.z)/
-          (SqrVertexlength(self.CoordInWCS.lBegin,self.CoordInWCS.lEnd));
+          (self.CoordInWCS.lBegin.SqrLengthTo(self.CoordInWCS.lEnd));
         if (t>=0) and (t<=1) then begin
           osp.worldcoord.x:=CoordInWCS.lbegin.x+t*dir.x;
           osp.worldcoord.y:=CoordInWCS.lbegin.y+t*dir.y;
@@ -442,8 +442,8 @@ begin
     8:begin
       if (SnapMode and osm_nearest)<>0 then begin
         tv:=vectordot(dir,param.md.mouseray.dir).asPoint3d;
-        n:=vectordot(param.md.mouseray.dir,tv.asVector3d);
-        n:=NormalizeVertex(n);
+        n:=vectordot(param.md.mouseray.dir,tv.asVector);
+        n.Normalize;//:=NormalizeVertex(n);
         v.x:=param.md.mouseray.lbegin.x-CoordInWCS.lbegin.x;
         v.y:=param.md.mouseray.lbegin.y-CoordInWCS.lbegin.y;
         v.z:=param.md.mouseray.lbegin.z-CoordInWCS.lbegin.z;
@@ -529,7 +529,7 @@ begin
           tv2.x:=pgdbobjline(pobj)^.CoordInWCS.lbegin.x+dir2.x*t2;
           tv2.y:=pgdbobjline(pobj)^.CoordInWCS.lbegin.y+dir2.y*t2;
           tv2.z:=pgdbobjline(pobj)^.CoordInWCS.lbegin.z+dir2.z*t2;
-          dist:=Vertexlength(tv1,tv2);
+          dist:=tv1.LengthTo(tv2);
           if dist<bigeps then begin
             if (SnapMode and osm_intersection)<>0 then begin
               osp.worldcoord:=tv1;
@@ -624,15 +624,15 @@ var
   tv,tv2:TzePoint3d;
 begin
   if rtmod.point.pointtype=os_begin then begin
-    CoordInOCS.lbegin:=rtmod.point.worldcoord+rtmod.dist;
+    CoordInOCS.lbegin:=rtmod.point.worldcoord+rtmod.dist.asVector;
   end else if rtmod.point.pointtype=os_end then begin
-    CoordInOCS.lend:=rtmod.point.worldcoord+rtmod.dist;
+    CoordInOCS.lend:=rtmod.point.worldcoord+rtmod.dist.asVector;
   end else if rtmod.point.pointtype=os_midle then begin
     tv:=uzegeometry.VertexSub(CoordInOCS.lend,CoordInOCS.lbegin);
-    tv:=uzegeometry.VertexMulOnSc(tv,0.5);
-    tv2:=rtmod.point.worldcoord+rtmod.dist;
+    tv:={uzegeometry.VertexMulOnSc}(tv*0.5);
+    tv2:=rtmod.point.worldcoord+rtmod.dist.asVector;
     CoordInOCS.lbegin:=VertexSub(tv2,tv);
-    CoordInOCS.lend:=tv2+tv;
+    CoordInOCS.lend:=tv2+tv.asVector;
   end;
 end;
 
@@ -644,15 +644,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=CoordInWCS.lbegin;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=CoordInWCS.lend;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end else if pdesc^.pointtype=os_midle then begin
     pdesc.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/2);
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:=ToTzePoint2i(tv);
+    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
   end;
 end;
 
@@ -685,12 +685,12 @@ procedure GDBObjLine.transform;
 var
   tv:TzeVector4d;
 begin
-  tv.Slice:=CoordInOCS.lbegin.asVector3d;
+  tv.Slice:=CoordInOCS.lbegin.asVector;
   tv.CutOff:=1;
   tv:=vectortransform(tv,t_matrix);
   CoordInOCS.lbegin:=tv.Slice.asPoint3d;
 
-  tv.Slice:=CoordInOCS.lend.asVector3d;
+  tv.Slice:=CoordInOCS.lend.asVector;
   tv.CutOff:=1;
   tv:=vectortransform(tv,t_matrix);
   CoordInOCS.lend:=tv.Slice.asPoint3d;
