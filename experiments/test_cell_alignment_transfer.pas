@@ -18,7 +18,8 @@
     * the AutoCAD code decodes back to the same hor/vert groups (round-trip),
     * "default" alignments are treated as left/top, matching the editor
       combobox convention (issue #1352),
-    * cells without an explicit alignment collect to 0 (inherit from style).
+    * cells without an explicit alignment collect to 1 (TopLeft), rather than
+      inheriting MiddleCenter from the AutoCAD table style (issue #1399).
 
   Build & run:
     fpc -Mobjfpc experiments/test_cell_alignment_transfer.pas \
@@ -32,14 +33,14 @@ uses
   SysUtils;
 
 type
-  // Mirror of fpsTypes enums (same declaration order!)
+  // Копия порядка перечислений fpsTypes.
   TsHorAlignment = (haDefault, haLeft, haCenter, haRight);
   TsVertAlignment = (vaDefault, vaTop, vaCenter, vaBottom);
-  // Mirror of uzeacadtable_types
+  // Копия перечислений uzeacadtable_types.
   THorzAlign = (zhaLeft, zhaCenter, zhaRight);
   TVertAlign = (zvaTop, zvaMiddle, zvaBottom);
 
-{ ---- logic copied verbatim from uzvspreadsheet_dimensions.pas ---- }
+{ Логика из uzvspreadsheet_dimensions.pas. }
 
 function HorAlignToGroup(AHor: TsHorAlignment): Integer;
 begin
@@ -65,17 +66,14 @@ begin
   Result := VertAlignToGroup(AVert) * 3 + HorAlignToGroup(AHor) + 1;
 end;
 
-{ Collects the AutoCAD code for one cell the way CollectCellAlignments does:
-  0 (inherit) when both alignments are default, otherwise the encoded code. }
+{ Собирает код одной ячейки так же, как CollectCellAlignments. Значения
+  по умолчанию должны стать явным TopLeft, иначе стиль таблицы изменит их. }
 function CollectOne(AHor: TsHorAlignment; AVert: TsVertAlignment): Integer;
 begin
-  if (AHor <> haDefault) or (AVert <> vaDefault) then
-    Result := WorksheetAlignmentToAcad(AHor, AVert)
-  else
-    Result := 0;
+  Result := WorksheetAlignmentToAcad(AHor, AVert);
 end;
 
-{ ---- logic copied verbatim from uzeacadtable_styles.pas ---- }
+{ Логика из uzeacadtable_styles.pas. }
 
 function DXFAlignToHorz(Alignment: Integer): THorzAlign;
 var
@@ -103,7 +101,7 @@ begin
   end;
 end;
 
-{ ---- test harness ---- }
+{ Тестовый запуск. }
 
 var
   Failures: Integer = 0;
@@ -131,7 +129,7 @@ end;
 begin
   WriteLn('Testing cell alignment transfer (issue #1363)');
 
-  // The 9 combinations, AutoCAD codes 1..9 (1=TopLeft .. 9=BottomRight)
+  // Девять комбинаций AutoCAD: 1=TopLeft .. 9=BottomRight.
   ExpectCode(haLeft,   vaTop,    1, zhaLeft,   zvaTop,    'left-top');
   ExpectCode(haCenter, vaTop,    2, zhaCenter, zvaTop,    'center-top');
   ExpectCode(haRight,  vaTop,    3, zhaRight,  zvaTop,    'right-top');
@@ -142,7 +140,7 @@ begin
   ExpectCode(haCenter, vaBottom, 8, zhaCenter, zvaBottom, 'center-bottom');
   ExpectCode(haRight,  vaBottom, 9, zhaRight,  zvaBottom, 'right-bottom');
 
-  // Defaults are treated as left/top (matching editor combobox, issue #1352)
+  // Значения по умолчанию соответствуют left/top (issue #1352).
   Check(WorksheetAlignmentToAcad(haDefault, vaDefault) = 1,
     'haDefault/vaDefault -> AutoCAD code 1 (TopLeft)');
   Check(WorksheetAlignmentToAcad(haDefault, vaCenter) = 4,
@@ -150,9 +148,9 @@ begin
   Check(WorksheetAlignmentToAcad(haRight, vaDefault) = 3,
     'haRight/vaDefault -> AutoCAD code 3 (TopRight)');
 
-  // Collection emits 0 (inherit) only when BOTH alignments are default
-  Check(CollectOne(haDefault, vaDefault) = 0,
-    'fully default cell -> 0 (inherit from style)');
+  // Сбор сохраняет умолчание листа, а не наследует стиль таблицы (issue #1399).
+  Check(CollectOne(haDefault, vaDefault) = 1,
+    'fully default cell -> code 1 (TopLeft)');
   Check(CollectOne(haCenter, vaDefault) = 2,
     'explicit horizontal only -> code 2 (TopCenter)');
   Check(CollectOne(haDefault, vaBottom) = 7,
