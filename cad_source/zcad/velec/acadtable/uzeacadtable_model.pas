@@ -3616,7 +3616,10 @@ begin
     APart.LineTypeName := '';
   APart.LineTypeScale := vp.LineTypeScale;
 
-  APart.InsertPoint := FInsertPoint;
+  // FInsertPoint содержит исходную точку DXF/программного построения, а
+  // интерактивный перенос обновляет Local.P_insert через objmatrix.
+  // Сохраняем фактическое положение объекта после трансформаций (issue #1396).
+  APart.InsertPoint := Local.P_insert;
   APart.Direction.x := Cos(FRotate);
   APart.Direction.y := Sin(FRotate);
   APart.Direction.z := 0;

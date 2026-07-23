@@ -405,14 +405,17 @@ begin
   dxfIntegerout(AOutStream, 171, 1);
   dxfIntegerout(AOutStream, 172, 0);
   dxfIntegerout(AOutStream, 173, BoolToDXF(IsVirtual));
-  if Alignment <> 0 then
-    dxfIntegerout(AOutStream, 170, Alignment);
   dxfIntegerout(AOutStream, 174, 0);
   dxfIntegerout(AOutStream, 175, ColSpan);
   dxfIntegerout(AOutStream, 176, RowSpan);
   dxfIntegerout(AOutStream, 91, 262144);
   dxfIntegerout(AOutStream, 178, 0);
   dxfDoubleout(AOutStream, 145, 0);
+  // AutoCAD хранит выравнивание после служебных данных ячейки и перед
+  // group 92. Ранняя запись group 170 игнорировалась при открытии файла,
+  // поэтому ячейка возвращалась к выравниванию стиля таблицы (issue #1396).
+  if Alignment <> 0 then
+    dxfIntegerout(AOutStream, 170, Alignment);
   dxfIntegerout(AOutStream, 92, 0);
   dxfStringWithoutEncodeOut(AOutStream, 301, 'CELL_VALUE');
   if CellText <> '' then
