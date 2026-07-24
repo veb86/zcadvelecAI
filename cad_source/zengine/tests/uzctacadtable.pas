@@ -187,10 +187,13 @@ type
     procedure SavesTransformedInsertPointAndCellAlignmentToDXF;
     // issue #1368: явные типы строк (SetRowStyleTypes) задают индекс базового
     // стиля строки (0=Title, 1=Header, 2=Data); RowStyleTypeAt возвращает
-    // заданное значение либо -1 вне диапазона, а перестроение таблицы
-    // сбрасывает ранее заданные типы строк.
+    // эффективный тип с учётом fallback рендера либо -1 вне диапазона, а
+    // перестроение таблицы сбрасывает ранее заданные типы строк.
     procedure SetRowStyleTypesAssignsRowStyles;
     procedure RebuildResetsRowStyleTypes;
+    // issue #1406: ZCAD model-path DXF не содержит AcDbTableContent, поэтому
+    // редактор должен получать Title/Header/Data из legacy-позиционной логики.
+    procedure LoadsLegacyRowStylesForSpreadsheetEditing;
     // issue #1373: таблица с несколькими строками-заголовками (tablebugheader.dxf:
     // строка 0 = Title, строки 1 и 2 = Header, остальные = Data) должна
     // загружаться с правильными типами строк, прочитанными из современного
@@ -2831,9 +2834,9 @@ begin
       ColWidths, RowHeights, Alignments, InsertPt),
       'BuildFromCellTextsWithSizesAndAlignments должен построить таблицу');
 
-    // До назначения типов строк все строки не имеют явного типа (-1).
-    CheckEquals(-1, Table^.RowStyleTypeAt(0),
-      'До SetRowStyleTypes строка 0 не должна иметь явного типа');
+    // Программно созданная таблица до назначения типов состоит из Data.
+    CheckEquals(2, Table^.RowStyleTypeAt(0),
+      'До SetRowStyleTypes программная строка должна иметь тип Data');
 
     // Назначаем: строка 0 = Title (0), строка 1 = Header (1), строка 2 = Data (2).
     Table^.SetRowStyleTypes([0, 1, 2]);
@@ -2890,10 +2893,36 @@ begin
       ColWidths, RowHeights, Alignments, InsertPt),
       'Повторное построение таблицы должно завершиться успешно');
 
-    CheckEquals(-1, Table^.RowStyleTypeAt(0),
-      'После перестроения строка 0 не должна иметь явного типа');
-    CheckEquals(-1, Table^.RowStyleTypeAt(1),
-      'После перестроения строка 1 не должна иметь явного типа');
+    CheckEquals(2, Table^.RowStyleTypeAt(0),
+      'После перестроения строка 0 должна вернуться к типу Data');
+    CheckEquals(2, Table^.RowStyleTypeAt(1),
+      'После перестроения строка 1 должна вернуться к типу Data');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.LoadsLegacyRowStylesForSpreadsheetEditing;
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../experiments/issue1399/zcadtablevyrav.txt'),
+    Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+    CheckEquals(4, AcadTable^.RowCount, 'Ожидались четыре строки');
+
+    CheckEquals(0, AcadTable^.RowStyleTypeAt(0),
+      'Первая legacy-строка должна открываться как Title');
+    CheckEquals(1, AcadTable^.RowStyleTypeAt(1),
+      'Вторая legacy-строка должна открываться как Header');
+    CheckEquals(2, AcadTable^.RowStyleTypeAt(2),
+      'Третья legacy-строка должна открываться как Data');
+    CheckEquals(2, AcadTable^.RowStyleTypeAt(3),
+      'Четвёртая legacy-строка должна открываться как Data');
   finally
     Drawing.done;
   end;
