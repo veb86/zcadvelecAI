@@ -105,6 +105,11 @@ function CollectRowHeights(AWorksheet: TsWorksheet;
 function WorksheetAlignmentToAcad(AHor: TsHorAlignment;
   AVert: TsVertAlignment): Integer;
 
+{ Преобразует код выравнивания AutoCAD (1..9) обратно в пару выравниваний
+  fpspreadsheet. Некорректный код трактуется как левое/верхнее. }
+procedure AcadAlignmentToWorksheet(AAlignment: Integer;
+  out AHor: TsHorAlignment; out AVert: TsVertAlignment);
+
 { Собирает выравнивания ячеек листа в кодировке AutoCAD для передачи в
   GDBObjAcadTable.BuildFromCellTextsWithSizesAndAlignments (issue #1363).
   Значения "по умолчанию" преобразуются в фактическое выравнивание листа
@@ -247,6 +252,25 @@ begin
   // Код AutoCAD (group 170): 1..9 = вертикаль*3 + горизонталь + 1,
   // где 1=TopLeft .. 9=BottomRight.
   Result := VertAlignToGroup(AVert) * 3 + HorAlignToGroup(AHor) + 1;
+end;
+
+procedure AcadAlignmentToWorksheet(AAlignment: Integer;
+  out AHor: TsHorAlignment; out AVert: TsVertAlignment);
+const
+  HorByGroup: array[0..2] of TsHorAlignment = (
+    fpsTypes.haLeft, fpsTypes.haCenter, fpsTypes.haRight);
+  VertByGroup: array[0..2] of TsVertAlignment = (
+    fpsTypes.vaTop, fpsTypes.vaCenter, fpsTypes.vaBottom);
+var
+  AlignmentIndex: Integer;
+begin
+  AHor := fpsTypes.haLeft;
+  AVert := fpsTypes.vaTop;
+  if (AAlignment < 1) or (AAlignment > 9) then
+    Exit;
+  AlignmentIndex := AAlignment - 1;
+  AHor := HorByGroup[AlignmentIndex mod 3];
+  AVert := VertByGroup[AlignmentIndex div 3];
 end;
 
 function CollectCellAlignments(AWorksheet: TsWorksheet;
