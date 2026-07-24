@@ -46,7 +46,7 @@ def test_alignment_uses_autocad_cell_group_order():
     )
     groups = [
         "dxfintegerout(aoutstream,176,rowspan);",
-        "dxfintegerout(aoutstream,91,262144);",
+        "dxfintegerout(aoutstream,91,262145)",
         "dxfintegerout(aoutstream,178,0);",
         "dxfdoubleout(aoutstream,145,0);",
         "dxfintegerout(aoutstream,170,alignment);",

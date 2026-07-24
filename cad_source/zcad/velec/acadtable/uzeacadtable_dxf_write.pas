@@ -408,7 +408,12 @@ begin
   dxfIntegerout(AOutStream, 174, 0);
   dxfIntegerout(AOutStream, 175, ColSpan);
   dxfIntegerout(AOutStream, 176, RowSpan);
-  dxfIntegerout(AOutStream, 91, 262144);
+  // The low bit marks that the cell has an explicit property override.
+  // Without it AutoCAD ignores group 170 and falls back to the table style.
+  if Alignment <> 0 then
+    dxfIntegerout(AOutStream, 91, 262145)
+  else
+    dxfIntegerout(AOutStream, 91, 262144);
   dxfIntegerout(AOutStream, 178, 0);
   dxfDoubleout(AOutStream, 145, 0);
   // AutoCAD хранит выравнивание после служебных данных ячейки и перед
