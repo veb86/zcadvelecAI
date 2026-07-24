@@ -107,8 +107,8 @@ function WorksheetAlignmentToAcad(AHor: TsHorAlignment;
 
 { Собирает выравнивания ячеек листа в кодировке AutoCAD для передачи в
   GDBObjAcadTable.BuildFromCellTextsWithSizesAndAlignments (issue #1363).
-  Ячейкам без явно заданного выравнивания (оба значения "по умолчанию")
-  присваивается 0 — наследование выравнивания от стиля таблицы. }
+  Значения "по умолчанию" преобразуются в фактическое выравнивание листа
+  слева/сверху, а не в наследование от стиля таблицы (issue #1399). }
 function CollectCellAlignments(AWorksheet: TsWorksheet;
   ARowCount, AColCount: Integer): TTableAlignmentArray;
 
@@ -264,20 +264,19 @@ begin
   for RowIdx := 0 to ARowCount - 1 do
     for ColIdx := 0 to AColCount - 1 do
     begin
-      // По умолчанию выравнивание не задано — ячейка наследует его от стиля
-      // таблицы. Это сохраняет прежнее поведение для ячеек, которым в
-      // редакторе явно не назначали выравнивание.
-      Result[RowIdx * AColCount + ColIdx] := 0;
+      // Пустая ячейка не имеет записи fpspreadsheet и получает фактическое
+      // выравнивание листа по умолчанию: слева/сверху (код AutoCAD 1).
+      Result[RowIdx * AColCount + ColIdx] :=
+        WorksheetAlignmentToAcad(fpsTypes.haDefault, fpsTypes.vaDefault);
       Cell := AWorksheet.FindCell(Cardinal(RowIdx), Cardinal(ColIdx));
       if Cell = nil then
         Continue;
       Hor := AWorksheet.ReadHorAlignment(Cell);
       Vert := AWorksheet.ReadVertAlignment(Cell);
-      // Переносим выравнивание только если оно задано в ячейке листа явно;
-      // иначе оставляем 0 (наследование от стиля таблицы).
-      if (Hor <> fpsTypes.haDefault) or (Vert <> fpsTypes.vaDefault) then
-        Result[RowIdx * AColCount + ColIdx] :=
-          WorksheetAlignmentToAcad(Hor, Vert);
+      // Даже полностью стандартное выравнивание надо записывать явно.
+      // Иначе ACAD_TABLE применяет MiddleCenter из стиля таблицы.
+      Result[RowIdx * AColCount + ColIdx] :=
+        WorksheetAlignmentToAcad(Hor, Vert);
     end;
 end;
 
