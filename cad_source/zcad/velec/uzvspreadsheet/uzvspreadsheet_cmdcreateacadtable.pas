@@ -52,6 +52,7 @@ uses
   uzestylestablesdxf,
   uzeentsubordinated,
   uzeconsts,
+  uzeentity,
   uzeTypes,
   uzegeometry,
   uzegeometrytypes,

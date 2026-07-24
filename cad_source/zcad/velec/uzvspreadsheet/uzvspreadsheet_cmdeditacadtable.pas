@@ -38,6 +38,7 @@ uses
   uzeconsts,
   uzcdrawings,
   uzcinterface,
+  uzeentity,
   uzclog,
   uzvspreadsheet_dimensions,
   uzvspreadsheet_cmdcellstyle,
