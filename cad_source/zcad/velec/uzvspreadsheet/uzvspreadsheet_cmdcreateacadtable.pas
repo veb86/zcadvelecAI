@@ -228,6 +228,7 @@ begin
   // Создаём сущность и помещаем её в конструктивный root чертежа
   pt := AllocAndInitAcadTable(
     PGDBObjGenericWithSubordinated(@drawings.CurrentDWG^.ConstructObjRoot));
+  zcSetEntPropFromCurrentDrawingProp(PGDBObjEntity(pt));
   drawings.CurrentDWG^.ConstructObjRoot.ObjArray.AddPEntity(pt^);
 
   // Строим таблицу из текстов ячеек с переносом размеров столбцов/строк
