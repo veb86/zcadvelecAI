@@ -423,6 +423,14 @@ type
       const AColWidths, ARowHeights: TTableSizeArray;
       const ACellAlignments: TTableAlignmentArray;
       const AInsertPoint: TzePoint3d): Boolean; virtual;
+    // Обновляет содержимое существующей таблицы, сохраняя её стиль,
+    // трансформацию и свойства объекта. В отличие от BuildFrom* предназначен
+    // для сохранения правок из uzvspreadsheet обратно в выбранную таблицу.
+    function UpdateFromCellTextsWithSizesAndAlignments(
+      ARowCount, AColCount: Integer;
+      const ACellTexts: TTableTextArray;
+      const AColWidths, ARowHeights: TTableSizeArray;
+      const ACellAlignments: TTableAlignmentArray): Boolean; virtual;
 
     // Задаёт явные типы строк (issue #1368). ATypes индексируется по номеру
     // строки; значение — индекс базового стиля строки (0=Title, 1=Header,
@@ -435,6 +443,13 @@ type
     // (0=Title, 1=Header, 2=Data) либо -1, если тип строки не задан или
     // строка вне диапазона (issue #1368).
     function RowStyleTypeAt(ARow: Integer): Integer;
+    // Возвращает текст ячейки главной части таблицы. Для некорректных
+    // индексов возвращает пустую строку (issue #1402).
+    function CellTextAt(ARow, ACol: Integer): String;
+    // Возвращает фактическую высоту строки / ширину столбца. Для
+    // некорректного индекса возвращает 0 (issue #1402).
+    function RowHeightAt(ARow: Integer): Double;
+    function ColWidthAt(ACol: Integer): Double;
 
     // Публичные свойства для инспектора объектов
     property InsertPoint: TzePoint3d read FInsertPoint;
@@ -484,9 +499,10 @@ type
     // некорректных индексов возвращает пустую строку.
     function ContinuationPartCellText(
       APartIndex, ARow, ACol: Integer): string;
-    // Код выравнивания AutoCAD (group 170, 1..9) ячейки главной части
-    // таблицы; 0 — выравнивание не задано (наследуется от стиля). Для
-    // некорректных индексов возвращает 0 (для инспекции/тестов, issue #1363).
+    // Фактический код выравнивания AutoCAD (1..9) ячейки главной части.
+    // Явное значение group 170 имеет приоритет; при его отсутствии
+    // возвращается выравнивание, разрешённое из стиля строки/ячейки.
+    // Для некорректных индексов возвращает 0 (issue #1363, #1402).
     function CellAlignmentAt(ARow, ACol: Integer): Integer;
     // Повторно определяет признак повтора верхних меток по текущим данным
     // частей-продолжений и возвращает результат (issue #1309). Используется
@@ -763,6 +779,50 @@ begin
   Result := True;
 end;
 
+function GDBObjAcadTable.UpdateFromCellTextsWithSizesAndAlignments(
+  ARowCount, AColCount: Integer;
+  const ACellTexts: TTableTextArray;
+  const AColWidths, ARowHeights: TTableSizeArray;
+  const ACellAlignments: TTableAlignmentArray): Boolean;
+var
+  SavedTableStyle: TTableStyle;
+  SavedTableStyleHandle: String;
+  SavedLocal: GDBObj2dprop;
+  SavedObjMatrix: TzeTypedMatrix4d;
+  SavedInsertInWCS: TzePoint3d;
+  SavedScale: TzeVector3d;
+  SavedRotate: Double;
+begin
+  SavedTableStyle := FTableStyle;
+  SavedTableStyleHandle := FTableStyleHandle;
+  SavedLocal := Local;
+  SavedObjMatrix := objMatrix;
+  SavedInsertInWCS := P_insert_in_WCS;
+  SavedScale := FScale;
+  SavedRotate := FRotate;
+
+  // BuildFrom* is also used for newly allocated objects and therefore only
+  // appends dimensions to the initialized vectors. For an existing table,
+  // discard the old values before rebuilding so getters and geometry use the
+  // dimensions saved by the spreadsheet (issue #1402).
+  FRowHeights.Clear;
+  FColWidths.Clear;
+
+  Result := BuildFromCellTextsWithSizesAndAlignments(
+    ARowCount, AColCount, ACellTexts, AColWidths, ARowHeights,
+    ACellAlignments, FInsertPoint);
+  if not Result then
+    Exit;
+
+  FTableStyle := SavedTableStyle;
+  FTableStyleHandle := SavedTableStyleHandle;
+  Local := SavedLocal;
+  objMatrix := SavedObjMatrix;
+  P_insert_in_WCS := SavedInsertInWCS;
+  FScale := SavedScale;
+  FRotate := SavedRotate;
+end;
+
 function GDBObjAcadTable.GetCellTextLocal(
   RowIdx, ColIdx: Integer): String;
 var
@@ -794,6 +854,27 @@ begin
     Result := FRowStyleTypes[ARow]
   else
     Result := -1;
+end;
+
+function GDBObjAcadTable.CellTextAt(ARow, ACol: Integer): String;
+begin
+  Result := GetCellTextLocal(ARow, ACol);
+end;
+
+function GDBObjAcadTable.RowHeightAt(ARow: Integer): Double;
+begin
+  Result := 0;
+  if (ARow < 0) or (ARow >= FRowCount) then
+    Exit;
+  Result := GetRowHeightLocal(ARow);
+end;
+
+function GDBObjAcadTable.ColWidthAt(ACol: Integer): Double;
+begin
+  Result := 0;
+  if (ACol < 0) or (ACol >= FColCount) then
+    Exit;
+  Result := GetColWidthLocal(ACol);
 end;
 
 // --- Конструктор и деструктор ---
@@ -1810,12 +1891,31 @@ begin
 end;
 
 function GDBObjAcadTable.CellAlignmentAt(ARow, ACol: Integer): Integer;
+var
+  StyleRowIndex: Integer;
+  ResolvedStyle: TCellStyle;
 begin
   Result := 0;
   if (ARow < 0) or (ARow >= FRowCount) then Exit;
   if (ACol < 0) or (ACol >= FColCount) then Exit;
   if (Length(FCells) > ARow) and (Length(FCells[ARow]) > ACol) then
+  begin
     Result := FCells[ARow][ACol].CellAlignment;
+    if Result > 0 then
+      Exit;
+  end;
+
+  if RowStyleTypeAt(ARow) >= 0 then
+    StyleRowIndex := RowStyleTypeAt(ARow)
+  else if FForceDataStyleAllRows then
+    StyleRowIndex := 2
+  else
+    StyleRowIndex := ARow;
+  ResolvedStyle := uzeacadtable_cell.ResolveCellStyleForBaseRow(
+    StyleRowIndex, ARow, ACol, FTableStyle, FRows, FCols, FCells,
+    FRowCount, FColCount, FTableFlags);
+  Result := Ord(ResolvedStyle.VertAlign) * 3 +
+    Ord(ResolvedStyle.HorzAlign) + 1;
 end;
 
 // Признак разрыва вычисляется по двум источникам (issue #1305, часть 2a):

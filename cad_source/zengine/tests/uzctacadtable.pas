@@ -168,6 +168,8 @@ type
     // (как при вставке из редактора электронных таблиц) должно задавать
     // размеры таблицы и отрисовывать текст каждой непустой ячейки.
     procedure BuildsAcadTableFromCellTexts;
+    procedure ExposesAcadTableDataForSpreadsheetEditing;
+    procedure UpdatesAcadTableWithoutMovingOrChangingStyle;
     // issue #1357: пустой диапазон не создаёт таблицу.
     procedure BuildFromCellTextsRejectsEmptyDimensions;
     // issue #1359: явные ширины столбцов и высоты строк должны переноситься
@@ -2477,6 +2479,91 @@ begin
       'Ячейка C2 должна быть отрисована');
     CheckEquals(0, CountMTextByTemplate(Table^.ConstObjArray, ''),
       'Пустая ячейка не должна создавать текст');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.ExposesAcadTableDataForSpreadsheetEditing;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+    SetLength(Texts, 4);
+    Texts[0] := 'Title'; Texts[1] := 'Value';
+    Texts[2] := 'A'; Texts[3] := '1';
+    SetLength(ColWidths, 2);
+    ColWidths[0] := 25.0; ColWidths[1] := 35.0;
+    SetLength(RowHeights, 2);
+    RowHeights[0] := 12.0; RowHeights[1] := 18.0;
+    SetLength(Alignments, 4);
+    Alignments[0] := 1; Alignments[1] := 5;
+    Alignments[2] := 7; Alignments[3] := 9;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(
+      2, 2, Texts, ColWidths, RowHeights, Alignments, NulPoint));
+
+    CheckEquals('Value', Table^.CellTextAt(0, 1));
+    CheckEquals(12.0, Table^.RowHeightAt(0), 1e-6);
+    CheckEquals(35.0, Table^.ColWidthAt(1), 1e-6);
+    CheckEquals(9, Table^.CellAlignmentAt(1, 1));
+    CheckEquals('', Table^.CellTextAt(-1, 0));
+    CheckEquals(0.0, Table^.RowHeightAt(10), 1e-6);
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.UpdatesAcadTableWithoutMovingOrChangingStyle;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  Sizes: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  BeforeInsert: TzePoint3d;
+  BeforeStyle: String;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+    SetLength(Texts, 1);
+    Texts[0] := 'Before';
+    BeforeInsert := NulPoint;
+    BeforeInsert.x := 10;
+    BeforeInsert.y := 20;
+    CheckTrue(Table^.BuildFromCellTexts(1, 1, Texts, BeforeInsert));
+    BeforeInsert := Table^.InsertPoint;
+    BeforeStyle := Table^.TableStyleName;
+
+    Texts[0] := 'After';
+    SetLength(Sizes, 1);
+    Sizes[0] := 22.0;
+    SetLength(Alignments, 1);
+    Alignments[0] := 9;
+    CheckTrue(Table^.UpdateFromCellTextsWithSizesAndAlignments(
+      1, 1, Texts, Sizes, Sizes, Alignments));
+
+    CheckEquals('After', Table^.CellTextAt(0, 0));
+    CheckEquals(BeforeStyle, Table^.TableStyleName);
+    CheckEquals(BeforeInsert.x, Table^.InsertPoint.x, 1e-6);
+    CheckEquals(BeforeInsert.y, Table^.InsertPoint.y, 1e-6);
+    CheckEquals(22.0, Table^.RowHeightAt(0), 1e-6,
+      'При обновлении старая высота строки не должна оставаться первой');
+    CheckEquals(22.0, Table^.ColWidthAt(0), 1e-6,
+      'При обновлении старая ширина столбца не должна оставаться первой');
+    CheckEquals(9, Table^.CellAlignmentAt(0, 0));
   finally
     Drawing.done;
   end;

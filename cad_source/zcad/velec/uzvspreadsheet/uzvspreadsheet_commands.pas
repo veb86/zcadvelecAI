@@ -48,7 +48,9 @@ uses
   uzvspreadsheet_cmdcellstyle,
   uzvspreadsheet_cmdfillspaceroom,
   uzvspreadsheet_cmdinserttable,
-  uzvspreadsheet_cmdcreateacadtable;
+  uzvspreadsheet_cmdcreateacadtable,
+  uzvspreadsheet_cmdeditacadtable,
+  uzvspreadsheet_cmdsaveacadtable;
 
 implementation
 
