@@ -439,10 +439,9 @@ type
     // редактора электронных таблиц после построения геометрии, чтобы строки,
     // целиком состоящие из ячеек Title/Header, получили соответствующий стиль.
     procedure SetRowStyleTypes(const ATypes: array of Integer); virtual;
-    // Возвращает эффективный индекс базового стиля для строки ARow
-    // (0=Title, 1=Header, 2=Data). При отсутствии явных типов использует
-    // ту же принудительную/позиционную логику, что и рендеринг таблицы;
-    // для строки вне диапазона возвращает -1 (issue #1368/#1406).
+    // Возвращает явно заданный индекс базового стиля для строки ARow
+    // (0=Title, 1=Header, 2=Data) либо -1, если тип строки не задан или
+    // строка вне диапазона (issue #1368).
     function RowStyleTypeAt(ARow: Integer): Integer;
     // Возвращает текст ячейки главной части таблицы. Для некорректных
     // индексов возвращает пустую строку (issue #1402).
@@ -851,14 +850,10 @@ end;
 
 function GDBObjAcadTable.RowStyleTypeAt(ARow: Integer): Integer;
 begin
-  if (ARow < 0) or (ARow >= FRowCount) then
-    Result := -1
-  else if ARow <= High(FRowStyleTypes) then
+  if (ARow >= 0) and (ARow <= High(FRowStyleTypes)) then
     Result := FRowStyleTypes[ARow]
-  else if FForceDataStyleAllRows then
-    Result := 2
   else
-    Result := Min(ARow, 2);
+    Result := -1;
 end;
 
 function GDBObjAcadTable.CellTextAt(ARow, ACol: Integer): String;
