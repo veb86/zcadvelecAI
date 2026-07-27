@@ -190,6 +190,9 @@ type
     // эффективный тип с учётом fallback рендера либо -1 вне диапазона, а
     // перестроение таблицы сбрасывает ранее заданные типы строк.
     procedure SetRowStyleTypesAssignsRowStyles;
+    // issue #1409: mixed Title/Header/Data styles in one row must remain
+    // independent instead of being collapsed to one row style.
+    procedure SetCellStyleTypesKeepsMixedRowStyles;
     procedure RebuildResetsRowStyleTypes;
     // issue #1402: ZCAD model-path DXF не содержит AcDbTableContent, поэтому
     // редактор должен получать Title/Header/Data из legacy-позиционной логики.
@@ -2851,6 +2854,48 @@ begin
       'Строка вне диапазона должна вернуть -1');
     CheckEquals(-1, Table^.RowStyleTypeAt(-1),
       'Отрицательный индекс строки должен вернуть -1');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.SetCellStyleTypesKeepsMixedRowStyles;
+var
+  Drawing: TSimpleDrawing;
+  Table: PGDBObjAcadTable;
+  Texts: TTableTextArray;
+  ColWidths, RowHeights: TTableSizeArray;
+  Alignments: TTableAlignmentArray;
+  InsertPt: TzePoint3d;
+begin
+  Drawing.init(nil);
+  try
+    Table := AllocAndInitAcadTable(
+      PGDBObjGenericWithSubordinated(Drawing.pObjRoot));
+    Table^.bp.ListPos.Owner := Drawing.pObjRoot;
+    Drawing.pObjRoot^.ObjArray.AddPEntity(Table^);
+
+    System.SetLength(Texts, 3);
+    Texts[0] := 'Title';
+    Texts[1] := 'Header';
+    Texts[2] := 'Data';
+    System.SetLength(ColWidths, 0);
+    System.SetLength(RowHeights, 0);
+    System.SetLength(Alignments, 0);
+    InsertPt := NulPoint;
+    CheckTrue(Table^.BuildFromCellTextsWithSizesAndAlignments(
+      1, 3, Texts, ColWidths, RowHeights, Alignments, InsertPt),
+      'Таблица со смешанными стилями должна быть построена');
+
+    Table^.SetCellStyleTypes([0, 1, 2]);
+    CheckEquals(0, Table^.CellStyleTypeAt(0, 0),
+      'Первая ячейка должна сохранить Title');
+    CheckEquals(1, Table^.CellStyleTypeAt(0, 1),
+      'Вторая ячейка той же строки должна сохранить Header');
+    CheckEquals(2, Table^.CellStyleTypeAt(0, 2),
+      'Третья ячейка той же строки должна сохранить Data');
+    CheckEquals(-1, Table^.CellStyleTypeAt(0, 3),
+      'Ячейка вне диапазона должна вернуть -1');
   finally
     Drawing.done;
   end;

@@ -28,12 +28,11 @@
       Header — #E7E6E6 (серый);
       Data   — #FFFFFF (белый).
 
-    При экспорте в GDBObjAcadTable тип строки определяется по цвету её ячеек:
-    строка становится Title/Header только тогда, когда ВСЕ её ячейки окрашены
-    в соответствующий цвет (правило единогласия). Логика классификации цвета
-    и определения типа строки вынесена в отдельные функции, чтобы её можно
-    было покрыть автоматическими тестами. Менять высоту текста и прочее
-    форматирование команды не должны — изменяется только цвет заливки. }
+    При экспорте в GDBObjAcadTable цвет классифицируется отдельно для каждой
+    ячейки и сохраняется как её собственный тип Title/Header/Data (issue
+    #1409). Совместимая классификация строк сохранена для старых потребителей.
+    Менять высоту текста и прочее форматирование команды не должны —
+    изменяется только цвет заливки. }
 unit uzvspreadsheet_cmdcellstyle;
 
 {$INCLUDE zengineconfig.inc}
@@ -90,6 +89,11 @@ function DetectRowStyleKind(aWorksheet: TsWorksheet;
   строк 0..ARowCount-1 по цвету заливки ячеек. Результат предназначен для
   передачи в GDBObjAcadTable.SetRowStyleTypes при экспорте. }
 function CollectRowStyleTypes(aWorksheet: TsWorksheet;
+  ARowCount, AColCount: Integer): TIntegerDynArray;
+
+{ Собирает тип каждой ячейки в порядке row-major. В отличие от
+  CollectRowStyleTypes смешанные стили одной строки не схлопываются в Data. }
+function CollectCellStyleTypes(aWorksheet: TsWorksheet;
   ARowCount, AColCount: Integer): TIntegerDynArray;
 
 { Применяет тип ячейки (цвет заливки) ко всем ячейкам выделенного диапазона }
@@ -174,6 +178,26 @@ begin
   for row := 0 to ARowCount - 1 do
     Result[row] := CellStyleKindToRowStyleIndex(
       DetectRowStyleKind(aWorksheet, row, AColCount));
+end;
+
+function CollectCellStyleTypes(aWorksheet: TsWorksheet;
+  ARowCount, AColCount: Integer): TIntegerDynArray;
+var
+  row, col: Integer;
+  cell: PCell;
+begin
+  SetLength(Result, 0);
+  if (aWorksheet = nil) or (ARowCount <= 0) or (AColCount <= 0) then
+    Exit;
+
+  SetLength(Result, ARowCount * AColCount);
+  for row := 0 to ARowCount - 1 do
+    for col := 0 to AColCount - 1 do
+    begin
+      cell := aWorksheet.FindCell(Cardinal(row), Cardinal(col));
+      Result[row * AColCount + col] := CellStyleKindToRowStyleIndex(
+        ClassifyCellBackgroundColor(aWorksheet.ReadBackgroundColor(cell)));
+    end;
 end;
 
 { Возвращает выделенный диапазон в координатах листа (без фиксированных

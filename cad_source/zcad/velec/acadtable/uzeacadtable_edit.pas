@@ -64,6 +64,7 @@ begin
   ACell.ColSpan := 1;
   ACell.RowSpan := 1;
   InitCellStyle(ACell.Style);
+  ACell.StyleType := -1;
 end;
 
 procedure SetCellText(
