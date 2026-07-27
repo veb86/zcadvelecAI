@@ -129,6 +129,9 @@ type
     BlockName: String;
     // Переопределение стиля
     Style: TCellStyle;
+    // Индекс базового стиля этой ячейки: 0=Title, 1=Header, 2=Data.
+    // -1 означает наследование типа от строки.
+    StyleType: Integer;
     // Выравнивание ячейки из DXF (group 170 в данных ячейки AcDbTable).
     // Значения AutoCAD:
     //   1=TopLeft, 2=TopCenter, 3=TopRight,

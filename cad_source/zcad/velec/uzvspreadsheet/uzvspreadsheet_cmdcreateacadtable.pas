@@ -22,10 +22,9 @@
 
     Команда анализирует заполненную часть активного листа книги, строит по её
     содержимому AutoCAD-совместимую таблицу ACAD_TABLE со стилем "Standard" и
-    помещает её на чертёж. Тип строки (Title/Header/Data) определяется по цвету
-    заливки ячеек редактора: строка получает тип Title/Header только если ВСЕ
-    её ячейки окрашены соответствующим цветом, иначе остаётся строкой данных
-    (issue #1368, цвета задаются командами модуля uzvspreadsheet_cmdcellstyle). }
+    помещает её на чертёж. Тип Title/Header/Data определяется по цвету заливки
+    отдельно для каждой ячейки (issue #1409; цвета задаются командами модуля
+    uzvspreadsheet_cmdcellstyle). }
 unit uzvspreadsheet_cmdcreateacadtable;
 
 {$INCLUDE zengineconfig.inc}
@@ -175,7 +174,7 @@ var
   texts: TTableTextArray;
   colWidths, rowHeights: TTableSizeArray;
   cellAlignments: TTableAlignmentArray;
-  rowStyleTypes: TIntegerDynArray;
+  rowStyleTypes, cellStyleTypes: TIntegerDynArray;
   rowCount, colCount: Integer;
   insPt: TzePoint3d;
   dc: TDrawContext;
@@ -244,13 +243,13 @@ begin
     Exit;
   end;
 
-  // Определяем тип каждой строки по цвету заливки ячеек редактора и переносим
-  // его в таблицу: строка становится Title/Header только если ВСЕ её ячейки
-  // окрашены соответствующим цветом (issue #1368). Строки без единогласия
-  // остаются строками данных. SetRowStyleTypes имеет приоритет над общим
-  // режимом «все строки — данные».
+  // Строковый тип сохраняется для совместимости с логикой повторяемых меток,
+  // а тип каждой ячейки переносится отдельно и имеет приоритет при рендере и
+  // DXF-записи (issue #1409).
   rowStyleTypes := CollectRowStyleTypes(worksheet, rowCount, colCount);
   pt^.SetRowStyleTypes(rowStyleTypes);
+  cellStyleTypes := CollectCellStyleTypes(worksheet, rowCount, colCount);
+  pt^.SetCellStyleTypes(cellStyleTypes);
 
   // Гарантируем наличие и применяем стиль "Standard" (issue #1357).
   // Если применение не удалось, остаётся стиль по умолчанию из

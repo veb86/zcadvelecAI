@@ -439,11 +439,13 @@ type
     // редактора электронных таблиц после построения геометрии, чтобы строки,
     // целиком состоящие из ячеек Title/Header, получили соответствующий стиль.
     procedure SetRowStyleTypes(const ATypes: array of Integer); virtual;
+    procedure SetCellStyleTypes(const ATypes: array of Integer); virtual;
     // Возвращает эффективный индекс базового стиля для строки ARow
     // (0=Title, 1=Header, 2=Data). При отсутствии явных типов использует
     // ту же принудительную/позиционную логику, что и рендеринг таблицы;
     // для строки вне диапазона возвращает -1 (issue #1368/#1402).
     function RowStyleTypeAt(ARow: Integer): Integer;
+    function CellStyleTypeAt(ARow, ACol: Integer): Integer;
     // Возвращает текст ячейки главной части таблицы. Для некорректных
     // индексов возвращает пустую строку (issue #1402).
     function CellTextAt(ARow, ACol: Integer): String;
@@ -765,6 +767,7 @@ begin
       FCells[RowIdx][ColIdx].ColSpan := 1;
       FCells[RowIdx][ColIdx].RowSpan := 1;
       InitCellStyle(FCells[RowIdx][ColIdx].Style);
+      FCells[RowIdx][ColIdx].StyleType := -1;
     end;
 
   // Программно созданная таблица не содержит объединений ячеек
@@ -849,6 +852,24 @@ begin
   FRowStyleTypesExplicit := True;
 end;
 
+procedure GDBObjAcadTable.SetCellStyleTypes(const ATypes: array of Integer);
+var
+  RowIdx, ColIdx, CellIdx, StyleType: Integer;
+begin
+  for RowIdx := 0 to FRowCount - 1 do
+    for ColIdx := 0 to FColCount - 1 do
+    begin
+      CellIdx := RowIdx * FColCount + ColIdx;
+      StyleType := -1;
+      if CellIdx <= High(ATypes) then
+        if (ATypes[CellIdx] >= 0) and (ATypes[CellIdx] <= 2) then
+          StyleType := ATypes[CellIdx];
+      FCells[RowIdx][ColIdx].StyleType := StyleType;
+    end;
+  InvalidateRawDXFEntity;
+  FGeometryBuilt := False;
+end;
+
 function GDBObjAcadTable.RowStyleTypeAt(ARow: Integer): Integer;
 begin
   if (ARow < 0) or (ARow >= FRowCount) then
@@ -859,6 +880,19 @@ begin
     Result := 2
   else
     Result := Min(ARow, 2);
+end;
+
+function GDBObjAcadTable.CellStyleTypeAt(ARow, ACol: Integer): Integer;
+begin
+  if (ARow < 0) or (ARow >= FRowCount) or
+     (ACol < 0) or (ACol >= FColCount) then
+    Result := -1
+  else if (ARow <= High(FCells)) and
+          (ACol <= High(FCells[ARow])) and
+          (FCells[ARow][ACol].StyleType >= 0) then
+    Result := FCells[ARow][ACol].StyleType
+  else
+    Result := RowStyleTypeAt(ARow);
 end;
 
 function GDBObjAcadTable.CellTextAt(ARow, ACol: Integer): String;
@@ -1126,6 +1160,7 @@ begin
         FCells[RowIdx][ColIdx].ColSpan := 1;
         FCells[RowIdx][ColIdx].RowSpan := 1;
         InitCellStyle(FCells[RowIdx][ColIdx].Style);
+        FCells[RowIdx][ColIdx].StyleType := -1;
         CellIndex := RowIdx * FColCount + ColIdx;
         if CellIndex < Length(DXFData.CellAlignments) then
           FCells[RowIdx][ColIdx].CellAlignment :=
@@ -1424,7 +1459,10 @@ begin
           //    используется позиционный стиль от логической базы (issue #1311);
           // 2) FForceDataStyleAllRows (issue #1357) — все строки как данные;
           // 3) позиционный выбор стиля по номеру строки.
-          if (ARowBaseIndex = 0) and (RowStyleTypeAt(RowIdx) >= 0) then
+          if (ARowBaseIndex = 0) and
+             (FCells[RowIdx][ColIdx].StyleType >= 0) then
+            StyleRowIndex := FCells[RowIdx][ColIdx].StyleType
+          else if RowStyleTypeAt(RowIdx) >= 0 then
             StyleRowIndex := RowStyleTypeAt(RowIdx)
           else if FForceDataStyleAllRows then
             StyleRowIndex := 2
@@ -1910,7 +1948,10 @@ begin
       Exit;
   end;
 
-  if RowStyleTypeAt(ARow) >= 0 then
+  if (ARow <= High(FCells)) and (ACol <= High(FCells[ARow])) and
+     (FCells[ARow][ACol].StyleType >= 0) then
+    StyleRowIndex := FCells[ARow][ACol].StyleType
+  else if RowStyleTypeAt(ARow) >= 0 then
     StyleRowIndex := RowStyleTypeAt(ARow)
   else if FForceDataStyleAllRows then
     StyleRowIndex := 2

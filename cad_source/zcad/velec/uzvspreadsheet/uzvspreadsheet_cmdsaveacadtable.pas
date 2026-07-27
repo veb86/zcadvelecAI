@@ -68,7 +68,7 @@ var
   Texts: TTableTextArray;
   ColWidths, RowHeights: TTableSizeArray;
   Alignments: TTableAlignmentArray;
-  RowTypes: TIntegerDynArray;
+  RowTypes, CellTypes: TIntegerDynArray;
   DC: TDrawContext;
 begin
   Result := False;
@@ -88,11 +88,13 @@ begin
   RowHeights := CollectRowHeights(AWorksheet, RowCount);
   Alignments := CollectCellAlignments(AWorksheet, RowCount, ColCount);
   RowTypes := CollectRowStyleTypes(AWorksheet, RowCount, ColCount);
+  CellTypes := CollectCellStyleTypes(AWorksheet, RowCount, ColCount);
 
   if not ATable^.UpdateFromCellTextsWithSizesAndAlignments(
     RowCount, ColCount, Texts, ColWidths, RowHeights, Alignments) then
     Exit;
   ATable^.SetRowStyleTypes(RowTypes);
+  ATable^.SetCellStyleTypes(CellTypes);
   DC := drawings.GetCurrentDWG^.CreateDrawingRC;
   ATable^.FormatEntity(drawings.GetCurrentDWG^, DC);
   drawings.GetCurrentROOT^.ObjArray.ObjTree.CorrectNodeBoundingBox(ATable^);

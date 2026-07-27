@@ -229,6 +229,21 @@ begin
     Result := APart.Cells[ARow][ACol].CellAlignment;
 end;
 
+function CellStyleTypeAt(
+  const APart: TAcadTableDXFWritePart;
+  ARow, ACol: Integer): Integer;
+begin
+  Result := -1;
+  if (ARow >= 0) and (ARow <= High(APart.Cells)) and
+     (ACol >= 0) and (ACol <= High(APart.Cells[ARow])) then
+    Result := APart.Cells[ARow][ACol].StyleType;
+  if (Result < 0) or (Result > 2) then
+    if ARow < 2 then
+      Result := ARow
+    else
+      Result := 2;
+end;
+
 function FindMergeForCell(
   const APart: TAcadTableDXFWritePart;
   ARow, ACol: Integer;
@@ -395,15 +410,16 @@ var
   CellText: String;
   ColSpan, RowSpan: Integer;
   IsVirtual: Boolean;
-  Alignment: Integer;
+  Alignment, StyleType: Integer;
 begin
   CellText := CellTextAt(APart, ARow, ACol);
   GetCellSpanAndVirtualFlag(APart, ARow, ACol,
     ColSpan, RowSpan, IsVirtual);
   Alignment := CellAlignmentAt(APart, ARow, ACol);
+  StyleType := CellStyleTypeAt(APart, ARow, ACol);
 
   dxfIntegerout(AOutStream, 171, 1);
-  dxfIntegerout(AOutStream, 172, 0);
+  dxfIntegerout(AOutStream, 172, StyleType);
   dxfIntegerout(AOutStream, 173, BoolToDXF(IsVirtual));
   dxfIntegerout(AOutStream, 174, 0);
   dxfIntegerout(AOutStream, 175, ColSpan);
