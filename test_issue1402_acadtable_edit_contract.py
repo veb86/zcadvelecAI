@@ -42,6 +42,16 @@ require(open_cmd, "GDBAcadTableID", "AcadTable type validation")
 require(open_cmd, "CellTextAt(", "text import")
 require(open_cmd, "CellAlignmentAt(", "alignment import")
 require(open_cmd, "RowStyleTypeAt(", "cell type import")
+require(
+    model,
+    "else if FForceDataStyleAllRows then",
+    "effective legacy row type for editor shading",
+)
+require(
+    model,
+    "Result := Min(ARow, 2);",
+    "Title/Header/Data positional fallback for editor shading",
+)
 require(open_cmd, "RowHeightAt(", "row height import")
 require(open_cmd, "ColWidthAt(", "column width import")
 require(open_cmd, "Entity = PGDBObjEntity(FEditingAcadTable)", "live target check")
