@@ -41,7 +41,7 @@ require(open_cmd, "SelObjArray.Count <> 1", "single-selection validation")
 require(open_cmd, "GDBAcadTableID", "AcadTable type validation")
 require(open_cmd, "CellTextAt(", "text import")
 require(open_cmd, "CellAlignmentAt(", "alignment import")
-require(open_cmd, "RowStyleTypeAt(", "cell type import")
+require(open_cmd, "CellStyleTypeAt(", "cell type import")
 require(
     model,
     "else if FForceDataStyleAllRows then",

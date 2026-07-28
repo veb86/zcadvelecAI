@@ -30,6 +30,13 @@ def test_create_and_save_pass_cell_styles_to_model():
         assert "SetCellStyleTypes(" in source, name
 
 
+def test_edit_restores_every_cell_style_from_model():
+    source = read(SHEET / "uzvspreadsheet_cmdeditacadtable.pas")
+    assert "ATable^.CellStyleTypeAt(Row, Col)" in source
+    assert "CellStyleKindColor(" in source
+    assert "WriteRowType(" not in source
+
+
 def test_model_keeps_cell_styles_independent():
     source = read(ACADTABLE / "uzeacadtable_model.pas")
     assert "procedure SetCellStyleTypes(const ATypes: array of Integer);" in source
@@ -47,6 +54,7 @@ def test_dxf_writes_style_for_each_cell():
 if __name__ == "__main__":
     test_spreadsheet_collects_every_cell_style()
     test_create_and_save_pass_cell_styles_to_model()
+    test_edit_restores_every_cell_style_from_model()
     test_model_keeps_cell_styles_independent()
     test_dxf_writes_style_for_each_cell()
     print("ALL TESTS PASSED")

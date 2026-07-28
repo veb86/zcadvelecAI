@@ -43,7 +43,9 @@ def test_accessor_returns_the_effective_legacy_row_style():
 def test_editor_and_fpunit_regression_use_effective_row_styles():
     edit = compact(EDIT.read_text(encoding="utf-8"))
     tests = TESTS.read_text(encoding="utf-8")
-    assert "atable^.rowstyletypeat(row)" in edit
+    # CellStyleTypeAt falls back to RowStyleTypeAt when a legacy table has no
+    # explicit per-cell style, preserving the old editor shading behavior.
+    assert "atable^.cellstyletypeat(row,col)" in edit
     assert "LoadsLegacyRowStylesForSpreadsheetEditing" in tests
     assert "zcadtablevyrav.txt" in tests
 
