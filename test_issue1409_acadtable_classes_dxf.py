@@ -108,6 +108,20 @@ def test_acadtable_writer_emits_and_registers_required_classes():
         "'AcDbCellStyleMap'",
     ):
         assert marker in body
+    assert re.search(
+        r"'ACAD_TABLE',\s*'AcDbTable',\s*1025,\s*AcadTableCount,\s*1",
+        body,
+    )
+    assert re.search(
+        r"'TABLECONTENT',\s*'AcDbTableContent',\s*1152,\s*"
+        r"AcadTableCount\*2,\s*0",
+        body,
+    )
+    assert re.search(
+        r"'CELLSTYLEMAP',\s*'AcDbCellStyleMap',\s*1152,\s*"
+        r"CellStyleMapCount,\s*0",
+        body,
+    )
     assert "RegisterClassesSaveDxfProc(@WriteAcadTableClassesToDXF)" in source
 
 
