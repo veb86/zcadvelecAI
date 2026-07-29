@@ -89,10 +89,9 @@ begin
   Result := PGDBObjAcadTable(Selected^.objaddr);
 end;
 
-procedure WriteRowType(AWorksheet: TsWorksheet; ARow, AColCount,
+procedure WriteCellType(AWorksheet: TsWorksheet; ARow, ACol,
   AStyleType: Integer);
 var
-  Col: Integer;
   StyleKind: TZVCellStyleKind;
 begin
   case AStyleType of
@@ -100,9 +99,8 @@ begin
     1: StyleKind := zvskHeader;
     else StyleKind := zvskData;
   end;
-  for Col := 0 to AColCount - 1 do
-    AWorksheet.WriteBackgroundColor(ARow, Col,
-      CellStyleKindColor(StyleKind));
+  AWorksheet.WriteBackgroundColor(ARow, ACol,
+    CellStyleKindColor(StyleKind));
 end;
 
 function LoadAcadTableToWorksheet(ATable: PGDBObjAcadTable;
@@ -124,11 +122,11 @@ begin
   begin
     SetWorksheetRowHeightMM(AWorksheet, Row,
       AcadToWorksheetSize(ATable^.RowHeightAt(Row)));
-    WriteRowType(AWorksheet, Row, ATable^.ColCount,
-      ATable^.RowStyleTypeAt(Row));
     for Col := 0 to ATable^.ColCount - 1 do
     begin
       AWorksheet.WriteText(Row, Col, ATable^.CellTextAt(Row, Col));
+      WriteCellType(AWorksheet, Row, Col,
+        ATable^.CellStyleTypeAt(Row, Col));
       Alignment := ATable^.CellAlignmentAt(Row, Col);
       AcadAlignmentToWorksheet(Alignment, Hor, Vert);
       AWorksheet.WriteHorAlignment(Row, Col, Hor);
