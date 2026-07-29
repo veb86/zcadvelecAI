@@ -392,12 +392,15 @@ begin
         if not RowHeightsRead then
         begin
           AData.TableFlags := ARdr.ParseInteger;
+          // Биты 0x02/0x04 — «таблица связана с блоком», а не подавление
+          // заголовков; подавление лежит в битах 0x20/0x40 (issue #1409).
           programlog.LogOutFormatStr(
             'AcadTable: dxf_read: TableFlags=0x%x ' +
-            '(titleSup=%d headerSup=%d)',
+            '(hasBlock=%d titleSup=%d headerSup=%d)',
             [AData.TableFlags,
-             Ord((AData.TableFlags and 2) <> 0),
-             Ord((AData.TableFlags and 4) <> 0)],
+             Ord((AData.TableFlags and $06) <> 0),
+             Ord((AData.TableFlags and $20) <> 0),
+             Ord((AData.TableFlags and $40) <> 0)],
             LM_Info);
         end
         else
