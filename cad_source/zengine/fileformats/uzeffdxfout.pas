@@ -283,7 +283,7 @@ end;
 { Записывает расширенный словарь стиля таблицы и объект CELLSTYLEMAP.
 
   Цепочка ссылок, которую ожидает AutoCAD (issue #1409):
-    TABLESTYLE --102{ACAD_XDICTIONARY/360}--> DICTIONARY
+    TABLESTYLE --102{ACAD_XDICTIONARY/360--> DICTIONARY
       --(ключ ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP)--> CELLSTYLEMAP
 
   DictHandle/MapHandle — заранее выделенные хэндлы этих двух объектов. }

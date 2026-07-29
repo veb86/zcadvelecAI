@@ -33,7 +33,7 @@ interface
 uses
   uzeacadtable_types,
   uzegeometrytypes, uzctnrVectorBytesStream,
-  uzedrawingdef, uzedrawingsimple, uzeffdxfsupport,
+  uzedrawingdef, uzedrawingsimple, uzeffdxfsupport,gzctnrVectorTypes,
   uzeTypes, uzeconsts, uzclog, uzbLogIntf;
 
 type
