@@ -45,10 +45,15 @@ def test_model_keeps_cell_styles_independent():
 
 
 def test_dxf_writes_style_for_each_cell():
+    # Group 172 is ZCAD's own round-trip channel only: in the DXF reference it
+    # is the "cell flag value", so AutoCAD ignores it. The style AutoCAD reads
+    # is written into the TABLECONTENT object - see
+    # test_issue1409_tablecontent_dxf.py.
     source = read(ACADTABLE / "uzeacadtable_dxf_write.pas")
     assert "function CellStyleTypeAt(" in source
     assert "StyleType := CellStyleTypeAt(APart, ARow, ACol);" in source
     assert "dxfIntegerout(AOutStream, 172, StyleType);" in source
+    assert "AddAcadTableContentRecord(" in source
 
 
 if __name__ == "__main__":

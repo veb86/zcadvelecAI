@@ -111,7 +111,39 @@ implementation
 uses
   SysUtils, Classes, uzeffdxfout;
 
+const
+  { Идентификаторы стилей ячеек AutoCAD (CELLSTYLEMAP / TABLECELL_BEGIN.90):
+    1 = _TITLE, 2 = _HEADER, 3 = _DATA. Внутренние StyleType таблицы ZCAD
+    нумеруются с нуля (0 = Title, 1 = Header, 2 = Data). }
+  CAcadCellStyleIdTitle = 1;
+
 type
+  TAcadTableIntegerArray = array of Integer;
+  TAcadTableStringArray = array of String;
+
+  { Данные для объекта TABLECONTENT (round-trip AutoCAD 2008+), в котором
+    хранится ИНДИВИДУАЛЬНЫЙ стиль каждой ячейки (issue #1409). В самой
+    сущности ACAD_TABLE стиль ячейки записать негде: группа 172 — это
+    cell flag value, а не стиль, поэтому AutoCAD её игнорирует и раскрашивает
+    таблицу по своему правилу «строка 0 — заголовок, строка 1 — шапка,
+    остальные — данные». Реальные стили лежат в TABLECONTENT:
+      TABLEROW_BEGIN  / 90 — стиль строки,
+      TABLECELL_BEGIN / 90 — стиль конкретной ячейки. }
+  TAcadTableContentRecord = record
+    EntityHandle: TDWGHandle;
+    DictionaryHandle: TDWGHandle;
+    XRecordHandle: TDWGHandle;
+    ContentHandle: TDWGHandle;
+    TableStyleHandle: String;
+    RowCount: Integer;
+    ColCount: Integer;
+    RowHeights: TAcadTableDoubleArray;
+    ColWidths: TAcadTableDoubleArray;
+    RowStyleIds: TAcadTableIntegerArray;
+    CellStyleIds: TAcadTableIntegerArray;
+    CellTexts: TAcadTableStringArray;
+  end;
+
   TAcadTableRoundTripRecord = record
     MainHandle: TDWGHandle;
     ContinuationHandles: array of TDWGHandle;
@@ -127,6 +159,7 @@ type
 
 var
   RoundTripRecords: array of TAcadTableRoundTripRecord;
+  ContentRecords: array of TAcadTableContentRecord;
 
 procedure ResetAcadTableDXFWriteState;
 var
@@ -135,6 +168,15 @@ begin
   for I := 0 to High(RoundTripRecords) do
     System.SetLength(RoundTripRecords[I].ContinuationHandles, 0);
   System.SetLength(RoundTripRecords, 0);
+  for I := 0 to High(ContentRecords) do
+  begin
+    System.SetLength(ContentRecords[I].RowHeights, 0);
+    System.SetLength(ContentRecords[I].ColWidths, 0);
+    System.SetLength(ContentRecords[I].RowStyleIds, 0);
+    System.SetLength(ContentRecords[I].CellStyleIds, 0);
+    System.SetLength(ContentRecords[I].CellTexts, 0);
+  end;
+  System.SetLength(ContentRecords, 0);
 end;
 
 function BoolToDXF(AValue: Boolean): Integer;
@@ -297,16 +339,96 @@ begin
   end;
 end;
 
+// Преобразует внутренний StyleType ячейки (0=Title, 1=Header, 2=Data)
+// в идентификатор стиля ячейки AutoCAD (1=_TITLE, 2=_HEADER, 3=_DATA).
+function AcadCellStyleId(AStyleType: Integer): Integer;
+begin
+  if (AStyleType < 0) or (AStyleType > 2) then
+    AStyleType := 2;
+  Result := AStyleType + CAcadCellStyleIdTitle;
+end;
+
+// Собирает данные для объекта TABLECONTENT данной части таблицы и выдаёт
+// хэндлы расширенного словаря, XRECORD и самого TABLECONTENT (issue #1409).
+// Возвращает False, если для части нечего писать (пустая таблица).
+function AddAcadTableContentRecord(
+  const APart: TAcadTableDXFWritePart;
+  AEntityHandle: TDWGHandle;
+  var AIODXFContext: TIODXFSaveContext;
+  out ADictionaryHandle: TDWGHandle): Boolean;
+var
+  RecIdx, RowIdx, ColIdx: Integer;
+begin
+  Result := False;
+  ADictionaryHandle := 0;
+  if (APart.RowCount <= 0) or (APart.ColCount <= 0) then
+    Exit;
+
+  RecIdx := Length(ContentRecords);
+  System.SetLength(ContentRecords, RecIdx + 1);
+  with ContentRecords[RecIdx] do
+  begin
+    EntityHandle := AEntityHandle;
+    DictionaryHandle := NextAnonymousHandle(AIODXFContext);
+    XRecordHandle := NextAnonymousHandle(AIODXFContext);
+    ContentHandle := NextAnonymousHandle(AIODXFContext);
+    TableStyleHandle := APart.TableStyleHandle;
+    RowCount := APart.RowCount;
+    ColCount := APart.ColCount;
+
+    System.SetLength(RowHeights, RowCount);
+    System.SetLength(RowStyleIds, RowCount);
+    System.SetLength(ColWidths, ColCount);
+    System.SetLength(CellStyleIds, RowCount * ColCount);
+    System.SetLength(CellTexts, RowCount * ColCount);
+
+    for ColIdx := 0 to ColCount - 1 do
+      ColWidths[ColIdx] := ColWidthAt(APart, ColIdx);
+
+    for RowIdx := 0 to RowCount - 1 do
+    begin
+      RowHeights[RowIdx] := RowHeightAt(APart, RowIdx);
+      { Стиль строки берём по первой ячейке — он всё равно перекрывается
+        индивидуальным стилем каждой ячейки ниже. }
+      RowStyleIds[RowIdx] :=
+        AcadCellStyleId(CellStyleTypeAt(APart, RowIdx, 0));
+      for ColIdx := 0 to ColCount - 1 do
+      begin
+        CellStyleIds[RowIdx * ColCount + ColIdx] :=
+          AcadCellStyleId(CellStyleTypeAt(APart, RowIdx, ColIdx));
+        CellTexts[RowIdx * ColCount + ColIdx] :=
+          CellTextAt(APart, RowIdx, ColIdx);
+      end;
+    end;
+
+    ADictionaryHandle := DictionaryHandle;
+  end;
+  Result := True;
+end;
+
 procedure WriteEntityPrefix(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart;
   out AHandle: TDWGHandle);
+var
+  DictionaryHandle: TDWGHandle;
 begin
   AHandle := EntityHandleForPart(APart, AIODXFContext);
 
   dxfStringWithoutEncodeOut(AOutStream, 0, 'ACAD_TABLE');
   dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(AHandle, 0));
+  { Расширенный словарь сущности со ссылкой на round-trip XRECORD, через
+    который AutoCAD получает TABLECONTENT с индивидуальными стилями ячеек
+    (issue #1409). Сами объекты пишутся позже, в секцию OBJECTS. }
+  if AddAcadTableContentRecord(APart, AHandle, AIODXFContext,
+       DictionaryHandle) then
+  begin
+    dxfStringWithoutEncodeOut(AOutStream, 102, '{ACAD_XDICTIONARY');
+    dxfStringWithoutEncodeOut(AOutStream, 360,
+      IntToHex(DictionaryHandle, 0));
+    dxfStringWithoutEncodeOut(AOutStream, 102, '}');
+  end;
   dxfStringWithoutEncodeOut(AOutStream, 100, dxfName_AcDbEntity);
   if APart.LayerName <> '' then
     dxfStringout(AOutStream, 8, APart.LayerName,
@@ -804,6 +926,225 @@ begin
     IntToHex(ARecord.MainHandle, 0));
 end;
 
+// Нейтральный (без переопределений) блок CONTENTFORMAT: содержимое ячейки
+// полностью наследует свойства стиля ячейки.
+procedure WriteContentFormat(var AOutStream: TZctnrVectorBytes);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 300, 'CONTENTFORMAT');
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'CONTENTFORMAT_BEGIN');
+  dxfIntegerout(AOutStream, 90, 0);
+  dxfIntegerout(AOutStream, 91, 0);
+  dxfIntegerout(AOutStream, 92, 512);
+  dxfIntegerout(AOutStream, 93, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 300, '');
+  dxfDoubleout(AOutStream, 40, 0);
+  dxfDoubleout(AOutStream, 140, 1);
+  dxfIntegerout(AOutStream, 94, 1);
+  dxfIntegerout(AOutStream, 62, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 340, '0');
+  dxfDoubleout(AOutStream, 144, 0.18);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'CONTENTFORMAT_END');
+end;
+
+// Пустой DATAMAP (нет пользовательских данных).
+procedure WriteEmptyDataMap(var AOutStream: TZctnrVectorBytes);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 301, 'CUSTOMDATA');
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'DATAMAP_BEGIN');
+  dxfIntegerout(AOutStream, 90, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'DATAMAP_END');
+end;
+
+// Нейтральный TABLEFORMAT (170 = 0: переопределений свойств нет).
+// AType: 1 — ячейка, 2 — строка, 3 — столбец, 4 — таблица.
+procedure WriteEmptyTableFormat(
+  var AOutStream: TZctnrVectorBytes; AType: Integer);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'TABLEFORMAT_BEGIN');
+  dxfIntegerout(AOutStream, 90, AType);
+  dxfIntegerout(AOutStream, 170, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLEFORMAT_END');
+end;
+
+procedure WriteTableContentCell(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const AText: String;
+  ACellStyleId: Integer);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 300, 'CELL');
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'LINKEDTABLEDATACELL_BEGIN');
+  dxfIntegerout(AOutStream, 90, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 300, '');
+  dxfIntegerout(AOutStream, 91, 0);
+  WriteEmptyDataMap(AOutStream);
+  dxfIntegerout(AOutStream, 92, 0);
+  if AText <> '' then
+  begin
+    dxfIntegerout(AOutStream, 95, 1);
+    dxfStringWithoutEncodeOut(AOutStream, 302, 'CONTENT');
+    dxfStringWithoutEncodeOut(AOutStream, 1, 'CELLCONTENT_BEGIN');
+    dxfIntegerout(AOutStream, 90, 1);
+    dxfStringWithoutEncodeOut(AOutStream, 300, 'VALUE');
+    dxfIntegerout(AOutStream, 93, 6);
+    dxfIntegerout(AOutStream, 90, 4);
+    dxfStringout(AOutStream, 1, AText, AIODXFContext.Header);
+    dxfIntegerout(AOutStream, 94, 0);
+    dxfStringWithoutEncodeOut(AOutStream, 300, '');
+    dxfStringout(AOutStream, 302, AText, AIODXFContext.Header);
+    dxfStringWithoutEncodeOut(AOutStream, 304, 'ACVALUE_END');
+    dxfIntegerout(AOutStream, 91, 0);
+    dxfStringWithoutEncodeOut(AOutStream, 309, 'CELLCONTENT_END');
+    dxfStringWithoutEncodeOut(AOutStream, 1,
+      'FORMATTEDCELLCONTENT_BEGIN');
+    dxfIntegerout(AOutStream, 170, 1);
+    WriteContentFormat(AOutStream);
+    dxfStringWithoutEncodeOut(AOutStream, 309,
+      'FORMATTEDCELLCONTENT_END');
+  end
+  else
+    dxfIntegerout(AOutStream, 95, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'LINKEDTABLEDATACELL_END');
+
+  dxfStringWithoutEncodeOut(AOutStream, 1,
+    'FORMATTEDTABLEDATACELL_BEGIN');
+  dxfStringWithoutEncodeOut(AOutStream, 300, 'CELLTABLEFORMAT');
+  WriteEmptyTableFormat(AOutStream, 1);
+  dxfStringWithoutEncodeOut(AOutStream, 309,
+    'FORMATTEDTABLEDATACELL_END');
+
+  { Ключевая для issue #1409 запись: индивидуальный стиль ячейки. }
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'TABLECELL_BEGIN');
+  dxfIntegerout(AOutStream, 90, ACellStyleId);
+  dxfIntegerout(AOutStream, 91, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLECELL_END');
+end;
+
+procedure WriteTableContentObject(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ARecord: TAcadTableContentRecord);
+var
+  RowIdx, ColIdx: Integer;
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'TABLECONTENT');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.ContentHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.XRecordHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbLinkedData');
+  dxfStringWithoutEncodeOut(AOutStream, 1, '');
+  dxfStringWithoutEncodeOut(AOutStream, 300, '');
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbLinkedTableData');
+
+  dxfIntegerout(AOutStream, 90, ARecord.ColCount);
+  for ColIdx := 0 to ARecord.ColCount - 1 do
+  begin
+    dxfStringWithoutEncodeOut(AOutStream, 300, 'COLUMN');
+    dxfStringWithoutEncodeOut(AOutStream, 1,
+      'LINKEDTABLEDATACOLUMN_BEGIN');
+    dxfStringWithoutEncodeOut(AOutStream, 300, '');
+    dxfIntegerout(AOutStream, 91, 0);
+    WriteEmptyDataMap(AOutStream);
+    dxfStringWithoutEncodeOut(AOutStream, 309,
+      'LINKEDTABLEDATACOLUMN_END');
+    dxfStringWithoutEncodeOut(AOutStream, 1,
+      'FORMATTEDTABLEDATACOLUMN_BEGIN');
+    dxfStringWithoutEncodeOut(AOutStream, 300, 'COLUMNTABLEFORMAT');
+    WriteEmptyTableFormat(AOutStream, 3);
+    dxfStringWithoutEncodeOut(AOutStream, 309,
+      'FORMATTEDTABLEDATACOLUMN_END');
+    dxfStringWithoutEncodeOut(AOutStream, 1, 'TABLECOLUMN_BEGIN');
+    dxfIntegerout(AOutStream, 90, 0);
+    dxfDoubleout(AOutStream, 40, ARecord.ColWidths[ColIdx]);
+    dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLECOLUMN_END');
+  end;
+
+  dxfIntegerout(AOutStream, 91, ARecord.RowCount);
+  for RowIdx := 0 to ARecord.RowCount - 1 do
+  begin
+    dxfStringWithoutEncodeOut(AOutStream, 301, 'ROW');
+    dxfStringWithoutEncodeOut(AOutStream, 1,
+      'LINKEDTABLEDATAROW_BEGIN');
+    dxfIntegerout(AOutStream, 90, ARecord.ColCount);
+    for ColIdx := 0 to ARecord.ColCount - 1 do
+      WriteTableContentCell(AOutStream, AIODXFContext,
+        ARecord.CellTexts[RowIdx * ARecord.ColCount + ColIdx],
+        ARecord.CellStyleIds[RowIdx * ARecord.ColCount + ColIdx]);
+    dxfIntegerout(AOutStream, 91, 0);
+    WriteEmptyDataMap(AOutStream);
+    dxfStringWithoutEncodeOut(AOutStream, 309,
+      'LINKEDTABLEDATAROW_END');
+    dxfStringWithoutEncodeOut(AOutStream, 1,
+      'FORMATTEDTABLEDATAROW_BEGIN');
+    dxfStringWithoutEncodeOut(AOutStream, 300, 'ROWTABLEFORMAT');
+    WriteEmptyTableFormat(AOutStream, 2);
+    dxfStringWithoutEncodeOut(AOutStream, 309,
+      'FORMATTEDTABLEDATAROW_END');
+    dxfStringWithoutEncodeOut(AOutStream, 1, 'TABLEROW_BEGIN');
+    dxfIntegerout(AOutStream, 90, ARecord.RowStyleIds[RowIdx]);
+    dxfDoubleout(AOutStream, 40, ARecord.RowHeights[RowIdx]);
+    dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLEROW_END');
+  end;
+  dxfIntegerout(AOutStream, 92, 0);
+
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbFormattedTableData');
+  dxfStringWithoutEncodeOut(AOutStream, 300, 'TABLEFORMAT');
+  WriteEmptyTableFormat(AOutStream, 4);
+  dxfIntegerout(AOutStream, 90, 1);
+  dxfIntegerout(AOutStream, 91, 0);
+  dxfIntegerout(AOutStream, 92, 0);
+  dxfIntegerout(AOutStream, 93, 0);
+  dxfIntegerout(AOutStream, 94, 2);
+
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbTableContent');
+  if ARecord.TableStyleHandle <> '' then
+    dxfStringWithoutEncodeOut(AOutStream, 340, ARecord.TableStyleHandle)
+  else
+    dxfStringWithoutEncodeOut(AOutStream, 340, '0');
+end;
+
+// Пишет тройку объектов round-trip AutoCAD 2008 для одной таблицы:
+// расширенный словарь сущности -> XRECORD -> TABLECONTENT (issue #1409).
+procedure WriteAcadTableContentToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ARecord: TAcadTableContentRecord);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'DICTIONARY');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.DictionaryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.EntityHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbDictionary');
+  dxfIntegerout(AOutStream, 280, 1);
+  dxfIntegerout(AOutStream, 281, 1);
+  dxfStringWithoutEncodeOut(AOutStream, 3, 'ACAD_XREC_ROUNDTRIP');
+  dxfStringWithoutEncodeOut(AOutStream, 360,
+    IntToHex(ARecord.XRecordHandle, 0));
+
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.XRecordHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.DictionaryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
+  dxfIntegerout(AOutStream, 280, 1);
+  dxfStringWithoutEncodeOut(AOutStream, 102,
+    'ACAD_ROUNDTRIP_2008_TABLE_ENTITY');
+  dxfStringWithoutEncodeOut(AOutStream, 360,
+    IntToHex(ARecord.ContentHandle, 0));
+  dxfIntegerout(AOutStream, 70, 2);
+  dxfIntegerout(AOutStream, 90, 1);
+  dxfDoubleout(AOutStream, 10, 0);
+  dxfDoubleout(AOutStream, 20, 0);
+  dxfDoubleout(AOutStream, 30, 0);
+  dxfIntegerout(AOutStream, 90, 0);
+  dxfIntegerout(AOutStream, 90, 5);
+
+  WriteTableContentObject(AOutStream, AIODXFContext, ARecord);
+end;
+
 procedure WriteAcadTableRoundTripObjectsToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TSimpleDrawing;
@@ -811,6 +1152,9 @@ procedure WriteAcadTableRoundTripObjectsToDXF(
 var
   RecIdx: Integer;
 begin
+  for RecIdx := 0 to High(ContentRecords) do
+    WriteAcadTableContentToDXF(
+      AOutStream, AIODXFContext, ContentRecords[RecIdx]);
   for RecIdx := 0 to High(RoundTripRecords) do
     WriteRoundTripRecordToDXF(
       AOutStream, AIODXFContext, RoundTripRecords[RecIdx]);
