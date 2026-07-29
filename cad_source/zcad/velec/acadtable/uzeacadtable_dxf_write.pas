@@ -56,6 +56,11 @@ type
     Cells: TTableCellArray;
     Merges: TMergeRangeArray;
     TableStyleHandle: String;
+    // Имя стиля таблицы. Хэндл TABLESTYLE перенумеровывается при сохранении,
+    // поэтому TableStyleHandle (хэндл из загруженного файла) для ссылки 342
+    // непригоден — хэндл резолвится по имени через
+    // AIODXFContext.TableStyleNameHandleMap (issue #1409).
+    TableStyleName: String;
     // Имя анонимного блока таблицы (group code 2 / связанный BLOCK_RECORD
     // через group code 343). Для модельного пути записи (issue #1381) сюда
     // подставляется имя сгенерированного перед сохранением блока с геометрией
@@ -135,6 +140,7 @@ type
     XRecordHandle: TDWGHandle;
     ContentHandle: TDWGHandle;
     TableStyleHandle: String;
+    TableStyleName: String;
     RowCount: Integer;
     ColCount: Integer;
     RowHeights: TAcadTableDoubleArray;
@@ -373,6 +379,7 @@ begin
     XRecordHandle := NextAnonymousHandle(AIODXFContext);
     ContentHandle := NextAnonymousHandle(AIODXFContext);
     TableStyleHandle := APart.TableStyleHandle;
+    TableStyleName := APart.TableStyleName;
     RowCount := APart.RowCount;
     ColCount := APart.ColCount;
 
@@ -406,6 +413,27 @@ begin
   Result := True;
 end;
 
+// Возвращает актуальный хэндл объекта TABLESTYLE для ссылок 342/340.
+// Приоритет — карта «имя стиля -> новый хэндл», заполняемая при записи
+// секции OBJECTS: хэндлы стилей перенумеровываются при сохранении, поэтому
+// сохранённый в модели TableStyleHandle почти всегда устарел (issue #1409).
+function ResolveTableStyleHandle(
+  var AIODXFContext: TIODXFSaveContext;
+  const ATableStyleName, AFallbackHandle: String): String;
+var
+  MappedValue: String;
+begin
+  if ATableStyleName <> '' then
+    if AIODXFContext.TableStyleNameHandleMap.MyGetValue(
+         ATableStyleName, MappedValue) then
+      if MappedValue <> '' then
+      begin
+        Result := MappedValue;
+        Exit;
+      end;
+  Result := AFallbackHandle;
+end;
+
 procedure WriteEntityPrefix(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
@@ -429,6 +457,11 @@ begin
       IntToHex(DictionaryHandle, 0));
     dxfStringWithoutEncodeOut(AOutStream, 102, '}');
   end;
+  // Владелец сущности — BLOCK_RECORD пространства модели. Без группы 330
+  // AutoCAD не принимает round-trip таблицу (issue #1409).
+  if AIODXFContext.AcadTableOwnerHandle > 0 then
+    dxfStringWithoutEncodeOut(AOutStream, 330,
+      IntToHex(AIODXFContext.AcadTableOwnerHandle, 0));
   dxfStringWithoutEncodeOut(AOutStream, 100, dxfName_AcDbEntity);
   if APart.LayerName <> '' then
     dxfStringout(AOutStream, 8, APart.LayerName,
@@ -471,11 +504,13 @@ procedure WriteTableHeader(
   var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart);
 var
-  BlockRecordHandle: String;
+  BlockRecordHandle, TableStyleHandle: String;
 begin
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbTable');
-  if APart.TableStyleHandle <> '' then
-    dxfStringWithoutEncodeOut(AOutStream, 342, APart.TableStyleHandle);
+  TableStyleHandle := ResolveTableStyleHandle(AIODXFContext,
+    APart.TableStyleName, APart.TableStyleHandle);
+  if TableStyleHandle <> '' then
+    dxfStringWithoutEncodeOut(AOutStream, 342, TableStyleHandle);
   // Ссылка на BLOCK_RECORD анонимного блока таблицы (group code 343). AutoCAD
   // отрисовывает proxy/roundtrip AcDbTable по связанному блоку, поэтому без
   // 343 части разорванной таблицы открываются пустыми/битыми (issue #1381).
@@ -955,6 +990,42 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 309, 'DATAMAP_END');
 end;
 
+// Контрольная сумма содержимого ячейки, которую AutoCAD хранит в
+// ACAD_ROUNDTRIP_2008_CELL_CHECKSUM: сумма кодов символов текста ячейки.
+// Проверено на файле, пересохранённом AutoCAD: для односимвольных ячеек
+// значение равно коду символа Unicode ('1'=49, 'ф'=1092 и т.д.).
+function CellTextChecksum(const AText: String): Int64;
+var
+  U: UnicodeString;
+  I: Integer;
+begin
+  Result := 0;
+  U := UTF8Decode(AText);
+  for I := 1 to Length(U) do
+    Result := Result + Ord(U[I]);
+end;
+
+// DATAMAP ячейки с контрольной суммой её содержимого. AutoCAD сверяет эту
+// величину при открытии round-trip таблицы (issue #1409).
+procedure WriteCellChecksumDataMap(
+  var AOutStream: TZctnrVectorBytes; const AText: String);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 301, 'CUSTOMDATA');
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'DATAMAP_BEGIN');
+  dxfIntegerout(AOutStream, 90, 1);
+  dxfStringWithoutEncodeOut(AOutStream, 300,
+    'ACAD_ROUNDTRIP_2008_CELL_CHECKSUM');
+  dxfStringWithoutEncodeOut(AOutStream, 301, 'DATAMAP_VALUE');
+  dxfIntegerout(AOutStream, 93, 2);
+  dxfIntegerout(AOutStream, 90, 2);
+  dxfDoubleout(AOutStream, 140, CellTextChecksum(AText));
+  dxfIntegerout(AOutStream, 94, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 300, '');
+  dxfStringWithoutEncodeOut(AOutStream, 302, '');
+  dxfStringWithoutEncodeOut(AOutStream, 304, 'ACVALUE_END');
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'DATAMAP_END');
+end;
+
 // Нейтральный TABLEFORMAT (170 = 0: переопределений свойств нет).
 // AType: 1 — ячейка, 2 — строка, 3 — столбец, 4 — таблица.
 procedure WriteEmptyTableFormat(
@@ -977,7 +1048,7 @@ begin
   dxfIntegerout(AOutStream, 90, 0);
   dxfStringWithoutEncodeOut(AOutStream, 300, '');
   dxfIntegerout(AOutStream, 91, 0);
-  WriteEmptyDataMap(AOutStream);
+  WriteCellChecksumDataMap(AOutStream, AText);
   dxfIntegerout(AOutStream, 92, 0);
   if AText <> '' then
   begin
@@ -1026,6 +1097,7 @@ procedure WriteTableContentObject(
   const ARecord: TAcadTableContentRecord);
 var
   RowIdx, ColIdx: Integer;
+  TableStyleHandle: String;
 begin
   dxfStringWithoutEncodeOut(AOutStream, 0, 'TABLECONTENT');
   dxfStringWithoutEncodeOut(AOutStream, 5,
@@ -1091,15 +1163,17 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbFormattedTableData');
   dxfStringWithoutEncodeOut(AOutStream, 300, 'TABLEFORMAT');
   WriteEmptyTableFormat(AOutStream, 4);
-  dxfIntegerout(AOutStream, 90, 1);
-  dxfIntegerout(AOutStream, 91, 0);
-  dxfIntegerout(AOutStream, 92, 0);
-  dxfIntegerout(AOutStream, 93, 0);
-  dxfIntegerout(AOutStream, 94, 2);
+  // Переопределений форматирования на уровне таблицы нет (AutoCAD пишет
+  // здесь одиночное 90|0; наш прежний набор 90..94 ломал разбор).
+  dxfIntegerout(AOutStream, 90, 0);
 
   dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbTableContent');
-  if ARecord.TableStyleHandle <> '' then
-    dxfStringWithoutEncodeOut(AOutStream, 340, ARecord.TableStyleHandle)
+  // Ссылка на TABLESTYLE, в расширенном словаре которого лежит CELLSTYLEMAP
+  // с определениями _TITLE/_HEADER/_DATA (issue #1409).
+  TableStyleHandle := ResolveTableStyleHandle(AIODXFContext,
+    ARecord.TableStyleName, ARecord.TableStyleHandle);
+  if TableStyleHandle <> '' then
+    dxfStringWithoutEncodeOut(AOutStream, 340, TableStyleHandle)
   else
     dxfStringWithoutEncodeOut(AOutStream, 340, '0');
 end;

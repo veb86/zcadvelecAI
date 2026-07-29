@@ -171,14 +171,170 @@ begin
   WriteCellBordersToStream(outstream);
 end;
 
+{ Пара «код/значение» в поток (сокращение для читаемости кода ниже) }
+procedure dxfPairOut(var outstream: TZctnrVectorBytes;
+                     const Code: Integer; const Value: string); inline;
+begin
+  outstream.TXTAddStringEOL(dxfGroupCode(Code));
+  outstream.TXTAddStringEOL(Value);
+end;
+
+{ Записывает один блок CELLSTYLE карты стилей ячеек (AcDbCellStyleMap).
+
+  Именно этот объект даёт смысл идентификаторам стиля ячейки (90) внутри
+  TABLECELL_BEGIN объекта TABLECONTENT: без CELLSTYLEMAP AutoCAD отбрасывает
+  индивидуальные стили ячеек и применяет встроенное правило «строка 1 — Title,
+  строка 2 — Header, остальные — Data» (issue #1409).
+
+  AStyleId  — 1=_TITLE, 2=_HEADER, 3=_DATA
+  AStyleName— '_TITLE' / '_HEADER' / '_DATA'
+  AStyleType— 1 для заголовочных строк (title/header), 2 для данных
+  AFlags92  — 32768 для _TITLE (признак строки заголовка таблицы), иначе 0 }
+procedure WriteCellStyleMapEntryToStream(
+  var outstream: TZctnrVectorBytes;
+  const CS: TGDBDXFTableCellStyle;
+  const AStyleId, AStyleType, AFlags92: Integer;
+  const AStyleName: string);
+var
+  GridBit: Integer;
+begin
+  dxfPairOut(outstream, 300, 'CELLSTYLE');
+  dxfPairOut(outstream, 1, 'TABLEFORMAT_BEGIN');
+  dxfPairOut(outstream, 90, '5');
+  dxfPairOut(outstream, 170, '1');
+  dxfPairOut(outstream, 91, '0');
+  dxfPairOut(outstream, 92, IntToStr(AFlags92));
+  dxfPairOut(outstream, 62, '257');
+  dxfPairOut(outstream, 93, '1');
+
+  { Формат содержимого ячейки: выравнивание (94) и высота текста (144) }
+  dxfPairOut(outstream, 300, 'CONTENTFORMAT');
+  dxfPairOut(outstream, 1, 'CONTENTFORMAT_BEGIN');
+  dxfPairOut(outstream, 90, '0');
+  dxfPairOut(outstream, 91, '0');
+  dxfPairOut(outstream, 92, '512');
+  dxfPairOut(outstream, 93, '0');
+  dxfPairOut(outstream, 300, '');
+  dxfPairOut(outstream, 40, '0.0');
+  dxfPairOut(outstream, 140, '1.0');
+  dxfPairOut(outstream, 94, IntToStr(CS.Alignment));
+  dxfPairOut(outstream, 62, IntToStr(CS.TextColor));
+  { 340 = хэндл текстового стиля. 0 означает «стиль по умолчанию таблицы»;
+    имя текстового стиля уже записано в самом TABLESTYLE (группа 7). }
+  dxfPairOut(outstream, 340, '0');
+  dxfPairOut(outstream, 144, DXFFloatStr(CS.TextHeight));
+  dxfPairOut(outstream, 309, 'CONTENTFORMAT_END');
+
+  dxfPairOut(outstream, 171, '1');
+  dxfPairOut(outstream, 301, 'MARGIN');
+  dxfPairOut(outstream, 1, 'CELLMARGIN_BEGIN');
+  dxfPairOut(outstream, 40, '1.5');
+  dxfPairOut(outstream, 40, '1.5');
+  dxfPairOut(outstream, 40, '1.5');
+  dxfPairOut(outstream, 40, '1.5');
+  dxfPairOut(outstream, 40, '0.18');
+  dxfPairOut(outstream, 40, '0.18');
+  dxfPairOut(outstream, 309, 'CELLMARGIN_END');
+
+  { Шесть описаний линий сетки ячейки (горизонтальные/вертикальные/рамка) }
+  dxfPairOut(outstream, 94, '6');
+  GridBit := 1;
+  while GridBit <= 32 do
+  begin
+    dxfPairOut(outstream, 95, IntToStr(GridBit));
+    dxfPairOut(outstream, 302, 'GRIDFORMAT');
+    dxfPairOut(outstream, 1, 'GRIDFORMAT_BEGIN');
+    dxfPairOut(outstream, 90, '0');
+    dxfPairOut(outstream, 91, '1');
+    dxfPairOut(outstream, 62, '0');
+    dxfPairOut(outstream, 92, '-2');
+    dxfPairOut(outstream, 340, '0');
+    dxfPairOut(outstream, 93, '0');
+    dxfPairOut(outstream, 40, '0.045');
+    dxfPairOut(outstream, 309, 'GRIDFORMAT_END');
+    GridBit := GridBit * 2;
+  end;
+  dxfPairOut(outstream, 309, 'TABLEFORMAT_END');
+
+  dxfPairOut(outstream, 1, 'CELLSTYLE_BEGIN');
+  dxfPairOut(outstream, 90, IntToStr(AStyleId));
+  dxfPairOut(outstream, 91, IntToStr(AStyleType));
+  dxfPairOut(outstream, 300, AStyleName);
+  dxfPairOut(outstream, 309, 'CELLSTYLE_END');
+end;
+
+{ Записывает расширенный словарь стиля таблицы и объект CELLSTYLEMAP.
+
+  Цепочка ссылок, которую ожидает AutoCAD (issue #1409):
+    TABLESTYLE --102{ACAD_XDICTIONARY/360}--> DICTIONARY
+      --(ключ ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP)--> CELLSTYLEMAP
+
+  DictHandle/MapHandle — заранее выделенные хэндлы этих двух объектов. }
+procedure WriteCellStyleMapObjectsToStream(
+  var outstream: TZctnrVectorBytes;
+  Style: PTGDBDXFTableStyle;
+  const StyleHandle, DictHandle, MapHandle: TDWGHandle);
+var
+  CS: array[0..2] of TGDBDXFTableCellStyle;
+  PCellStyle: PTGDBDXFTableCellStyle;
+  CellIdx: Integer;
+  Iter: itrec;
+  DefaultAlignments: array[0..2] of Integer;
+begin
+  { Порядок блоков ячеек в TABLESTYLE: 0=data, 1=title, 2=header }
+  DefaultAlignments[0] := 2;
+  DefaultAlignments[1] := 5;
+  DefaultAlignments[2] := 5;
+  for CellIdx := 0 to 2 do
+  begin
+    FillChar(CS[CellIdx], SizeOf(CS[CellIdx]), 0);
+    CS[CellIdx].TextHeight := 2.5;
+    CS[CellIdx].Alignment := DefaultAlignments[CellIdx];
+  end;
+  CellIdx := 0;
+  PCellStyle := Style^.CellFormats.beginiterate(Iter);
+  while (PCellStyle <> nil) and (CellIdx < 3) do
+  begin
+    CS[CellIdx] := PCellStyle^;
+    Inc(CellIdx);
+    PCellStyle := Style^.CellFormats.iterate(Iter);
+  end;
+
+  { Словарь-расширение стиля таблицы }
+  dxfPairOut(outstream, 0, 'DICTIONARY');
+  dxfPairOut(outstream, 5, inttohex(DictHandle, 0));
+  dxfPairOut(outstream, 330, inttohex(StyleHandle, 0));
+  dxfPairOut(outstream, 100, 'AcDbDictionary');
+  dxfPairOut(outstream, 281, '1');
+  dxfPairOut(outstream, 3, 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP');
+  dxfPairOut(outstream, 360, inttohex(MapHandle, 0));
+
+  { Сама карта стилей ячеек: _TITLE=1, _HEADER=2, _DATA=3 }
+  dxfPairOut(outstream, 0, 'CELLSTYLEMAP');
+  dxfPairOut(outstream, 5, inttohex(MapHandle, 0));
+  dxfPairOut(outstream, 102, '{ACAD_REACTORS');
+  dxfPairOut(outstream, 330, inttohex(DictHandle, 0));
+  dxfPairOut(outstream, 102, '}');
+  dxfPairOut(outstream, 330, inttohex(DictHandle, 0));
+  dxfPairOut(outstream, 100, 'AcDbCellStyleMap');
+  dxfPairOut(outstream, 90, '3');
+  WriteCellStyleMapEntryToStream(outstream, CS[1], 1, 1, 32768, '_TITLE');
+  WriteCellStyleMapEntryToStream(outstream, CS[2], 2, 1, 0, '_HEADER');
+  WriteCellStyleMapEntryToStream(outstream, CS[0], 3, 2, 0, '_DATA');
+end;
+
 { Записывает один объект TABLESTYLE в выходной поток DXF.
   StyleHandle — заранее назначенный хэндл объекта.
-  OwnerHandle — хэндл словаря ACAD_TABLESTYLE (владелец). }
+  OwnerHandle — хэндл словаря ACAD_TABLESTYLE (владелец).
+  DictHandle/MapHandle — хэндлы расширенного словаря и CELLSTYLEMAP;
+  если оба равны 0, карта стилей ячеек не записывается. }
 procedure WriteTableStyleObjectToStream(
   var outstream: TZctnrVectorBytes;
   Style: PTGDBDXFTableStyle;
   const StyleHandle: TDWGHandle;
-  const OwnerHandle: TDWGHandle);
+  const OwnerHandle: TDWGHandle;
+  const DictHandle: TDWGHandle = 0;
+  const MapHandle: TDWGHandle = 0);
 var
   PCellStyle: PTGDBDXFTableCellStyle;
   DefaultCS: TGDBDXFTableCellStyle;
@@ -195,11 +351,19 @@ begin
   outstream.TXTAddStringEOL(dxfGroupCode(5));
   outstream.TXTAddStringEOL(inttohex(StyleHandle, 0));
 
-  { Блок ACAD_XDICTIONARY намеренно НЕ пишем (issue #1339): сам объект
-    расширенного словаря в выходной файл не сохраняется, поэтому ссылка 360
-    на Style^.XDictHandle (старый хэндл из загруженного файла) указывала бы
-    на несуществующий объект — висячая ссылка, из-за которой AutoCAD
-    открывает пустой чертёж. }
+  { Блок ACAD_XDICTIONARY со старым хэндлом Style^.XDictHandle не пишем
+    (issue #1339): такая ссылка указывала бы на несуществующий объект.
+    Но если для стиля выделены хэндлы под словарь и CELLSTYLEMAP, эти
+    объекты записываются нами ниже, и ссылка 360 корректна (issue #1409). }
+  if (DictHandle > 0) and (MapHandle > 0) then
+  begin
+    outstream.TXTAddStringEOL(dxfGroupCode(102));
+    outstream.TXTAddStringEOL('{ACAD_XDICTIONARY');
+    outstream.TXTAddStringEOL(dxfGroupCode(360));
+    outstream.TXTAddStringEOL(inttohex(DictHandle, 0));
+    outstream.TXTAddStringEOL(dxfGroupCode(102));
+    outstream.TXTAddStringEOL('}');
+  end;
 
   { Блок ACAD_REACTORS — принадлежность словарю }
   outstream.TXTAddStringEOL(dxfGroupCode(102));
@@ -255,6 +419,12 @@ begin
     WriteCellStyleToStream(outstream, DefaultCS, 'Standard');
     Inc(CellIdx);
   end;
+
+  { Карта стилей ячеек — без неё AutoCAD игнорирует индивидуальные стили
+    ячеек в TABLECONTENT (issue #1409). }
+  if (DictHandle > 0) and (MapHandle > 0) then
+    WriteCellStyleMapObjectsToStream(outstream, Style,
+      StyleHandle, DictHandle, MapHandle);
 
   programlog.LogOutFormatStr(
     'uzeffdxfout: записан TABLESTYLE "%s" handle=%s',
@@ -365,6 +535,8 @@ var
   intablestyledict: boolean;
   { Массивы предварительно выделенных хэндлов для стилей таблиц }
   tsHandles: array of TDWGHandle;
+  tsDictHandles: array of TDWGHandle;
+  tsMapHandles: array of TDWGHandle;
   tsCount: integer;
   tsHandlesAllocated: boolean;
   beforeProcIdx: integer;
@@ -405,10 +577,18 @@ var
     tsCount:=drawing.DXFTableStyleTable.count;
     if tsCount>0 then begin
       SetLength(tsHandles, tsCount);
+      SetLength(tsDictHandles, tsCount);
+      SetLength(tsMapHandles, tsCount);
       psIdx:=0;
       psStyle:=drawing.DXFTableStyleTable.beginiterate(psIter);
       while (psStyle<>nil) and (psIdx<tsCount) do begin
         tsHandles[psIdx]:=IODXFContext.handle;
+        Inc(IODXFContext.handle);
+        { Хэндлы расширенного словаря стиля и карты стилей ячеек
+          (CELLSTYLEMAP), см. issue #1409 }
+        tsDictHandles[psIdx]:=IODXFContext.handle;
+        Inc(IODXFContext.handle);
+        tsMapHandles[psIdx]:=IODXFContext.handle;
         Inc(IODXFContext.handle);
         if not IODXFContext.TableStyleNameHandleMap.MyContans(psStyle^.Name) then
           IODXFContext.TableStyleNameHandleMap.Add(
@@ -461,6 +641,8 @@ begin
     tsCount:=0;
     tsHandlesAllocated:=False;
     SetLength(tsHandles, 0);
+    SetLength(tsDictHandles, 0);
+    SetLength(tsMapHandles, 0);
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
     while templatefile.notEOF do begin
@@ -1380,7 +1562,8 @@ begin
               ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
               while (ptablestyle<>nil) and (i<tsCount) do begin
                 WriteTableStyleObjectToStream(
-                  outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+                  outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  tsDictHandles[i],tsMapHandles[i]);
                 Inc(writtenstylecount);
                 Inc(i);
                 ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
@@ -1430,7 +1613,8 @@ begin
             ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
             while (ptablestyle<>nil) and (i<tsCount) do begin
               WriteTableStyleObjectToStream(
-                outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+                outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  tsDictHandles[i],tsMapHandles[i]);
               Inc(writtenstylecount);
               Inc(i);
               ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
@@ -1452,7 +1636,8 @@ begin
             ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
             while (ptablestyle<>nil) and (i<tsCount) do begin
               WriteTableStyleObjectToStream(
-                outstream,ptablestyle,tsHandles[i],tablestyledicthandle);
+                outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  tsDictHandles[i],tsMapHandles[i]);
               Inc(writtenstylecount);
               Inc(i);
               ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);

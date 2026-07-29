@@ -3777,6 +3777,9 @@ begin
   CopyCellArray(FCells, APart.Cells);
   CopyMergeArray(FMerges, APart.Merges);
   APart.TableStyleHandle := FTableStyleHandle;
+  // Имя стиля нужно писателю DXF, чтобы получить актуальный (перенумерованный)
+  // хэндл TABLESTYLE для ссылок 342/340 (issue #1409).
+  APart.TableStyleName := FTableStyle.Name;
   APart.BlockName := FMainPartBlockName;
   APart.TableFlags := FTableFlags;
   APart.BreakEnabled := GetBreakEnabled;
@@ -3803,6 +3806,8 @@ begin
   CopyCellArray(ASource.Cells, APart.Cells);
   CopyMergeArray(ASource.Merges, APart.Merges);
   APart.TableStyleHandle := ASource.TableStyleHandle;
+  if ASource.TableStyle.Name <> '' then
+    APart.TableStyleName := ASource.TableStyle.Name;
   APart.BlockName := ASource.BlockName;
   APart.TableFlags := ASource.TableFlags;
   APart.BreakEnabled := ASource.BreakEnabled;
