@@ -42,11 +42,18 @@ type
   TObjectsSaveDxfProc=procedure(var outstream:TZctnrVectorBytes;
                                 var drawing:TSimpleDrawing;
                                 var IODXFContext:TIODXFSaveContext);
+  { Callback, вызываемый перед закрытием секции CLASSES. Классы
+    прикладных DXF-объектов должны быть объявлены до появления их
+    экземпляров в секциях ENTITIES/OBJECTS. }
+  TClassesSaveDxfProc=procedure(var outstream:TZctnrVectorBytes;
+                                var drawing:TSimpleDrawing;
+                                var IODXFContext:TIODXFSaveContext);
 
 { Регистрирует pre-save callback. Все зарегистрированные callback'и
   вызываются в порядке регистрации в начале savedxf20XX. }
 procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
 procedure RegisterObjectsSaveDxfProc(proc:TObjectsSaveDxfProc);
+procedure RegisterClassesSaveDxfProc(proc:TClassesSaveDxfProc);
 
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
@@ -55,6 +62,7 @@ implementation
 var
   BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
   ObjectsSaveDxfProcs:array of TObjectsSaveDxfProc;
+  ClassesSaveDxfProcs:array of TClassesSaveDxfProc;
 
 procedure RegisterBeforeSaveDxfProc(proc:TBeforeSaveDxfProc);
 var
@@ -72,6 +80,15 @@ begin
   i:=Length(ObjectsSaveDxfProcs);
   SetLength(ObjectsSaveDxfProcs,i+1);
   ObjectsSaveDxfProcs[i]:=proc;
+end;
+
+procedure RegisterClassesSaveDxfProc(proc:TClassesSaveDxfProc);
+var
+  i:Integer;
+begin
+  i:=Length(ClassesSaveDxfProcs);
+  SetLength(ClassesSaveDxfProcs,i+1);
+  ClassesSaveDxfProcs[i]:=proc;
 end;
 
 procedure RegisterAcadAppInDXF(const appname:string;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
@@ -527,7 +544,7 @@ var
   lph:TLPSHandle;
 
   { Переменные для сохранения стилей таблиц в секции OBJECTS }
-  inobjectssec: boolean;
+  inobjectssec,inclassessec: boolean;
   tablestyledicthandle: TDWGHandle;
   tablestyleiter: itrec;
   ptablestyle: PTGDBDXFTableStyle;
@@ -548,6 +565,16 @@ var
     for objectsProcIdx:=0 to High(ObjectsSaveDxfProcs) do
       if Assigned(ObjectsSaveDxfProcs[objectsProcIdx]) then
         ObjectsSaveDxfProcs[objectsProcIdx](
+          outstream,drawing,IODXFContext);
+  end;
+
+  procedure RunClassesSaveDxfProcs;
+  var
+    classesProcIdx: Integer;
+  begin
+    for classesProcIdx:=0 to High(ClassesSaveDxfProcs) do
+      if Assigned(ClassesSaveDxfProcs[classesProcIdx]) then
+        ClassesSaveDxfProcs[classesProcIdx](
           outstream,drawing,IODXFContext);
   end;
 
@@ -635,6 +662,7 @@ begin
     indimstyletable:=False;
     inappidtable:=False;
     inobjectssec:=False;
+    inclassessec:=False;
     intablestyledict:=False;
     tablestyledicthandle:=0;
     writtenstylecount:=0;
@@ -703,6 +731,18 @@ begin
                and (lasthandle=tablestyledicthandle) then
               intablestyledict:=True;
           end;
+        end else if (groupi=2) and (values='CLASSES') then begin
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+          inclassessec:=True;
+        end else if inclassessec and (groupi=0)
+                    and (values=dxfName_ENDSEC) then begin
+          { Прикладные модули объявляют здесь классы своих сущностей и
+            объектов до закрывающего ENDSEC (issue #1409). }
+          RunClassesSaveDxfProcs;
+          inclassessec:=False;
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
