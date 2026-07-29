@@ -114,7 +114,7 @@ procedure WriteAcadTableRoundTripObjectsToDXF(
 implementation
 
 uses
-  SysUtils, Classes, uzeffdxfout;
+  SysUtils, Classes, uzeffdxfout, uzeentity;
 
 const
   { Идентификаторы стилей ячеек AutoCAD (CELLSTYLEMAP / TABLECELL_BEGIN.90):
@@ -166,6 +166,64 @@ type
 var
   RoundTripRecords: array of TAcadTableRoundTripRecord;
   ContentRecords: array of TAcadTableContentRecord;
+
+procedure WriteAcadTableClassRecord(
+  var AOutStream: TZctnrVectorBytes;
+  const ADXFName, ACppName: String;
+  AProxyFlags, AInstanceCount, AIsEntity: Integer);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'CLASS');
+  dxfStringWithoutEncodeOut(AOutStream, 1, ADXFName);
+  dxfStringWithoutEncodeOut(AOutStream, 2, ACppName);
+  dxfStringWithoutEncodeOut(AOutStream, 3, 'ObjectDBX Classes');
+  dxfIntegerout(AOutStream, 90, AProxyFlags);
+  dxfIntegerout(AOutStream, 91, AInstanceCount);
+  dxfIntegerout(AOutStream, 280, 0);
+  dxfIntegerout(AOutStream, 281, AIsEntity);
+end;
+
+{ Объявляет прикладные классы, экземпляры которых этот модуль пишет в
+  ENTITIES и OBJECTS. Без этих CLASS-записей AutoCAD не связывает
+  TABLECONTENT/CELLSTYLEMAP с реализацией ObjectDBX и восстанавливает стили
+  ячеек по встроенному правилу строк (issue #1409).
+
+  В эталоне AutoCAD TABLECONTENT имеет два экземпляра класса на одну таблицу:
+  данные самой таблицы и связанное содержимое сущности. }
+procedure WriteAcadTableClassesToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var ADrawing: TSimpleDrawing;
+  var AIODXFContext: TIODXFSaveContext);
+var
+  AcadTableCount, CellStyleMapCount: Integer;
+  Entity: PGDBObjEntity;
+  Iter: itrec;
+begin
+  AcadTableCount:=0;
+  if ADrawing.pObjRoot<>nil then
+  begin
+    Entity:=ADrawing.pObjRoot^.ObjArray.beginiterate(Iter);
+    while Entity<>nil do
+    begin
+      if Entity^.GetObjType=GDBAcadTableID then
+        Inc(AcadTableCount);
+      Entity:=ADrawing.pObjRoot^.ObjArray.iterate(Iter);
+    end;
+  end;
+  CellStyleMapCount:=ADrawing.DXFTableStyleTable.Count;
+
+  if AcadTableCount>0 then
+  begin
+    WriteAcadTableClassRecord(AOutStream,
+      'ACAD_TABLE', 'AcDbTable', 1025, AcadTableCount, 1);
+    WriteAcadTableClassRecord(AOutStream,
+      'TABLECONTENT', 'AcDbTableContent', 1152,
+      AcadTableCount*2, 0);
+  end;
+  if CellStyleMapCount>0 then
+    WriteAcadTableClassRecord(AOutStream,
+      'CELLSTYLEMAP', 'AcDbCellStyleMap', 1152,
+      CellStyleMapCount, 0);
+end;
 
 procedure ResetAcadTableDXFWriteState;
 var
@@ -1243,6 +1301,7 @@ end;
 
 initialization
   RegisterBeforeSaveDxfProc(@ResetAcadTableDXFWriteStateBeforeSave);
+  RegisterClassesSaveDxfProc(@WriteAcadTableClassesToDXF);
   RegisterObjectsSaveDxfProc(@WriteAcadTableRoundTripObjectsToDXF);
 
 finalization
