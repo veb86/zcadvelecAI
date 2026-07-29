@@ -89,6 +89,12 @@ type
     // ссылку 342 на актуальный хэндл TABLESTYLE, а не оставляет старый хэндл,
     // который после перенумерации указывал на чужой объект ("aits"/блок).
     procedure ResolvesRawTableStyleNameAndRemaps342OnDXFOut;
+    // issue #1409: при сохранении по МОДЕЛЬНОМУ пути (raw-DXF инвалидирован
+    // редактированием) сущность ACAD_TABLE тоже должна получать владельца
+    // (330) и актуальный хэндл стиля таблицы (342), а объект TABLECONTENT —
+    // ссылку 340 на тот же стиль. Без них AutoCAD игнорирует
+    // индивидуальные стили ячеек и раскрашивает таблицу по своему правилу.
+    procedure WritesOwnerAndTableStyleRefsOnModelPathDXFOut;
     // issue #1305, часть 1: трансформация (перенос) должна перестраивать
     // визуальное представление таблицы.
     procedure TransformationMovesRenderedTable;
@@ -1403,6 +1409,67 @@ begin
     // Старый хэндл стиля 87 (после перенумерации — чужой объект) не должен течь.
     CheckEquals(0, CountDxfPairs(DXFText, '342', '87'),
       'Старый хэндл стиля 87 не должен оставаться в сохранённой таблице');
+  finally
+    Drawing.done;
+  end;
+end;
+
+procedure TAcadTableStyleTest.WritesOwnerAndTableStyleRefsOnModelPathDXFOut;
+const
+  StandardHandle = 'B8';
+  OwnerHandle = '1F';
+var
+  Drawing: TSimpleDrawing;
+  AcadTable: PGDBObjAcadTable;
+  OutStream: TZctnrVectorBytes;
+  SaveContext: TIODXFSaveContext;
+  DXFText: String;
+  OrigDir, OtherDir: TAcadTableBreakDirection;
+begin
+  LoadDrawingFromDXF(
+    ExpandFileName('../../../cad_source/test/tablerazdel.dxf'), Drawing);
+  try
+    AcadTable := FindFirstAcadTable(Drawing.pObjRoot);
+    AssertNotNull('Ожидалась сущность AcadTable', AcadTable);
+
+    // Инвалидируем raw-DXF, чтобы сохранение пошло по модельному пути.
+    OrigDir := AcadTable^.BreakDirection;
+    if OrigDir = atbdRight then
+      OtherDir := atbdLeft
+    else
+      OtherDir := atbdRight;
+    AcadTable^.BreakDirection := OtherDir;
+    AcadTable^.BreakDirection := OrigDir;
+
+    OutStream.init(64 * 1024);
+    SaveContext.InitRec;
+    SaveContext.Header.Version := AC1021;
+    SaveContext.Header.iVersion := 1021;
+    try
+      SaveContext.AcadTableOwnerHandle := $1F;
+      SaveContext.TableStyleNameHandleMap.Add(
+        AcadTable^.TableStyleName, StandardHandle);
+
+      ResetAcadTableDXFWriteState;
+      AcadTable^.DXFOut(OutStream, Drawing, SaveContext);
+      WriteAcadTableRoundTripObjectsToDXF(OutStream, Drawing, SaveContext);
+      DXFText := DxfStreamToText(OutStream);
+    finally
+      ResetAcadTableDXFWriteState;
+      SaveContext.Done;
+      OutStream.done;
+    end;
+
+    CheckTrue(HasDxfSequence(DXFText, ['330', OwnerHandle]),
+      'Сущность ACAD_TABLE должна ссылаться на владельца (330) — иначе ' +
+      'AutoCAD не принимает round-trip таблицу (issue #1409)');
+    CheckTrue(HasDxfSequence(DXFText, ['342', StandardHandle]),
+      'Модельный путь должен писать актуальный хэндл стиля таблицы (342)');
+    CheckTrue(HasDxfSequence(DXFText, ['340', StandardHandle]),
+      'TABLECONTENT должен ссылаться (340) на стиль таблицы, в расширенном ' +
+      'словаре которого лежит CELLSTYLEMAP (issue #1409)');
+    CheckTrue(CountDxfPairs(DXFText, '90', '1') > 0,
+      'В TABLECONTENT должны присутствовать идентификаторы стилей ячеек');
   finally
     Drawing.done;
   end;
