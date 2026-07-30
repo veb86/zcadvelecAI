@@ -1068,15 +1068,20 @@ begin
     IntToHex(ARecord.MainHandle, 0));
 end;
 
-// Нейтральный (без переопределений) блок CONTENTFORMAT: содержимое ячейки
-// полностью наследует свойства стиля ячейки.
-procedure WriteContentFormat(var AOutStream: TZctnrVectorBytes);
+// Блок CONTENTFORMAT. AutoCAD использует две разные пары type/flags:
+//   3/4   — формат непосредственно записанного содержимого ячейки;
+//   0/512 — наследуемый формат внутри CELLTABLEFORMAT.
+// Подмена первой пары второй делает TABLECONTENT внутренне противоречивым:
+// AutoCAD перестаёт применять индивидуальный стиль TABLECELL (issue #1409).
+procedure WriteContentFormat(
+  var AOutStream: TZctnrVectorBytes;
+  AContentType, AFlags: Integer);
 begin
   dxfStringWithoutEncodeOut(AOutStream, 300, 'CONTENTFORMAT');
   dxfStringWithoutEncodeOut(AOutStream, 1, 'CONTENTFORMAT_BEGIN');
-  dxfIntegerout(AOutStream, 90, 0);
+  dxfIntegerout(AOutStream, 90, AContentType);
   dxfIntegerout(AOutStream, 91, 0);
-  dxfIntegerout(AOutStream, 92, 512);
+  dxfIntegerout(AOutStream, 92, AFlags);
   dxfIntegerout(AOutStream, 93, 0);
   dxfStringWithoutEncodeOut(AOutStream, 300, '');
   dxfDoubleout(AOutStream, 40, 0);
@@ -1144,6 +1149,25 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLEFORMAT_END');
 end;
 
+// Материализованный формат ячейки из файла, пересохранённого AutoCAD.
+// В отличие от пустого TABLEFORMAT с 170=0 этот блок активен (170=1) и
+// поэтому позволяет следующему TABLECELL_BEGIN/90 выбрать _TITLE, _HEADER
+// или _DATA. Остальные свойства наследуются из выбранного CELLSTYLE.
+procedure WriteCellTableFormat(var AOutStream: TZctnrVectorBytes);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 1, 'TABLEFORMAT_BEGIN');
+  dxfIntegerout(AOutStream, 90, 1);
+  dxfIntegerout(AOutStream, 170, 1);
+  dxfIntegerout(AOutStream, 91, 0);
+  dxfIntegerout(AOutStream, 92, 0);
+  dxfIntegerout(AOutStream, 62, 257);
+  dxfIntegerout(AOutStream, 93, 1);
+  WriteContentFormat(AOutStream, 0, 512);
+  dxfIntegerout(AOutStream, 171, 0);
+  dxfIntegerout(AOutStream, 94, 0);
+  dxfStringWithoutEncodeOut(AOutStream, 309, 'TABLEFORMAT_END');
+end;
+
 procedure WriteTableContentCell(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
@@ -1176,7 +1200,7 @@ begin
     dxfStringWithoutEncodeOut(AOutStream, 1,
       'FORMATTEDCELLCONTENT_BEGIN');
     dxfIntegerout(AOutStream, 170, 1);
-    WriteContentFormat(AOutStream);
+    WriteContentFormat(AOutStream, 3, 4);
     dxfStringWithoutEncodeOut(AOutStream, 309,
       'FORMATTEDCELLCONTENT_END');
   end
@@ -1187,7 +1211,7 @@ begin
   dxfStringWithoutEncodeOut(AOutStream, 1,
     'FORMATTEDTABLEDATACELL_BEGIN');
   dxfStringWithoutEncodeOut(AOutStream, 300, 'CELLTABLEFORMAT');
-  WriteEmptyTableFormat(AOutStream, 1);
+  WriteCellTableFormat(AOutStream);
   dxfStringWithoutEncodeOut(AOutStream, 309,
     'FORMATTEDTABLEDATACELL_END');
 

@@ -34,6 +34,11 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def dxf_pairs(path: Path):
+    lines = [line.strip() for line in read(path).splitlines()]
+    return list(zip(lines[0::2], lines[1::2]))
+
+
 def emitted_pairs(source: str):
     """Group code / literal value pairs emitted by the writer, in order."""
     pattern = re.compile(
@@ -45,6 +50,12 @@ def emitted_pairs(source: str):
         (int(c), " ".join(v.split()).strip("'"))
         for c, v in pattern.findall(source)
     ]
+
+
+def procedure_source(source: str, name: str, next_name: str) -> str:
+    start = source.index(f"procedure {name}")
+    end = source.index(f"procedure {next_name}", start)
+    return source[start:end]
 
 
 def test_entity_references_extension_dictionary():
@@ -82,6 +93,41 @@ def test_each_cell_gets_its_own_style_id():
     assert "AcadCellStyleId(CellStyleTypeAt(APart, RowIdx, ColIdx));" in source
 
 
+def test_explicit_cell_style_uses_materialized_autocad_cell_format():
+    """The TABLEFORMAT containing a cell style id must be active.
+
+    AutoCAD's issue attachment ``test3acad.txt`` retains the requested
+    Title/Header/Data ids only when FORMATTEDTABLEDATACELL contains this
+    materialized payload.  ZCAD used to write only ``90=1, 170=0`` (an
+    inactive/inherited format) next to an explicit TABLECELL style id, so
+    AutoCAD discarded the id and fell back to row position.
+    """
+    source = read(WRITER)
+    formatter = procedure_source(
+        source, "WriteCellTableFormat", "WriteTableContentCell"
+    )
+    assert emitted_pairs(formatter) == [
+        (1, "TABLEFORMAT_BEGIN"),
+        (90, "1"),
+        (170, "1"),
+        (91, "0"),
+        (92, "0"),
+        (62, "257"),
+        (93, "1"),
+        (171, "0"),
+        (94, "0"),
+        (309, "TABLEFORMAT_END"),
+    ]
+    assert "WriteContentFormat(AOutStream, 0, 512);" in formatter
+
+    cell_writer = procedure_source(
+        source, "WriteTableContentCell", "WriteTableContentObject"
+    )
+    assert "WriteContentFormat(AOutStream, 3, 4);" in cell_writer
+    assert "WriteCellTableFormat(AOutStream);" in cell_writer
+    assert "WriteEmptyTableFormat(AOutStream, 1);" not in cell_writer
+
+
 def test_tablecontent_markers_are_balanced():
     source = read(WRITER)
     start = source.index("procedure WriteContentFormat")
@@ -99,8 +145,7 @@ def test_tablecontent_markers_are_balanced():
 
 def test_reference_autocad_file_uses_row_style_ids():
     """Evidence for the semantics asserted above, from a real AutoCAD file."""
-    lines = [line.strip() for line in read(REFERENCE_DXF).splitlines()]
-    pairs = [(lines[i], lines[i + 1]) for i in range(0, len(lines) - 1, 2)]
+    pairs = dxf_pairs(REFERENCE_DXF)
     styles = [
         int(pairs[i + 1][1])
         for i, (code, value) in enumerate(pairs)
@@ -110,10 +155,37 @@ def test_reference_autocad_file_uses_row_style_ids():
     assert styles == [1, 2, 2, 3, 3, 3], styles
 
 
+def test_reference_autocad_file_materializes_cell_formats():
+    """A checked-in AutoCAD file confirms the required active prefix."""
+    pairs = dxf_pairs(REFERENCE_DXF)
+    expected = [
+        ("1", "FORMATTEDTABLEDATACELL_BEGIN"),
+        ("300", "CELLTABLEFORMAT"),
+        ("1", "TABLEFORMAT_BEGIN"),
+        ("90", "1"),
+        ("170", "1"),
+        ("91", "0"),
+        ("92", "0"),
+        ("62", "257"),
+        ("93", "1"),
+        ("300", "CONTENTFORMAT"),
+        ("1", "CONTENTFORMAT_BEGIN"),
+        ("90", "0"),
+        ("91", "0"),
+        ("92", "512"),
+    ]
+    assert any(
+        pairs[index : index + len(expected)] == expected
+        for index in range(len(pairs) - len(expected) + 1)
+    )
+
+
 if __name__ == "__main__":
     test_entity_references_extension_dictionary()
     test_cell_style_id_mapping_is_title_header_data()
     test_each_cell_gets_its_own_style_id()
+    test_explicit_cell_style_uses_materialized_autocad_cell_format()
     test_tablecontent_markers_are_balanced()
     test_reference_autocad_file_uses_row_style_ids()
+    test_reference_autocad_file_materializes_cell_formats()
     print("ALL TESTS PASSED")
