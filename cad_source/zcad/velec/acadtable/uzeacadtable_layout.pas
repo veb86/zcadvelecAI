@@ -72,6 +72,19 @@ procedure BuildRenderSegments(
 
 implementation
 
+const
+  { Биты подавления заголовков в группе 90 сущности AcDbTable
+    (flag_for_table_value): 0x20 — подавлена строка Title, 0x40 — строка
+    Header. Прежде здесь проверялись биты 0x02 и 0x04, но это биты «таблица
+    связана с блоком»: реальные DXF от AutoCAD приходят с TableFlags=22
+    ($02+$04+$10), где строки Title и Header фактически присутствуют
+    (см. cad_source/test/tablerazdel.dxf и комментарий к
+    GDBObjAcadTable.ComputeTopLabelRowCount). Из-за подмены зона повтора
+    верхних строк-меток обнулялась для любой таблицы, сохранённой с флагами
+    AutoCAD (issue #1409). }
+  CAcadTableTitleSuppressedFlag = $20;
+  CAcadTableHeaderSuppressedFlag = $40;
+
 function GetRowHeight(
   RowIndex: Integer;
   const ARowHeights: TZctnrVectorDouble): Double;
@@ -139,8 +152,10 @@ begin
   if (ARowCount <= 0) or (Length(ASegments) = 0) then
     Exit;
 
-  TitleSuppressed := (ATableFlags and 2) <> 0;
-  HeaderSuppressed := (ATableFlags and 4) <> 0;
+  TitleSuppressed :=
+    (ATableFlags and CAcadTableTitleSuppressedFlag) <> 0;
+  HeaderSuppressed :=
+    (ATableFlags and CAcadTableHeaderSuppressedFlag) <> 0;
 
   RepeatRowCount := 0;
   if ABreakRepeatTopLabels then

@@ -322,6 +322,10 @@ begin
   dxfPairOut(outstream, 5, inttohex(DictHandle, 0));
   dxfPairOut(outstream, 330, inttohex(StyleHandle, 0));
   dxfPairOut(outstream, 100, 'AcDbDictionary');
+  { 280|1 — жёсткое владение записями словаря. AutoCAD пишет этот флаг для
+    словаря-расширения стиля таблицы; без него CELLSTYLEMAP считается
+    «одолженным» объектом (issue #1409). }
+  dxfPairOut(outstream, 280, '1');
   dxfPairOut(outstream, 281, '1');
   dxfPairOut(outstream, 3, 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP');
   dxfPairOut(outstream, 360, inttohex(MapHandle, 0));

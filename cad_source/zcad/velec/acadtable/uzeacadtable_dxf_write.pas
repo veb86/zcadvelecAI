@@ -122,6 +122,34 @@ const
     нумеруются с нуля (0 = Title, 1 = Header, 2 = Data). }
   CAcadCellStyleIdTitle = 1;
 
+  { Группа 172 ячейки AcDbTable — это «cell flag value», а не стиль ячейки.
+    AutoCAD всегда пишет здесь 0, а стиль берёт из TABLECONTENT (issue #1409). }
+  CAcadCellFlagValue = 0;
+
+  { Значение группы 90 подраздела AcDbTable (flag_for_table_value):
+      0x02 + 0x04 — таблица связана с блоком (AutoCAD всегда взводит эти биты),
+      0x10        — направление таблицы вниз.
+    ZCAD исторически писал 0, из-за чего AutoCAD считал таблицу «без блока» и
+    направленной вверх. }
+  CAcadTableHasBlockFlags = $02 or $04;
+  CAcadTableDirectionDownFlag = $10;
+  CAcadTableDefaultFlags =
+    CAcadTableHasBlockFlags or CAcadTableDirectionDownFlag;
+
+  { Хвост round-trip XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY. Во всех
+    эталонах AutoCAD (cad_source/test/tablebugheader.dxf, tablerazdel.dxf,
+    acadtablerazdel2007_*.dxf, bugbreaktable.dxf) запись всегда завершается
+    жёсткой ссылкой 361 на объект TABLEGEOMETRY. Без неё разбор round-trip
+    записи обрывается, AutoCAD отбрасывает TABLECONTENT целиком и
+    восстанавливает стили ячеек по встроенному правилу строк (issue #1409). }
+  CAcadTableRoundTripTailValue = 5;
+
+  { Кэш геометрии ячейки в TABLEGEOMETRY: geom_data_flag (93) AutoCAD всегда
+    пишет равным 7, а num_geometry (94) = 0 означает «геометрия не
+    закэширована» (так AutoCAD пишет пустые ячейки, см. tablerazdel.dxf). }
+  CAcadTableGeometryDataFlag = 7;
+  CAcadTableGeometryNoCache = 0;
+
 type
   TAcadTableIntegerArray = array of Integer;
   TAcadTableStringArray = array of String;
@@ -139,6 +167,7 @@ type
     DictionaryHandle: TDWGHandle;
     XRecordHandle: TDWGHandle;
     ContentHandle: TDWGHandle;
+    GeometryHandle: TDWGHandle;
     TableStyleHandle: String;
     TableStyleName: String;
     RowCount: Integer;
@@ -218,6 +247,11 @@ begin
     WriteAcadTableClassRecord(AOutStream,
       'TABLECONTENT', 'AcDbTableContent', 1152,
       AcadTableCount*2, 0);
+    // Кэш геометрии ячеек. Объект TABLEGEOMETRY завершает round-trip XRECORD
+    // (ссылка 361), без него AutoCAD не принимает TABLECONTENT (issue #1409).
+    WriteAcadTableClassRecord(AOutStream,
+      'TABLEGEOMETRY', 'AcDbTableGeometry', 1152,
+      AcadTableCount, 0);
   end;
   if CellStyleMapCount>0 then
     WriteAcadTableClassRecord(AOutStream,
@@ -403,6 +437,17 @@ begin
   end;
 end;
 
+// Значение группы 90 подраздела AcDbTable. Таблицы, созданные в ZCAD, имеют
+// TableFlags=0: это означает «нет связанного блока, направление вверх», и
+// AutoCAD такую таблицу разбирает по упрощённому пути. Подставляем набор
+// битов, который пишет сам AutoCAD (issue #1409).
+function TableFlagsForDXF(const APart: TAcadTableDXFWritePart): Integer;
+begin
+  Result := APart.TableFlags;
+  if Result = 0 then
+    Result := CAcadTableDefaultFlags;
+end;
+
 // Преобразует внутренний StyleType ячейки (0=Title, 1=Header, 2=Data)
 // в идентификатор стиля ячейки AutoCAD (1=_TITLE, 2=_HEADER, 3=_DATA).
 function AcadCellStyleId(AStyleType: Integer): Integer;
@@ -436,6 +481,7 @@ begin
     DictionaryHandle := NextAnonymousHandle(AIODXFContext);
     XRecordHandle := NextAnonymousHandle(AIODXFContext);
     ContentHandle := NextAnonymousHandle(AIODXFContext);
+    GeometryHandle := NextAnonymousHandle(AIODXFContext);
     TableStyleHandle := APart.TableStyleHandle;
     TableStyleName := APart.TableStyleName;
     RowCount := APart.RowCount;
@@ -579,7 +625,7 @@ begin
          APart.BlockName, BlockRecordHandle) then
       dxfStringWithoutEncodeOut(AOutStream, 343, BlockRecordHandle);
   dxfvertexout(AOutStream, 11, APart.Direction);
-  dxfIntegerout(AOutStream, 90, APart.TableFlags);
+  dxfIntegerout(AOutStream, 90, TableFlagsForDXF(APart));
   dxfIntegerout(AOutStream, 91, APart.RowCount);
   dxfIntegerout(AOutStream, 92, APart.ColCount);
   dxfIntegerout(AOutStream, 93, 0);
@@ -625,16 +671,19 @@ var
   CellText: String;
   ColSpan, RowSpan: Integer;
   IsVirtual: Boolean;
-  Alignment, StyleType: Integer;
+  Alignment: Integer;
 begin
   CellText := CellTextAt(APart, ARow, ACol);
   GetCellSpanAndVirtualFlag(APart, ARow, ACol,
     ColSpan, RowSpan, IsVirtual);
   Alignment := CellAlignmentAt(APart, ARow, ACol);
-  StyleType := CellStyleTypeAt(APart, ARow, ACol);
 
   dxfIntegerout(AOutStream, 171, 1);
-  dxfIntegerout(AOutStream, 172, StyleType);
+  // Группа 172 — cell flag value, а не стиль ячейки. Раньше сюда писался
+  // StyleType (0/1/2); AutoCAD это значение не интерпретирует как стиль, зато
+  // ненулевой флаг искажает разбор ячейки. Стиль каждой ячейки пишется
+  // отдельно, в TABLECELL_BEGIN|90 объекта TABLECONTENT (issue #1409).
+  dxfIntegerout(AOutStream, 172, CAcadCellFlagValue);
   dxfIntegerout(AOutStream, 173, BoolToDXF(IsVirtual));
   dxfIntegerout(AOutStream, 174, 0);
   dxfIntegerout(AOutStream, 175, ColSpan);
@@ -1236,8 +1285,44 @@ begin
     dxfStringWithoutEncodeOut(AOutStream, 340, '0');
 end;
 
-// Пишет тройку объектов round-trip AutoCAD 2008 для одной таблицы:
-// расширенный словарь сущности -> XRECORD -> TABLECONTENT (issue #1409).
+{ Кэш геометрии ячеек таблицы (AcDbTableGeometry). На него ссылается
+  завершающая группа 361 round-trip XRECORD, и без этого объекта AutoCAD
+  считает round-trip запись неполной и игнорирует TABLECONTENT вместе со
+  всеми индивидуальными стилями ячеек (issue #1409).
+
+  Содержимое кэша пишем пустым: num_geometry (94) = 0 — «геометрия ячейки не
+  закэширована». Именно так AutoCAD записывает пустые ячейки (см. эталон
+  cad_source/test/tablerazdel.dxf). Реальные значения зависят от метрик
+  шрифта AutoCAD, посчитать их в ZCAD нельзя, а кэш AutoCAD всё равно
+  перестраивает при регенерации таблицы. }
+procedure WriteTableGeometryObject(
+  var AOutStream: TZctnrVectorBytes;
+  const ARecord: TAcadTableContentRecord);
+var
+  CellIdx: Integer;
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'TABLEGEOMETRY');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.GeometryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.XRecordHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbTableGeometry');
+  dxfIntegerout(AOutStream, 90, ARecord.RowCount);
+  dxfIntegerout(AOutStream, 91, ARecord.ColCount);
+  dxfIntegerout(AOutStream, 92, ARecord.RowCount * ARecord.ColCount);
+  for CellIdx := 0 to ARecord.RowCount * ARecord.ColCount - 1 do
+  begin
+    dxfIntegerout(AOutStream, 93, CAcadTableGeometryDataFlag);
+    dxfDoubleout(AOutStream, 40, 0);
+    dxfDoubleout(AOutStream, 41, 0);
+    dxfStringWithoutEncodeOut(AOutStream, 330, '0');
+    dxfIntegerout(AOutStream, 94, CAcadTableGeometryNoCache);
+  end;
+end;
+
+// Пишет четвёрку объектов round-trip AutoCAD 2008 для одной таблицы:
+// расширенный словарь сущности -> XRECORD -> TABLECONTENT + TABLEGEOMETRY
+// (issue #1409).
 procedure WriteAcadTableContentToDXF(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
@@ -1272,9 +1357,17 @@ begin
   dxfDoubleout(AOutStream, 20, 0);
   dxfDoubleout(AOutStream, 30, 0);
   dxfIntegerout(AOutStream, 90, 0);
-  dxfIntegerout(AOutStream, 90, 5);
+  // Хвост записи завершается обязательной ссылкой 361 на TABLEGEOMETRY —
+  // ровно так её пишет AutoCAD. Прежний вариант (последняя группа 90 без 361)
+  // обрывал round-trip запись, и AutoCAD отбрасывал TABLECONTENT с
+  // индивидуальными стилями ячеек, раскрашивая таблицу по правилу строк
+  // (issue #1409).
+  dxfIntegerout(AOutStream, 90, CAcadTableRoundTripTailValue);
+  dxfStringWithoutEncodeOut(AOutStream, 361,
+    IntToHex(ARecord.GeometryHandle, 0));
 
   WriteTableContentObject(AOutStream, AIODXFContext, ARecord);
+  WriteTableGeometryObject(AOutStream, ARecord);
 end;
 
 procedure WriteAcadTableRoundTripObjectsToDXF(
