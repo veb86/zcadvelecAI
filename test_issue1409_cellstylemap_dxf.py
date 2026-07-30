@@ -29,6 +29,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DXFOUT = ROOT / "cad_source" / "zengine" / "fileformats" / "uzeffdxfout.pas"
+DXFSUPPORT = (
+    ROOT / "cad_source" / "zengine" / "fileformats" / "uzeffdxfsupport.pas"
+)
 WRITER = (
     ROOT
     / "cad_source"
@@ -65,9 +68,17 @@ def test_tablestyle_gets_extension_dictionary_and_cellstylemap():
     assert "'CELLSTYLEMAP'" in source
     assert "'AcDbCellStyleMap'" in source
     # The map declares exactly three cell styles.
-    assert "WriteCellStyleMapEntryToStream(outstream, CS[1], 1, 1, 32768, '_TITLE')" in source
-    assert "WriteCellStyleMapEntryToStream(outstream, CS[2], 2, 1, 0, '_HEADER')" in source
-    assert "WriteCellStyleMapEntryToStream(outstream, CS[0], 3, 2, 0, '_DATA')" in source
+    for style, style_id, style_type, flags, name, text_index in (
+        ("CS[1]", 1, 1, 32768, "_TITLE", 1),
+        ("CS[2]", 2, 1, 0, "_HEADER", 2),
+        ("CS[0]", 3, 2, 0, "_DATA", 0),
+    ):
+        assert re.search(
+            rf"WriteCellStyleMapEntryToStream\(\s*outstream, "
+            rf"{re.escape(style)}, {style_id}, {style_type}, {flags}, "
+            rf"'{name}', TextStyleHandles\[{text_index}\]\)",
+            source,
+        )
 
 
 def test_dictionary_and_map_handles_are_preallocated():
@@ -115,6 +126,47 @@ def test_reference_file_documents_three_cell_styles():
     for name in ("_TITLE", "_HEADER", "_DATA"):
         assert name in text
     assert re.search(r"^90 3$", text, re.M)
+
+
+def test_cellstyle_content_formats_reference_real_text_styles():
+    """CONTENTFORMAT/340 must resolve to an exported STYLE, never handle 0.
+
+    The latest failing file (test6) matches the AutoCAD reference map except
+    for these three references: ZCAD writes 340|0, whereas AutoCAD writes the
+    handle of the applicable text STYLE.  A zero reference leaves the
+    CELLSTYLE definitions incomplete, so AutoCAD falls back to row position.
+    """
+    reference = read(REFERENCE)
+    content_formats = re.findall(
+        r"^1 CONTENTFORMAT_BEGIN$\n(.*?)^309 CONTENTFORMAT_END$",
+        reference,
+        re.M | re.S,
+    )
+    assert len(content_formats) == 3
+    reference_handles = [
+        re.search(r"^340 ([0-9A-F]+)$", block, re.M).group(1)
+        for block in content_formats
+    ]
+    assert all(handle != "0" for handle in reference_handles)
+
+    support = read(DXFSUPPORT)
+    source = read(DXFOUT)
+    entry = source[source.index("procedure WriteCellStyleMapEntryToStream"):]
+    entry = entry[: entry.index("\nprocedure WriteCellStyleMapObjectsToStream")]
+
+    # STYLE records are emitted before OBJECTS/CELLSTYLEMAP, so remember
+    # their fresh handles by name in the save context and use the handle
+    # selected for each Title/Header/Data text style in CONTENTFORMAT/340.
+    assert "TextStyleNameHandleMap:TString2StringDictionary;" in support
+    assert "TextStyleNameHandleMap:=TString2StringDictionary.create;" in support
+    assert "TextStyleNameHandleMap.Free;" in support
+    assert "IODXFContext.TextStyleNameHandleMap.Add(" in source
+    assert "const ATextStyleHandle: string" in entry
+    assert "dxfPairOut(outstream, 340, ATextStyleHandle);" in entry
+    assert "TextStyleNameHandleMap.MyGetValue('Standard', Result);" in source
+    assert "dxfPairOut(outstream, 340, '0');" not in entry.split(
+        "dxfPairOut(outstream, 144", 1
+    )[0]
 
 
 def test_entity_writes_owner_and_table_style_references():

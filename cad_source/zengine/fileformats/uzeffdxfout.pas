@@ -211,7 +211,8 @@ procedure WriteCellStyleMapEntryToStream(
   var outstream: TZctnrVectorBytes;
   const CS: TGDBDXFTableCellStyle;
   const AStyleId, AStyleType, AFlags92: Integer;
-  const AStyleName: string);
+  const AStyleName: string;
+  const ATextStyleHandle: string);
 var
   GridBit: Integer;
 begin
@@ -236,9 +237,10 @@ begin
   dxfPairOut(outstream, 140, '1.0');
   dxfPairOut(outstream, 94, IntToStr(CS.Alignment));
   dxfPairOut(outstream, 62, IntToStr(CS.TextColor));
-  { 340 = хэндл текстового стиля. 0 означает «стиль по умолчанию таблицы»;
-    имя текстового стиля уже записано в самом TABLESTYLE (группа 7). }
-  dxfPairOut(outstream, 340, '0');
+  { 340 = хэндл текстового стиля. AutoCAD пишет реальную ссылку STYLE в
+    каждом CONTENTFORMAT карты; 0 оставляет определение CELLSTYLE неполным,
+    после чего индивидуальные стили ячеек игнорируются (issue #1409). }
+  dxfPairOut(outstream, 340, ATextStyleHandle);
   dxfPairOut(outstream, 144, DXFFloatStr(CS.TextHeight));
   dxfPairOut(outstream, 309, 'CONTENTFORMAT_END');
 
@@ -290,13 +292,26 @@ end;
 procedure WriteCellStyleMapObjectsToStream(
   var outstream: TZctnrVectorBytes;
   Style: PTGDBDXFTableStyle;
-  const StyleHandle, DictHandle, MapHandle: TDWGHandle);
+  const StyleHandle, DictHandle, MapHandle: TDWGHandle;
+  TextStyleNameHandleMap: TString2StringDictionary);
 var
   CS: array[0..2] of TGDBDXFTableCellStyle;
+  TextStyleHandles: array[0..2] of string;
   PCellStyle: PTGDBDXFTableCellStyle;
   CellIdx: Integer;
   Iter: itrec;
   DefaultAlignments: array[0..2] of Integer;
+
+  function ResolveTextStyleHandle(const StyleName: string): string;
+  begin
+    Result := '0';
+    if (StyleName <> '')
+       and TextStyleNameHandleMap.MyGetValue(StyleName, Result) then
+      Exit;
+    { Старые/неполные TABLESTYLE могут не содержать группу 7. В таком случае
+      используем реальный хэндл Standard, как делает AutoCAD. }
+    TextStyleNameHandleMap.MyGetValue('Standard', Result);
+  end;
 begin
   { Порядок блоков ячеек в TABLESTYLE: 0=data, 1=title, 2=header }
   DefaultAlignments[0] := 2;
@@ -307,6 +322,8 @@ begin
     FillChar(CS[CellIdx], SizeOf(CS[CellIdx]), 0);
     CS[CellIdx].TextHeight := 2.5;
     CS[CellIdx].Alignment := DefaultAlignments[CellIdx];
+    TextStyleHandles[CellIdx] :=
+      ResolveTextStyleHandle(Style^.CellTextStyleName[CellIdx]);
   end;
   CellIdx := 0;
   PCellStyle := Style^.CellFormats.beginiterate(Iter);
@@ -339,9 +356,12 @@ begin
   dxfPairOut(outstream, 330, inttohex(DictHandle, 0));
   dxfPairOut(outstream, 100, 'AcDbCellStyleMap');
   dxfPairOut(outstream, 90, '3');
-  WriteCellStyleMapEntryToStream(outstream, CS[1], 1, 1, 32768, '_TITLE');
-  WriteCellStyleMapEntryToStream(outstream, CS[2], 2, 1, 0, '_HEADER');
-  WriteCellStyleMapEntryToStream(outstream, CS[0], 3, 2, 0, '_DATA');
+  WriteCellStyleMapEntryToStream(
+    outstream, CS[1], 1, 1, 32768, '_TITLE', TextStyleHandles[1]);
+  WriteCellStyleMapEntryToStream(
+    outstream, CS[2], 2, 1, 0, '_HEADER', TextStyleHandles[2]);
+  WriteCellStyleMapEntryToStream(
+    outstream, CS[0], 3, 2, 0, '_DATA', TextStyleHandles[0]);
 end;
 
 { Записывает один объект TABLESTYLE в выходной поток DXF.
@@ -354,6 +374,7 @@ procedure WriteTableStyleObjectToStream(
   Style: PTGDBDXFTableStyle;
   const StyleHandle: TDWGHandle;
   const OwnerHandle: TDWGHandle;
+  TextStyleNameHandleMap: TString2StringDictionary;
   const DictHandle: TDWGHandle = 0;
   const MapHandle: TDWGHandle = 0);
 var
@@ -445,7 +466,7 @@ begin
     ячеек в TABLECONTENT (issue #1409). }
   if (DictHandle > 0) and (MapHandle > 0) then
     WriteCellStyleMapObjectsToStream(outstream, Style,
-      StyleHandle, DictHandle, MapHandle);
+      StyleHandle, DictHandle, MapHandle, TextStyleNameHandleMap);
 
   programlog.LogOutFormatStr(
     'uzeffdxfout: записан TABLESTYLE "%s" handle=%s',
@@ -1429,6 +1450,10 @@ begin
 
                   p:=pcurrtextstyle;
                   IODXFContext.p2h.MyGetOrCreateValue(p,IODXFContext.handle,temphandle);
+                  if not IODXFContext.TextStyleNameHandleMap.MyContans(
+                    pcurrtextstyle^.Name) then
+                    IODXFContext.TextStyleNameHandleMap.Add(
+                      pcurrtextstyle^.Name, inttohex(temphandle,0));
                   outstream.TXTAddStringEOL(inttohex(temphandle,0));
 
                   outstream.TXTAddStringEOL(dxfGroupCode(330));
@@ -1607,6 +1632,7 @@ begin
               while (ptablestyle<>nil) and (i<tsCount) do begin
                 WriteTableStyleObjectToStream(
                   outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  IODXFContext.TextStyleNameHandleMap,
                   tsDictHandles[i],tsMapHandles[i]);
                 Inc(writtenstylecount);
                 Inc(i);
@@ -1658,6 +1684,7 @@ begin
             while (ptablestyle<>nil) and (i<tsCount) do begin
               WriteTableStyleObjectToStream(
                 outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  IODXFContext.TextStyleNameHandleMap,
                   tsDictHandles[i],tsMapHandles[i]);
               Inc(writtenstylecount);
               Inc(i);
@@ -1681,6 +1708,7 @@ begin
             while (ptablestyle<>nil) and (i<tsCount) do begin
               WriteTableStyleObjectToStream(
                 outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
+                  IODXFContext.TextStyleNameHandleMap,
                   tsDictHandles[i],tsMapHandles[i]);
               Inc(writtenstylecount);
               Inc(i);

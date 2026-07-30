@@ -112,10 +112,13 @@ type
       сущности на актуальные новые хэндлы:
         AcadTableOwnerHandle  — новый хэндл владельца (*Model_Space) для 330;
         BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
-        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342. }
+        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342;
+        TextStyleNameHandleMap  — имя текстового стиля -> новый хэндл STYLE
+          для ссылок 340 внутри CELLSTYLEMAP. }
     AcadTableOwnerHandle:TDWGHandle;
     BlockNameHandleMap:TString2StringDictionary;
     TableStyleNameHandleMap:TString2StringDictionary;
+    TextStyleNameHandleMap:TString2StringDictionary;
 
     procedure InitRec;
     procedure Done;
@@ -405,6 +408,7 @@ begin
   AcadTableOwnerHandle:=0;
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
+  TextStyleNameHandleMap:=TString2StringDictionary.create;
 
   Header.InitRec;
 end;
@@ -414,6 +418,7 @@ begin
   VarsDict.Free;
   BlockNameHandleMap.Free;
   TableStyleNameHandleMap.Free;
+  TextStyleNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;
