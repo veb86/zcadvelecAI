@@ -5,7 +5,7 @@ Usage::
 
     python3 experiments/issue1409_roundtrip_audit.py file.dxf [file.dxf ...]
 
-For every file it reports the four markers that decide whether AutoCAD keeps
+For every file it reports the five markers that decide whether AutoCAD keeps
 the per-cell styles of an ACAD_TABLE entity:
 
 * does the ``ACAD_ROUNDTRIP_2008_TABLE_ENTITY`` XRECORD end with the hard
@@ -14,6 +14,7 @@ the per-cell styles of an ACAD_TABLE entity:
   in the CLASSES section);
 * what the AcDbTable ``90`` flag word and the per-cell ``172`` flag value are;
 * which style id each row and each cell carries inside TABLECONTENT.
+* whether each CELLSTYLE content format points to a real exported text STYLE.
 
 Run it on a ZCAD export and on an AutoCAD-resaved copy of the same drawing to
 see the difference.  Reference files live in ``cad_source/test/``.
@@ -80,6 +81,41 @@ def report_styles(pairs):
     print(f"  cell style ids        : {cells}")
 
 
+def report_cellstyle_text_refs(pairs):
+    text_styles = {
+        next((value for code, value in record if code == "5"), None):
+        next((value for code, value in record if code == "2"), None)
+        for record in records(pairs, "STYLE")
+    }
+    text_styles.pop(None, None)
+
+    refs = []
+    for record in records(pairs, "CELLSTYLEMAP"):
+        for index, pair in enumerate(record):
+            if pair != ("1", "CONTENTFORMAT_BEGIN"):
+                continue
+            content_format = record[index + 1:]
+            end = next(
+                (offset for offset, item in enumerate(content_format)
+                 if item == ("309", "CONTENTFORMAT_END")),
+                len(content_format),
+            )
+            refs.append(next(
+                (value for code, value in content_format[:end]
+                 if code == "340"),
+                None,
+            ))
+
+    resolved = [
+        f"{handle}->{text_styles[handle]}"
+        if handle in text_styles else f"{handle}->UNRESOLVED"
+        for handle in refs
+    ]
+    status = "OK" if refs and all(handle in text_styles for handle in refs) \
+        else "INVALID - AutoCAD cannot resolve CELLSTYLE content formats"
+    print(f"  CELLSTYLE text refs   : {resolved}  {status}")
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -91,6 +127,7 @@ def main(argv):
         report_roundtrip(pairs)
         report_entity(pairs)
         report_styles(pairs)
+        report_cellstyle_text_refs(pairs)
         print()
     return 0
 
