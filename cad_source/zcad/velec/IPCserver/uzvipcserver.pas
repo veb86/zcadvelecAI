@@ -32,7 +32,7 @@ uses
   uzcinterface, uzclog, uzcutils, uzcsysvars, uzeconsts, uzcstrconsts,
   uzeentdevice, uzeentblockinsert, uzeentlwpolyline, uzeentpolyline,
   uzeentcircle, uzeentarc, uzeenttext, uzeentmtext,
-  uzeffdxf, uzeffdxfsupport, uzbpaths, uzcFileStructure, uzbLogTypes,
+  uzeffdxf, uzeffdxfsupport, uzbpaths, uzcFileStructure, uzbLogTypes,uzgldrawcontext,
   uzeTypes;
 
 const
@@ -696,6 +696,7 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
     PDev: PGDBObjDevice;
     InsertPoint: TzePoint3d;
     Key: string;
+    rc:TDrawContext;
   begin
     if (ACmd^.Args = nil) or (ACmd^.Args.Count < 1) then
     begin
@@ -739,27 +740,28 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
     {** Создаем устройство **}
     PDev := AllocEnt(GDBDeviceID);
     PDev^.init(nil, nil, 0);
-    PDev.Name := DeviceName;
+    PDev^.Name := DeviceName;
     PDev^.Local.P_insert := InsertPoint;
 
     {** Устанавливаем параметры из params объекта **}
-    if DeviceInfo.Find('params') <> nil then
-    begin
-      Params := DeviceInfo.Objects['params'];
-      for Key in Params.Names do
-      begin
-        {** Сохраняем параметры в устройстве - зависит от реализации устройства **}
-        {** Для простоты используем стандартный механизм **}
-        {** Здесь можно добавить логику установки параметров **}
-      end;
-    end;
+    //if DeviceInfo.Find('params') <> nil then
+    //begin
+    //  Params := DeviceInfo.Objects['params'];
+    //  for Key in Params.Names do
+    //  begin
+    //    {** Сохраняем параметры в устройстве - зависит от реализации устройства **}
+    //    {** Для простоты используем стандартный механизм **}
+    //    {** Здесь можно добавить логику установки параметров **}
+    //  end;
+    //end;
 
     {** Строим геометрию устройства **}
-    PDev.BuildVarGeometry(drawings.GetCurrentDWG^);
-    PDev.BuildGeometry(drawings.GetCurrentDWG^);
+    PDev^.BuildVarGeometry(drawings.GetCurrentDWG^);
+    PDev^.BuildGeometry(drawings.GetCurrentDWG^);
 
     {** Форматируем устройство **}
-    PDev.FormatEntity(drawings.GetCurrentDWG^, drawings.GetCurrentDWG^.CreateDrawingRC);
+    rc:=drawings.GetCurrentDWG^.CreateDrawingRC;
+    pdev^.FormatEntity(drawings.GetCurrentDWG^,rc);
 
     {** Добавляем в чертеж **}
     zcSetEntPropFromCurrentDrawingProp(PDev);
