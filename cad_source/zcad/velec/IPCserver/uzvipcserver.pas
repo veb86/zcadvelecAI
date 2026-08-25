@@ -59,7 +59,7 @@ type
   {** Тип команды IPC }
   TIPCCommandType = (ictPing, ictSave, ictExport, ictLine, ictCircle,
                      ictArc, ictPolyline, ictText, ictMText, ictBlockInsert,
-                     ictBeginBatch, ictEndBatch, ictUnknown);
+                     ictBeginBatch, ictEndBatch, ictBatchLines, ictInsertDevice, ictUnknown);
 
   {** Запись команды в очереди }
   PIPCCommand = ^TIPCCommand;
@@ -354,6 +354,10 @@ begin
     Result := ictBeginBatch
   else if SameText(ACmdName, 'END_BATCH') then
     Result := ictEndBatch
+  else if SameText(ACmdName, 'BATCH_LINES') then
+    Result := ictBatchLines
+  else if SameText(ACmdName, 'INSERT_DEVICE') then
+    Result := ictInsertDevice
   else
     Result := ictUnknown;
 end;
@@ -627,6 +631,145 @@ function TIPCServerThread.ExecuteCommand(ACmd: PIPCCommand): TIPCCommandResult;
     Result.Result := Format('Text created: "%s" at (%.2f,%.2f)', [TextContent, InsertPoint.x, InsertPoint.y]);
   end;
 
+  procedure ExecuteBatchLines;
+  var
+    I: Integer;
+    LineArray: TJSONArray;
+    LineCoords: TJSONData;
+    PLine: PGDBObjLine;
+    P1, P2: TzePoint3d;
+    X1, Y1, X2, Y2: Double;
+  begin
+    if (ACmd^.Args = nil) or (ACmd^.Args.Count < 1) then
+    begin
+      Result.Status := 'error';
+      Result.Error := 'BATCH_LINES requires array of line coordinates';
+      Exit;
+    end;
+
+    LineArray := ACmd^.Args.Items[0] as TJSONArray;
+    if LineArray = nil then
+    begin
+      Result.Status := 'error';
+      Result.Error := 'BATCH_LINES argument must be an array';
+      Exit;
+    end;
+
+    for I := 0 to LineArray.Count - 1 do
+    begin
+      LineCoords := LineArray.Items[I];
+      if LineCoords is TJSONArray then
+      begin
+        if TJSONArray(LineCoords).Count >= 4 then
+        begin
+          X1 := TJSONArray(LineCoords).Items[0].AsFloat;
+          Y1 := TJSONArray(LineCoords).Items[1].AsFloat;
+          X2 := TJSONArray(LineCoords).Items[2].AsFloat;
+          Y2 := TJSONArray(LineCoords).Items[3].AsFloat;
+
+          P1.x := X1;
+          P1.y := Y1;
+          P1.z := 0;
+          P2.x := X2;
+          P2.y := Y2;
+          P2.z := 0;
+
+          PLine := AllocEnt(GDBLineID);
+          PLine^.init(nil, nil, LnWtByLayer, P1, P2);
+          zcSetEntPropFromCurrentDrawingProp(PLine);
+          zcAddEntToCurrentDrawingWithUndo(PLine);
+        end;
+      end;
+    end;
+
+    zcRedrawCurrentDrawing;
+    Result.Status := 'ok';
+    Result.Result := Format('Created %d lines', [LineArray.Count]);
+  end;
+
+  procedure ExecuteInsertDevice;
+  var
+    DeviceInfo: TJSONObject;
+    DeviceName: string;
+    Params: TJSONObject;
+    Position: TJSONObject;
+    PDev: PGDBObjDevice;
+    InsertPoint: TzePoint3d;
+    Key: string;
+  begin
+    if (ACmd^.Args = nil) or (ACmd^.Args.Count < 1) then
+    begin
+      Result.Status := 'error';
+      Result.Error := 'INSERT_DEVICE requires device info object';
+      Exit;
+    end;
+
+    if not (ACmd^.Args.Items[0] is TJSONObject) then
+    begin
+      Result.Status := 'error';
+      Result.Error := 'INSERT_DEVICE argument must be an object';
+      Exit;
+    end;
+
+    DeviceInfo := ACmd^.Args.Items[0] as TJSONObject;
+    
+    DeviceName := DeviceInfo.Get('device_name', '');
+    if DeviceName = '' then
+    begin
+      Result.Status := 'error';
+      Result.Error := 'Device name is required';
+      Exit;
+    end;
+
+    {** Получаем позицию **}
+    if DeviceInfo.Find('position') <> nil then
+    begin
+      Position := DeviceInfo.Objects['position'];
+      InsertPoint.x := Position.Get('x', 0);
+      InsertPoint.y := Position.Get('y', 0);
+      InsertPoint.z := Position.Get('z', 0);
+    end
+    else
+    begin
+      InsertPoint.x := 0;
+      InsertPoint.y := 0;
+      InsertPoint.z := 0;
+    end;
+
+    {** Создаем устройство **}
+    PDev := AllocEnt(GDBDeviceID);
+    PDev^.init(nil, nil, 0);
+    PDev.Name := DeviceName;
+    PDev^.Local.P_insert := InsertPoint;
+
+    {** Устанавливаем параметры из params объекта **}
+    if DeviceInfo.Find('params') <> nil then
+    begin
+      Params := DeviceInfo.Objects['params'];
+      for Key in Params.Names do
+      begin
+        {** Сохраняем параметры в устройстве - зависит от реализации устройства **}
+        {** Для простоты используем стандартный механизм **}
+        {** Здесь можно добавить логику установки параметров **}
+      end;
+    end;
+
+    {** Строим геометрию устройства **}
+    PDev.BuildVarGeometry(drawings.GetCurrentDWG^);
+    PDev.BuildGeometry(drawings.GetCurrentDWG^);
+
+    {** Форматируем устройство **}
+    PDev.FormatEntity(drawings.GetCurrentDWG^, drawings.GetCurrentDWG^.CreateDrawingRC);
+
+    {** Добавляем в чертеж **}
+    zcSetEntPropFromCurrentDrawingProp(PDev);
+    zcAddEntToCurrentDrawingWithUndo(PDev);
+    zcRedrawCurrentDrawing;
+
+    Result.Status := 'ok';
+    Result.Result := Format('Inserted %s', [DeviceName]);
+  end;
+
 begin
   Result.Status := 'error';
   Result.Result := '';
@@ -654,6 +797,12 @@ begin
 
       ictText:
         ExecuteText;
+
+      ictBatchLines:
+        ExecuteBatchLines;
+
+      ictInsertDevice:
+        ExecuteInsertDevice;
 
       ictUnknown:
         begin
