@@ -64,25 +64,29 @@ type
   }
   TZCADHTTPServerManager = class
   private
-    FServer: TFPHttpServer;
-    FServerThread: TZCADHTTPServerThread;
+  FServer: TFPHttpServer;
+  FServerThread: TZCADHTTPServerThread;
 
-    FRunning: Boolean;
-    FHost: string;
-    FPort: Integer;
+  FRunning: Boolean;
+  FHost: string;
+  FPort: Integer;
 
-    procedure CleanupStoppedServer;
+  procedure CleanupStoppedServer;
 
-    procedure HandleRequest(
-      Sender: TObject;
-      var ARequest: TFPHTTPConnectionRequest;
-      var AResponse: TFPHTTPConnectionResponse
-    );
+  procedure SetCORSHeaders(
+    var AResponse: TFPHTTPConnectionResponse
+  );
 
-    procedure Log(
-      const AMessage: string;
-      ALogLevel: TLogLevel
-    );
+  procedure HandleRequest(
+    Sender: TObject;
+    var ARequest: TFPHTTPConnectionRequest;
+    var AResponse: TFPHTTPConnectionResponse
+  );
+
+  procedure Log(
+    const AMessage: string;
+    ALogLevel: TLogLevel
+  );
 
   public
     constructor Create;
@@ -286,7 +290,7 @@ begin
 
   Log(
     'HTTP server thread finished, cleaning up',
-    LM_Debug
+    LM_Info
   );
 
 
@@ -308,6 +312,29 @@ begin
 
 end;
 
+{=============================================================================
+  CORS
+=============================================================================}
+
+procedure TZCADHTTPServerManager.SetCORSHeaders(
+  var AResponse: TFPHTTPConnectionResponse
+);
+begin
+
+  AResponse.CustomHeaders.Add(
+    'Access-Control-Allow-Origin: *'
+  );
+
+  AResponse.CustomHeaders.Add(
+    'Access-Control-Allow-Methods: GET, POST, OPTIONS'
+  );
+
+  AResponse.CustomHeaders.Add(
+    'Access-Control-Allow-Headers: Content-Type'
+  );
+
+end;
+
 
 {=============================================================================
   HTTP REQUEST
@@ -321,20 +348,61 @@ procedure TZCADHTTPServerManager.HandleRequest(
 var
   JSONText: string;
   ResponseText: string;
+  Method: string;
 begin
+
+  Method := UpperCase(ARequest.Method);
+
 
   Log(
     Format(
       'HTTP request: %s %s',
-      [ARequest.Method, ARequest.URI]
+      [
+        Method,
+        ARequest.URI
+      ]
     ),
-    LM_Debug
+    LM_Info
   );
 
 
-  {=========================================================================}
-  { WIDGETS                                                                }
-  {=========================================================================}
+  {===========================================================================
+    CORS
+
+    Важно:
+    Заголовки должны добавляться для ВСЕХ ответов,
+    включая ошибки 404/405/500 и OPTIONS.
+  ===========================================================================}
+
+  SetCORSHeaders(AResponse);
+
+
+  {===========================================================================
+    OPTIONS / CORS PREFLIGHT
+  ===========================================================================}
+
+  if Method = 'OPTIONS' then
+  begin
+
+    Log(
+      Format(
+        'CORS preflight: %s',
+        [ARequest.URI]
+      ),
+      LM_Info
+    );
+
+
+    AResponse.Code := 204;
+
+    Exit;
+
+  end;
+
+
+  {===========================================================================
+    WIDGETS
+  ===========================================================================}
 
   if
     (ARequest.URI = '/widgets') or
@@ -352,103 +420,159 @@ begin
   end;
 
 
-  {=========================================================================}
-  { IPC                                                                    }
-  {=========================================================================}
+  {===========================================================================
+    IPC
+  ===========================================================================}
 
-  if ARequest.URI <> '/ipc' then
+  if ARequest.URI = '/ipc' then
   begin
 
-    AResponse.Code := 404;
+    {-----------------------------------------------------------------------
+      GET /ipc
 
-    AResponse.ContentType :=
-      'application/json';
+      Используется для проверки доступности HTTP-сервера.
 
-    AResponse.Content :=
-      '{"status":"error","error":"Endpoint not found"}';
+      В IPC не передаём.
+    -----------------------------------------------------------------------}
 
-    Exit;
-
-  end;
-
-
-  if UpperCase(ARequest.Method) <> 'POST' then
-  begin
-
-    AResponse.Code := 405;
-
-    AResponse.ContentType :=
-      'application/json';
-
-    AResponse.Content :=
-      '{"status":"error","error":"Method not allowed"}';
-
-    Exit;
-
-  end;
-
-
-  JSONText := ARequest.Content;
-
-  if Trim(JSONText) = '' then
-  begin
-
-    AResponse.Code := 400;
-
-    AResponse.ContentType :=
-      'application/json';
-
-    AResponse.Content :=
-      '{"status":"error","error":"Empty request body"}';
-
-    Exit;
-
-  end;
-
-
-  ResponseText := '';
-
-  try
-
-    HTTPIPCExecuteJSON(
-      JSONText,
-      ResponseText
-    );
-
-
-    AResponse.Code := 200;
-
-    AResponse.ContentType :=
-      'application/json';
-
-    AResponse.Content :=
-      ResponseText;
-
-  except
-
-    on E: Exception do
+    if Method = 'GET' then
     begin
 
-      Log(
-        Format(
-          'HTTP IPC error: %s',
-          [E.Message]
-        ),
-        LM_Error
-      );
-
-
-      AResponse.Code := 500;
+      AResponse.Code := 200;
 
       AResponse.ContentType :=
-        'application/json';
+        'application/json; charset=utf-8';
 
       AResponse.Content :=
-        '{"status":"error","error":"Internal server error"}';
+        '{"status":"ok","message":"ZCAD HTTP server is available"}';
+
+      Exit;
 
     end;
 
+
+    {-----------------------------------------------------------------------
+      POST /ipc
+
+      Реальная IPC-команда.
+    -----------------------------------------------------------------------}
+
+    if Method <> 'POST' then
+    begin
+
+      AResponse.Code := 405;
+
+      AResponse.ContentType :=
+        'application/json; charset=utf-8';
+
+      AResponse.Content :=
+        '{"status":"error","error":"Method not allowed"}';
+
+      Exit;
+
+    end;
+
+
+    JSONText := ARequest.Content;
+
+
+    if Trim(JSONText) = '' then
+    begin
+
+      AResponse.Code := 400;
+
+      AResponse.ContentType :=
+        'application/json; charset=utf-8';
+
+      AResponse.Content :=
+        '{"status":"error","error":"Empty request body"}';
+
+      Exit;
+
+    end;
+
+
+    ResponseText := '';
+
+
+    try
+
+      Log(
+        Format(
+          'HTTP IPC request: %s',
+          [JSONText]
+        ),
+        LM_Info
+      );
+
+
+      HTTPIPCExecuteJSON(
+        JSONText,
+        ResponseText
+      );
+
+
+      AResponse.Code := 200;
+
+      AResponse.ContentType :=
+        'application/json; charset=utf-8';
+
+      AResponse.Content :=
+        ResponseText;
+
+
+      Log(
+        Format(
+          'HTTP IPC response: %s',
+          [ResponseText]
+        ),
+        LM_Info
+      );
+
+
+    except
+
+      on E: Exception do
+      begin
+
+        Log(
+          Format(
+            'HTTP IPC error: %s',
+            [E.Message]
+          ),
+          LM_Error
+        );
+
+
+        AResponse.Code := 500;
+
+        AResponse.ContentType :=
+          'application/json; charset=utf-8';
+
+        AResponse.Content :=
+          '{"status":"error","error":"Internal server error"}';
+
+      end;
+
+    end;
+
+
+    Exit;
+
   end;
+
+
+  {===========================================================================
+    UNKNOWN ENDPOINT
+  ===========================================================================}
+
+  AResponse.Code := 404;
+
+  AResponse.ContentType :=
+    'application/json; charset=utf-8';
+
+  AResponse.Content :=
+    '{"status":"error","error":"Endpoint not found"}';
 
 end;
 
