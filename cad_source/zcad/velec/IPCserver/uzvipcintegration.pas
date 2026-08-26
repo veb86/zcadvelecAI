@@ -417,6 +417,108 @@ var
       end;
     end;
   end;
+    procedure ExecuteBatchLines;
+  var
+    Lines: TJSONArray;
+    LineData: TJSONArray;
+    PLine: PGDBObjLine;
+    P1, P2: TzePoint3d;
+    I: Integer;
+  begin
+    if (Cmd^.Args = nil) or (Cmd^.Args.Count < 1) then
+    begin
+      CmdResult.Status := 'error';
+      CmdResult.Error := 'BATCH_LINES requires an array of lines';
+      Exit;
+    end;
+
+    try
+      { Args[0] должен содержать массив линий }
+      Lines := Cmd^.Args.Arrays[0];
+
+      if Lines.Count = 0 then
+      begin
+        CmdResult.Status := 'error';
+        CmdResult.Error := 'BATCH_LINES: empty lines array';
+        Exit;
+      end;
+
+      { Создаём все линии в ConstructRoot }
+      for I := 0 to Lines.Count - 1 do
+      begin
+        LineData := Lines.Arrays[I];
+
+        if LineData.Count < 4 then
+          raise Exception.CreateFmt(
+            'BATCH_LINES: line %d requires 4 coordinates',
+            [I]
+          );
+
+        P1.x := LineData.Items[0].AsFloat;
+        P1.y := LineData.Items[1].AsFloat;
+        P1.z := 0;
+
+        P2.x := LineData.Items[2].AsFloat;
+        P2.y := LineData.Items[3].AsFloat;
+        P2.z := 0;
+
+        PLine := AllocEnt(GDBLineID);
+
+        PLine^.init(
+          nil,
+          nil,
+          LnWtByLayer,
+          P1,
+          P2
+        );
+
+        zcSetEntPropFromCurrentDrawingProp(PLine);
+
+        { Добавляем без отдельного Undo и Redraw }
+        zcAddEntToCurrentDrawingConstructRoot(PLine);
+
+      end;
+
+      { Все линии созданы.
+        Теперь одним действием переносим их в чертёж. }
+      zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(
+        'IPC_BATCH_LINES'
+      );
+
+      { Одна перерисовка после создания всех линий }
+      zcRedrawCurrentDrawing;
+
+      CmdResult.Status := 'ok';
+      CmdResult.Result := Format(
+        'Created %d lines',
+        [Lines.Count]
+      );
+
+      ProgramLog.LogOutFormatStr(
+        'IPC BATCH_LINES: created %d lines',
+        [Lines.Count],
+        LM_Info,
+        0
+      );
+
+    except
+      on E: Exception do
+      begin
+        CmdResult.Status := 'error';
+        CmdResult.Error := Format(
+          'BATCH_LINES error: %s',
+          [E.Message]
+        );
+
+        ProgramLog.LogOutFormatStr(
+          'IPC BATCH_LINES error: %s',
+          [E.Message],
+          LM_Error,
+          0
+        );
+      end;
+    end;
+  end;
 
 begin
   {** Обрабатываем несколько команд за один вызов для производительности }
@@ -447,6 +549,7 @@ begin
         ictText: ExecuteText;
         ictBeginBatch: ExecuteBeginBatch;
         ictEndBatch: ExecuteEndBatch;
+        ictBatchLines: ExecuteBatchLines;
         ictUnknown:
           begin
             CmdResult.Status := 'error';
