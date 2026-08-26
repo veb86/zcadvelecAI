@@ -27,7 +27,7 @@ interface
 
 uses
   Classes, SysUtils, ExtCtrls, Forms, fpjson,
-  uzclog, uzcinterface, uzvipcserver, uzeTypes;
+  uzclog, uzcinterface, uzvipcserver,uzvhttpserver, uzeTypes;
 
 type
   {** Обработчик команд IPC в главном потоке }
@@ -601,22 +601,39 @@ procedure IPCIntegrationInit;
 begin
   if IPCCommandHandler = nil then
   begin
-    IPCCommandHandler := TIPCCommandHandler.Create(nil); {** Создаём без владельца, чтобы избежать проблем при завершении }
+    IPCCommandHandler := TIPCCommandHandler.Create(nil);
     IPCCommandHandler.Start;
-    ProgramLog.LogOutFormatStr('IPC integration initialized', [], LM_Info, 0);
+
+    ProgramLog.LogOutFormatStr(
+      'IPC integration initialized',
+      [],
+      LM_Info,
+      0
+    );
   end;
+
 end;
 
 procedure IPCIntegrationDone;
 begin
+
+
   if IPCCommandHandler <> nil then
   begin
     IPCCommandHandler.Stop;
     IPCCommandHandler.Free;
     IPCCommandHandler := nil;
-    ProgramLog.LogOutFormatStr('IPC integration finalized', [], LM_Info, 0);
+
+    ProgramLog.LogOutFormatStr(
+      'IPC integration finalized',
+      [],
+      LM_Info,
+      0
+    );
   end;
+
 end;
+
 
 procedure IPCProcessPendingCommands;
 begin
