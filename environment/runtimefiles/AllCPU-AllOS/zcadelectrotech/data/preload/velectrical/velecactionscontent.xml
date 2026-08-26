@@ -24,6 +24,9 @@
 	  <ZAction Name="ACN_L2SL" Command="L2SL" Caption="Lines to superlines"/>
 	  <ZAction Name="ACN_uzvexportspacetoSTF" Command="exportLighttoSTF" Img="dataexportstf.png" Caption="Экспортировать пространства в STF файл"/>
 	  <ZAction Name="ACN_uzvimportlightinDXF" Command="importDialux" Img="dataimportdxf.png" Caption="Распознать светильники в файле DXF"/>
+ 	  <ZAction Name="ACN_HTTPStart" Command="HTTPStart" Img="#HST" Caption="Start HTTP server"/>
+	  <ZAction Name="ACN_HTTPStatus" Command="HTTPStatus" Img="#HSU" Caption="Status HTTP server"/>
+	  <ZAction Name="ACN_HTTPStop" Command="HTTPStop" Img="#HED" Caption="Stop HTTP server"/>
     </Group>
   </ActionsContent>
 </CONFIG>

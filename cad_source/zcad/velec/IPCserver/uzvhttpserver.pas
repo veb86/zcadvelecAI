@@ -46,6 +46,8 @@ type
     TZCADHTTPServerThread = class(TThread)
     private
       FServer: TFPHttpServer;
+      FFinished: Boolean;
+      property Finished: Boolean read FFinished;
     protected
       procedure Execute; override;
     public
@@ -67,6 +69,8 @@ type
     FRunning: Boolean;
     FHost: string;
     FPort: Integer;
+
+    procedure CleanupStoppedServer;
 
     procedure HandleRequest(
       Sender: TObject;
@@ -152,13 +156,15 @@ implementation
 
 constructor TZCADHTTPServerThread.Create(AServer: TFPHttpServer);
 begin
+
   inherited Create(True);
 
-  FreeOnTerminate := False;
+  FreeOnTerminate := false;
 
   FServer := AServer;
-
+  FFinished := False;
   Start;
+
 end;
 
 
@@ -222,15 +228,7 @@ begin
     FServer.Active := True уже завершился,
     поэтому теперь сервер можно освобождать.
   ---------------------------------------------------------------------------}
-
-  if Server <> nil then
-  begin
-
-    Server.Free;
-
-    FServer := nil;
-
-  end;
+  FFinished := True;
 
 end;
 
@@ -272,6 +270,36 @@ begin
     ALogLevel,
     0
   );
+end;
+
+procedure TZCADHTTPServerManager.CleanupStoppedServer;
+begin
+
+  if FServerThread = nil then
+    Exit;
+
+
+  if FServerThread.Finished then
+  begin
+
+    Log(
+      'HTTP server thread finished, cleaning up',
+      LM_Debug
+    );
+
+
+    FServerThread.Free;
+    FServerThread := nil;
+
+
+    if FServer <> nil then
+    begin
+      FServer.Free;
+      FServer := nil;
+    end;
+
+  end;
+
 end;
 
 
@@ -461,9 +489,16 @@ begin
 
       if FServer <> nil then
       begin
-        FServer.Free;
-        FServer := nil;
+
+        try
+          FServer.Active := False;
+        except
+        end;
+
       end;
+
+      FServer := nil;
+      FServerThread := nil;
 
 
       FRunning := False;
@@ -482,6 +517,8 @@ end;
 =============================================================================}
 
 procedure TZCADHTTPServerManager.Stop;
+var
+  Server: TFPHttpServer;
 begin
 
   if not FRunning then
@@ -495,18 +532,35 @@ begin
 
 
   {---------------------------------------------------------------------------
-    Останавливаем сервер.
+    Сохраняем ссылку на сервер локально.
+  ---------------------------------------------------------------------------}
+
+  Server := FServer;
+
+
+  {---------------------------------------------------------------------------
+    Сначала убираем ссылки менеджера.
+
+    После этого менеджер больше не владеет сервером.
+  ---------------------------------------------------------------------------}
+
+  FServer := nil;
+  FServerThread := nil;
+  FRunning := False;
+
+
+  {---------------------------------------------------------------------------
+    Просим TFPHttpServer остановить accept().
 
     ВАЖНО:
-    Не вызываем WaitFor здесь.
-    FServer.Active := False должен остановить accept()
-    в серверном потоке.
+    Здесь НЕТ WaitFor.
+    Здесь НЕТ Free.
   ---------------------------------------------------------------------------}
 
   try
 
-    if FServer <> nil then
-      FServer.Active := False;
+    if Server <> nil then
+      Server.Active := False;
 
   except
 
@@ -522,17 +576,8 @@ begin
   end;
 
 
-  {---------------------------------------------------------------------------
-    Пока НЕ освобождаем FServerThread и FServer.
-
-    Поток должен сам выйти из FServer.Active := True.
-  ---------------------------------------------------------------------------}
-
-  FRunning := False;
-
-
   Log(
-    'HTTP server stop requested',
+    'HTTP server stopped',
     LM_Info
   );
 

@@ -28,6 +28,10 @@
 	  <Separator/>
 	  <Action Name="ACN_uzvexportspacetoSTF"/>
       <Action Name="ACN_uzvimportlightinDXF"/>
+	  <Separator/>
+	  <Action Name="ACN_HTTPStart"/>
+      <Action Name="ACN_HTTPStatus"/>
+	  <Action Name="ACN_HTTPStop"/>
     </ElectrotechVelec>
   </ToolBarsContent>
 </CONFIG>
