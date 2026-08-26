@@ -28,7 +28,7 @@ uses
   uzccommandsabstract,
   uzccommandsimpl,
   uzbLogTypes,
-
+  uzvhttpipc,
   uzcinterface;
 
 const
@@ -36,7 +36,7 @@ const
   HTTP_DEFAULT_HOST = '127.0.0.1';
 
   {** Порт HTTP-сервера по умолчанию }
-  HTTP_DEFAULT_PORT = 8888;
+  HTTP_DEFAULT_PORT = 5000;
 
 type
 
@@ -47,11 +47,11 @@ type
     private
       FServer: TFPHttpServer;
       FFinished: Boolean;
-      property Finished: Boolean read FFinished;
     protected
       procedure Execute; override;
     public
       constructor Create(AServer: TFPHttpServer);
+      property Finished: Boolean read FFinished;
     end;
 
   {**
@@ -279,24 +279,29 @@ begin
     Exit;
 
 
-  if FServerThread.Finished then
+  if not FServerThread.Finished then
+    Exit;
+
+
+  Log(
+    'HTTP server thread finished, cleaning up',
+    LM_Debug
+  );
+
+
+  { Поток уже полностью вышел из Execute }
+
+  FServerThread.Free;
+  FServerThread := nil;
+
+
+  { Теперь можно освобождать TFPHttpServer }
+
+  if FServer <> nil then
   begin
 
-    Log(
-      'HTTP server thread finished, cleaning up',
-      LM_Debug
-    );
-
-
-    FServerThread.Free;
-    FServerThread := nil;
-
-
-    if FServer <> nil then
-    begin
-      FServer.Free;
-      FServer := nil;
-    end;
+    FServer.Free;
+    FServer := nil;
 
   end;
 
@@ -314,6 +319,7 @@ procedure TZCADHTTPServerManager.HandleRequest(
 );
 var
   JSONText: string;
+  ResponseText: string;
 begin
 
   Log(
@@ -324,80 +330,77 @@ begin
     LM_Debug
   );
 
-
   {---------------------------------------------------------------------------
     Проверяем endpoint
   ---------------------------------------------------------------------------}
 
   if ARequest.URI <> '/ipc' then
   begin
-
     AResponse.Code := 404;
     AResponse.ContentType := 'application/json';
-
     AResponse.Content :=
       '{"status":"error","error":"Endpoint not found"}';
-
     Exit;
   end;
 
-
   {---------------------------------------------------------------------------
-    Пока принимаем только POST
+    Разрешаем только POST
   ---------------------------------------------------------------------------}
 
-  if not SameText(ARequest.Method, 'POST') then
+  if UpperCase(ARequest.Method) <> 'POST' then
   begin
-
     AResponse.Code := 405;
     AResponse.ContentType := 'application/json';
-
     AResponse.Content :=
-      '{"status":"error","error":"Only POST is supported"}';
-
+      '{"status":"error","error":"Method not allowed"}';
     Exit;
   end;
 
-
   {---------------------------------------------------------------------------
-    Получаем JSON как обычный текст
+    Получаем JSON из тела HTTP-запроса
   ---------------------------------------------------------------------------}
 
   JSONText := ARequest.Content;
 
-
-  Log(
-    Format(
-      'Received JSON: %s',
-      [JSONText]
-    ),
-    LM_Debug
-  );
-
+  if Trim(JSONText) = '' then
+  begin
+    AResponse.Code := 400;
+    AResponse.ContentType := 'application/json';
+    AResponse.Content :=
+      '{"status":"error","error":"Empty request body"}';
+    Exit;
+  end;
 
   {---------------------------------------------------------------------------
-    ВАЖНО:
-
-    Здесь пока НЕТ разбора JSON.
-
-    HTTP-сервер вообще не знает его структуру.
-
-    На следующем этапе здесь будет передача JSON
-    в существующий IPC-механизм ZCAD.
+    Передаём JSON в независимый IPC-модуль
   ---------------------------------------------------------------------------}
 
+  ResponseText := '';
 
-  AResponse.Code := 200;
-  AResponse.ContentType := 'application/json';
+  try
+    HTTPIPCExecuteJSON(JSONText, ResponseText);
 
-  AResponse.Content :=
-    '{"status":"ok","result":"JSON received"}';
+    AResponse.Code := 200;
+    AResponse.ContentType := 'application/json';
+    AResponse.Content := ResponseText;
 
+  except
+    on E: Exception do
+    begin
+      Log(
+        Format(
+          'HTTP IPC error: %s',
+          [E.Message]
+        ),
+        LM_Error
+      );
 
-  Log(
-    'HTTP request processed',
-    LM_Debug
-  );
+      AResponse.Code := 500;
+      AResponse.ContentType := 'application/json';
+      AResponse.Content :=
+        '{"status":"error","error":"Internal server error"}';
+    end;
+  end;
 
 end;
 
@@ -413,6 +416,27 @@ function TZCADHTTPServerManager.Start(
 begin
 
   Result := False;
+
+
+  CleanupStoppedServer;
+
+
+  if FServerThread <> nil then
+  begin
+
+    if not FServerThread.Finished then
+    begin
+
+      Log(
+        'Previous HTTP server is still stopping',
+        LM_Info
+      );
+
+      Exit(False);
+
+    end;
+
+  end;
 
 
   if FRunning then
@@ -497,12 +521,8 @@ begin
 
       end;
 
-      FServer := nil;
-      FServerThread := nil;
-
 
       FRunning := False;
-
       Result := False;
 
     end;
@@ -517,8 +537,6 @@ end;
 =============================================================================}
 
 procedure TZCADHTTPServerManager.Stop;
-var
-  Server: TFPHttpServer;
 begin
 
   if not FRunning then
@@ -532,35 +550,17 @@ begin
 
 
   {---------------------------------------------------------------------------
-    Сохраняем ссылку на сервер локально.
-  ---------------------------------------------------------------------------}
-
-  Server := FServer;
-
-
-  {---------------------------------------------------------------------------
-    Сначала убираем ссылки менеджера.
-
-    После этого менеджер больше не владеет сервером.
-  ---------------------------------------------------------------------------}
-
-  FServer := nil;
-  FServerThread := nil;
-  FRunning := False;
-
-
-  {---------------------------------------------------------------------------
-    Просим TFPHttpServer остановить accept().
+    Запрашиваем остановку сервера.
 
     ВАЖНО:
-    Здесь НЕТ WaitFor.
-    Здесь НЕТ Free.
+    FServer и FServerThread здесь НЕ обнуляем.
+    Они нужны менеджеру до полного завершения потока.
   ---------------------------------------------------------------------------}
 
   try
 
-    if Server <> nil then
-      Server.Active := False;
+    if FServer <> nil then
+      FServer.Active := False;
 
   except
 
@@ -576,8 +576,13 @@ begin
   end;
 
 
+  { Сервер больше считается запущенным }
+
+  FRunning := False;
+
+
   Log(
-    'HTTP server stopped',
+    'HTTP server stop requested',
     LM_Info
   );
 
@@ -781,9 +786,9 @@ begin
 
 
     zcUI.TextMessage(
-      'HTTP server stopped',
-      TMWOHistoryOut
-    );
+  'HTTP server stop requested',
+  TMWOHistoryOut
+);
 
 
     Result := cmd_ok;
