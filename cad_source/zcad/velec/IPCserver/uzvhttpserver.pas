@@ -29,6 +29,7 @@ uses
   uzccommandsimpl,
   uzbLogTypes,
   uzvhttpipc,
+  uzvhttpwidgets,
   uzcinterface;
 
 const
@@ -330,63 +331,104 @@ begin
     LM_Debug
   );
 
-  {---------------------------------------------------------------------------
-    Проверяем endpoint
-  ---------------------------------------------------------------------------}
+
+  {=========================================================================}
+  { WIDGETS                                                                }
+  {=========================================================================}
+
+  if
+    (ARequest.URI = '/widgets') or
+    (Pos('/widgets/', ARequest.URI) = 1)
+  then
+  begin
+
+    HTTPWidgetsHandleRequest(
+      ARequest,
+      AResponse
+    );
+
+    Exit;
+
+  end;
+
+
+  {=========================================================================}
+  { IPC                                                                    }
+  {=========================================================================}
 
   if ARequest.URI <> '/ipc' then
   begin
+
     AResponse.Code := 404;
-    AResponse.ContentType := 'application/json';
+
+    AResponse.ContentType :=
+      'application/json';
+
     AResponse.Content :=
       '{"status":"error","error":"Endpoint not found"}';
+
     Exit;
+
   end;
 
-  {---------------------------------------------------------------------------
-    Разрешаем только POST
-  ---------------------------------------------------------------------------}
 
   if UpperCase(ARequest.Method) <> 'POST' then
   begin
+
     AResponse.Code := 405;
-    AResponse.ContentType := 'application/json';
+
+    AResponse.ContentType :=
+      'application/json';
+
     AResponse.Content :=
       '{"status":"error","error":"Method not allowed"}';
+
     Exit;
+
   end;
 
-  {---------------------------------------------------------------------------
-    Получаем JSON из тела HTTP-запроса
-  ---------------------------------------------------------------------------}
 
   JSONText := ARequest.Content;
 
   if Trim(JSONText) = '' then
   begin
+
     AResponse.Code := 400;
-    AResponse.ContentType := 'application/json';
+
+    AResponse.ContentType :=
+      'application/json';
+
     AResponse.Content :=
       '{"status":"error","error":"Empty request body"}';
+
     Exit;
+
   end;
 
-  {---------------------------------------------------------------------------
-    Передаём JSON в независимый IPC-модуль
-  ---------------------------------------------------------------------------}
 
   ResponseText := '';
 
   try
-    HTTPIPCExecuteJSON(JSONText, ResponseText);
+
+    HTTPIPCExecuteJSON(
+      JSONText,
+      ResponseText
+    );
+
 
     AResponse.Code := 200;
-    AResponse.ContentType := 'application/json';
-    AResponse.Content := ResponseText;
+
+    AResponse.ContentType :=
+      'application/json';
+
+    AResponse.Content :=
+      ResponseText;
 
   except
+
     on E: Exception do
     begin
+
       Log(
         Format(
           'HTTP IPC error: %s',
@@ -395,11 +437,17 @@ begin
         LM_Error
       );
 
+
       AResponse.Code := 500;
-      AResponse.ContentType := 'application/json';
+
+      AResponse.ContentType :=
+        'application/json';
+
       AResponse.Content :=
         '{"status":"error","error":"Internal server error"}';
+
     end;
+
   end;
 
 end;
