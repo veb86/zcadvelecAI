@@ -328,8 +328,11 @@ uses
   uzccommand_tablestylemanager,
 
   //**IPC Server for remote control**//
-  uzvipcserver,
-  uzvipcintegration,
+  uzvhttpserver,
+  uzvhttpipc,
+  uzvhttpcmdgeometry,
+  //uzvipcserver,
+  //uzvipcintegration,
   //**//
   uexpsvgcommands,
 

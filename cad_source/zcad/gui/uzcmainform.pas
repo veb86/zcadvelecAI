@@ -36,7 +36,7 @@ uses
   uzctnrVectorBytesStream,uzeTypes,
   uzcsysvars,uzcstrconsts,uzcLog,uzbLogTypes,uzbLog,
   uzsbVarmanDef,varman,UUnitManager,uzcsysinfo,
-  uzestylestexts,uzestylesdim,
+  uzestylestexts,uzestylesdim,uzvhttpipc,
   uzbexceptionscl,uzbexceptionsgui,
   {ZCAD ENTITIES}
   uzegeometrytypes,uzeentity,UGDBSelectedObjArray,uzestyleslayers,uzedrawingsimple,
@@ -1356,6 +1356,9 @@ begin
         if UniqueInstanceBase.FIPCServer.active then
           UniqueInstanceBase.FIPCServer.PeekMessage(0,True);
       {endif}
+
+      HTTPIPCProcessPendingCommands;
+
       done:=True;
       sysvar.debug.languadedeb.UpdatePO:=_UpdatePO;
       sysvar.debug.languadedeb.NotEnlishWord:=_NotEnlishWord;

@@ -5,8 +5,63 @@
 *                                                                           *
 *****************************************************************************
 
-@author(HTTP IPC bridge for ZCAD)
+@author(HTTP IPC dispatcher for ZCAD)
 @author(Vladimir Bobrov)
+
+Описание:
+
+  Универсальный HTTP IPC диспетчер.
+
+  ВАЖНО:
+
+    Этот unit НЕ зависит от:
+
+      uzvipcserver
+      TIPCCommandType
+      PIPCCommand
+      IPCCommandQueue
+
+  HTTP IPC состоит из трёх частей:
+
+      1. Реестр команд
+      2. Очередь команд
+      3. HTTP -> Command -> Response
+
+  Команды регистрируются другими unit-ами:
+
+      uzvhttpcmdgeometry
+      uzvhttpcmdtext
+      uzvhttpcmdbatch
+      uzvhttpcmddevice
+      uzvhttpcmdfile
+
+  Пример регистрации:
+
+      RegisterHTTPIPCCommand(
+        'LINE',
+        @HTTPCommandLine
+      );
+
+  HTTP поток НЕ выполняет ZCAD-команду.
+
+  Он:
+
+      JSON
+        |
+        v
+      Command
+        |
+        v
+      HTTPIPCCommandQueue
+        |
+        v
+      главный поток ZCAD
+        |
+        v
+      Handler
+        |
+        v
+      Response
 }
 
 {$mode objfpc}{$H+}
@@ -20,32 +75,176 @@ interface
 uses
   Classes,
   SysUtils,
+  SyncObjs,
   fpjson,
   jsonparser,
-  syncobjs,
   uzclog,
-  uzbLogTypes,
-  uzvipcserver;
+  uzbLogTypes;
+
+type
+
+  {=========================================================================}
+  {                                                                         }
+  {  Обработчик HTTP IPC команды                                            }
+  {                                                                         }
+  {=========================================================================}
+
+  THTTPIPCCommandHandler = function(
+    AArgs: TJSONArray;
+    out AResult: string;
+    out AError: string
+  ): Boolean;
+
+
+  {=========================================================================}
+  {                                                                         }
+  {  Команда HTTP IPC                                                      }
+  {                                                                         }
+  {=========================================================================}
+
+  THTTPIPCCommand = class
+  private
+    FRefCount: LongInt;
+
+    procedure DestroyCommand;
+
+  public
+    ID: string;
+    CmdName: string;
+    Token: string;
+
+    Args: TJSONArray;
+
+    Handler: THTTPIPCCommandHandler;
+
+    ResultText: string;
+    ErrorText: string;
+
+    Success: Boolean;
+
+    Completed: TEvent;
+
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure AddRef;
+    procedure Release;
+
+    function WaitFor(ATimeout: Cardinal): TWaitResult;
+  end;
+
+
+  {=========================================================================}
+  {                                                                         }
+  {  Очередь HTTP IPC                                                       }
+  {                                                                         }
+  {=========================================================================}
+
+  THTTPIPCCommandQueue = class
+  private
+    FLock: TCriticalSection;
+    FItems: TList;
+
+  public
+    constructor Create;
+    destructor Destroy; override;
+
+    procedure Enqueue(ACommand: THTTPIPCCommand);
+
+    function TryDequeue(
+      out ACommand: THTTPIPCCommand
+    ): Boolean;
+
+    function IsEmpty: Boolean;
+    function Count: Integer;
+  end;
+
+
+{=============================================================================
+  РЕЕСТР КОМАНД
+=============================================================================}
 
 {**
-  Передаёт JSON-команду из HTTP-транспорта
-  в существующую IPCCommandQueue.
+  Зарегистрировать HTTP IPC команду.
 
-  Входной JSON:
+  Пример:
+
+    RegisterHTTPIPCCommand(
+      'LINE',
+      @HTTPCommandLine
+    );
+}
+procedure RegisterHTTPIPCCommand(
+  const AName: string;
+  AHandler: THTTPIPCCommandHandler
+);
+
+
+{**
+  Проверить наличие команды в реестре.
+}
+function HTTPIPCCommandRegistered(
+  const AName: string
+): Boolean;
+
+
+{**
+  Получить обработчик команды.
+
+  Result = True:
+    команда найдена.
+
+  Result = False:
+    команда отсутствует.
+}
+function HTTPIPCGetCommandHandler(
+  const AName: string;
+  out AHandler: THTTPIPCCommandHandler
+): Boolean;
+
+
+{=============================================================================
+  ОЧЕРЕДЬ
+=============================================================================}
+
+{**
+  Глобальная очередь HTTP IPC.
+
+  Обрабатывается главным потоком ZCAD.
+}
+var
+  HTTPIPCCommandQueue: THTTPIPCCommandQueue;
+
+
+{=============================================================================
+  HTTP EXECUTION
+=============================================================================}
+
+{**
+  Выполнить HTTP IPC JSON запрос.
+
+  Формат:
 
     {
-      "id": "cmd-0001",
-      "cmd": "PING",
-      "args": []
+      "id": "123",
+      "cmd": "LINE",
+      "args": [0, 0, 100, 100],
+      "token": ""
     }
 
-  Выходной JSON формируется существующим
-  uzvipcintegration.pas.
+  HTTP поток:
 
-  Result = True  - команда была поставлена в очередь
-                   и получила результат выполнения.
+    1. Парсит JSON.
+    2. Находит Handler.
+    3. Создаёт THTTPIPCCommand.
+    4. Помещает его в очередь.
+    5. Ждёт завершения.
+    6. Возвращает JSON.
 
-  Result = False - ошибка формирования/передачи команды.
+  ВАЖНО:
+
+    Реальное выполнение Handler происходит не здесь,
+    а в главном потоке ZCAD через HTTPIPCCommandQueue.
 }
 function HTTPIPCExecuteJSON(
   const AJSON: string;
@@ -53,92 +252,73 @@ function HTTPIPCExecuteJSON(
 ): Boolean;
 
 
+{=============================================================================
+  ГЛАВНЫЙ ПОТОК
+=============================================================================}
+
+{**
+  Обработать одну команду из очереди.
+
+  Эту функцию должен вызывать главный поток ZCAD.
+
+  Например:
+
+      while HTTPIPCProcessNextCommand do;
+
+  или из TTimer:
+
+      HTTPIPCProcessPendingCommands;
+}
+function HTTPIPCProcessNextCommand: Boolean;
+
+
+{**
+  Обработать все ожидающие команды.
+
+  Вызывать только из главного потока ZCAD.
+}
+procedure HTTPIPCProcessPendingCommands;
+
+
+{**
+  Время ожидания HTTP команды.
+
+  30 секунд.
+}
+const
+  HTTP_IPC_COMMAND_TIMEOUT = 30000;
+
+
 implementation
+
+type
+
+  {=========================================================================}
+  {                                                                         }
+  {  Элемент реестра                                                        }
+  {                                                                         }
+  {=========================================================================}
+
+  THTTPIPCCommandRegistration = record
+    Name: string;
+    Handler: THTTPIPCCommandHandler;
+  end;
+
+
+var
+
+  { Реестр команд }
+  HTTPIPCCommandRegistry:
+    array of THTTPIPCCommandRegistration;
+
+  { Защита реестра }
+  HTTPIPCRegistryLock:
+    TCriticalSection;
 
 
 {=============================================================================
-  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+  LOG
 =============================================================================}
-
-function HTTPIPCGetCommandType(
-  const ACmdName: string
-): TIPCCommandType;
-begin
-
-  if SameText(ACmdName, 'PING') then
-    Result := ictPing
-
-  else if SameText(ACmdName, 'SAVE') then
-    Result := ictSave
-
-  else if SameText(ACmdName, 'EXPORT') then
-    Result := ictExport
-
-  else if SameText(ACmdName, 'LINE') then
-    Result := ictLine
-
-  else if SameText(ACmdName, 'CIRCLE') then
-    Result := ictCircle
-
-  else if SameText(ACmdName, 'ARC') then
-    Result := ictArc
-
-  else if SameText(ACmdName, 'POLYLINE') then
-    Result := ictPolyline
-
-  else if SameText(ACmdName, 'TEXT') then
-    Result := ictText
-
-  else if SameText(ACmdName, 'MTEXT') then
-    Result := ictMText
-
-  else if SameText(ACmdName, 'BLOCKINSERT') then
-    Result := ictBlockInsert
-
-  else if SameText(ACmdName, 'BEGIN_BATCH') then
-    Result := ictBeginBatch
-
-  else if SameText(ACmdName, 'END_BATCH') then
-    Result := ictEndBatch
-
-  else if SameText(ACmdName, 'BATCH_LINES') then
-    Result := ictBatchLines
-
-  else if SameText(ACmdName, 'INSERT_DEVICE') then
-    Result := ictInsertDevice
-
-  else
-    Result := ictUnknown;
-
-end;
-
-
-function HTTPIPCCreateErrorResponse(
-  const AID: string;
-  const AError: string
-): string;
-var
-  Response: TJSONObject;
-begin
-
-  Response := TJSONObject.Create;
-
-  try
-
-    Response.Add('id', AID);
-    Response.Add('status', 'error');
-    Response.Add('error', AError);
-
-    Result := Response.AsJSON;
-
-  finally
-
-    Response.Free;
-
-  end;
-
-end;
-
 
 procedure HTTPIPCLog(
   const AMessage: string;
@@ -157,7 +337,649 @@ end;
 
 
 {=============================================================================
-  HTTPIPCExecuteJSON
+  НОРМАЛИЗАЦИЯ ИМЕНИ
+=============================================================================}
+
+function NormalizeCommandName(
+  const AName: string
+): string;
+begin
+
+  Result :=
+    UpperCase(
+      Trim(AName)
+    );
+
+end;
+
+
+{=============================================================================
+  THTTPIPCCommand
+=============================================================================}
+
+constructor THTTPIPCCommand.Create;
+begin
+
+  inherited Create;
+
+  FRefCount := 1;
+
+  ID := '';
+  CmdName := '';
+  Token := '';
+
+  Args := nil;
+
+  Handler := nil;
+
+  ResultText := '';
+  ErrorText := '';
+
+  Success := False;
+
+  Completed :=
+    TEvent.Create(
+      nil,
+      True,
+      False,
+      ''
+    );
+
+end;
+
+
+destructor THTTPIPCCommand.Destroy;
+begin
+
+  if Args <> nil then
+  begin
+    Args.Free;
+    Args := nil;
+  end;
+
+
+  if Completed <> nil then
+  begin
+    Completed.Free;
+    Completed := nil;
+  end;
+
+
+  inherited Destroy;
+
+end;
+
+
+procedure THTTPIPCCommand.DestroyCommand;
+begin
+
+  Destroy;
+
+end;
+
+
+procedure THTTPIPCCommand.AddRef;
+begin
+
+  InterlockedIncrement(FRefCount);
+
+end;
+
+
+procedure THTTPIPCCommand.Release;
+begin
+
+  if InterlockedDecrement(FRefCount) = 0 then
+    DestroyCommand;
+
+end;
+
+
+function THTTPIPCCommand.WaitFor(
+  ATimeout: Cardinal
+): TWaitResult;
+begin
+
+  if Completed = nil then
+    Exit(wrError);
+
+  Result :=
+    Completed.WaitFor(
+      ATimeout
+    );
+
+end;
+
+
+{=============================================================================
+  THTTPIPCCommandQueue
+=============================================================================}
+
+constructor THTTPIPCCommandQueue.Create;
+begin
+
+  inherited Create;
+
+  FLock :=
+    TCriticalSection.Create;
+
+  FItems :=
+    TList.Create;
+
+end;
+
+
+destructor THTTPIPCCommandQueue.Destroy;
+var
+  I: Integer;
+  Cmd: THTTPIPCCommand;
+begin
+
+  if FLock <> nil then
+    FLock.Acquire;
+
+  try
+
+    if FItems <> nil then
+    begin
+
+      for I := 0 to FItems.Count - 1 do
+      begin
+
+        Cmd :=
+          THTTPIPCCommand(
+            FItems[I]
+          );
+
+        if Cmd <> nil then
+          Cmd.Release;
+
+      end;
+
+      FItems.Clear;
+
+    end;
+
+  finally
+
+    if FLock <> nil then
+      FLock.Release;
+
+  end;
+
+
+  FItems.Free;
+  FItems := nil;
+
+  FLock.Free;
+  FLock := nil;
+
+
+  inherited Destroy;
+
+end;
+
+
+procedure THTTPIPCCommandQueue.Enqueue(
+  ACommand: THTTPIPCCommand
+);
+begin
+
+  if ACommand = nil then
+    raise Exception.Create(
+      'Cannot enqueue nil HTTP IPC command'
+    );
+
+  { Очередь получает собственную ссылку }
+  ACommand.AddRef;
+
+  FLock.Acquire;
+  try
+
+    try
+
+      FItems.Add(
+        ACommand
+      );
+
+    except
+
+      { Если Add завершился ошибкой,
+        возвращаем ссылку очереди. }
+
+      ACommand.Release;
+
+      raise;
+
+    end;
+
+  finally
+
+    FLock.Release;
+
+  end;
+
+end;
+
+
+function THTTPIPCCommandQueue.TryDequeue(
+  out ACommand: THTTPIPCCommand
+): Boolean;
+begin
+
+  ACommand := nil;
+
+  FLock.Acquire;
+
+  try
+
+    if FItems.Count = 0 then
+      Exit(False);
+
+
+    ACommand :=
+      THTTPIPCCommand(
+        FItems[0]
+      );
+
+
+    FItems.Delete(0);
+
+
+    { ВАЖНО:
+
+      Ссылка очереди передаётся вызывающему.
+
+      Поэтому здесь НЕ вызываем Release.
+    }
+
+    Result := True;
+
+  finally
+
+    FLock.Release;
+
+  end;
+
+end;
+
+
+function THTTPIPCCommandQueue.IsEmpty: Boolean;
+begin
+
+  FLock.Acquire;
+
+  try
+
+    Result :=
+      FItems.Count = 0;
+
+  finally
+
+    FLock.Release;
+
+  end;
+
+end;
+
+
+function THTTPIPCCommandQueue.Count: Integer;
+begin
+
+  FLock.Acquire;
+
+  try
+
+    Result :=
+      FItems.Count;
+
+  finally
+
+    FLock.Release;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  REPOSITORY SEARCH
+=============================================================================}
+
+function FindHTTPIPCCommandIndex(
+  const AName: string
+): Integer;
+var
+  I: Integer;
+  Name: string;
+begin
+
+  Result := -1;
+
+  Name :=
+    NormalizeCommandName(
+      AName
+    );
+
+
+  for I := 0 to High(HTTPIPCCommandRegistry) do
+  begin
+
+    if HTTPIPCCommandRegistry[I].Name = Name then
+    begin
+
+      Result := I;
+      Exit;
+
+    end;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  REGISTER
+=============================================================================}
+
+procedure RegisterHTTPIPCCommand(
+  const AName: string;
+  AHandler: THTTPIPCCommandHandler
+);
+var
+  Name: string;
+  Index: Integer;
+  Count: Integer;
+begin
+
+  Name :=
+    NormalizeCommandName(
+      AName
+    );
+
+
+  if Name = '' then
+  begin
+
+    HTTPIPCLog(
+      'Cannot register command with empty name',
+      LM_Error
+    );
+
+    Exit;
+
+  end;
+
+
+  if not Assigned(AHandler) then
+  begin
+
+    HTTPIPCLog(
+      Format(
+        'Cannot register command "%s": handler is nil',
+        [Name]
+      ),
+      LM_Error
+    );
+
+    Exit;
+
+  end;
+
+
+  HTTPIPCRegistryLock.Acquire;
+
+  try
+
+    Index :=
+      FindHTTPIPCCommandIndex(
+        Name
+      );
+
+
+    if Index >= 0 then
+    begin
+
+      HTTPIPCLog(
+        Format(
+          'HTTP IPC command already registered: %s',
+          [Name]
+        ),
+        LM_Error
+      );
+
+      Exit;
+
+    end;
+
+
+    Count :=
+      Length(
+        HTTPIPCCommandRegistry
+      );
+
+
+    SetLength(
+      HTTPIPCCommandRegistry,
+      Count + 1
+    );
+
+
+    HTTPIPCCommandRegistry[Count].Name :=
+      Name;
+
+    HTTPIPCCommandRegistry[Count].Handler :=
+      AHandler;
+
+
+    HTTPIPCLog(
+      Format(
+        'HTTP IPC command registered: %s',
+        [Name]
+      ),
+      LM_Debug
+    );
+
+  finally
+
+    HTTPIPCRegistryLock.Release;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  REGISTERED?
+=============================================================================}
+
+function HTTPIPCCommandRegistered(
+  const AName: string
+): Boolean;
+begin
+
+  HTTPIPCRegistryLock.Acquire;
+
+  try
+
+    Result :=
+      FindHTTPIPCCommandIndex(
+        AName
+      ) >= 0;
+
+  finally
+
+    HTTPIPCRegistryLock.Release;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  GET HANDLER
+=============================================================================}
+
+function HTTPIPCGetCommandHandler(
+  const AName: string;
+  out AHandler: THTTPIPCCommandHandler
+): Boolean;
+var
+  Index: Integer;
+begin
+
+  AHandler := nil;
+
+  HTTPIPCRegistryLock.Acquire;
+
+  try
+
+    Index :=
+      FindHTTPIPCCommandIndex(
+        AName
+      );
+
+
+    if Index < 0 then
+      Exit(False);
+
+
+    AHandler :=
+      HTTPIPCCommandRegistry[Index].Handler;
+
+
+    Result :=
+      Assigned(AHandler);
+
+  finally
+
+    HTTPIPCRegistryLock.Release;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  ERROR RESPONSE
+=============================================================================}
+
+function HTTPIPCCreateErrorResponse(
+  const AID: string;
+  const AError: string
+): string;
+var
+  Response: TJSONObject;
+begin
+
+  Response :=
+    TJSONObject.Create;
+
+  try
+
+    Response.Add(
+      'id',
+      AID
+    );
+
+    Response.Add(
+      'status',
+      'error'
+    );
+
+    Response.Add(
+      'error',
+      AError
+    );
+
+
+    Result :=
+      Response.AsJSON;
+
+  finally
+
+    Response.Free;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  SUCCESS RESPONSE
+=============================================================================}
+
+function HTTPIPCCreateCommandResponse(
+  ACommand: THTTPIPCCommand
+): string;
+var
+  Response: TJSONObject;
+begin
+
+  Response :=
+    TJSONObject.Create;
+
+  try
+
+    Response.Add(
+      'id',
+      ACommand.ID
+    );
+
+
+    if ACommand.Success then
+    begin
+
+      Response.Add(
+        'status',
+        'ok'
+      );
+
+
+      if ACommand.ResultText <> '' then
+        Response.Add(
+          'result',
+          ACommand.ResultText
+        );
+
+    end
+    else
+    begin
+
+      Response.Add(
+        'status',
+        'error'
+      );
+
+
+      if ACommand.ErrorText <> '' then
+        Response.Add(
+          'error',
+          ACommand.ErrorText
+        )
+      else
+        Response.Add(
+          'error',
+          'Command execution failed'
+        );
+
+    end;
+
+
+    Result :=
+      Response.AsJSON;
+
+  finally
+
+    Response.Free;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  JSON EXECUTION
 =============================================================================}
 
 function HTTPIPCExecuteJSON(
@@ -168,7 +990,7 @@ var
   Parser: TJSONParser;
   Root: TJSONObject;
 
-  Cmd: PIPCCommand;
+  Cmd: THTTPIPCCommand;
 
   CmdName: string;
   CommandID: string;
@@ -176,26 +998,28 @@ var
 
   ArgsData: TJSONData;
 
+  Handler: THTTPIPCCommandHandler;
+
   WaitResult: TWaitResult;
 
-  Response: TJSONObject;
-
-  CommandEnqueued: Boolean;
+  Enqueued: Boolean;
 
 begin
 
   Result := False;
   AResponse := '';
 
-  Cmd := nil;
   Parser := nil;
   Root := nil;
-  CommandEnqueued := False;
+
+  Cmd := nil;
+
+  Enqueued := False;
 
 
-  {===========================================================================
-    Проверка входных данных
-  ===========================================================================}
+  {=========================================================================}
+  { Проверка JSON }
+  {=========================================================================}
 
   if Trim(AJSON) = '' then
   begin
@@ -211,22 +1035,23 @@ begin
   end;
 
 
-  {===========================================================================
-    Проверка существования IPC-очереди
-  ===========================================================================}
+  {=========================================================================}
+  { Проверка очереди }
+  {=========================================================================}
 
-  if IPCCommandQueue = nil then
+  if HTTPIPCCommandQueue = nil then
   begin
 
     HTTPIPCLog(
-      'IPCCommandQueue is not initialized',
+      'HTTP IPC command queue is not initialized',
       LM_Error
     );
+
 
     AResponse :=
       HTTPIPCCreateErrorResponse(
         '',
-        'IPC command queue is not initialized'
+        'HTTP IPC command queue is not initialized'
       );
 
     Exit;
@@ -234,19 +1059,23 @@ begin
   end;
 
 
-  {===========================================================================
-    Парсинг JSON
-  ===========================================================================}
+  {=========================================================================}
+  { JSON PARSE }
+  {=========================================================================}
 
   try
 
-    Parser := TJSONParser.Create(AJSON);
+    Parser :=
+      TJSONParser.Create(
+        AJSON
+      );
 
     try
 
       try
 
-        Root := Parser.Parse as TJSONObject;
+        Root :=
+          Parser.Parse as TJSONObject;
 
       except
 
@@ -261,6 +1090,7 @@ begin
             LM_Error
           );
 
+
           AResponse :=
             HTTPIPCCreateErrorResponse(
               '',
@@ -269,6 +1099,7 @@ begin
                 [E.Message]
               )
             );
+
 
           Exit;
 
@@ -291,15 +1122,16 @@ begin
       end;
 
 
-      {=======================================================================
-        Получаем ID
-      =======================================================================}
+      {=====================================================================}
+      { ID }
+      {=====================================================================}
 
       CommandID :=
         Root.Get(
           'id',
           ''
         );
+
 
       if CommandID = '' then
       begin
@@ -315,15 +1147,16 @@ begin
       end;
 
 
-      {=======================================================================
-        Получаем имя команды
-      =======================================================================}
+      {=====================================================================}
+      { COMMAND }
+      {=====================================================================}
 
       CmdName :=
         Root.Get(
           'cmd',
           ''
         );
+
 
       if CmdName = '' then
       begin
@@ -339,18 +1172,49 @@ begin
       end;
 
 
-      {=======================================================================
-        Получаем token.
+      CmdName :=
+        NormalizeCommandName(
+          CmdName
+        );
 
-        На этом уровне token не проверяется.
 
-        Причина:
-        HTTP-сервер работает отдельно от TIPCServerThread,
-        а FToken у TIPCServerThread является private.
+      {=====================================================================}
+      { FIND HANDLER }
+      {=====================================================================}
 
-        При необходимости авторизацию HTTP можно добавить
-        отдельным механизмом позже.
-      =======================================================================}
+      if not HTTPIPCGetCommandHandler(
+        CmdName,
+        Handler
+      ) then
+      begin
+
+        HTTPIPCLog(
+          Format(
+            'Unknown HTTP IPC command: %s',
+            [CmdName]
+          ),
+          LM_Error
+        );
+
+
+        AResponse :=
+          HTTPIPCCreateErrorResponse(
+            CommandID,
+            Format(
+              'Unknown command: %s',
+              [CmdName]
+            )
+          );
+
+
+        Exit;
+
+      end;
+
+
+      {=====================================================================}
+      { TOKEN }
+      {=====================================================================}
 
       Token :=
         Root.Get(
@@ -359,43 +1223,43 @@ begin
         );
 
 
-      {=======================================================================
-        Создаём команду
-      =======================================================================}
+      {=====================================================================}
+      { CREATE COMMAND }
+      {=====================================================================}
 
-      New(Cmd);
-
-      Cmd^.ID := CommandID;
-
-      Cmd^.CmdType :=
-        HTTPIPCGetCommandType(
-          CmdName
-        );
-
-      Cmd^.Token := Token;
-
-      Cmd^.Response := nil;
-
-      Cmd^.Completed :=
-        TEvent.Create(
-          nil,
-          True,
-          False,
-          ''
-        );
+      Cmd :=
+        THTTPIPCCommand.Create;
 
 
-      {=======================================================================
-        Получаем args
-      =======================================================================}
+      Cmd.ID :=
+        CommandID;
+
+      Cmd.CmdName :=
+        CmdName;
+
+      Cmd.Token :=
+        Token;
+
+      Cmd.Handler :=
+        Handler;
+
+
+      {=====================================================================}
+      { ARGS }
+      {=====================================================================}
 
       ArgsData :=
-        Root.Find('args');
+        Root.Find(
+          'args'
+        );
+
 
       if ArgsData <> nil then
       begin
 
-        if not (ArgsData is TJSONArray) then
+        if not (
+          ArgsData is TJSONArray
+        ) then
         begin
 
           AResponse :=
@@ -404,24 +1268,13 @@ begin
               'Command args must be an array'
             );
 
+
           Exit;
 
         end;
 
 
-        {---------------------------------------------------------------------
-          ВАЖНО:
-
-          Делаем Clone.
-
-          Root будет уничтожен после выхода из блока парсинга,
-          поэтому нельзя передавать Root.Arrays['args'] напрямую.
-
-          Кроме того, существующий uzvipcintegration.pas
-          освобождает Cmd^.Args после выполнения команды.
-        ---------------------------------------------------------------------}
-
-        Cmd^.Args :=
+        Cmd.Args :=
           TJSONArray(
             ArgsData
           ).Clone as TJSONArray;
@@ -430,7 +1283,7 @@ begin
       else
       begin
 
-        Cmd^.Args :=
+        Cmd.Args :=
           TJSONArray.Create;
 
       end;
@@ -461,137 +1314,86 @@ begin
   end;
 
 
-  {===========================================================================
-    Если команда неизвестна
-
-    Мы всё равно передаём её существующему IPC executor.
-
-    Это важно для сохранения поведения:
-    uzvipcintegration.pas сам вернёт:
-
-      Unknown command
-
-    Таким образом HTTP-транспорт не дублирует
-    логику обработки команд.
-  ===========================================================================}
-
-
-  {===========================================================================
-    ПОМЕЩЕНИЕ КОМАНДЫ В ОЧЕРЕДЬ
-  ===========================================================================}
+  {=========================================================================}
+  { ENQUEUE }
+  {=========================================================================}
 
   try
 
-    IPCCommandQueue.Enqueue(Cmd);
+    HTTPIPCCommandQueue.Enqueue(
+      Cmd
+    );
 
-    CommandEnqueued := True;
+
+    Enqueued := True;
 
 
     HTTPIPCLog(
       Format(
-        'Command enqueued: %s',
-        [Cmd^.ID]
+        'Command enqueued: %s (%s)',
+        [
+          Cmd.ID,
+          Cmd.CmdName
+        ]
       ),
       LM_Debug
     );
 
 
-    {=======================================================================
-      ОЖИДАНИЕ ВЫПОЛНЕНИЯ
-
-      Команду выполняет НЕ HTTP-поток.
-
-      Её заберёт:
-
-        uzvipcintegration.pas
-          ↓
-        IPCCommandHandler.ProcessQueue
-          ↓
-        ExecutePing / ExecuteLine / ...
-          ↓
-        Cmd^.Completed.SetEvent
-
-      Поэтому HTTP-поток здесь только ждёт.
-    =======================================================================}
+    {=======================================================================}
+    { WAIT }
+    {=======================================================================}
 
     WaitResult :=
-      Cmd^.Completed.WaitFor(
-        IPC_COMMAND_TIMEOUT
+      Cmd.WaitFor(
+        HTTP_IPC_COMMAND_TIMEOUT
       );
 
 
-    {=======================================================================
-      Команда выполнена
-    =======================================================================}
+    {=======================================================================}
+    { COMPLETED }
+    {=======================================================================}
 
     if WaitResult = wrSignaled then
     begin
 
-      if Cmd^.Response <> nil then
-      begin
-
-        {-------------------------------------------------------------------
-          Копируем JSON в строку.
-
-          После этого TJSONObject можно освободить.
-        -------------------------------------------------------------------}
-
-        Response := Cmd^.Response;
-
-        AResponse :=
-          Response.AsJSON;
-
-        Cmd^.Response := nil;
-
-        Response.Free;
-
-
-        HTTPIPCLog(
-          Format(
-            'Command completed: %s',
-            [Cmd^.ID]
-          ),
-          LM_Debug
+      AResponse :=
+        HTTPIPCCreateCommandResponse(
+          Cmd
         );
 
 
-        Result := True;
+      HTTPIPCLog(
+        Format(
+          'Command completed: %s (%s)',
+          [
+            Cmd.ID,
+            Cmd.CmdName
+          ]
+        ),
+        LM_Debug
+      );
 
-      end
-      else
-      begin
 
-        AResponse :=
-          HTTPIPCCreateErrorResponse(
-            Cmd^.ID,
-            'Command completed without response'
-          );
-
-        HTTPIPCLog(
-          Format(
-            'Command completed without response: %s',
-            [Cmd^.ID]
-          ),
-          LM_Error
-        );
-
-        Result := False;
-
-      end;
+      Result := True;
 
     end
 
-    {=======================================================================
-      Таймаут
-    =======================================================================}
+
+    {=======================================================================}
+    { TIMEOUT }
+    {=======================================================================}
 
     else if WaitResult = wrTimeout then
     begin
 
       HTTPIPCLog(
         Format(
-          'Command timeout: %s',
-          [Cmd^.ID]
+          'Command timeout: %s (%s)',
+          [
+            Cmd.ID,
+            Cmd.CmdName
+          ]
         ),
         LM_Error
       );
@@ -599,50 +1401,30 @@ begin
 
       AResponse :=
         HTTPIPCCreateErrorResponse(
-          Cmd^.ID,
+          Cmd.ID,
           'Command timeout'
         );
 
-
-      {---------------------------------------------------------------------
-        ВАЖНО!
-
-        Здесь мы НЕ освобождаем Cmd.
-
-        Команда уже помещена в IPCCommandQueue и может всё ещё
-        находиться в очереди или выполняться главным потоком.
-
-        Если сейчас сделать:
-
-          Dispose(Cmd);
-
-        главный поток может получить dangling pointer.
-
-        Поэтому при timeout право владения командой остаётся
-        у IPC-системы.
-
-        Это безопаснее, чем возможный Access Violation.
-
-        Для первого этапа это сознательное решение.
-      ---------------------------------------------------------------------}
-
-      Cmd := nil;
 
       Result := False;
 
     end
 
-    {=======================================================================
-      Другой результат WaitFor
-    =======================================================================}
+
+    {=======================================================================}
+    { WAIT ERROR }
+    {=======================================================================}
 
     else
     begin
 
       HTTPIPCLog(
         Format(
-          'Command wait error: %s',
-          [Cmd^.ID]
+          'Command wait error: %s (%s)',
+          [
+            Cmd.ID,
+            Cmd.CmdName
+          ]
         ),
         LM_Error
       );
@@ -650,19 +1432,10 @@ begin
 
       AResponse :=
         HTTPIPCCreateErrorResponse(
-          Cmd^.ID,
+          Cmd.ID,
           'Error waiting for command completion'
         );
 
-
-      {---------------------------------------------------------------------
-        Аналогично timeout:
-
-        команда уже передана в очередь, поэтому освобождать её
-        здесь нельзя.
-      ---------------------------------------------------------------------}
-
-      Cmd := nil;
 
       Result := False;
 
@@ -676,7 +1449,7 @@ begin
 
       HTTPIPCLog(
         Format(
-          'IPC queue error: %s',
+          'HTTP IPC queue error: %s',
           [E.Message]
         ),
         LM_Error
@@ -687,19 +1460,10 @@ begin
         HTTPIPCCreateErrorResponse(
           CommandID,
           Format(
-            'IPC queue error: %s',
+            'HTTP IPC queue error: %s',
             [E.Message]
           )
         );
-
-
-      {---------------------------------------------------------------------
-        Если команда уже была помещена в очередь,
-        не пытаемся её освобождать.
-      ---------------------------------------------------------------------}
-
-      if CommandEnqueued then
-        Cmd := nil;
 
 
       Result := False;
@@ -709,52 +1473,33 @@ begin
   end;
 
 
-  {===========================================================================
-    ОЧИСТКА
+  {=========================================================================}
+  { RELEASE HTTP OWNER }
+  {=========================================================================}
 
-    До этого места мы доходим только если команда НЕ была передана
-    очереди либо уже полностью получила результат.
+  { ВАЖНО:
 
-    Если Cmd = nil:
-      либо команда передана очереди,
-      либо команда была освобождена ниже.
+    После Enqueue:
 
-    Если Cmd <> nil:
-      команда существует и не была передана очереди.
-  ===========================================================================}
+      HTTP владеет одной ссылкой.
+      Queue владеет второй ссылкой.
+
+    Если HTTP timeout:
+
+      HTTP Release
+          |
+          +---- Queue продолжает владеть командой.
+          |
+          +---- главный поток позже выполнит её.
+
+    Поэтому timeout больше НЕ вызывает утечку
+    и НЕ требует Cmd := nil.
+  }
 
   if Cmd <> nil then
   begin
 
-    if Cmd^.Response <> nil then
-    begin
-
-      Cmd^.Response.Free;
-      Cmd^.Response := nil;
-
-    end;
-
-
-    if Cmd^.Args <> nil then
-    begin
-
-      Cmd^.Args.Free;
-      Cmd^.Args := nil;
-
-    end;
-
-
-    if Cmd^.Completed <> nil then
-    begin
-
-      Cmd^.Completed.Free;
-      Cmd^.Completed := nil;
-
-    end;
-
-
-    Dispose(Cmd);
-
+    Cmd.Release;
     Cmd := nil;
 
   end;
@@ -763,4 +1508,236 @@ begin
 end;
 
 
+{=============================================================================
+  PROCESS ONE COMMAND
+=============================================================================}
+
+function HTTPIPCProcessNextCommand: Boolean;
+var
+  Cmd: THTTPIPCCommand;
+  StatusText: string;
+begin
+
+  Result := False;
+
+  if HTTPIPCCommandQueue = nil then
+    Exit;
+
+
+  Cmd := nil;
+
+
+  if not HTTPIPCCommandQueue.TryDequeue(
+    Cmd
+  ) then
+    Exit;
+
+
+  try
+
+    HTTPIPCLog(
+      Format(
+        'Executing command in main thread: %s (%s)',
+        [
+          Cmd.ID,
+          Cmd.CmdName
+        ]
+      ),
+      LM_Debug
+    );
+
+
+    {=======================================================================}
+    { EXECUTE HANDLER }
+    {=======================================================================}
+
+    try
+
+      Cmd.ResultText := '';
+      Cmd.ErrorText := '';
+      Cmd.Success := False;
+
+
+      if not Assigned(Cmd.Handler) then
+      begin
+
+        Cmd.ErrorText :=
+          'Command handler is not assigned';
+
+      end
+      else
+      begin
+
+        Cmd.Success :=
+          Cmd.Handler(
+            Cmd.Args,
+            Cmd.ResultText,
+            Cmd.ErrorText
+          );
+
+      end;
+
+
+    except
+
+      on E: Exception do
+      begin
+
+        Cmd.Success := False;
+
+        Cmd.ResultText := '';
+
+        Cmd.ErrorText :=
+          Format(
+            'Exception: %s',
+            [E.Message]
+          );
+
+
+        HTTPIPCLog(
+          Format(
+            'Command exception [%s]: %s',
+            [
+              Cmd.CmdName,
+              E.Message
+            ]
+          ),
+          LM_Error
+        );
+
+      end;
+
+    end;
+
+   {=======================================================================}
+{ SIGNAL HTTP THREAD }
+{=======================================================================}
+
+if Cmd.Completed <> nil then
+  Cmd.Completed.SetEvent;
+
+
+if Cmd.Success then
+  StatusText := 'ok'
+else
+  StatusText := 'error';
+
+
+HTTPIPCLog(
+  Format(
+    'Command finished: %s (%s), status=%s',
+    [
+      Cmd.ID,
+      Cmd.CmdName,
+      StatusText
+    ]
+  ),
+  LM_Debug
+);
+
+
+    Result := True;
+
+
+  finally
+
+    {=======================================================================}
+    { RELEASE QUEUE OWNER }
+    {=======================================================================}
+
+    Cmd.Release;
+
+  end;
+
+end;
+
+
+{=============================================================================
+  PROCESS ALL
+=============================================================================}
+
+procedure HTTPIPCProcessPendingCommands;
+begin
+
+  while HTTPIPCProcessNextCommand do
+  begin
+    { Обрабатываем следующую команду }
+  end;
+
+end;
+
+
+{=============================================================================
+  INITIALIZATION
+=============================================================================}
+
+initialization
+
+  HTTPIPCCommandRegistry :=
+    nil;
+
+
+  HTTPIPCRegistryLock :=
+    TCriticalSection.Create;
+
+
+  HTTPIPCCommandQueue :=
+    THTTPIPCCommandQueue.Create;
+
+
+  ProgramLog.LogOutFormatStr(
+    'HTTP IPC dispatcher initialized',
+    [],
+    LM_Info,
+    0
+  );
+
+
+{=============================================================================
+  FINALIZATION
+=============================================================================}
+
+finalization
+
+  {===========================================================================
+    ВАЖНО:
+
+    Очередь должна уничтожаться ДО lock реестра.
+
+    HTTP server к этому моменту должен быть остановлен,
+    чтобы новые команды больше не могли поступать.
+  ===========================================================================}
+
+  if HTTPIPCCommandQueue <> nil then
+  begin
+
+    HTTPIPCCommandQueue.Free;
+    HTTPIPCCommandQueue := nil;
+
+  end;
+
+
+  SetLength(
+    HTTPIPCCommandRegistry,
+    0
+  );
+
+
+  if HTTPIPCRegistryLock <> nil then
+  begin
+
+    HTTPIPCRegistryLock.Free;
+    HTTPIPCRegistryLock := nil;
+
+  end;
+
+
+  ProgramLog.LogOutFormatStr(
+    'HTTP IPC dispatcher finalized',
+    [],
+    LM_Info,
+    0
+  );
+
 end.
+
