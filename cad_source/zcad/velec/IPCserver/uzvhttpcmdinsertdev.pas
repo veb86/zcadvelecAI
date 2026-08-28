@@ -69,6 +69,7 @@ uses
   uzclog,
   uzbLogTypes,
   uzegeometrytypes,
+  uzgldrawcontext, uzsbVarmanDef,uzcvariablesutils,
   uzvhttpipc;
 
 function HTTPCommandInsertDev(
