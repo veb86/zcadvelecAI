@@ -80,6 +80,8 @@ uses
   fpjson,
   uzclog,
   uzbLogTypes,
+  uzccommandsmanager,
+  uzcstrconsts,
   uzegeometrytypes,
   uzgldrawcontext, uzsbVarmanDef,uzcvariablesutils,
   uzvhttpipc,
@@ -981,6 +983,12 @@ begin
       Device
     );
 
+    zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(
+      'HTTP_INSERT_DEV'
+    );
+
+       //  if commandmanager.MoveConstructRootTo(rscmSpecifyFirstPoint)=IRNormal then //двигаем их
+       //zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('ExampleConstructToModalSpace'); //если все ок, копируем в чертеж
 
     {=======================================================================
       Результат
