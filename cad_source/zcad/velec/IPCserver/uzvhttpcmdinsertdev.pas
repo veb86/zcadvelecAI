@@ -26,7 +26,8 @@ HTTP command:
     [
       ["PARAMETER1", "value1"],
       ["PARAMETER2", "BOOLEAN_1"],
-      ["PARAMETER3", "INTEGER_10"]
+      ["PARAMETER3", "INTEGER_10"],
+      ["PARAMETER4", "FLOAT_3.14"]
     ]
   ]
 
@@ -42,9 +43,20 @@ HTTP command:
     [
       ["param1", "value1"],
       ["param2", "BOOLEAN_1"],
-      ["param3", "INTEGER_10"]
+      ["param3", "INTEGER_10"],
+      ["param4", "FLOAT_3.14"]
     ]
   ]
+
+Типы параметров определяются по префиксу значения:
+
+  - BOOLEAN_0 или BOOLEAN_1 → Boolean
+  - INTEGER_<число> → Integer
+  - FLOAT_<число> → Float (Double)
+  - без префикса → String
+
+Если параметр с указанным именем не найден в устройстве,
+он будет создан автоматически с соответствующим типом.
 
 Устройство создаётся в ConstructRoot.
 
@@ -70,7 +82,8 @@ uses
   uzbLogTypes,
   uzegeometrytypes,
   uzgldrawcontext, uzsbVarmanDef,uzcvariablesutils,
-  uzvhttpipc;
+  uzvhttpipc,
+  uzcenitiesvariablesextender;
 
 function HTTPCommandInsertDev(
   AArgs: TJSONArray;
@@ -88,9 +101,9 @@ uses
   uzeentblockinsert,
   uzcutils,
   uzvconsts,
-  uzcenitiesvariablesextender,
   uzvmanemgetgem,
-  uzegeometry;
+  uzegeometry,
+  Varman;
 
 
 {=============================================================================
@@ -335,6 +348,10 @@ var
 
   Value: String;
   IsSpecialValue: Boolean;
+  
+  Varext: TVariablesExtender;
+  VD: vardesk;
+  VarType: String;
 
 begin
 
@@ -360,13 +377,122 @@ begin
   if PVD = nil then
   begin
 
-    raise Exception.CreateFmt(
-      'Parameter "%s" not found in device "%s"',
-      [
+    {-----------------------------------------------------------------------
+      Переменная не найдена — создаём новую.
+      Определяем тип по значению.
+    -----------------------------------------------------------------------}
+
+    Value :=
+      Trim(AValue);
+
+    VarType := 'String';
+
+    {---------------------------------------------------------------------
+      Проверяем BOOLEAN_
+    ---------------------------------------------------------------------}
+
+    if AnsiPos(
+         'BOOLEAN_',
+         Value
+       ) = 1
+    then
+    begin
+
+      VarType := 'Boolean';
+
+    end
+
+    {---------------------------------------------------------------------
+      Проверяем INTEGER_
+    ---------------------------------------------------------------------}
+
+    else
+    if AnsiPos(
+         'INTEGER_',
+         Value
+       ) = 1
+    then
+    begin
+
+      VarType := 'Integer';
+
+    end
+
+    {---------------------------------------------------------------------
+      Проверяем FLOAT_
+    ---------------------------------------------------------------------}
+
+    else
+    if AnsiPos(
+         'FLOAT_',
+         Value
+       ) = 1
+    then
+    begin
+
+      VarType := 'Float';
+
+    end;
+
+
+    {-----------------------------------------------------------------------
+      Получаем расширение переменных устройства.
+    -----------------------------------------------------------------------}
+
+    Varext :=
+      ADevice^.specialize GetExtension<TVariablesExtender>;
+
+
+    if Varext = nil then
+    begin
+
+      {-------------------------------------------------------------------
+        Расширения нет — создаём его.
+      -------------------------------------------------------------------}
+
+      Varext :=
+        TVariablesExtender.Create(ADevice);
+
+      ADevice^.AddExtension(Varext);
+
+    end;
+
+
+    {-----------------------------------------------------------------------
+      Создаём новую переменную.
+    -----------------------------------------------------------------------}
+
+    VD :=
+      Varext.entityunit.CreateVariable(
         AParameterName,
-        ADevice^.Name
-      ]
-    );
+        VarType
+      );
+
+
+    {-----------------------------------------------------------------------
+      Находим созданную переменную.
+    -----------------------------------------------------------------------}
+
+    PVD :=
+      Varext.entityunit.FindVariable(AParameterName);
+
+
+    if PVD = nil then
+      raise Exception.CreateFmt(
+        'Failed to create parameter "%s" in device "%s"',
+        [
+          AParameterName,
+          ADevice^.Name
+        ]
+      );
+
+
+    {-----------------------------------------------------------------------
+      Устанавливаем пользовательское имя (опционально).
+    -----------------------------------------------------------------------}
+
+    PVD^.username := AParameterName;
+
 
   end;
 
@@ -452,6 +578,41 @@ begin
       PVD^.data.Addr.Instance
     )^ :=
       StrToInt(Value);
+
+
+    IsSpecialValue :=
+      False;
+
+  end;
+
+
+  {-------------------------------------------------------------------------
+    FLOAT_
+  -------------------------------------------------------------------------}
+
+  if AnsiPos(
+       'FLOAT_',
+       Value
+     ) = 1
+  then
+  begin
+
+    Value :=
+      StringReplace(
+        Value,
+        'FLOAT_',
+        '',
+        [rfReplaceAll, rfIgnoreCase]
+      );
+
+    Value :=
+      Trim(Value);
+
+
+    PDouble(
+      PVD^.data.Addr.Instance
+    )^ :=
+      StrToFloat(Value);
 
 
     IsSpecialValue :=
