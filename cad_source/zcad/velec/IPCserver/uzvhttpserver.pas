@@ -474,7 +474,7 @@ begin
 
 
     JSONText := ARequest.Content;
-
+    zcUI.TextMessage(' JSONText = ' + JSONText,TMWOHistoryOut);
 
     if Trim(JSONText) = '' then
     begin
