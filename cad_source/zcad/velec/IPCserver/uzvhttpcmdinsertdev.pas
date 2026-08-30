@@ -85,11 +85,30 @@ uses
   uzvhttpipc,
   uzcenitiesvariablesextender;
 
+type
+  TInsertDevRequest = record
+    DeviceName: String;
+    X: Double;
+    Y: Double;
+    ScaleX: Double;
+    ScaleY: Double;
+    Rotate: Double;
+    NeedInteractive: Boolean;
+  end;
+
+var
+  FInsertDevRequests: array of TInsertDevRequest;
+
 function HTTPCommandInsertDev(
   AArgs: TJSONArray;
   out AResult: string;
   out AError: string
 ): Boolean;
+
+procedure HTTPInsertDevAddRequest(const ARequest: TInsertDevRequest);
+function HTTPInsertDevGetRequestCount: Integer;
+function HTTPInsertDevHasInteractive: Boolean;
+procedure HTTPInsertDevClearRequests;
 
 implementation
 
