@@ -55,37 +55,37 @@
       
       CmdID := QueueGristCommand('SET_GRIST_VALUE', Args);
       
-      { Args больше не нужен - очередь владеет копией }
-    end;
-
-  managerGRIST делает:
-  
-    POST /grist/poll
-    Body: {}
-    
-    Ответ:
-    {
-      "ok": true,
-      "commands": [
-        {
-          "id": 1001,
-          "command": "SET_GRIST_VALUE",
-          "args": {...}
-        }
-      ]
-    }
-    
-  После выполнения:
-  
-    POST /grist/ack
-    Body: {"id": 1001}
-    
-    Ответ:
-    {
-      "ok": true,
-      "id": 1001
-    }
-}
+//      { Args больше не нужен - очередь владеет копией }
+//    end;
+//
+//  managerGRIST делает:
+//  
+//    POST /grist/poll
+//    Body: {}
+//    
+//    Ответ:
+//    {
+//      "ok": true,
+//      "commands": [
+//        {
+//          "id": 1001,
+//          "command": "SET_GRIST_VALUE",
+//          "args": {...}
+//        }
+//      ]
+//    }
+//    
+//  После выполнения:
+//  
+//    POST /grist/ack
+//    Body: {"id": 1001}
+//    
+//    Ответ:
+//    {
+//      "ok": true,
+//      "id": 1001
+//    }
+//}
 
 {$mode objfpc}{$H+}
 
@@ -103,6 +103,7 @@ uses
   jsonparser,
   uzclog,
   uzbLogTypes,
+  fphttpserver,
   httpdefs;
 
 type
@@ -243,9 +244,6 @@ type
 function GristCommandRegistered(
   const AName: string
 ): Boolean;
-begin
-  Result := True;
-end;
 
 
 {**
@@ -258,9 +256,6 @@ procedure RegisterGristCommandHandler(
   const AName: string;
   AHandler: Pointer
 );
-begin
-  { Пустая реализация для совместимости }
-end;
 
 
 {=============================================================================}
@@ -386,6 +381,22 @@ const
 
 
 implementation
+
+
+procedure RegisterGristCommandHandler(
+  const AName: string;
+  AHandler: Pointer
+);
+begin
+  { Пустая реализация для совместимости }
+end;
+
+function GristCommandRegistered(
+  const AName: string
+): Boolean;
+begin
+  Result := True;
+end;
 
 
 {=============================================================================}
