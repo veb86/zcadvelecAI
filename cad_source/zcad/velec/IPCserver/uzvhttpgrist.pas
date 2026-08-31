@@ -915,61 +915,62 @@ begin
   { Парсим JSON (допускаем пустой объект {}) }
   Parser := nil;
   Root := nil;
-  
   try
-    if Trim(JSONText) <> '' then
-    begin
-      Parser := TJSONParser.Create(JSONText, False);
-      Root := Parser.Parse;
-      
-      if Root = nil then
-      begin
-        AResponse.Code := 400;
-        AResponse.ContentType := 'application/json; charset=utf-8';
-        AResponse.Content := CreateGristErrorResponse('Invalid JSON');
-        Exit;
-      end;
-      
-      if not (Root is TJSONObject) then
-      begin
-        AResponse.Code := 400;
-        AResponse.ContentType := 'application/json; charset=utf-8';
-        AResponse.Content := CreateGristErrorResponse('JSON root must be object');
-        Exit;
-      end;
-    end;
-    
-    { Получаем команды из очереди }
-    Commands := nil;
     try
-      GristCommandQueue.PollCommands(Commands);
-      
-      { Формируем ответ }
-      ResponseText := CreateGristSuccessResponse(Commands);
-      
-      AResponse.Code := 200;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := ResponseText;
-      
-    finally
-      if Commands <> nil then
-        Commands.Free;
-    end;
-    
-  except
-    on E: Exception do
-    begin
-      GristLog(
-        Format(
-          'HTTP GRIST poll error: %s',
-          [E.Message]
-        ),
-        LM_Error
-      );
-      
-      AResponse.Code := 500;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := CreateGristErrorResponse('Internal server error');
+      if Trim(JSONText) <> '' then
+      begin
+        Parser := TJSONParser.Create(JSONText, False);
+        Root := Parser.Parse;
+
+        if Root = nil then
+        begin
+          AResponse.Code := 400;
+          AResponse.ContentType := 'application/json; charset=utf-8';
+          AResponse.Content := CreateGristErrorResponse('Invalid JSON');
+          Exit;
+        end;
+
+        if not (Root is TJSONObject) then
+        begin
+          AResponse.Code := 400;
+          AResponse.ContentType := 'application/json; charset=utf-8';
+          AResponse.Content := CreateGristErrorResponse('JSON root must be object');
+          Exit;
+        end;
+      end;
+
+      { Получаем команды из очереди }
+      Commands := nil;
+      try
+        GristCommandQueue.PollCommands(Commands);
+
+        { Формируем ответ }
+        ResponseText := CreateGristSuccessResponse(Commands);
+
+        AResponse.Code := 200;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := ResponseText;
+
+      finally
+        if Commands <> nil then
+          Commands.Free;
+      end;
+
+    except
+      on E: Exception do
+      begin
+        GristLog(
+          Format(
+            'HTTP GRIST poll error: %s',
+            [E.Message]
+          ),
+          LM_Error
+        );
+
+        AResponse.Code := 500;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := CreateGristErrorResponse('Internal server error');
+      end;
     end;
   finally
     if Root <> nil then
@@ -1020,73 +1021,74 @@ begin
   { Парсим JSON }
   Parser := nil;
   Root := nil;
-  
   try
-    Parser := TJSONParser.Create(JSONText, False);
-    Root := Parser.Parse as TJSONObject;
-    
-    if Root = nil then
-    begin
-      AResponse.Code := 400;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := CreateGristErrorResponse('Invalid JSON');
-      Exit;
-    end;
-    
-    { Проверяем наличие поля id }
-    IDData := Root.Find('id');
-    
-    if IDData = nil then
-    begin
-      AResponse.Code := 400;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := CreateGristErrorResponse('Missing "id" field');
-      Exit;
-    end;
-    
-    { Получаем ID }
     try
-      CommandID := IDData.AsInt64;
-    except
-      on E: Exception do
+      Parser := TJSONParser.Create(JSONText, False);
+      Root := Parser.Parse as TJSONObject;
+
+      if Root = nil then
       begin
         AResponse.Code := 400;
         AResponse.ContentType := 'application/json; charset=utf-8';
-        AResponse.Content := CreateGristErrorResponse('"id" must be a number');
+        AResponse.Content := CreateGristErrorResponse('Invalid JSON');
         Exit;
       end;
-    end;
-    
-    { Подтверждаем команду }
-    if GristCommandQueue.AckCommand(CommandID) then
-    begin
-      ResponseText := CreateGristAckResponse(CommandID);
-      
-      AResponse.Code := 200;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := ResponseText;
-    end
-    else
-    begin
-      AResponse.Code := 404;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := CreateGristErrorResponse('Unknown command id');
-    end;
-    
-  except
-    on E: Exception do
-    begin
-      GristLog(
-        Format(
-          'HTTP GRIST ack error: %s',
-          [E.Message]
-        ),
-        LM_Error
-      );
-      
-      AResponse.Code := 500;
-      AResponse.ContentType := 'application/json; charset=utf-8';
-      AResponse.Content := CreateGristErrorResponse('Internal server error');
+
+      { Проверяем наличие поля id }
+      IDData := Root.Find('id');
+
+      if IDData = nil then
+      begin
+        AResponse.Code := 400;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := CreateGristErrorResponse('Missing "id" field');
+        Exit;
+      end;
+
+      { Получаем ID }
+      try
+        CommandID := IDData.AsInt64;
+      except
+        on E: Exception do
+        begin
+          AResponse.Code := 400;
+          AResponse.ContentType := 'application/json; charset=utf-8';
+          AResponse.Content := CreateGristErrorResponse('"id" must be a number');
+          Exit;
+        end;
+      end;
+
+      { Подтверждаем команду }
+      if GristCommandQueue.AckCommand(CommandID) then
+      begin
+        ResponseText := CreateGristAckResponse(CommandID);
+
+        AResponse.Code := 200;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := ResponseText;
+      end
+      else
+      begin
+        AResponse.Code := 404;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := CreateGristErrorResponse('Unknown command id');
+      end;
+
+    except
+      on E: Exception do
+      begin
+        GristLog(
+          Format(
+            'HTTP GRIST ack error: %s',
+            [E.Message]
+          ),
+          LM_Error
+        );
+
+        AResponse.Code := 500;
+        AResponse.ContentType := 'application/json; charset=utf-8';
+        AResponse.Content := CreateGristErrorResponse('Internal server error');
+      end;
     end;
   finally
     if Root <> nil then
