@@ -30,6 +30,7 @@ uses
   uzbLogTypes,
   uzvhttpipc,
   uzvhttpwidgets,
+  uzvhttpgrist,
   uzcinterface;
 
 const
@@ -556,6 +557,27 @@ begin
 
     end;
 
+
+    Exit;
+
+  end;
+
+
+  {===========================================================================
+    GRIST
+  ===========================================================================}
+
+  if
+    (ARequest.URI = '/grist/poll') or
+    (ARequest.URI = '/grist/ack') or
+    (Pos('/grist/', ARequest.URI) = 1)
+  then
+  begin
+
+    HandleGristRequest(
+      ARequest,
+      AResponse
+    );
 
     Exit;
 
