@@ -1,66 +1,126 @@
-unit uzvtestgrist;
+{
+*****************************************************************************
+*  Test Grist Command - Testing ZCAD -> Grist command queue
+*****************************************************************************
+}
 
 {$mode objfpc}{$H+}
+
+unit uzvtestgrist;
+
+{$INCLUDE zengineconfig.inc}
 
 interface
 
 uses
-  Classes, SysUtils, fpjson, jsonparser, uzclog, uzvhttpgrist;
+  SysUtils,
+  Classes,
+  fpjson,
+  jsonparser,
+  uzclog,
+  uzvhttpgrist,
+  uzccommandsmanager,
+  uzccommandsabstract,
+  uzccommandsimpl,
+  uzcinterface;
 
-type
-  { Класс команды тестирования }
-  TTestGristCommand = class
-  public
-    class procedure Execute(const Params: string);
-  end;
+function TestGristCommand_com(const Context: TZCADCommandContext;
+  operands: TCommandOperands): TCommandResult;
 
 implementation
 
-{ TTestGristCommand }
+procedure LogMessage(const Msg: string);
+begin
+  zcUI.TextMessage(Msg, TMWOHistoryOut);
+end;
 
-class procedure TTestGristCommand.Execute(const Params: string);
+function TestGristCommand_com(const Context: TZCADCommandContext;
+  operands: TCommandOperands): TCommandResult;
 var
   Args: TJSONObject;
   CmdID: Int64;
   LogMsg: string;
 begin
-  { Создаём JSON-аргументы команды }
+  Result := cmd_ok;
+
+  LogMessage('========================================');
+  LogMessage('TEST GRIST COMMAND');
+  LogMessage('========================================');
+
   Args := TJSONObject.Create;
   try
+    {----------------------------------------------------------
+      Формируем JSON-аргументы команды SET_GRIST_VALUE
+    ----------------------------------------------------------}
+
     Args.Add('table', 'Devices');
     Args.Add('recordId', 25);
     Args.Add('field', 'Name');
     Args.Add('value', 'Светильник');
-    
-    { Добавляем команду в очередь ZCAD → Grist }
-    { QueueGristCommand создаёт копию Args, поэтому после вызова }
-    { очередь владеет данными, и мы можем безопасно освободить Args }
+
+    LogMessage('Добавление команды в очередь ZCAD -> Grist...');
+    LogMessage('  command = SET_GRIST_VALUE');
+    LogMessage('  table = Devices');
+    LogMessage('  recordId = 25');
+    LogMessage('  field = Name');
+    LogMessage('  value = Светильник');
+
+    {----------------------------------------------------------
+      Передаём команду в очередь ZCAD -> Grist
+    ----------------------------------------------------------}
+
     CmdID := QueueGristCommand('SET_GRIST_VALUE', Args);
-    
-    { Логируем результат }
+
+    {----------------------------------------------------------
+      Формируем сообщение о результате
+    ----------------------------------------------------------}
+
     LogMsg := Format(
-      'testGrist: команда добавлена в очередь. ID=%d, command=SET_GRIST_VALUE, table=Devices, recordId=25',
+      'testGrist: команда добавлена в очередь. ID=%d',
       [CmdID]
     );
-    
-    LM_Info(LogMsg);
-    
-    WriteLn(LogMsg);
-    WriteLn(Format('Аргументы: table=Devices, recordId=25, field=Name, value=Светильник'));
-    WriteLn('Команда ожидает обработки через POST /grist/poll от managerGRIST');
-    
+
+
+    { Сообщение пользователю ZCAD }
+    LogMessage('');
+    LogMessage(LogMsg);
+    LogMessage(
+      'Команда ожидает обработки через POST /grist/poll от managerGRIST'
+    );
+
+    LogMessage('========================================');
+    LogMessage('TEST GRIST COMMAND - completed');
+    LogMessage('========================================');
+
   finally
-    { Освобождаем локальный объект Args }
-    { Примечание: QueueGristCommand internally clones the JSON object, }
-    { so the queue owns its own copy and we can safely free Args here }
+    { QueueGristCommand создаёт собственную копию JSON.
+      Поэтому исходный Args можно безопасно освободить. }
     Args.Free;
   end;
 end;
 
 initialization
-  { Регистрация команды в системе команд ZCAD }
-  { Формат: RegisterCommand('имя_команды', @обработчик) }
-  { Если в проекте есть реестр команд, добавить сюда: }
-  { RegisterCADCommand('testGrist', @TTestGristCommand.Execute); }
-  
+  programlog.LogOutFormatStr(
+    'Unit "%s" initialization',
+    [{$INCLUDE %FILE%}],
+    LM_Info,
+    UnitsInitializeLMId
+  );
+
+  { Регистрация команды ZCAD }
+  CreateZCADCommand(
+    @TestGristCommand_com,
+    'testGrist',
+    CADWG,
+    0
+  );
+
+finalization
+  ProgramLog.LogOutFormatStr(
+    'Unit "%s" finalization',
+    [{$INCLUDE %FILE%}],
+    LM_Info,
+    UnitsFinalizeLMId
+  );
+
 end.
