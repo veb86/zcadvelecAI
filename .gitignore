@@ -1,73 +1,87 @@
 ```
-# Compiled and build artifacts
-*.pyc
-__pycache__/
+# Pascal/Delphi compiled files
+*.ppu
 *.o
 *.obj
-*.exe
-*.dll
-*.so
-*.class
-*.out
+*.dcu
+*.compiled
+[Dd]esktop.ini
 
 # Dependencies
-.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
-node_modules/
-dist/
+.venv/
+.conda/
+
+# Build outputs
 build/
-target/
-.gradle/
-.mypy_cache/
-.pytest_cache/
+dist/
+*.egg
+*.egg-info/
+.installed.cfg
+*.egg-link
 
-# Logs and temp files
+# Logs
 *.log
-*.tmp
-*.swp
-*.swo
+*.out
 
-# Environment
-.env
-.env.local
-*.env.*
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
-# Editors
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+nbproject/
+nbbuild/
+nbdist/
+.nb-gradle/
 
-# System files
-.DS_Store
-Thumbs.db
-
-# Coverage
+# Testing
+.coverage
 coverage/
 htmlcov/
-.coverage
+.pytest_cache/
+.hypothesis/
 
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Distribution / packaging
 *.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+*.whl
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Coverage
+coverage.xml
+*.gcov
+*.lcov
+
+# Documentation
+docs/_build/
+
+# Miscellaneous
+*.bak
+*.tmp
+*.temp
+*~
+.DS_Store
 ```
