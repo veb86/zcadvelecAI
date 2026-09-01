@@ -909,6 +909,12 @@ begin
     Exit;
   end;
   
+  { Логирование запроса poll }
+  GristLog(
+    'GRIST Poll: получен запрос опроса очереди',
+    LM_Info
+  );
+  
   { Читаем тело запроса }
   JSONText := ARequest.Content;
   
