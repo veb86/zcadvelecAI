@@ -485,18 +485,18 @@ begin
               inc(i);
             end;
           end;
-
+          current:=1;
           if i<(IV.Size-1) then begin
           with IV.Mutable[IV.Size-1]^ do begin
             p1:=@i2dprop.interceptcoord;
             t1:=i2dprop.t1;
             First:=LIC.C;
           end;
-          j:=IV.Size-1;
+          j:=IV.Size-2;
           while j>i do begin
             with IV.Mutable[j]^ do begin
               p2:=@i2dprop.interceptcoord;
-              if Odd(i) then begin
+              if Odd(current) then begin
                 DrawStrokes(Strokes,t1,p1^,p2^,DC);
                 if first<>LIC.c then
                   break;
@@ -504,6 +504,7 @@ begin
               p1:=p2;
               First:=LIC.C;
               dec(j);
+              inc(current);
             end;
           end;
           end;
