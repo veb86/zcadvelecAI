@@ -283,7 +283,8 @@ begin
 end;
 class procedure TZEntsManipulator.CorrectNodeBoundingBox(var NodeBB:TBoundingBox;var Entity:GDBObjEntity);
 begin
-     ConcatBB(NodeBB,GetEntityBoundingBox(Entity));
+     if Entity.IsActualy then
+       ConcatBB(NodeBB,GetEntityBoundingBox(Entity));
 end;
 class function TZEntsManipulator.GetEntityBoundingBox(var Entity:GDBObjEntity):TBoundingBox;
 begin

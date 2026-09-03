@@ -29,6 +29,8 @@ uses
 type
   PGDBObjVisualProp=^GDBObjVisualProp;
 
+  TEntityVisibility=(EVVisible,EVInvisible);
+
   GDBObjVisualProp=record
     Layer:PGDBLayerProp;
     LineWeight:TGDBLineWeight;
@@ -37,6 +39,7 @@ type
     BoundingBox:TBoundingBox;
     LastCameraPos:TActuality;
     Color:TGDBPaletteColor;
+    Visibility:TEntityVisibility;
   end;
 
 function getLTfromVP(const vp:GDBObjVisualProp):PGDBLtypeProp;

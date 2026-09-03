@@ -351,6 +351,7 @@ begin
   toObj.vp.color:=vp.color;
   toObj.vp.Layer:=vp.Layer;
   toObj.vp.LineWeight:=vp.LineWeight;
+  toObj.vp.Visibility:=vp.Visibility;
 end;
 
 procedure GDBObjEntity.correctsublayers(var la:GDBLayerArray);
@@ -403,7 +404,7 @@ var
   oldValue:TActuality;
 begin
   oldValue:=Visible;
-  if (self.vp.Layer._on) then
+  if self.IsActualy then
     Visible:=Actuality.visibleactualy
   else
     Visible:=0;
@@ -442,6 +443,7 @@ begin
   self.PExtAttrib:=nil;
   vp.LastCameraPos:=NotActual;
   vp.color:=ClByLayer;
+  vp.Visibility:=EVVisible;
   State:=[];
 end;
 
@@ -865,7 +867,7 @@ begin
     Result:=False;
   end;
   if self.vp.Layer<>nil then
-    if not(self.vp.Layer._on) then begin
+    if not IsActualy then begin
       Visible:=0;
       Result:=False;
     end;
@@ -927,16 +929,19 @@ end;
 
 function GDBObjEntity.getonlyvisibleoutbound(var DC:TDrawContext):TBoundingBox;
 begin
-  getonlyoutbound(dc);
-  Result:=vp.BoundingBox;
+  if IsActualy then begin
+    getonlyoutbound(dc);
+    Result:=vp.BoundingBox;
+  end else begin
+    Result.LBN:=cP3d__0__0__0;
+    Result.RTF:=cP3d_m1_m1_m1;
+  end;
 end;
 
 function GDBObjEntity.IsActualy:boolean;
 begin
-  if vp.Layer^._on then
-    Result:=True
-  else
-    Result:=False;
+  Result:=(vp.Layer<>nil) and vp.Layer^._on and
+    (vp.Visibility=EVVisible);
 end;
 
 function GDBObjEntity.isonmouse;
@@ -1004,7 +1009,7 @@ end;
 
 function GDBObjEntity.SelectQuik;
 begin
-  if (vp.Layer._lock)or(not vp.Layer._on) then begin
+  if (vp.Layer._lock)or(not IsActualy) then begin
     Result:=False;
   end else begin
     Result:=True;
@@ -1146,6 +1151,13 @@ begin
     end;
     62:begin
       vp.color:=rdr.ParseInteger;
+      Result:=True;
+    end;
+    60:begin
+      if rdr.ParseInteger=1 then
+        vp.Visibility:=EVInvisible
+      else
+        vp.Visibility:=EVVisible;
       Result:=True;
     end;
     370:begin
