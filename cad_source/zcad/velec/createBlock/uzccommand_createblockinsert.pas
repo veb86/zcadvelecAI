@@ -63,12 +63,15 @@ uses
   uzccommandsabstract,
   uzccommandsimpl,
   uzccommandsmanager,
+  uzccommand_Insert,
   uzcinterface,
   uzcstrconsts,
   uzeblockdef,
   uzeentity,
+  uzeentblockinsert,
   uzeentwithlocalcs,
-  uzeconsts;
+  uzeconsts,
+  zebaseundocommands;
 
 implementation
 
@@ -107,6 +110,18 @@ type
     procedure RunInsert(Data: PtrInt);
   end;
 
+  TCreateBlockDefUndoCommand=class(TUCmdBase)
+  private
+    FDrawing: PTZCADDrawing;
+    FBlockName: string;
+    FSavedBlockDef: PGDBObjBlockdef;
+  public
+    constructor Create(ADrawing: PTZCADDrawing; ABlockDef: PGDBObjBlockdef);
+    destructor Destroy; override;
+    procedure UnDo; override;
+    procedure Comit; override;
+  end;
+
 procedure TAsyncInsertRunner.RunInsert(Data: PtrInt);
 var
   cmdStr: string;
@@ -122,8 +137,183 @@ begin
   );
 end;
 
+procedure CopyBlockDefContent(
+  ASource: PGDBObjBlockdef;
+  ADest: PGDBObjBlockdef;
+  ADrawing: PTZCADDrawing
+);
+var
+  pEntity, pClone: PGDBObjEntity;
+  ir: itrec;
+  dc: TDrawContext;
+begin
+  if (ASource = nil) or (ADest = nil) then
+    Exit;
+
+  ADest^.VarFromFile := ASource^.VarFromFile;
+  ADest^.Base := ASource^.Base;
+  ADest^.BlockDesc := ASource^.BlockDesc;
+  ASource^.CopyExtensionsTo(ADest^);
+
+  if ADrawing <> nil then begin
+    dc := ADrawing^.CreateDrawingRC;
+    Exclude(dc.Options, DCODrawable);
+  end;
+
+  pEntity := ASource^.ObjArray.beginiterate(ir);
+  if pEntity <> nil then
+    repeat
+      pClone := pEntity^.Clone(ADest);
+      if pClone <> nil then begin
+        pClone^.correctobjects(ADest, ADest^.ObjArray.Count);
+        if pClone^.IsHaveLCS then
+          PGDBObjWithLocalCS(pClone)^.CalcObjMatrix;
+        if ADrawing <> nil then begin
+          pClone^.BuildGeometry(ADrawing^);
+          pClone^.FormatEntity(ADrawing^, dc);
+        end;
+        ADest^.ObjArray.AddPEntity(pClone^);
+      end;
+      pEntity := ASource^.ObjArray.iterate(ir);
+    until pEntity = nil;
+
+  ADest^.Formated := ASource^.Formated;
+  if ADrawing <> nil then
+    ADest^.FormatEntity(ADrawing^, dc);
+end;
+
+function CloneBlockDef(ASource: PGDBObjBlockdef): PGDBObjBlockdef;
+begin
+  Result := nil;
+  if ASource = nil then
+    Exit;
+  Getmem(pointer(Result), SizeOf(GDBObjBlockdef));
+  Result^.init(ASource^.Name);
+  CopyBlockDefContent(ASource, Result, nil);
+end;
+
+constructor TCreateBlockDefUndoCommand.Create(
+  ADrawing: PTZCADDrawing;
+  ABlockDef: PGDBObjBlockdef
+);
+begin
+  inherited Create;
+  FDrawing := ADrawing;
+  FSavedBlockDef := CloneBlockDef(ABlockDef);
+  if ABlockDef <> nil then
+    FBlockName := ABlockDef^.Name
+  else
+    FBlockName := '';
+end;
+
+destructor TCreateBlockDefUndoCommand.Destroy;
+begin
+  if FSavedBlockDef <> nil then begin
+    FSavedBlockDef^.done;
+    Freemem(pointer(FSavedBlockDef));
+  end;
+  inherited;
+end;
+
+procedure TCreateBlockDefUndoCommand.UnDo;
+var
+  idx: Integer;
+  pBlockDef: PGDBObjBlockdef;
+begin
+  if (FDrawing = nil) or (FBlockName = '') then
+    Exit;
+  idx := FDrawing^.BlockDefArray.getindex(FBlockName);
+  if idx < 0 then
+    Exit;
+  pBlockDef := FDrawing^.BlockDefArray.getDataMutable(idx);
+  if pBlockDef <> nil then
+    pBlockDef^.done;
+  FDrawing^.BlockDefArray.EraseElement(idx);
+end;
+
+procedure TCreateBlockDefUndoCommand.Comit;
+var
+  pBlockDef: PGDBObjBlockdef;
+begin
+  if (FDrawing = nil) or (FSavedBlockDef = nil) or (FBlockName = '') then
+    Exit;
+  if FDrawing^.BlockDefArray.getblockdef(FBlockName) <> nil then
+    Exit;
+  pBlockDef := FDrawing^.BlockDefArray.create(FBlockName);
+  CopyBlockDefContent(FSavedBlockDef, pBlockDef, FDrawing);
+end;
+
 var
   AsyncInsertRunner: TAsyncInsertRunner;
+  PendingCreateBlockInsertDrawing: PTZCADDrawing;
+  CreateBlockInsertUndoMarkerOpen: Boolean;
+
+procedure CloseCreateBlockInsertUndoMarker;
+begin
+  if CreateBlockInsertUndoMarkerOpen and
+    (PendingCreateBlockInsertDrawing <> nil) then
+    PendingCreateBlockInsertDrawing^.UndoStack.PushEndMarker;
+  CreateBlockInsertUndoMarkerOpen := False;
+  PendingCreateBlockInsertDrawing := nil;
+end;
+
+procedure FinishCreateBlockInsertUndo(PInsert: PGDBObjBlockInsert);
+begin
+  CloseCreateBlockInsertUndoMarker;
+end;
+
+procedure CancelCreateBlockInsertUndo;
+begin
+  CloseCreateBlockInsertUndoMarker;
+end;
+
+procedure PushCreateBlockDefUndoCommand(pBlockDef: PGDBObjBlockdef);
+var
+  undoCommand: TCreateBlockDefUndoCommand;
+begin
+  if (PendingCreateBlockInsertDrawing = nil) or (pBlockDef = nil) then
+    Exit;
+  undoCommand := TCreateBlockDefUndoCommand.Create(
+    PendingCreateBlockInsertDrawing,
+    pBlockDef
+  );
+  PendingCreateBlockInsertDrawing^.UndoStack.PushBackData(undoCommand);
+  Inc(PendingCreateBlockInsertDrawing^.UndoStack.CurrentCommand);
+end;
+
+procedure StartCreateBlockInsertUndo(pBlockDef: PGDBObjBlockdef);
+begin
+  PendingCreateBlockInsertDrawing := PTZCADDrawing(drawings.GetCurrentDWG);
+  if PendingCreateBlockInsertDrawing = nil then
+    Exit;
+  PendingCreateBlockInsertDrawing^.UndoStack.PushStartMarker(CommandName);
+  CreateBlockInsertUndoMarkerOpen := True;
+  PushCreateBlockDefUndoCommand(pBlockDef);
+  SetInsertOneShotCallbacks(
+    @FinishCreateBlockInsertUndo,
+    @CancelCreateBlockInsertUndo
+  );
+end;
+
+procedure RemoveCreatedBlockDef(pBlockDef: PGDBObjBlockdef);
+var
+  drawing: PTZCADDrawing;
+  idx: Integer;
+  blockInArray: PGDBObjBlockdef;
+begin
+  if pBlockDef = nil then
+    Exit;
+  drawing := PTZCADDrawing(drawings.GetCurrentDWG);
+  if drawing = nil then
+    Exit;
+  idx := drawing^.BlockDefArray.getindex(pBlockDef^.Name);
+  if idx < 0 then
+    Exit;
+  blockInArray := drawing^.BlockDefArray.getDataMutable(idx);
+  if blockInArray <> nil then
+    blockInArray^.done;
+  drawing^.BlockDefArray.EraseElement(idx);
+end;
 
 {
   Подсчитывает количество выделенных примитивов в текущем чертеже.
@@ -301,6 +491,7 @@ begin
   // Шаг 4: создание BlockDef и наполнение его копиями выделенных примитивов
   pBlockDef := BuildNewBlockDef(blockName, basePoint, addedCount);
   if (pBlockDef = nil) or (addedCount = 0) then begin
+    RemoveCreatedBlockDef(pBlockDef);
     zcUI.TextMessage(
       'CreateBlockInsert: не удалось создать блок.',
       TMWOHistoryOut
@@ -321,6 +512,7 @@ begin
   );
 
   // Шаг 5: асинхронно запустить команду Insert с подставленным именем блока
+  StartCreateBlockInsertUndo(pBlockDef);
   AsyncInsertRunner.BlockName := blockName;
   Application.QueueAsyncCall(AsyncInsertRunner.RunInsert, 0);
 end;
