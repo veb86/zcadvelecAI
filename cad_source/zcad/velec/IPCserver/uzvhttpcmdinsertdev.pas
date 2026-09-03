@@ -80,6 +80,7 @@ uses
   fpjson,
   uzclog,
   uzbLogTypes,
+  uzcmainform,
   uzccommandsmanager,
   uzcstrconsts,
   uzegeometrytypes,
@@ -680,6 +681,11 @@ begin
 
   Result := False;
 
+  {$ifndef windows}
+         application.BringToFront;
+  {$else}
+         zcMainForm.settop;
+  {$endif}
 
   {===========================================================================
     Проверка аргументов
@@ -983,12 +989,12 @@ begin
       Device
     );
 
-    zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(
-      'HTTP_INSERT_DEV'
-    );
+    //zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(
+    //  'HTTP_INSERT_DEV'
+    //);
 
-       //  if commandmanager.MoveConstructRootTo(rscmSpecifyFirstPoint)=IRNormal then //двигаем их
-       //zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('ExampleConstructToModalSpace'); //если все ок, копируем в чертеж
+         if commandmanager.MoveConstructRootTo(rscmSpecifyFirstPoint)=IRNormal then //двигаем их
+       zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('ExampleConstructToModalSpace'); //если все ок, копируем в чертеж
 
     {=======================================================================
       Результат
