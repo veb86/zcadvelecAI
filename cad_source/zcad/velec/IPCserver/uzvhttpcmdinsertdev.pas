@@ -80,6 +80,9 @@ uses
   fpjson,
   uzclog,
   uzbLogTypes,
+  uzcdrawing,
+  gzctnrVectorTypes,
+  uzeentity,
   uzcmainform,
   uzccommandsmanager,
   uzcstrconsts,
@@ -106,7 +109,7 @@ uses
   uzvconsts,
   uzvmanemgetgem,
   uzegeometry,
-  uzegeometrytypes,
+  //uzegeometrytypes,
   Varman;
 
 
@@ -225,11 +228,11 @@ begin
   
   t_matrix := uzegeometry.CreateTranslationMatrix(APoint.asVector);
   
-  pobj := pcd^.GetConstructObjRoot.ObjArray.beginiterate(ir);
+  pobj := pcd^.GetConstructObjRoot^.ObjArray.beginiterate(ir);
   if pobj <> nil then
   repeat
     pobj^.transform(t_matrix);
-    pobj := pcd^.GetConstructObjRoot.ObjArray.iterate(ir);
+    pobj := pcd^.GetConstructObjRoot^.ObjArray.iterate(ir);
   until pobj = nil;
   
   {-------------------------------------------------------------------------
