@@ -87,7 +87,7 @@ type
     procedure AddOnTrackAxis(var posr:os_record;const processaxis:taddotrac);virtual;
     procedure transform(const t_matrix:TzeTypedMatrix4d);virtual;
     procedure TransformAt(p:PGDBObjEntity;t_matrix:PzeTypedMatrix4d);virtual;
-    function GetTangentInPoint(const point:TzePoint3d):TzePoint3d;virtual;
+    function GetTangentInPoint(const point:TzePoint3d):TzeVector3d;virtual;
     procedure higlight(var DC:TDrawContext);virtual;
     class function CreateInstance:PGDBObjLWPolyline;static;
     function GetObjType:TObjID;virtual;
@@ -105,7 +105,7 @@ procedure GDBObjLWpolyline.higlight(var DC:TDrawContext);
 begin
 end;
 
-function GDBObjLWpolyline.GetTangentInPoint(const point:TzePoint3d):TzePoint3d;
+function GDBObjLWpolyline.GetTangentInPoint(const point:TzePoint3d):TzeVector3d;
 var
   ptv,ppredtv:PzePoint3d;
   ir:itrec;
@@ -132,12 +132,8 @@ begin
         found:=1;
       end;
 
-      if found>0 then begin
-        Result:=vertexsub(ptv^,ppredtv^);
-        Result.Normalize;
-        exit;
-        Dec(found);
-      end;
+      if found>0 then
+        exit((ptv^-ppredtv^).Normalized);
 
       ppredtv:=ptv;
       ptv:=Vertex3D_in_WCS_Array.iterate(ir);
@@ -211,6 +207,9 @@ begin
   else
     ie:=Width3D_in_WCS_Array.Count-1;
 
+  subresult:=CalcAABBInFrustum(vp.BoundingBox,mf);
+  if subresult=IREmpty then
+    exit(false);
 
   q3d:=Width3D_in_WCS_Array.GetParrayAsPointer;
   p3d:=Vertex3D_in_WCS_Array.GetParrayAsPointer;
@@ -223,8 +222,7 @@ begin
 
       subresult:=CalcOutBound4VInFrustum(q3d^,mf);
       if subresult=IRFully then begin
-        Result:=True;
-        exit;
+        exit(True);
       end else if subresult=IRPartially then begin
         if uzegeometry.CalcTrueInFrustum
           (q3d^[0],q3d^[1],mf)<>irempty then begin
@@ -297,12 +295,12 @@ begin
         f:=ptv.z;
       ptv:=Vertex3D_in_WCS_Array.iterate(ir);
     until ptv=nil;
-    vp.BoundingBox.LBN:=CreateVertex(l,B,n);
-    vp.BoundingBox.RTF:=CreateVertex(r,T,f);
+    vp.BoundingBox.LBN:=TzePoint3d.Make(l,B,n);
+    vp.BoundingBox.RTF:=TzePoint3d.Make(r,T,f);
 
   end else begin
-    vp.BoundingBox.LBN:=CreateVertex(-1,-1,-1);
-    vp.BoundingBox.RTF:=CreateVertex(1,1,1);
+    vp.BoundingBox.LBN:=cP3d_m1_m1_m1;
+    vp.BoundingBox.RTF:=cP3d__1__1__1;
   end;
 end;
 
@@ -354,7 +352,7 @@ begin
   pdesc.worldcoord:=GDBPoint3dArray.PTArr(Vertex3D_in_WCS_Array.parray)^
     [vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+  pdesc.dispcoord:=tv.Slice.asPoint2i;
 end;
 
 procedure GDBObjLWpolyline.AddControlpoints;
@@ -440,7 +438,7 @@ var
   i,ie:integer;
   q3d:PGDBQuad3d;
   plw:PSegmentParams;
-  v:TzePoint3d;
+  v:TzeVector3d;
   simplydraw:boolean;
 begin
 
@@ -448,8 +446,8 @@ begin
   exit;
 
   if dc.lod=LODCalculatedDetail then begin
-    v:=uzegeometry.VertexSub(vp.BoundingBox.RTF,vp.BoundingBox.LBN);
-    simplydraw:=not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v.asVector),49);
+    v:={uzegeometry.VertexSub}(vp.BoundingBox.RTF-vp.BoundingBox.LBN);
+    simplydraw:=not SqrCanSimplyDrawInWCS(DC,v.SqrLength,49);
   end else
     simplydraw:=dc.lod=LODLowDetail;
 
@@ -640,7 +638,7 @@ begin
     tv.x:=GDBPolyline2DArray.PTArr(Vertex2D_in_OCS_Array.PArray)^[j].x;
     tv.y:=GDBPolyline2DArray.PTArr(Vertex2D_in_OCS_Array.PArray)^[j].y;
     tv.z:=0;
-    dxfvertex2dout(outStream,10,PzePoint2d(@tv)^);
+    dxfvertex2dout(outStream,10,tv.Slice);
     dxfDoubleout(outStream,40,PSegmentParams(SgmntsParams.getDataMutable(j)).data.startw);
     dxfDoubleout(outStream,41,PSegmentParams(SgmntsParams.getDataMutable(j)).data.endw);
     dxfDoubleout(outStream,42,PSegmentParams(SgmntsParams.getDataMutable(j)).data.bulge);
@@ -729,23 +727,14 @@ end;
 procedure GDBObjLWpolyline.createpoint;
 var
   i:integer;
-  v:TzeVector4d;
-  v3d:TzeVector3d;
-  pv:PzeVector2d;
+  p3d:TzePoint3d;
+  pv:PzePoint2d;
 begin
   Vertex3D_in_WCS_Array.Clear;
   pv:=Vertex2D_in_OCS_Array.GetParrayAsPointer;
   for i:=0 to Vertex2D_in_OCS_Array.Count-1 do begin
-    v.Slice.Slice:=pv^;
-    {v.x:=pv.x;
-    v.y:=pv.y;}
-    v.Slice.CutOff:=0;
-    //v.z:=0;
-    v.CutOff:=0;
-    //v.w:=1;
-    v:=VectorTransform(v,objMatrix);
-    v3d:=v.Slice;
-    Vertex3D_in_WCS_Array.PushBackData(v3d.asPoint3d);
+    p3d:=VectorTransform2D(pv^,objMatrix);
+    Vertex3D_in_WCS_Array.PushBackData(p3d);
     Inc(pv);
   end;
   Vertex3D_in_WCS_Array.Shrink;
@@ -899,7 +888,7 @@ begin
       pw:=ALWpolyLine.SgmntsParams.getDataMutable(i);
       pw.data.startw:=CreateDoubleFromArray(counter,args);
       pw.data.endw:=CreateDoubleFromArray(counter,args);
-      pw.data.hw:=IsDoubleNotEqual(pw.data.startw,0) or IsDoubleNotEqual(pw.data.endw,0);
+      pw.data.hw:=(not SameValue(pw.data.startw,0)) or (not SameValue(pw.data.endw,0));
     end;
   end;
 end;

@@ -76,7 +76,7 @@ type
 
     function IsIntersect_Line(lbegin,lend:TzePoint3d):Intercept3DProp;virtual;
     procedure AddOnTrackAxis(var posr:os_record;const processaxis:taddotrac);virtual;
-    function GetTangentInPoint(const point:TzePoint3d):TzePoint3d;virtual;
+    function GetTangentInPoint(const point:TzePoint3d):TzeVector3d;virtual;
 
     class function CreateInstance:PGDBObjLine;static;
     function GetObjType:TObjID;virtual;
@@ -95,9 +95,9 @@ function AllocAndInitLine(owner:PGDBObjGenericWithSubordinated):PGDBObjLine;
 
 implementation
 
-function GDBObjLine.GetTangentInPoint(const point:TzePoint3d):TzePoint3d;
+function GDBObjLine.GetTangentInPoint(const point:TzePoint3d):TzeVector3d;
 begin
-  Result:=(CoordInWCS.lEnd-CoordInWCS.lBegin).asPoint3d.Normalized;
+  Result:=(CoordInWCS.lEnd-CoordInWCS.lBegin).Normalized;
 end;
 
 procedure GDBObjLine.AddOnTrackAxis(var posr:os_record;const processaxis:taddotrac);
@@ -122,7 +122,7 @@ end;
 
 function GDBObjLine.GetCenterPoint;
 begin
-  Result:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,0.5);
+  Result:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,0.5);
 end;
 
 function GDBObjLine.GetObjTypeName;
@@ -138,7 +138,7 @@ function GDBObjLine.jointoline(pl:pgdbobjline;var drawing:TDrawingDef):boolean;
     l:double;
   begin
     ww:=scalardot(w,u);
-    l:=SqrOneVertexlength({VertexSub}(w-{VertexMulOnSc}(u*ww)));
+    l:=(w-(u*ww)).SqrLength;
     if eps>l then
       Result:=True
     else
@@ -160,10 +160,10 @@ begin
   dir:=CoordInWCS.lEnd-CoordInWCS.lBegin;
   u:={NormalizeVertex}(dir).Normalized;
   w:=pl.CoordInWCS.lbegin-CoordInWCS.lbegin;
-  t1:=(scalardot(w,dir))/SqrOneVertexlength(dir);
+  t1:=(scalardot(w,dir))/dir.SqrLength;
   q:=online(w,u);
   w:=pl.CoordInWCS.lend-CoordInWCS.lbegin;
-  t2:=(scalardot(w,dir))/SqrOneVertexlength(dir);
+  t2:=(scalardot(w,dir))/dir.SqrLength;
   q:=q and online(w,u);
   if not q then
     exit;
@@ -177,8 +177,8 @@ begin
     a2:=t1;
   if t2>a2 then
     a2:=t2;
-  self.CoordInOCS.lend:=VertexDmorph(self.CoordInOCS.lbegin,dir.asPoint3d,a2);
-  self.CoordInOCS.lbegin:=VertexDmorph(self.CoordInOCS.lbegin,dir.asPoint3d,a1);
+  self.CoordInOCS.lend:=self.CoordInOCS.lbegin+dir*a2;
+  self.CoordInOCS.lbegin:=self.CoordInOCS.lbegin+dir*a1;
   dc:=drawing.CreateDrawingRC;
   FormatEntity(drawing,dc);
   pl^.YouDeleted(drawing);
@@ -374,7 +374,7 @@ begin
     end;
     1:begin
       if (SnapMode and osm_4)<>0 then begin
-        osp.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/4);
+        osp.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,1/4);
         ProjectProc(osp.worldcoord,osp.dispcoord);
         osp.ostype:=os_1_4;
       end else
@@ -382,7 +382,7 @@ begin
     end;
     2:begin
       if (SnapMode and osm_3)<>0 then begin
-        osp.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/3);
+        osp.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,1/3);
         ProjectProc(osp.worldcoord,osp.dispcoord);
         osp.ostype:=os_1_3;
       end else
@@ -390,7 +390,7 @@ begin
     end;
     3:begin
       if (SnapMode and osm_midpoint)<>0 then begin
-        osp.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/2);
+        osp.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,1/2);
         ProjectProc(osp.worldcoord,osp.dispcoord);
         osp.ostype:=os_midle;
       end else
@@ -398,7 +398,7 @@ begin
     end;
     4:begin
       if (SnapMode and osm_3)<>0 then begin
-        osp.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,2/3);
+        osp.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,2/3);
         ProjectProc(osp.worldcoord,osp.dispcoord);
         osp.ostype:=os_2_3;
       end else
@@ -406,7 +406,7 @@ begin
     end;
     5:begin
       if (SnapMode and osm_4)<>0 then begin
-        osp.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,3/4);
+        osp.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,3/4);
         ProjectProc(osp.worldcoord,osp.dispcoord);
         osp.ostype:=os_3_4;
       end else
@@ -503,7 +503,8 @@ end;
 function GDBObjLine.getintersect;
 var
   t1,t2,dist:double;
-  l1b,l1e,l2b,l2e,tv1,tv2,dir,dir2:TzePoint3d;
+  l1b,l1e,l2b,l2e,tv1,tv2:TzePoint3d;
+  dir,dir2:TzeVector3d;
 begin
   if (onlygetsnapcount=1)or(pobj^.getobjtype<>gdblineid) then
     exit(False);
@@ -520,9 +521,8 @@ begin
         ((SnapMode and osm_intersection)<>0) then begin
         if line2dintercep(l1b.x,l1b.y,l1e.x,l1e.y,l2b.x,l2b.y,l2e.x,l2e.y,t1,t2) then
         begin
-          dir:=VertexSub(CoordInWCS.lEnd,CoordInWCS.lBegin);
-          dir2:=VertexSub(pgdbobjline(pobj)^.CoordInWCS.lEnd,pgdbobjline(
-            pobj)^.CoordInWCS.lBegin);
+          dir:=CoordInWCS.lEnd-CoordInWCS.lBegin;
+          dir2:=pgdbobjline(pobj)^.CoordInWCS.lEnd-pgdbobjline(pobj)^.CoordInWCS.lBegin;
           tv1.x:=CoordInWCS.lbegin.x+dir.x*t1;
           tv1.y:=CoordInWCS.lbegin.y+dir.y*t1;
           tv1.z:=CoordInWCS.lbegin.z+dir.z*t1;
@@ -621,18 +621,19 @@ end;
 
 procedure GDBObjLine.rtmodifyonepoint(const rtmod:TRTModifyData);
 var
-  tv,tv2:TzePoint3d;
+  tv:TzeVector3d;
+  tv2:TzePoint3d;
 begin
   if rtmod.point.pointtype=os_begin then begin
     CoordInOCS.lbegin:=rtmod.point.worldcoord+rtmod.dist.asVector;
   end else if rtmod.point.pointtype=os_end then begin
     CoordInOCS.lend:=rtmod.point.worldcoord+rtmod.dist.asVector;
   end else if rtmod.point.pointtype=os_midle then begin
-    tv:=uzegeometry.VertexSub(CoordInOCS.lend,CoordInOCS.lbegin);
-    tv:={uzegeometry.VertexMulOnSc}(tv*0.5);
+    tv:=CoordInOCS.lend-CoordInOCS.lbegin;
+    tv:=tv*0.5;
     tv2:=rtmod.point.worldcoord+rtmod.dist.asVector;
-    CoordInOCS.lbegin:=VertexSub(tv2,tv);
-    CoordInOCS.lend:=tv2+tv.asVector;
+    CoordInOCS.lbegin:=tv2-tv;
+    CoordInOCS.lend:=tv2+tv;
   end;
 end;
 
@@ -644,15 +645,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=CoordInWCS.lbegin;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=CoordInWCS.lend;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_midle then begin
-    pdesc.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/2);
+    pdesc.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,1/2);
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 
@@ -667,7 +668,7 @@ begin
 
   pdesc.pointtype:=os_midle;
   pdesc.attr:=[];
-  pdesc.worldcoord:=Vertexmorph(CoordInWCS.lbegin,CoordInWCS.lend,1/2);
+  pdesc.worldcoord:=CoordInWCS.lbegin.LerpTo(CoordInWCS.lend,1/2);
   PSelectedObjDesc(tdesc)^.pcontrolpoint^.PushBackData(pdesc);
 
   pdesc.pointtype:=os_begin;

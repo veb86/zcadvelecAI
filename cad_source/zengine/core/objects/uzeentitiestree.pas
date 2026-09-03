@@ -186,7 +186,7 @@ begin
     if DC.LOD=LODCalculatedDetail then begin
       if LODDeep=0 then begin
         v:=Node.BoundingBox.RTF-Node.BoundingBox.LBN;
-        if not SqrCanSimplyDrawInWCS(DC,uzegeometry.SqrOneVertexlength(v),300) then begin
+        if not SqrCanSimplyDrawInWCS(DC,v.SqrLength,300) then begin
           DC.LOD:=LODLowDetail;
           inc(LODDeep);
         end;
@@ -249,7 +249,7 @@ TSMAccumulation:begin
                    inc(FirstStageData.counter,2);
                 end;
         TSMCalc:begin
-                   FirstStageData.midlepoint:={VertexMulOnSc}(FirstStageData.midlepoint/FirstStageData.counter);
+                   FirstStageData.midlepoint:=(FirstStageData.midlepoint/FirstStageData.counter);
                    FirstStageData.d:=sqrt(sqr(FirstStageData.midlepoint.x) + sqr(FirstStageData.midlepoint.y) + sqr(FirstStageData.midlepoint.z));
                 end;
          TSMEnd:begin

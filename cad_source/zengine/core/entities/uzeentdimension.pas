@@ -113,6 +113,7 @@ var
   p0inside,p1inside:boolean;
   pp1,pp2:TzePoint3d;
   zangle:double;
+  dp21:TzeVector3d;
 begin
   l:=p1.LengthTo(p2);
   tbp0:=PDimStyle.GetDimBlockParam(0);
@@ -145,7 +146,7 @@ begin
     else
       p1inside:=False;
   end;
-  zangle:=vertexangle(createvertex2d(p1.x,p1.y),createvertex2d(p2.x,p2.y));
+  zangle:=VectorAngle((p2-p1).Slice{(p1.x,p1.y),createvertex2d(p2.x,p2.y)});
   if not supress1 then begin
     if p0inside then
       pointer(pv):=
@@ -182,21 +183,24 @@ begin
     pv^.BuildGeometry(drawing);
     pv^.formatentity(drawing,dc);
   end;
+  dp21:=(p2-p1).Normalized;
   if tbp0.Width=0 then
-    pp1:=Vertexmorphabs(p2,p1,PDimStyle.Lines.DIMDLE)
+    //pp1:=Vertexmorphabs(p2,p1,PDimStyle.Lines.DIMDLE)
+    pp1:=p1-dp21*(PDimStyle.Lines.DIMDLE)
   else begin
     if p0inside then
-      pp1:=
-        Vertexmorphabs(p2,p1,-PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
+      //pp1:=Vertexmorphabs(p2,p1,-PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
+      pp1:=p1+dp21*(PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
     else
       pp1:=p1;
   end;
   if tbp1.Width=0 then
-    pp2:=Vertexmorphabs(p1,p2,PDimStyle.Lines.DIMDLE)
+    //pp2:=Vertexmorphabs(p1,p2,PDimStyle.Lines.DIMDLE)
+    pp2:=p2+dp21*(PDimStyle.Lines.DIMDLE)
   else begin
     if p0inside then
-      pp2:=
-        Vertexmorphabs(p1,p2,-PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
+      //pp2:=Vertexmorphabs(p1,p2,-PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
+      pp2:=p2-dp21*(PDimStyle.Arrows.DIMASZ*GetDIMSCALE)
     else
       pp2:=p2;
   end;
@@ -225,8 +229,7 @@ begin
           pl:=DrawDimensionLineLinePart((p1+p2.asVector)*0.5,
             DimData.P11InOCS,drawing);
           pl.FormatEntity(drawing,dc);
-          pl:=DrawDimensionLineLinePart(DimData.P11InOCS,VertexDmorph(
-            DimData.P11InOCS,VectorT.asPoint3d,getpsize),drawing);
+          pl:=DrawDimensionLineLinePart(DimData.P11InOCS,DimData.P11InOCS+VectorT*getpsize,drawing);
           pl.FormatEntity(drawing,dc);
         end;
       end;
@@ -266,7 +269,7 @@ end;
 
 procedure GDBObjDimension.CalcTextAngle;
 begin
-  DimAngle:=vertexangle(cP2d__0__0,CreateVertex2D(vectorD.x,vectorD.y));
+  DimAngle:=VectorAngle(vectorD.Slice);
   TextAngle:=CorrectAngleIfNotReadable(DimAngle);
 end;
 
@@ -394,7 +397,7 @@ begin
   if (self.DimData.textmoved)or TextAlwaysMoved then begin
     if (abs(scalardot(p-DimData.MidPoint,vectorN))>2*textsize)or TextAlwaysMoved then
       if GetDIMTMOVE=DTMCreateLeader then begin
-        p:=VertexDmorph(p,VectorT.asPoint3d,GetPSize/2);
+        p:=p+VectorT*GetPSize/2;
         DimData.NeedTextLeader:=True;
       end;
     p:=p+TextOffset.asVector;
@@ -410,19 +413,19 @@ begin
   ptext.FormatEntity(drawing,dc);
 
   if PDimStyle.Text.DIMGAP<0 then begin
-    p:=uzegeometry.VertexDmorph(p,ptext.Local.basis.ox.asPoint3d,-dimtextw/2);
-    p:=uzegeometry.VertexDmorph(p,ptext.Local.basis.oy.asPoint3d,dimtexth/2);
+    p:=p-ptext.Local.basis.ox*dimtextw/2;
+    p:=p+ptext.Local.basis.oy*dimtexth/2;
 
-    p2:=uzegeometry.VertexDmorph(p,ptext.Local.basis.ox.asPoint3d,dimtextw);
+    p2:=p+ptext.Local.basis.ox*dimtextw;
     DrawDimensionLineLinePart(p,p2,drawing).FormatEntity(drawing,dc);
 
-    p:=uzegeometry.VertexDmorph(p2,ptext.Local.basis.oy.asPoint3d,-dimtexth);
+    p:=p2-ptext.Local.basis.oy*dimtexth;
     DrawDimensionLineLinePart(p2,p,drawing).FormatEntity(drawing,dc);
 
-    p2:=uzegeometry.VertexDmorph(p,ptext.Local.basis.ox.asPoint3d,-dimtextw);
+    p2:=p-ptext.Local.basis.ox*dimtextw;
     DrawDimensionLineLinePart(p,p2,drawing).FormatEntity(drawing,dc);
 
-    p:=uzegeometry.VertexDmorph(p2,ptext.Local.basis.oy.asPoint3d,dimtexth);
+    p:=p2+ptext.Local.basis.oy*dimtexth;
     DrawDimensionLineLinePart(p2,p,drawing).FormatEntity(drawing,dc);
   end;
 
@@ -560,31 +563,31 @@ begin
   if pdesc^.pointtype=os_p10 then begin
     pdesc.worldcoord:=DimData.P10InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p11 then begin
     pdesc.worldcoord:=DimData.P11InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p12 then begin
     pdesc.worldcoord:=DimData.P12InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p13 then begin
     pdesc.worldcoord:=DimData.P13InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p14 then begin
     pdesc.worldcoord:=DimData.P14InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p15 then begin
     pdesc.worldcoord:=DimData.P15InWCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_p16 then begin
     pdesc.worldcoord:=DimData.P16InOCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 

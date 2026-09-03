@@ -74,7 +74,7 @@ end;
 function DWGNormalOrDefault(const P: TDWGPoint3D): TzePoint3d;
 begin
   Result := DWGPointToVertex(P);
-  if IsVectorNul(Result.asVector) then
+  if Result.IsNul then
     Result := cP3d__0__0__1;
 end;
 
@@ -315,7 +315,7 @@ begin
   DWGCopyHatchProps(PHatch^, DWGContext.DWGVer, DWGContext.DWGCodePage,
     Props);
   pobj := GDBObjHatch.CreateInstance;
-  pobj^.Local.p_insert := CreateVertex(0, 0, Props.Elevation);
+  pobj^.Local.p_insert := TzePoint3d.Make(0, 0, Props.Elevation);
   pobj^.Local.basis.oz := DWGNormalOrDefault(Props.Extrusion).asVector;
   pobj^.PatternName := Props.PatternName;
   if (pobj^.PatternName = '') and Props.IsSolidFill then

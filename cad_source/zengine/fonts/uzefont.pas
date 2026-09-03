@@ -111,20 +111,20 @@ begin
       PLLPsymbol^.Attrib:=LLAttrNothing;
     if (VDCopyParam.EID.GeomIndexMax-VDCopyParam.EID.GeomIndexMin)>4 then
       PLLPsymbol^.Attrib:=PLLPsymbol^.Attrib or  LLAttrNeedSimtlify;
-    v0:=createvertex(psyminfo^.SymMinX,psyminfo^.SymMinY,0);
+    v0:=TzePoint3d.Make(psyminfo^.SymMinX,psyminfo^.SymMinY,0);
     v0:=VectorTransform3d(v0,matr);
     v0:=VectorTransform3d(v0,objmatrix);
     PLLPsymbol^.OutBoundIndex:=geom.GeomData.Vertex3S.AddGDBVertex(v0);
-    v:=createvertex(psyminfo^.SymMinX,psyminfo^.SymMaxy,0);
+    v:=TzePoint3d.Make(psyminfo^.SymMinX,psyminfo^.SymMaxy,0);
     v:=VectorTransform3d(v,matr);
     v:=VectorTransform3d(v,objmatrix);
     geom.GeomData.Vertex3S.AddGDBVertex(v);
-    sqrsymh:=SqrOneVertexlength(vertexsub(v,v0).asVector);
-    v:=createvertex(psyminfo^.SymMaxx,psyminfo^.SymMaxy,0);
+    sqrsymh:=(v-v0).SqrLength;
+    v:=TzePoint3d.Make(psyminfo^.SymMaxx,psyminfo^.SymMaxy,0);
     v:=VectorTransform3d(v,matr);
     v:=VectorTransform3d(v,objmatrix);
     geom.GeomData.Vertex3S.AddGDBVertex(v);
-    v:=createvertex(psyminfo^.SymMaxx,psyminfo^.SymMiny,0);
+    v:=TzePoint3d.Make(psyminfo^.SymMaxx,psyminfo^.SymMiny,0);
     v:=VectorTransform3d(v,matr);
     v:=VectorTransform3d(v,objmatrix);
     geom.GeomData.Vertex3S.AddGDBVertex(v);
@@ -138,13 +138,13 @@ begin
         PLLSymbolLine^.SymbolsParam.pfont:=@self;
         PLLSymbolLine^.FirstOutBoundIndex:=PLLPsymbol^.OutBoundIndex;
         PLLSymbolLine^.SymbolsParam.FirstSymMatr:=uzegeometry.MatrixMultiply(matr,objmatrix);
-        PLLSymbolLine^.SymbolsParam.Rotate:=Vertexangle(CreateVertex2D(0,0),CreateVertex2D(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].v[0],PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].v[1]));
-        PLLSymbolLine^.SymbolsParam.sx:=oneVertexlength(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].Slice)/oneVertexlength(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[1].slice);
+        PLLSymbolLine^.SymbolsParam.Rotate:=VectorAngle(TzeVector2d.Make(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].v[0],PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].v[1]));
+        PLLSymbolLine^.SymbolsParam.sx:={oneVertexlength}(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].Slice.Length)/{oneVertexlength}(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[1].Slice.Length);
         true0Y:=VectorDot(PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[2].Slice,PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[0].Slice);
-        if not IsVectorNul(true0Y) then
+        if not true0Y.IsNul then
           true0Y.Normalize;//:=NormalizeVertex(true0Y);
         fact0y:=PLLSymbolLine^.SymbolsParam.FirstSymMatr.mtr.v[1].Slice;
-        if not IsVectorNul(fact0y) then
+        if not fact0y.IsNul then
           fact0y.Normalize;//:=NormalizeVertex(fact0y);
         PLLSymbolLine^.SymbolsParam.Oblique:=arccos(scalardot(true0Y,fact0y));
         PLLSymbolLine^.SymbolsParam.NeededFontHeight:=PLLSymbolLine^.SymbolsParam.NeededFontHeight*cos(PLLSymbolLine^.SymbolsParam.Oblique);

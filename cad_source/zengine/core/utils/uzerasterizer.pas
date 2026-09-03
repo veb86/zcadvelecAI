@@ -83,12 +83,12 @@ begin
 
   //smatrix:=CreateScaleMatrix(CreateVertex(scale,scale,scale));
 
-  //projMatrix:=ortho(point1.x,point2.x,point1.y,point2.y,-1,1,@cOneMatrix);
+  //projMatrix:=Ortho(point1.x,point2.x,point1.y,point2.y,-1,1,@cOneMatrix);
 
   projMatrix:=cOneMatrix;
-  projMatrix:=ortho(-dx/2,dx/2,-dy/2,dy/2,-1,1,@projMatrix);
-  projMatrix:=MatrixMultiply(projMatrix,CreateTranslationMatrix(CreateVector(-(point1.x+point2.x)/dx,-(point1.y+point2.y)/dy,0)));
-  projMatrix:=MatrixMultiply(projMatrix,CreateScaleMatrix(CreateVector(1/sx,1/sy,1)));
+  projMatrix:=Ortho(-dx/2,dx/2,-dy/2,dy/2,-1,1,@projMatrix);
+  projMatrix:=MatrixMultiply(projMatrix,CreateTranslationMatrix(TzeVector3d.Make(-(point1.x+point2.x)/dx,-(point1.y+point2.y)/dy,0)));
+  projMatrix:=MatrixMultiply(projMatrix,CreateScaleMatrix(TzeVector3d.Make(1/sx,1/sy,1)));
 
 
 
@@ -114,7 +114,7 @@ begin
   //prn.scalex:=prn.scalex*scale;
   //prn.scaley:=prn.scaley*scale;
 
-  tmatrix:=cdwg^.pcamera^.projMatrix;
+  tmatrix:=cdwg^.GetPCamera^.projMatrix;
   //drawings.GetCurrentDWG^.pcamera^.projMatrix:=prn.project;
   //drawings.GetCurrentDWG^.pcamera^.modelMatrix:=prn.model;
   //try
@@ -132,10 +132,10 @@ begin
   //----Printer.Title := 'zcadprint';
   //----Printer.BeginDoc;
 
-  cdwg^.pcamera^.NextPosition;
-  inc(cdwg^.pcamera^.DRAWCOUNT);
+  cdwg^.GetPCamera^.NextPosition;
+  inc(cdwg^.GetPCamera^.DRAWCOUNT);
   //_clip:=MatrixMultiply(prn.model,prn.project);
-  cdwg^.pcamera^.getfrustum(@cdwg^.pcamera^.modelMatrix,   @cdwg^.pcamera^.projMatrix,   cdwg^.pcamera^.clip,   cdwg^.pcamera^.frustum);
+  cdwg^.GetPCamera^.getfrustum(@cdwg^.GetPCamera^.modelMatrix,@cdwg^.GetPCamera^.projMatrix,cdwg^.GetPCamera^.clip,cdwg^.GetPCamera^.frustum);
   //_frustum:=calcfrustum(@_clip);
   cdwg^.wa.param.firstdraw := TRUE;
   //cdwg^.OGLwindow1.param.debugfrustum:=cdwg^.pcamera^.frustum;
@@ -170,9 +170,9 @@ begin
   _clip:=MatrixMultiply(modelMatrix,projMatrix);
   _frustum:=calcfrustum(@_clip);
 
-  Actlt.InfrustumActualy:=cdwg^.pcamera^.POSCOUNT;
-  Actlt.VisibleActualy:=cdwg^.pcamera^.VISCOUNT;
-  cdwg^.GetCurrentROOT^.CalcVisibleByTree(_frustum,Actlt,cdwg^.GetCurrentROOT^.ObjArray.ObjTree,cdwg^.pcamera^.Counters,@cdwg^.myGluProject2,cdwg^.pcamera^.prop.zoom,0);
+  Actlt.InfrustumActualy:=cdwg^.GetPCamera^.POSCOUNT;
+  Actlt.VisibleActualy:=cdwg^.GetPCamera^.VISCOUNT;
+  cdwg^.GetCurrentROOT^.CalcVisibleByTree(_frustum,Actlt,cdwg^.GetCurrentROOT^.ObjArray.ObjTree,cdwg^.GetPCamera^.Counters,@cdwg^.myGluProject2,cdwg^.GetPCamera^.prop.zoom,0);
   //cdwg^.GetCurrentROOT^.FormatEntity(cdwg^,dc);
   DoFormat(cdwg^.GetCurrentROOT^,cdwg^.GetCurrentROOT^.ObjArray,
     cdwg^.GetCurrentROOT^.ObjToConnectedArray,cdwg^,DC,0,[]);
@@ -185,10 +185,10 @@ begin
   PrinterDrawer.canvas.Clipping:=true;
   cdwg^.wa.treerender(cdwg^.GetCurrentROOT^.ObjArray.ObjTree,0,{0}dc);
   //prn.endrender;
-  inc(cdwg^.pcamera^.DRAWCOUNT);
+  inc(cdwg^.GetPCamera^.DRAWCOUNT);
 
   //----Printer.EndDoc;
-  cdwg^.pcamera^.projMatrix:=tmatrix;
+  cdwg^.GetPCamera^.projMatrix:=tmatrix;
 
   if PrintParam.Palette<>PC_Color then
     PopPalette;

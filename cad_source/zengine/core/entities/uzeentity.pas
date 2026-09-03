@@ -233,7 +233,7 @@ type
     function CalcObjMatrixWithoutOwner:TzeTypedMatrix4d;virtual;
     procedure EraseMi(pobj:pGDBObjEntity;pobjinarray:integer;
       var drawing:TDrawingDef);virtual;
-    function GetTangentInPoint(const point:TzePoint3d):TzePoint3d;virtual;
+    function GetTangentInPoint(const point:TzePoint3d):TzeVector3d;virtual;
     procedure CalcObjMatrix(pdrawing:PTDrawingDef=nil);virtual;
     procedure ReCalcFromObjMatrix;virtual;
     procedure correctsublayers(var la:GDBLayerArray);virtual;
@@ -379,9 +379,9 @@ begin
 
 end;
 
-function GDBObjEntity.GetTangentInPoint(const point:TzePoint3d):TzePoint3d;
+function GDBObjEntity.GetTangentInPoint(const point:TzePoint3d):TzeVector3d;
 begin
-  Result:=cP3d__0__0__0;
+  Result:=cV3d__0__0__0;
 end;
 
 function GDBObjEntity.IsHaveLCS:boolean;
@@ -897,16 +897,16 @@ end;
 
 procedure GDBObjEntity.correctbb;
 var
-  cv:TzePoint3d;
+  cv:TzeVector3d;
   d:double;
 begin
   d:=GetLTCorrectL(dc.DrawingContext.globalltscale);
-  cv:=VertexSUB(vp.BoundingBox.RTF,vp.BoundingBox.LBN);
+  cv:=vp.BoundingBox.RTF-vp.BoundingBox.LBN;
   if (d>0)and(d*d<cv.x*cv.x+cv.y*cv.y+cv.z*cv.z) then begin
     d:=GetLTCorrectH(dc.DrawingContext.globalltscale);
-    cv:=createvertex(d,d,d);
-    vp.BoundingBox.LBN:=VertexSUB(vp.BoundingBox.LBN,cv);
-    vp.BoundingBox.RTF:=vp.BoundingBox.RTF+cv.asVector;
+    cv:=TzeVector3d.Make(d,d,d);
+    vp.BoundingBox.LBN:=vp.BoundingBox.LBN-cv;
+    vp.BoundingBox.RTF:=vp.BoundingBox.RTF+cv;
   end;
 end;
 

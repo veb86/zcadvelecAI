@@ -6,7 +6,7 @@ interface
 
 uses
   SysUtils,
-  fpcunit,testregistry,
+  fpcunit,testregistry,math,
   uzeentarc,
   uzedrawingsimple,
   uzgldrawcontext,
@@ -39,7 +39,7 @@ begin
   //Создание дуги
   arc:=GDBObjArc.CreateInstance;
   //Настройка параметров дуги
-  center:=CreateVertex(10,10,0);  // Центр дуги
+  center:=TzePoint3d.Make(10,10,0);  // Центр дуги
   arc^.Local.P_insert:=center;
   arc^.R:=10.0;                       // Радиус 50 единиц
   arc^.StartAngle:=pi;               // Начальный угол 0 радиан
@@ -53,18 +53,18 @@ begin
   arc^.BuildGeometry(drawing);
   // Форматирование сущности
   arc^.formatEntity(drawing,dc);
-  arc^.transform(CreateReflectionMatrix(PlaneFrom3Pont(NulPoint,x_Y_zVertex,xy_Z_Vertex)));
+  arc^.transform(CreateReflectionMatrix(PlaneFrom3Pont(cP3d__0__0__0,cP3d__0__1__0,cP3d__0__0__1)));
   arc^.formatEntity(drawing,dc);
 
   verror:='';
-  if not IsPointEqual(arc^.P_insert_in_WCS,CreateVertex(-10,10,0)) then
+  if not arc^.P_insert_in_WCS.IsEqual(TzePoint3d.Make(-10,10,0)) then
     verror:=verror+format('arc^.P_insert_in_WCS (%g,%g,%g)<>(-10,10,0); ',
       [arc^.P_insert_in_WCS.x,arc^.P_insert_in_WCS.y,arc^.P_insert_in_WCS.z]);
-  if IsDoubleNotEqual(arc^.StartAngle,3*Pi/2) then
+  if not SameValue(arc^.StartAngle,3*Pi/2) then
     verror:=verror+format('arc^.StartAngle %g<>3*Pi/2; ',[arc^.StartAngle]);
-  if IsDoubleNotEqual(arc^.EndAngle,0) then
+  if not SameValue(arc^.EndAngle,0) then
     verror:=verror+format('arc^.EndAngle %g<>0; ',[arc^.EndAngle]);
-  if IsDoubleNotEqual(arc^.R,10) then
+  if not SameValue(arc^.R,10) then
     verror:=verror+format('arc^.R %g<>10; ',[arc^.R]);
   try
   if verror<>''then

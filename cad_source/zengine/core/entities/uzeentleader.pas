@@ -136,8 +136,8 @@ begin
   Leader.TextHeight:=0;
   Leader.TextWidth:=0;
   Leader.AnnotationHandle:=0;
-  Leader.NormalVector:=CreateVertex(0,0,1);
-  Leader.HorizontalDirection:=CreateVertex(1,0,0);
+  Leader.NormalVector:=cP3d__0__0__1;
+  Leader.HorizontalDirection:=cP3d__1__0__0;
   Leader.BlockOffset:=cP3d__0__0__0;
   Leader.AnnotationOffset:=cP3d__0__0__0;
   Leader.ArrowStyleIndex:=LeaderArrowStyleInherit;
@@ -260,34 +260,34 @@ begin
     Leader.VertexArrayInOCS.Count-2),LeaderArrowSize);
 end;
 
-function LeaderArrowAngleFromDirection(const Direction,FallbackStart,
+function LeaderArrowAngleFromDirection(const Direction:TzeVector3d;const FallbackStart,
   FallbackEnd:TzePoint3d):double;
 begin
   if Direction.Length>LeaderGeometryEpsilon then
-    Result:=VertexAngle(CreateVertex2D(0,0),CreateVertex2D(Direction.x,Direction.y))-pi
+    Result:=VectorAngle(Direction.Slice)-pi
   else
-    Result:=VertexAngle(CreateVertex2D(FallbackStart.x,FallbackStart.y),CreateVertex2D(FallbackEnd.x,FallbackEnd.y))-pi;
+    Result:=VectorAngle((FallbackEnd-FallbackStart).Slice)-pi;
 end;
 
 function LeaderSplineStartDirection(Spline:PGDBObjSpline;
-  const FallbackStart,FallbackEnd:TzePoint3d):TzePoint3d;
+  const FallbackStart,FallbackEnd:TzePoint3d):TzeVector3d;
 var
   i:integer;
   pFirst,pNext:PzePoint3d;
 begin
-  Result:=VertexSub(FallbackEnd,FallbackStart);
+  Result:=FallbackEnd-FallbackStart;
   if (Spline=nil)or(Spline^.VertexArrayInOCS.Count<2) then
     exit;
 
   pFirst:=Spline^.VertexArrayInOCS.getDataMutable(0);
   for i:=1 to Spline^.VertexArrayInOCS.Count-1 do begin
     pNext:=Spline^.VertexArrayInOCS.getDataMutable(i);
-    Result:=VertexSub(pNext^,pFirst^);
+    Result:=pNext^-pFirst^;
     if Result.Length>LeaderGeometryEpsilon then
       exit;
   end;
 
-  Result:=VertexSub(FallbackEnd,FallbackStart);
+  Result:=FallbackEnd-FallbackStart;
 end;
 
 // Выбирает степень сплайна по числу точек участка.
@@ -579,9 +579,9 @@ begin
     dxfvertexout(outStream,10,VertexArrayInOCS.Items[i]);
   if AnnotationHandle<>0 then
     dxfStringWithoutEncodeOut(outStream,340,IntToHex(AnnotationHandle,0));
-  if not IsSameVertex(NormalVector,CreateVertex(0,0,1)) then
+  if not IsSameVertex(NormalVector,cP3d__0__0__1) then
     dxfvertexout(outStream,210,NormalVector);
-  if not IsSameVertex(HorizontalDirection,CreateVertex(1,0,0)) then
+  if not IsSameVertex(HorizontalDirection,cP3d__1__0__0) then
     dxfvertexout(outStream,211,HorizontalDirection);
   if not IsZeroVertex(BlockOffset) then
     dxfvertexout(outStream,212,BlockOffset);
@@ -638,7 +638,7 @@ var
   ArrowParam:TDimArrowBlockParam;
   LeaderArrowSize:double;
   ArrowAngle:double;
-  ArrowDirection:TzePoint3d;
+  ArrowDirection:TzeVector3d;
   SplinePath:PGDBObjSpline;
   SplinePointCount:integer;
   HasTextTail,ArrowEnabled:boolean;
@@ -687,7 +687,7 @@ begin
     if (PathType=1)and(SplinePath<>nil) then
       ArrowDirection:=LeaderSplineStartDirection(SplinePath,p1^,p2^)
     else
-      ArrowDirection:=VertexSub(p2^,p1^);
+      ArrowDirection:=p2^-p1^;
     ArrowAngle:=LeaderArrowAngleFromDirection(ArrowDirection,p1^,p2^);
     pointer(pv):=ENTF_CreateBlockInsert(@self,@self.ConstObjArray,
       vp.Layer,LeaderArrowLineType(self,PDimStyle),
@@ -849,7 +849,7 @@ begin
   pdesc^.worldcoord:=
     GDBPoint3dArray.PTArr(VertexArrayInWCS.parray)^[VertexNumber];
   ProjectProc(pdesc^.worldcoord,tv);
-  pdesc^.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+  pdesc^.dispcoord:=tv.Slice.asPoint2i;
 end;
 
 procedure GDBObjLeader.addcontrolpoints(tdesc:Pointer);

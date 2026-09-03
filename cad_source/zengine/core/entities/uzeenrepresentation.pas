@@ -130,7 +130,7 @@ var
 begin
   if rc.lod=LODCalculatedDetail then begin
     v:=aabb.RTF-aabb.LBN;
-    simplydraw:=not SqrCanSimplyDrawInWCS(rc,uzegeometry.SqrOneVertexlength(v),49);
+    simplydraw:=not SqrCanSimplyDrawInWCS(rc,v.SqrLength,49);
   end else
     simplydraw:=rc.lod=LODLowDetail;
   Graphix.DrawGeometry(rc,inFrustumState,simplydraw);
@@ -330,7 +330,7 @@ var
 begin
   SetLength(tpts,Length(pts));
   for i:={low(pts)}0 to High(pts) do
-    tpts[i]:=CreateVertex(pts[i].x,pts[i].y,0);
+    tpts[i]:=TzePoint3d.Make(pts[i].x,pts[i].y,0);
   _CreatePolyLine(DC,Ent,vp,tpts,closed,ltgen);
 end;
 
@@ -710,7 +710,7 @@ begin
         inc(BulgedSegmentsCount);
       if data.hw then begin
         inc(WidthSegmentsCount);
-        if IsDoubleNotEqual(data.startw,data.endw) then
+        if not SameValue(data.startw,data.endw) then
           inc(VariableWidthSegmentsCount);
       end;
     end;

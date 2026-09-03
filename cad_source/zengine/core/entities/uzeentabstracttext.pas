@@ -94,12 +94,12 @@ var
   tv:TzePoint3d;
   m:TzeTypedMatrix4d;
 begin
-  tv:=CreateVertex(0,textprop.size,0);
+  tv:=TzePoint3d.Make(0,textprop.size,0);
   m:=t_matrix;
   m.mtr.v[3].Slice:=cV3d__0__0__0;
 
   tv:=VectorTransform3d(tv,m);
-  textprop.size:=oneVertexlength(tv.asVector);
+  textprop.size:={oneVertexlength}tv.Length;
   inherited;
 end;
 
@@ -160,7 +160,7 @@ begin
   if pdesc^.pointtype=os_point then begin
     pdesc.worldcoord:=P_insert_in_WCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 

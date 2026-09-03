@@ -389,7 +389,7 @@ begin
       ptpred:=VertexArrayInWCS.getDataMutable(vertexarrayInWCS.Count-2);
 
       tp:=ptlast^-ptpred^;
-      if uzegeometry.SqrOneVertexlength(tp)>sqreps then begin
+      if tp.SqrLength>sqreps then begin
         _YWCS:=cV3d__0__1__0;//gdb.GetCurrentDWG.pcamera.ydir;
         _ZWCS:=cV3d__0__0__1;//gdb.GetCurrentDWG.pcamera.look;
 
@@ -416,8 +416,8 @@ begin
         m:=MatrixMultiply(rotmatr,m);
 
         str22:=ptnlastCutted.PrevP;
-        str21:=VectorTransform3D(uzegeometry.CreateVertex(-3*SysVar.DSGN.DSGN_HelpScale^,0.5*SysVar.DSGN.DSGN_HelpScale^,0),m);
-        str23:=VectorTransform3D(uzegeometry.CreateVertex(-3*SysVar.DSGN.DSGN_HelpScale^,-0.5*SysVar.DSGN.DSGN_HelpScale^,0),m);
+        str21:=VectorTransform3D(TzePoint3d.Make(-3*SysVar.DSGN.DSGN_HelpScale^,0.5*SysVar.DSGN.DSGN_HelpScale^,0),m);
+        str23:=VectorTransform3D(TzePoint3d.Make(-3*SysVar.DSGN.DSGN_HelpScale^,-0.5*SysVar.DSGN.DSGN_HelpScale^,0),m);
       end else begin
         str22:=ptnlastCutted.PrevP;
         str21:=ptnlastCutted.PrevP;

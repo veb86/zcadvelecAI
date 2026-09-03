@@ -508,7 +508,7 @@ var
    i:integer;
    nearestd,{nearestd0,}secondd{,secondd0}:double;
    tp1,tp2:TzePoint3d;
-   dit,pdit:DistAndt;
+   dit,pdit:TDistWitht;
    Vertex0:TzePoint3d;
 begin
   nearestaxis:=-1;
@@ -584,7 +584,7 @@ var
    psd:PSelectedObjDesc;
    hi,hi2,vi,vi2,{ti,}i:integer;
    hname,vname:String;
-   dit:DistAndt;
+   dit:TDistWitht;
    Vertex0:TzePoint3d;
    isAxisVerical:TGDB3StateBool;
    isVertical:boolean;
@@ -1049,13 +1049,13 @@ begin
                  pl:=lineiterator.key;
                  PointOnCurve3DPropArraySort.Sort(arr,arr.size);
                  lc:=pl^.CoordInOCS;
-                 point:=uzegeometry.Vertexmorph(lc.lBegin,lc.lEnd,arr[0]);
+                 point:={uzegeometry.Vertexmorph}lc.lBegin.LerpTo(lc.lEnd,arr[0]);
                  pl^.CoordInOCS.lend:=point;
                  pl^.FormatEntity(drawings.GetCurrentDWG^,dc);
                  inc(lm);
                  for i:=1 to arr.size-1 do
                  begin
-                      point2:=uzegeometry.Vertexmorph(lc.lBegin,lc.lEnd,arr[i]);
+                      point2:={uzegeometry.Vertexmorph}lc.lBegin.LerpTo(lc.lEnd,arr[i]);
 
                       begin
                           PCreatedGDBLine := Pointer(drawings.GetCurrentDWG^.mainObjRoot.ObjArray.CreateInitObj(GDBLineID,drawings.GetCurrentROOT));
@@ -1185,7 +1185,7 @@ begin
 
   BlockScale.init('BlockScale',0,0);
   BlockScale.CEndActionAttr:=[];
-  BlockScaleParams.Scale:=uzegeometry.CreateVector(1,1,1);
+  BlockScaleParams.Scale:=cV3d__1__1__1;
   BlockScaleParams.Absolutely:=true;
   BlockScale.SetCommandParam(@BlockScaleParams,'PTBlockScaleParams');
 

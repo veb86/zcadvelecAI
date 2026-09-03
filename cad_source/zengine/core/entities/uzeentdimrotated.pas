@@ -81,8 +81,7 @@ begin
   dxfStringWithoutEncodeOut(outStream,100,'AcDbAlignedDimension');
   dxfvertexout(outStream,13,DimData.P13InWCS);
   dxfvertexout(outStream,14,DimData.P14InWCS);
-  dxfDoubleout(outStream,50,vertexangle(createvertex2d(0,0),createvertex2d(
-    vectorD.x,vectorD.y))*180/pi);
+  dxfDoubleout(outStream,50,VectorAngle(vectorD.Slice)*180/pi);
   dxfStringWithoutEncodeOut(outStream,100,'AcDbRotatedDimension');
 end;
 
@@ -123,7 +122,7 @@ var
 begin
   Result:=tv;
   tl:=GetTFromDirNormalizedPoint(DimData.P10InWCS,tv,vectorN.asPoint3d);
-  DimData.P10InWCS:=VertexDmorph(tv,vectorN.asPoint3d,tl);
+  DimData.P10InWCS:=tv+vectorN*tl;
 end;
 
 procedure GDBObjRotatedDimension.CalcDNVectors;

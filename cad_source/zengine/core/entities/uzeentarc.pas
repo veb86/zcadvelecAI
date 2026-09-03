@@ -159,7 +159,7 @@ var
   // Оси новой локальной СК (Arbitrary Axis Algorithm)
   newOcsX, newOcsY: TzeVector3d;
   // Нормализованные направления от нового центра к точкам дуги
-  dirToStart, dirToEnd: TzePoint3d;
+  dirToStart, dirToEnd: TzeVector3d;
   // Определитель матрицы трансформации (знак указывает на зеркальность)
   det: double;
 begin
@@ -208,16 +208,16 @@ begin
   newCenter := Local.P_insert;
 
   // Шаг 7. Вычисляем нормализованные направления от нового центра к точкам дуги
-  dirToStart := VertexSub(newStartPoint, newCenter).Normalized;
-  dirToEnd   := VertexSub(newEndPoint, newCenter).Normalized;
+  dirToStart := (newStartPoint-newCenter).Normalized;
+  dirToEnd   := (newEndPoint-newCenter).Normalized;
 
   // Шаг 8. Проецируем направления на оси локальной СК и вычисляем новые углы.
   // scalardot — скалярное произведение; оно даёт косинус и синус угла в плоскости дуги
-  StartAngle := ArcTan2(scalardot(dirToStart.asVector, newOcsY), scalardot(dirToStart.asVector, newOcsX));
+  StartAngle := ArcTan2(scalardot(dirToStart, newOcsY), scalardot(dirToStart, newOcsX));
   if StartAngle < 0 then
     StartAngle := 2 * pi + StartAngle;
 
-  EndAngle := ArcTan2(scalardot(dirToEnd.asVector, newOcsY), scalardot(dirToEnd.asVector, newOcsX));
+  EndAngle := ArcTan2(scalardot(dirToEnd, newOcsY), scalardot(dirToEnd, newOcsX));
   if EndAngle < 0 then
     EndAngle := 2 * pi + EndAngle;
 
@@ -246,7 +246,7 @@ begin
   P_insert_in_WCS:=Local.P_insert;
 
   // Радиус — длина первого вектора-оси в ObjMatrix (масштаб по оси X)
-  self.R:=oneVertexLength(objmatrix.mtr.v[0].Slice);
+  self.R:={oneVertexLength}(objmatrix.mtr.v[0].Slice.Length);
 
 end;
 
@@ -498,29 +498,26 @@ begin
     maxy:=ey;
   end;
   if (q and 1)>0 then begin
-    concatBBandPoint(vp.BoundingBox,VectorTransform3d(
-      CreateVertex(1,0,0),objMatrix));
+    concatBBandPoint(vp.BoundingBox,VectorTransform3d(cP3d__1__0__0,objMatrix));
     maxx:=1;
   end;
   if (q and 4)>0 then begin
-    concatBBandPoint(vp.BoundingBox,VectorTransform3d(
-      CreateVertex(-1,0,0),objMatrix));
+    concatBBandPoint(vp.BoundingBox,VectorTransform3d(cP3d_m1__0__0,objMatrix));
     minx:=-1;
   end;
   if (q and 2)>0 then begin
-    concatBBandPoint(vp.BoundingBox,VectorTransform3d(
-      CreateVertex(0,1,0),objMatrix));
+    concatBBandPoint(vp.BoundingBox,VectorTransform3d(cP3d__0__1__0,objMatrix));
     maxy:=1;
   end;
   if (q and 8)>0 then begin
     concatBBandPoint(vp.BoundingBox,VectorTransform3d(
-      CreateVertex(0,-1,0),objMatrix));
+      TzePoint3d.Make(0,-1,0),objMatrix));
     miny:=-1;
   end;
-   outbound[0]:=VectorTransform3d(CreateVertex(minx,maxy,0),objMatrix);
-  outbound[1]:=VectorTransform3d(CreateVertex(maxx,maxy,0),objMatrix);
-  outbound[2]:=VectorTransform3d(CreateVertex(maxx,miny,0),objMatrix);
-  outbound[3]:=VectorTransform3d(CreateVertex(minx,miny,0),objMatrix);
+   outbound[0]:=VectorTransform3d(TzePoint3d.Make(minx,maxy,0),objMatrix);
+  outbound[1]:=VectorTransform3d(TzePoint3d.Make(maxx,maxy,0),objMatrix);
+  outbound[2]:=VectorTransform3d(TzePoint3d.Make(maxx,miny,0),objMatrix);
+  outbound[3]:=VectorTransform3d(TzePoint3d.Make(minx,miny,0),objMatrix);
 end;
 
 procedure GDBObjARC.createpoints(var DC:TDrawContext);
@@ -624,15 +621,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=q0;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_midle then begin
     pdesc.worldcoord:=q1;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=q2;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 

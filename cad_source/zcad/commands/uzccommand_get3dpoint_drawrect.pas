@@ -67,12 +67,12 @@ begin
   vd:=commandmanager.GetValue;
   p1:=PzePoint3d(vd.Data.Addr.Instance)^;
 
-  p2:=createvertex(p1.x,point.y,p1.z);
-  p4:=createvertex(point.x,p1.y,point.z);
+  p2:=TzePoint3d.Make(p1.x,point.y,p1.z);
+  p4:=TzePoint3d.Make(point.x,p1.y,point.z);
 
-  matrixs.pmodelMatrix:=@drawings.GetCurrentDWG.GetPcamera.modelMatrix;
-  matrixs.pprojMatrix:=@drawings.GetCurrentDWG.GetPcamera.projMatrix;
-  matrixs.pviewport:=@drawings.GetCurrentDWG.GetPcamera.viewport;
+  matrixs.pmodelMatrix:=@drawings.GetCurrentDWG.GetPCamera.modelMatrix;
+  matrixs.pprojMatrix:=@drawings.GetCurrentDWG.GetPCamera.projMatrix;
+  matrixs.pviewport:=@drawings.GetCurrentDWG.GetPCamera.viewport;
 
   drawings.GetCurrentDWG.wa.Drawer.DrawLine3DInModelSpace(p1,p2,matrixs);
   drawings.GetCurrentDWG.wa.Drawer.DrawLine3DInModelSpace(p2,point,matrixs);

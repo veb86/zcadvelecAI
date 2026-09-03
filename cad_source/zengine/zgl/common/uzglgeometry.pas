@@ -29,11 +29,13 @@ type
   PZGLGraphix=^ZGLGraphix;
   PZPolySegmentData=^ZPolySegmentData;
   ZPolySegmentData= record
-    startpoint,endpoint,dir:TzePoint3d;
+    startpoint,endpoint:TzePoint3d;
+    dir:TzeVector3d;
     length,nlength,naccumlength,accumlength:Double;
   end;
   ZSegmentator=object(GZVector<ZPolySegmentData>)
-    dir,cp:TzePoint3d;
+    dir:TzeVector3d;
+    cp:TzePoint3d;
     cdp,angle:Double;
     pcurrsegment:PZPolySegmentData;
     ir:itrec;
@@ -330,8 +332,8 @@ function CalcSegment(const startpoint,endpoint:TzePoint3d;out segment:ZPolySegme
 begin
      segment.startpoint:=startpoint;
      segment.endpoint:=endpoint;
-     segment.dir:=VertexSub(endpoint,startpoint);
-     segment.length:={Vertexlength}startpoint.LengthTo(endpoint);
+     segment.dir:=endpoint-startpoint;
+     segment.length:=startpoint.LengthTo(endpoint);
      segment.accumlength:=prevlength+segment.length;
      segment.naccumlength:=segment.accumlength;
      result:=segment.accumlength;
@@ -429,7 +431,7 @@ begin
      cdp:=pcurrsegment^.naccumlength;
      pcurrsegment:=psegment;
      dir:=pcurrsegment^.dir;
-     angle:=Vertexangle(CreateVertex2D(0,0),CreateVertex2D(dir.x,dir.y));
+     angle:=VectorAngle(dir.Slice);
      cp:=pcurrsegment^.startpoint;
      end;
 //     else
@@ -439,7 +441,7 @@ procedure ZSegmentator.startdraw;
 begin
      pcurrsegment:=beginiterate(ir);
      dir:=pcurrsegment^.dir;
-     angle:=Vertexangle(CreateVertex2D(0,0),CreateVertex2D(dir.x,dir.y));
+     angle:=VectorAngle(dir.Slice);
      cdp:=0;
      cp:=pcurrsegment^.startpoint;
 end;
@@ -496,9 +498,9 @@ begin
                            mentrot:=CreateRotationMatrixZ(LineAngle)
                        else
                            mentrot:=cOneMatrix;
-    madd:=CreateTranslationMatrix(CreateVector(param.x*Scale,param.y*Scale,0));
-    mtrans:=CreateTranslationMatrix(CreateVector(PInsert.x,PInsert.y,PInsert.z));
-    mscale:=CreateScaleMatrix(CreateVector(param.Height*Scale,param.Height*Scale,param.Height*Scale));
+    madd:=CreateTranslationMatrix(TzeVector3d.Make(param.x*Scale,param.y*Scale,0));
+    mtrans:=CreateTranslationMatrix(TzeVector3d.Make(PInsert.x,PInsert.y,PInsert.z));
+    mscale:=CreateScaleMatrix(TzeVector3d.Make(param.Height*Scale,param.Height*Scale,param.Height*Scale));
     result:=cOneMatrix;
     result:=MatrixMultiply(result,mscale);
     result:=MatrixMultiply(result,mrot);
@@ -520,9 +522,9 @@ begin
                            mentrot:=CreateRotationMatrixZ(LineAngle)
                        else
                            mentrot:=cOneMatrix;
-    madd:=CreateTranslationMatrix(CreateVector(param.x*Scale,param.y*Scale,0));
-    mtrans:=CreateTranslationMatrix(CreateVector(PInsert.x,PInsert.y,PInsert.z));
-    mscale:=CreateScaleMatrix(CreateVector(param.Height*Scale,param.Height*Scale,param.Height*Scale));
+    madd:=CreateTranslationMatrix(TzeVector3d.Make(param.x*Scale,param.y*Scale,0));
+    mtrans:=CreateTranslationMatrix(TzeVector3d.Make(PInsert.x,PInsert.y,PInsert.z));
+    mscale:=CreateScaleMatrix(TzeVector3d.Make(param.Height*Scale,param.Height*Scale,param.Height*Scale));
     result:=cOneMatrix;
     result:=MatrixMultiply(result,mscale);
 
@@ -530,8 +532,8 @@ begin
     if (param.AD<>TACAbs) then
     if isNotReadableAngle(LineAngle) then
     begin
-    madd2:=CreateTranslationMatrix(CreateVector(dx*Scale,dy*Scale,0));
-    madd3:=CreateTranslationMatrix(CreateVector(-dx*Scale,-dy*Scale,0));
+    madd2:=CreateTranslationMatrix(TzeVector3d.Make(dx*Scale,dy*Scale,0));
+    madd3:=CreateTranslationMatrix(TzeVector3d.Make(-dx*Scale,-dy*Scale,0));
     mrot2:=CreateRotationMatrixZ(pi);
     result:=MatrixMultiply(result,madd3);
     result:=MatrixMultiply(result,mrot2);
@@ -664,7 +666,8 @@ end;
 procedure ZSegmentator.draw(var rc:TDrawContext;length:Double;paint:boolean;var dr:TLLDrawResult);
 var
   tcdp:Double;
-  oldcp,tv:TzePoint3d;
+  oldcp:TzePoint3d;
+  tv:TzeVector3d;
 begin
   if cdp<1 then begin
     tcdp:=length+cdp;
@@ -675,8 +678,8 @@ begin
     if (cdp>=-eps)and(tcdp>eps) then begin
       if tcdp<=(pcurrsegment.naccumlength+eps) then begin
         oldcp:=cp;
-        tv:={VertexMulOnSc}(dir*(length/pcurrsegment.nlength));
-        cp:=cp+tv.asVector;
+        tv:=dir*(length/pcurrsegment.nlength);
+        cp:=cp+tv;
         if paint then
           self.PGeom.DrawLineWithoutLT(rc,oldcp,cp,dr);
         cdp:=tcdp;
@@ -804,7 +807,7 @@ begin
   end else begin
     //LT:=getLTfromVP(vp);
     FirstLinePrimitiveindex:=LLprimitives.Count;
-    length:={Vertexlength}startpoint.LengthTo(endpoint);//длина линии
+    length:=startpoint.LengthTo(endpoint);//длина линии
     scale:=DC.DrawingContext.GlobalLTScale*vp.LineTypeScale;//фактический масштаб линии
     num:=trunc(Length/(scale*LT.strokesarray.LengthFact));//количество повторений шаблона
     if ((num<1)and(not LT^.WithoutLines))or(num>SysVarRDMaxLTPatternsInEntity) then begin

@@ -176,12 +176,12 @@ end;
 
 function TSmartTextEntExtender.isDefault:boolean;
 begin
-  result:=(FExtensionLine and FBaseLine)and(IsDoubleEqual(FExtensionLineStartShift,ExtensionLineStartShiftDef))
-        and(IsDoubleEqual(FLeaderStartDrawDist,ExtensionLeaderStartDrawDist))
-        and(IsDoubleEqual(FTextHeightOverride,ExtensionTextHeightOverrideDef))
+  result:=(FExtensionLine and FBaseLine)and(SameValue(FExtensionLineStartShift,ExtensionLineStartShiftDef))
+        and(SameValue(FLeaderStartDrawDist,ExtensionLeaderStartDrawDist))
+        and(SameValue(FTextHeightOverride,ExtensionTextHeightOverrideDef))
         and FHJOverride and FVJOverride
-        and(IsDoubleEqual(FBaseLineOffset.x,BaseLineOffsetDef.x))and((IsDoubleEqual(FBaseLineOffset.y,BaseLineOffsetDef.y)))
-        and FRotateOverride and (IsDoubleEqual(FRotateOverrideValue,RotateOverrideValueDef));
+        and(SameValue(FBaseLineOffset.x,BaseLineOffsetDef.x))and((SameValue(FBaseLineOffset.y,BaseLineOffsetDef.y)))
+        and FRotateOverride and (SameValue(FRotateOverrideValue,RotateOverrideValueDef));
 end;
 
 procedure TSmartTextEntExtender.Assign(Source:TBaseExtender);
@@ -416,7 +416,7 @@ begin
           V1:=PGDBObjEntity(pEntity)^.bp.ListPos.owner^.GetMatrix^.mtr.v[0].Slice.asPoint3d;
           a:=FRotateOverrideValue*pi/180;
           SinCos(a,sine,cosine);
-          l0:=scalardot(V1.Normalized.asVector,CreateVector(cosine,sine,0));
+          l0:=scalardot(V1.Normalized.asVector,TzeVector3d.Make(cosine,sine,0));
           l0:=arccos(l0);
           if v1.y<-eps then l0:=2*pi-l0;
         end else
@@ -474,23 +474,23 @@ begin
         dxfStringWithoutEncodeOut(outStream,1000,'STEExtensionLine=FALSE');
       if not FBaseLine then
         dxfStringWithoutEncodeOut(outStream,1000,'STEBaseLineLine=FALSE');
-      if not IsDoubleEqual(FExtensionLineStartShift,ExtensionLineStartShiftDef)then
+      if not SameValue(FExtensionLineStartShift,ExtensionLineStartShiftDef)then
         dxfStringWithoutEncodeOut(outStream,1000,'STEExtensionLineStartShift='+FloatToStr(FExtensionLineStartShift));
-      if not IsDoubleEqual(FLeaderStartDrawDist,ExtensionLeaderStartDrawDist)then
+      if not SameValue(FLeaderStartDrawDist,ExtensionLeaderStartDrawDist)then
         dxfStringWithoutEncodeOut(outStream,1000,'STELeaderStartDrawDist='+FloatToStr(FLeaderStartDrawDist));
-      if not IsDoubleEqual(FTextHeightOverride,ExtensionTextHeightOverrideDef)then
+      if not SameValue(FTextHeightOverride,ExtensionTextHeightOverrideDef)then
         dxfStringWithoutEncodeOut(outStream,1000,'STETextHeightOverride='+FloatToStr(FTextHeightOverride));
       if not FHJOverride then
         dxfStringWithoutEncodeOut(outStream,1000,'STEHJOverride=FALSE');
       if not FVJOverride then
         dxfStringWithoutEncodeOut(outStream,1000,'STEVJOverride=FALSE');
-      if not IsDoubleEqual(FBaseLineOffset.x,BaseLineOffsetDef.x)then
+      if not SameValue(FBaseLineOffset.x,BaseLineOffsetDef.x)then
         dxfStringWithoutEncodeOut(outStream,1000,'STEBaseLineOffsetX='+FloatToStr(FBaseLineOffset.x));
-      if not IsDoubleEqual(FBaseLineOffset.y,BaseLineOffsetDef.y)then
+      if not SameValue(FBaseLineOffset.y,BaseLineOffsetDef.y)then
         dxfStringWithoutEncodeOut(outStream,1000,'STEBaseLineOffsetY='+FloatToStr(FBaseLineOffset.y));
       if not FRotateOverride then
         dxfStringWithoutEncodeOut(outStream,1000,'STERotateOverride=FALSE');
-      if not IsDoubleEqual(FRotateOverrideValue,RotateOverrideValueDef)then
+      if not SameValue(FRotateOverrideValue,RotateOverrideValueDef)then
         dxfStringWithoutEncodeOut(outStream,1000,'STERotateOverrideValue='+FloatToStr(FRotateOverrideValue));
     end;
 end;

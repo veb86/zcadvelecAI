@@ -123,10 +123,10 @@ TSMAccumulation:begin
 end;
 class procedure TZEntsManipulator.CreateSeparator(var NodeBB:TBoundingBox;var TestNode:TGeomEntTreeNode.TTestNode;var PFirstStageData:pointer;const NodeNum:integer);
 var
-   v:TzePoint3d;
+   v:TzeVector3d;
    axis:integer;
 begin
-   v:=VertexSub(NodeBB.RTF,NodeBB.LBN);
+   v:=(NodeBB.RTF-NodeBB.LBN);
    if v.x>v.y then
               begin
                    if v.x>v.z then
@@ -141,7 +141,7 @@ begin
                           else
                               axis:=2
               end;
-   FirstStageData.midlepoint:={VertexMulOnSc}(NodeBB.RTF+NodeBB.LBN.asVector)*0.5;
+   FirstStageData.midlepoint:=(NodeBB.RTF+NodeBB.LBN.asVector)*0.5;
    FirstStageData.d:=sqrt(sqr(FirstStageData.midlepoint.x) + sqr(FirstStageData.midlepoint.y) + sqr(FirstStageData.midlepoint.z));
 case axis of
       0:TestNode.plane:=uzegeometry.PlaneFrom3Pont(FirstStageData.midlepoint,

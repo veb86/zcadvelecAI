@@ -89,7 +89,7 @@ type
       virtual; //<**Пересечение с линией описанной 2-я точками
     procedure ReCalcFromObjMatrix;virtual;
 
-    function GetTangentInPoint(const point:TzePoint3d):TzePoint3d;virtual;
+    function GetTangentInPoint(const point:TzePoint3d):TzeVector3d;virtual;
     procedure AddOnTrackAxis(var posr:os_record;
       const processaxis:taddotrac);virtual;
     function onpoint(var objects:TZctnrVectorPGDBaseEntity;
@@ -129,17 +129,18 @@ end;
 
 procedure GDBObjCircle.AddOnTrackAxis(var posr:os_record;const processaxis:taddotrac);
 var
-  tv,dir:TzePoint3d;
+  tv:TzePoint3d;
+  dir:TzeVector3d;
 begin
-  dir:=VertexSub(P_insert_in_WCS,posr.worldcoord);
-  processaxis(posr,dir);
-  tv:=vectordot(dir.asVector,cV3d__0__0__1).asPoint3d;
+  dir:=P_insert_in_WCS-posr.worldcoord;
+  processaxis(posr,dir.asPoint3d);
+  tv:=vectordot(dir,cV3d__0__0__1).asPoint3d;
   processaxis(posr,tv);
 end;
 
-function GDBObjCircle.GetTangentInPoint(const point:TzePoint3d):TzePoint3d;
+function GDBObjCircle.GetTangentInPoint(const point:TzePoint3d):TzeVector3d;
 begin
-  Result:=vectordot(P_insert_in_WCS-point,self.Local.basis.oz).Normalized.asPoint3d;
+  Result:=vectordot(P_insert_in_WCS-point,self.Local.basis.oz).Normalized;
 end;
 
 procedure GDBObjCircle.ReCalcFromObjMatrix;
@@ -179,10 +180,10 @@ begin
         Result.isintercept:=True;
         if abs(1-abs(t1))<abs(1-abs(t2)) then begin
           Result.t1:=t1;
-          Result.interceptcoord:=Vertexmorph(lbegin,lend,Result.t1);
+          Result.interceptcoord:=lbegin.LerpTo(lend,Result.t1);
         end else begin
           Result.t1:=t2;
-          Result.interceptcoord:=Vertexmorph(lbegin,lend,Result.t1);
+          Result.interceptcoord:=lbegin.LerpTo(lend,Result.t1);
         end;
       end else
         Result.isintercept:=False;
@@ -261,10 +262,10 @@ begin
       EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
     calcObjMatrix;
     createpoint(dc);
-    q0:=VectorTransform3d(CreateVertex(1,0,0),objMatrix);
-    q1:=VectorTransform3d(CreateVertex(0,-1,0),objMatrix);
-    q2:=VectorTransform3d(CreateVertex(-1,0,0),objMatrix);
-    q3:=VectorTransform3d(CreateVertex(0,1,0),objMatrix);
+    q0:=VectorTransform3d(cP3d__1__0__0,objMatrix);
+    q1:=VectorTransform3d(cP3d__0_m1__0,objMatrix);
+    q2:=VectorTransform3d(cP3d_m1__0__0,objMatrix);
+    q3:=VectorTransform3d(cP3d__0__1__0,objMatrix);
     calcbb(dc);
   end;
   CalcActualVisible(dc.DrawingContext.VActuality);
@@ -282,10 +283,10 @@ var
   t,b,l,r,n,f:double;
   i:integer;
 begin
-  outbound[0]:=VectorTransform3d(CreateVertex(-1,1,0),objMatrix);
-  outbound[1]:=VectorTransform3d(CreateVertex(1,1,0),objMatrix);
-  outbound[2]:=VectorTransform3d(CreateVertex(1,-1,0),objMatrix);
-  outbound[3]:=VectorTransform3d(CreateVertex(-1,-1,0),objMatrix);
+  outbound[0]:=VectorTransform3d(TzePoint3d.Make(-1,1,0),objMatrix);
+  outbound[1]:=VectorTransform3d(TzePoint3d.Make(1,1,0),objMatrix);
+  outbound[2]:=VectorTransform3d(TzePoint3d.Make(1,-1,0),objMatrix);
+  outbound[3]:=VectorTransform3d(TzePoint3d.Make(-1,-1,0),objMatrix);
 
   l:=outbound[0].x;
   r:=outbound[0].x;
@@ -308,8 +309,8 @@ begin
       f:=outbound[i].z;
   end;
 
-  vp.BoundingBox.LBN:=CreateVertex(l,B,n);
-  vp.BoundingBox.RTF:=CreateVertex(r,T,f);
+  vp.BoundingBox.LBN:=TzePoint3d.Make(l,B,n);
+  vp.BoundingBox.RTF:=TzePoint3d.Make(r,T,f);
 end;
 
 procedure GDBObjCircle.createpoint(var DC:TDrawContext);
@@ -331,8 +332,8 @@ begin
   pvertex:=circlepointoflod[l].beginiterate(ir);
   if pvertex<>nil then
     repeat
-      PzePoint2d(@tv)^:=pvertex^;
-      tv.z:=0;
+      tv.Slice:=pvertex^;
+      tv.CutOff:=0;
       v:=VectorTransform3D(tv,objmatrix);
       Vertex3D_in_WCS_Array.PushBackData(v);
       pvertex:=circlepointoflod[l].iterate(ir);
@@ -496,11 +497,9 @@ begin
         plane:=PlaneFrom3Pont(q0,q1,q2);
         Normalizeplane(plane);
         if PointOfRayPlaneIntersect(param.md.mouseraywithoutOS.lbegin,
-          param.md.mouseraywithoutOS.dir.asPoint3d,plane,tv)
+          param.md.mouseraywithoutOS.dir,plane,tv)
         then begin
-          n:=tv-P_insert_in_WCS;
-          n.Normalize;
-          n:={VertexMulOnSc}(n{.asPoint3d}*radius){.asVector3d};
+          n:=(tv-P_insert_in_WCS).Normalized*radius;
           osp.worldcoord:=P_insert_in_WCS+n;
           ProjectProc(osp.worldcoord,tv);
           osp.dispcoord:=tv;
@@ -521,23 +520,23 @@ begin
   if pdesc^.pointtype=os_center then begin
     pdesc.worldcoord:=P_insert_in_WCS;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_q0 then begin
     pdesc.worldcoord:=q0;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_q1 then begin
     pdesc.worldcoord:=q1;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_q2 then begin
     pdesc.worldcoord:=q2;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_q3 then begin
     pdesc.worldcoord:=q3;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 

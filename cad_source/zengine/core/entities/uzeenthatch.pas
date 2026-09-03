@@ -221,7 +221,7 @@ procedure GDBObjHatch.SaveToDXFPostProcess(var outStream:TZctnrVectorBytes;
   var IODXFContext:TIODXFSaveContext;AAPS:TAdditionalPostProcess=nil;AAPSData:PtrUInt=0);
 begin
   inherited;
-  if not IsVectorNul(Origin.asVector) then
+  if not Origin.IsNul then
     dxfvertexout(outStream,1010,Origin);
 end;
 
@@ -304,11 +304,11 @@ var
   newdrawlen:double;
 begin
   if Strokes.Count=0 then
-    Representation.CreateLineWithoutLT(DC,self,ObjMatrix,CreateVertex(p1.x,p1.y,0),CreateVertex(p2.x,p2.y,0))
+    Representation.CreateLineWithoutLT(DC,self,ObjMatrix,TzePoint3d.Make(p1.x,p1.y,0),TzePoint3d.Make(p2.x,p2.y,0))
   else begin
     dir:=(p2-p1).Normalized;
     t:=Scale*normalizeT(st*Strokes.LengthFact,Strokes.LengthFact);
-    l:={Vertexlength2d}p1.LengthTo(p2);
+    l:=p1.LengthTo(p2);
     findInterval(Strokes,Scale,t,cl,c);
     drawedlen:=0;
     p:=p1;
@@ -324,16 +324,16 @@ begin
       end;
       newdrawlen:=drawedlen+abs(d);
       if d=0 then
-        Representation.CreatePoint(DC,self,vp,ObjMatrix,CreateVertex(p.x,p.y,0))
+        Representation.CreatePoint(DC,self,vp,ObjMatrix,TzePoint3d.Make(p.x,p.y,0))
       else if d>0 then begin
         if newdrawlen<=l then begin
           pp.x:=p.x+dir.x*abs(d);
           pp.y:=p.y+dir.y*abs(d);
-          Representation.CreateLineWithoutLT(DC,self,ObjMatrix,CreateVertex(p.x,p.y,0),CreateVertex(pp.x,pp.y,0));
+          Representation.CreateLineWithoutLT(DC,self,ObjMatrix,TzePoint3d.Make(p.x,p.y,0),TzePoint3d.Make(pp.x,pp.y,0));
         end else begin
           pp.x:=p.x+dir.x*(d-(newdrawlen-l));
           pp.y:=p.y+dir.y*(d-(newdrawlen-l));
-          Representation.CreateLineWithoutLT(DC,self,ObjMatrix,CreateVertex(p.x,p.y,0),CreateVertex(pp.x,pp.y,0));
+          Representation.CreateLineWithoutLT(DC,self,ObjMatrix,TzePoint3d.Make(p.x,p.y,0),TzePoint3d.Make(pp.x,pp.y,0));
         end;
       end else begin
         pp.x:=p.x-dir.x*d;
@@ -485,18 +485,18 @@ begin
               inc(i);
             end;
           end;
-
+          current:=1;
           if i<(IV.Size-1) then begin
           with IV.Mutable[IV.Size-1]^ do begin
             p1:=@i2dprop.interceptcoord;
             t1:=i2dprop.t1;
             First:=LIC.C;
           end;
-          j:=IV.Size-1;
+          j:=IV.Size-2;
           while j>i do begin
             with IV.Mutable[j]^ do begin
               p2:=@i2dprop.interceptcoord;
-              if Odd(i) then begin
+              if Odd(current) then begin
                 DrawStrokes(Strokes,t1,p1^,p2^,DC);
                 if first<>LIC.c then
                   break;
@@ -504,6 +504,7 @@ begin
               p1:=p2;
               First:=LIC.C;
               dec(j);
+              inc(current);
             end;
           end;
           end;
@@ -567,7 +568,7 @@ begin
   dirx.x:=(Strokes.Offset.x*cosA-Strokes.Offset.y*sinA)*Scale;
   dirx.y:=(Strokes.Offset.y*cosA+Strokes.Offset.x*sinA)*Scale;
 
-  offs:={Vertex2dMulOnSc}(Strokes.Base*Scale);
+  offs:=Strokes.Base*Scale;
   //Origin надо учитывать при копировании паттерна из шаблона
   //offs:=VertexAdd(offs,Vertex2dMulOnSc(Origin,Scale));
 
@@ -710,12 +711,12 @@ begin
         f:=ptv.z;
       ptv:=Vertex3D_in_WCS_Array.iterate(ir);
     until ptv=nil;
-    vp.BoundingBox.LBN:=CreateVertex(l,B,n);
-    vp.BoundingBox.RTF:=CreateVertex(r,T,f);
+    vp.BoundingBox.LBN:=TzePoint3d.Make(l,B,n);
+    vp.BoundingBox.RTF:=TzePoint3d.Make(r,T,f);
 
   end else begin
-    vp.BoundingBox.LBN:=CreateVertex(-1,-1,-1);
-    vp.BoundingBox.RTF:=CreateVertex(1,1,1);
+    vp.BoundingBox.LBN:=TzePoint3d.Make(-1,-1,-1);
+    vp.BoundingBox.RTF:=TzePoint3d.Make(1,1,1);
   end;
 end;
 
@@ -804,7 +805,7 @@ begin
   vertexnumber:=pdesc^.vertexnum;
   pdesc.worldcoord:=GDBPoint3dArray.PTArr(Vertex3D_in_WCS_Array.parray)^[vertexnumber];
   ProjectProc(pdesc.worldcoord,tv);
-  pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+  pdesc.dispcoord:=tv.Slice.asPoint2i;
 end;
 
 procedure GDBObjHatch.AddControlpoints;

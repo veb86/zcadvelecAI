@@ -176,7 +176,7 @@ begin
   end;
   d13:=DimData.P10InWCS-DimData.P13InWCS;
   d14:=DimData.P10InWCS-DimData.P14InWCS;
-  if SqrOneVertexlength(d13)<SqrOneVertexlength(d14) then
+  if d13.SqrLength<d14.SqrLength then
     DimData.P10InWCS:=DimData.P14InWCS+d13;
 end;
 
@@ -184,8 +184,8 @@ constructor GDBObjGenericDimension.initnul;
 begin
   inherited initnul(owner);
   bp.ListPos.Owner:=owner;
-  DimData.P13InWCS:=createvertex(1,1,0);
-  DimData.P14InWCS:=createvertex(300,1,0);
+  DimData.P13InWCS:=TzePoint3d.Make(1,1,0);
+  DimData.P14InWCS:=TzePoint3d.Make(300,1,0);
   DimType:=TDimType.DTRotated;
   DimData.TextMoved:=False;
 end;
@@ -193,8 +193,8 @@ end;
 constructor GDBObjGenericDimension.init;
 begin
   inherited init(own,layeraddres,lw);
-  DimData.P13InWCS:=createvertex(1,1,0);
-  DimData.P14InWCS:=createvertex(300,1,0);
+  DimData.P13InWCS:=TzePoint3d.Make(1,1,0);
+  DimData.P14InWCS:=TzePoint3d.Make(300,1,0);
   DimType:=TDimType.DTRotated;
   DimData.TextMoved:=False;
 end;

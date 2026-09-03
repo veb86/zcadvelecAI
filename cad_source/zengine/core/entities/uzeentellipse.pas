@@ -22,7 +22,7 @@ interface
 uses
   uzeentityfactory,uzeentsubordinated,uzgldrawcontext,uzedrawingdef,uzecamera,
   uzeentwithlocalcs,uzestyleslayers,
-  UGDBSelectedObjArray,uzeentity,UGDBOutbound2DIArray,UGDBPoint3DArray,
+  UGDBSelectedObjArray,uzeentity,UGDBPoint3DArray,
   uzegeometrytypes,uzctnrVectorBytesStream,varman,uzsbVarmanDef,uzeTypes,uzeconsts,
   uzglviewareadata,uzegeometry,uzeffdxfsupport,uzeentplain,
   uzeSnap,Math,uzMVReader,uzCtnrVectorpBaseEntity;
@@ -212,7 +212,7 @@ var
   l:double;
 begin
   inherited CalcObjMatrix;
-  l:=onevertexlength(majoraxis);
+  l:={onevertexlength}(majoraxis.Length);
   m1:=CreateScaleMatrix(l,ratio*l,1);
   objmatrix:=matrixmultiply(m1,objmatrix);
   v.Slice.Slice:=local.p_insert.Slice.asVector;
@@ -232,9 +232,9 @@ begin
     EntExtensions.RunOnBeforeEntityFormat(@self,drawing,DC);
 
   if self.Ratio<=1 then
-    rr:=uzegeometry.oneVertexlength(majoraxis)
+    rr:={uzegeometry.oneVertexlength}(majoraxis.Length)
   else
-    rr:=uzegeometry.oneVertexlength(majoraxis)*ratio;
+    rr:={uzegeometry.oneVertexlength}(majoraxis.Length)*ratio;
 
   calcObjMatrix;
   angle:=endangle-startangle;
@@ -270,10 +270,10 @@ var
   t,b,l,rrr,n,f:double;
   i:integer;
 begin
-  outbound[0]:=VectorTransform3d(CreateVertex(-1,1,0),objMatrix);
-  outbound[1]:=VectorTransform3d(CreateVertex(1,1,0),objMatrix);
-  outbound[2]:=VectorTransform3d(CreateVertex(1,-1,0),objMatrix);
-  outbound[3]:=VectorTransform3d(CreateVertex(-1,-1,0),objMatrix);
+  outbound[0]:=VectorTransform3d(TzePoint3d.Make(-1,1,0),objMatrix);
+  outbound[1]:=VectorTransform3d(TzePoint3d.Make(1,1,0),objMatrix);
+  outbound[2]:=VectorTransform3d(TzePoint3d.Make(1,-1,0),objMatrix);
+  outbound[3]:=VectorTransform3d(TzePoint3d.Make(-1,-1,0),objMatrix);
   l:=outbound[0].x;
   rrr:=outbound[0].x;
   t:=outbound[0].y;
@@ -295,8 +295,8 @@ begin
       f:=outbound[i].z;
   end;
 
-  vp.BoundingBox.LBN:=CreateVertex(l,B,n);
-  vp.BoundingBox.RTF:=CreateVertex(rrr,T,f);
+  vp.BoundingBox.LBN:=TzePoint3d.Make(l,B,n);
+  vp.BoundingBox.RTF:=TzePoint3d.Make(rrr,T,f);
 end;
 
 procedure GDBObjEllipse.createpoint;
@@ -392,15 +392,15 @@ begin
   if pdesc^.pointtype=os_begin then begin
     pdesc.worldcoord:=q0;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_midle then begin
     pdesc.worldcoord:=q1;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end else if pdesc^.pointtype=os_end then begin
     pdesc.worldcoord:=q2;
     ProjectProc(pdesc.worldcoord,tv);
-    pdesc.dispcoord:={ToTzePoint2i}(tv.Slice.asPoint2i);
+    pdesc.dispcoord:=tv.Slice.asPoint2i;
   end;
 end;
 
@@ -522,8 +522,8 @@ begin
     Local.p_insert.z:=0;
     tv.x:=p_x;
     tv.y:=p_y;
-    startangle:=vertexangle(tv,ptdata.p1);
-    endangle:=vertexangle(tv,ptdata.p3);
+    startangle:=VectorAngle(ptdata.p1-tv);
+    endangle:=VectorAngle(ptdata.p3-tv);
     if startangle>endangle then begin
       rrr:=
         startangle;
@@ -531,7 +531,7 @@ begin
         endangle;
       endangle:=rrr;
     end;
-    rrr:=vertexangle(tv,ptdata.p2);
+    rrr:=VectorAngle(ptdata.p2-tv);
     if (rrr>startangle) and (rrr<endangle) then begin
     end
     else begin
