@@ -106,6 +106,7 @@ uses
   uzvconsts,
   uzvmanemgetgem,
   uzegeometry,
+  uzegeometrytypes,
   Varman;
 
 
@@ -196,6 +197,63 @@ begin
   Result :=
     (AJSON <> nil) and
     (AJSON.JSONType = jtArray);
+end;
+
+
+{=============================================================================
+  ПРИМЕНЕНИЕ ТРАНСФОРМАЦИИ И ПЕРЕНОС В ЧЕРТЁЖ
+=============================================================================}
+
+procedure ApplyTransformToConstructRootAndMoveToDrawing(
+  const APoint: TzePoint3d;
+  const ACommandName: String
+);
+var
+  pcd: PTZCADDrawing;
+  pobj: pGDBObjEntity;
+  ir: itrec;
+  t_matrix: TzeTypedMatrix4d;
+  RC: TDrawContext;
+begin
+  pcd := PTZCADDrawing(drawings.GetCurrentDWG);
+  
+  {-------------------------------------------------------------------------
+    Применяем трансформацию к объектам в ConstructRoot.
+    Устройство было создано в точке (0,0,0), теперь перемещаем его
+    в указанную точку установки.
+  -------------------------------------------------------------------------}
+  
+  t_matrix := uzegeometry.CreateTranslationMatrix(APoint.asVector);
+  
+  pobj := pcd^.GetConstructObjRoot.ObjArray.beginiterate(ir);
+  if pobj <> nil then
+  repeat
+    pobj^.transform(t_matrix);
+    pobj := pcd^.GetConstructObjRoot.ObjArray.iterate(ir);
+  until pobj = nil;
+  
+  {-------------------------------------------------------------------------
+    Сбрасываем матрицу объекта ConstructRoot
+  -------------------------------------------------------------------------}
+  
+  drawings.GetCurrentDWG^.ConstructObjRoot.ObjMatrix := cOneMatrix;
+  
+  {-------------------------------------------------------------------------
+    Форматируем объекты после трансформации
+  -------------------------------------------------------------------------}
+  
+  RC := drawings.GetCurrentDWG^.CreateDrawingRC;
+  drawings.GetCurrentDWG^.ConstructObjRoot.FormatEntity(
+    drawings.GetCurrentDWG^,
+    RC
+  );
+  
+  {-------------------------------------------------------------------------
+    Переносим объекты из ConstructRoot в чертёж с записью в Undo
+  -------------------------------------------------------------------------}
+  
+  zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(ACommandName);
+  
 end;
 
 
@@ -989,12 +1047,12 @@ begin
       Device
     );
 
-    //zcMoveEntsFromConstructRootToCurrentDrawingWithUndo(
-    //  'HTTP_INSERT_DEV'
-    //);
-
-         if commandmanager.MoveConstructRootTo(rscmSpecifyFirstPoint)=IRNormal then //двигаем их
-       zcMoveEntsFromConstructRootToCurrentDrawingWithUndo('ExampleConstructToModalSpace'); //если все ок, копируем в чертеж
+    // Переносим устройство из конструкторской области в чертёж
+    // HTTP-вызов происходит вне контекста обычной команды, поэтому
+    // commandmanager.MoveConstructRootTo не работает (CurrCmd.pcommandrunning = nil).
+    // Вместо этого применяем трансформацию вручную на основе координат из запроса,
+    // а затем переносим объекты с записью в Undo.
+    ApplyTransformToConstructRootAndMoveToDrawing(Point, 'HTTP_INSERT_DEV');
 
     {=======================================================================
       Результат
