@@ -1939,9 +1939,9 @@ begin
         { Загружаем стили таблиц из секции OBJECTS.
           TABLESTYLE объекты находятся в OBJECTS, а не в TABLES,
           поэтому обрабатываем их отдельно после извлечения сырой секции. }
-        ReadTableStylesFromDXFObjects(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          dwgCtx.PDrawing^.DXFTableStyleTable);
+        //ReadTableStylesFromDXFObjects(
+        //  dwgCtx.PDrawing^.RawObjectsSection,
+        //  dwgCtx.PDrawing^.DXFTableStyleTable);
 
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);

@@ -139,7 +139,7 @@ begin
   Center := FTransformer.Transform(Ellipse^.Local.P_insert);
   
   // Большая полуось (длина вектора MajorAxis)
-  MajorRadius := oneVertexlength(Ellipse^.MajorAxis);
+  MajorRadius := Ellipse^.MajorAxis.Length;
   // Малая полуось (через Ratio)
   MinorRadius := MajorRadius * Ellipse^.Ratio;
   
@@ -208,7 +208,7 @@ begin
   begin
     Vertex2D := LW^.Vertex2D_in_OCS_Array.getData(i);
     // Преобразуем 2D точку в 3D (Z=0)
-    Vertex3D := CreateVertex(Vertex2D.x, Vertex2D.y, 0);
+    Vertex3D := TzePoint3d.make(Vertex2D.x, Vertex2D.y, 0);
     Points[i] := FTransformer.Transform(Vertex3D);
     FGeometry.AddPoint(Points[i].X, Points[i].Y);
   end;

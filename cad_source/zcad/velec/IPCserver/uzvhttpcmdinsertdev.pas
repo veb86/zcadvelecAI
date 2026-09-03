@@ -295,7 +295,7 @@ begin
 
 
   PDevice^.scale :=
-    uzegeometry.CreateVector(
+    TZeVector3d.make(
       AScaleX,
       AScaleY,
       1

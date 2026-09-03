@@ -203,10 +203,10 @@ begin
 
   // Создаем матрицу поворота вокруг центра дуги (как в RotateEnts_com)
 
-  dispmatr := uzegeometry.CreateTranslationMatrix(CreateVector(-pa2^.P_insert_in_WCS.x, -pa2^.P_insert_in_WCS.y, -pa2^.P_insert_in_WCS.z));
+  dispmatr := uzegeometry.CreateTranslationMatrix(TZeVector3d.make(-pa2^.P_insert_in_WCS.x, -pa2^.P_insert_in_WCS.y, -pa2^.P_insert_in_WCS.z));
   rotmatr := uzegeometry.CreateRotationMatrixZ(rotationAngle);
   rotmatr := uzegeometry.MatrixMultiply(dispmatr, rotmatr);
-  dispmatr := uzegeometry.CreateTranslationMatrix(CreateVector(pa2^.P_insert_in_WCS.x, pa2^.P_insert_in_WCS.y, pa2^.P_insert_in_WCS.z));
+  dispmatr := uzegeometry.CreateTranslationMatrix(TZeVector3d.make(pa2^.P_insert_in_WCS.x, pa2^.P_insert_in_WCS.y, pa2^.P_insert_in_WCS.z));
   dispmatr := uzegeometry.MatrixMultiply(rotmatr, dispmatr);
 
   pa2^.transform(dispmatr);
@@ -250,10 +250,10 @@ begin
   rotationAngle := 30 * PI / 180;
   LogMessage(Format('   Угол поворота: %.6f (%.2f°)', [rotationAngle, AngleToDeg(rotationAngle)]));
 
-  dispmatr := uzegeometry.CreateTranslationMatrix(CreateVector(-pa3^.P_insert_in_WCS.x, -pa3^.P_insert_in_WCS.y, -pa3^.P_insert_in_WCS.z));
+  dispmatr := uzegeometry.CreateTranslationMatrix(TZeVector3d.make(-pa3^.P_insert_in_WCS.x, -pa3^.P_insert_in_WCS.y, -pa3^.P_insert_in_WCS.z));
   rotmatr := uzegeometry.CreateRotationMatrixZ(rotationAngle);
   rotmatr := uzegeometry.MatrixMultiply(dispmatr, rotmatr);
-  dispmatr := uzegeometry.CreateTranslationMatrix(CreateVector(pa3^.P_insert_in_WCS.x, pa3^.P_insert_in_WCS.y, pa3^.P_insert_in_WCS.z));
+  dispmatr := uzegeometry.CreateTranslationMatrix(TZeVector3d.make(pa3^.P_insert_in_WCS.x, pa3^.P_insert_in_WCS.y, pa3^.P_insert_in_WCS.z));
   dispmatr := uzegeometry.MatrixMultiply(rotmatr, dispmatr);
 
   pa3^.transform(dispmatr);

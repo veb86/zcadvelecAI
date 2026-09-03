@@ -2727,16 +2727,15 @@ end;
 function GDBObjAcadTable.ContinuationPartGripPointInWCS(
   APartIndex: Integer): TzePoint3d;
 var
-  LocalOffset: TzePoint3d;
+  LocalOffset: TzeVector3d;
 begin
   Result := P_insert_in_WCS;
   if (APartIndex < 0) or
      (APartIndex > High(FContinuationParts)) then
     Exit;
 
-  LocalOffset := VertexSub(
-    FContinuationParts[APartIndex].InsertPoint, FInsertPoint);
-  Result := VectorTransform3D(LocalOffset, objMatrix);
+  LocalOffset := FContinuationParts[APartIndex].InsertPoint - FInsertPoint;
+  Result := VectorTransform3D(LocalOffset, objMatrix).asPoint3d;
 end;
 
 function GDBObjAcadTable.BreakHeightGripPointInWCS(
@@ -2749,7 +2748,7 @@ begin
   Result := P_insert_in_WCS;
   if APartNumber = 0 then
   begin
-    LocalOffset := CreateVertex(
+    LocalOffset := TzePoint3d.make(
       GetTotalWidth / 2,
       -GetTotalHeight,
       0);
@@ -2767,8 +2766,7 @@ begin
   PartHeight := uzeacadtable_layout.GetTotalHeight(
     FContinuationParts[PartIdx].RowCount,
     FContinuationParts[PartIdx].RowHeights);
-  LocalOffset := VertexSub(
-    FContinuationParts[PartIdx].InsertPoint, FInsertPoint);
+  LocalOffset := (FContinuationParts[PartIdx].InsertPoint- FInsertPoint).asPoint3d;
   LocalOffset.x := LocalOffset.x + PartWidth / 2;
   LocalOffset.y := LocalOffset.y - PartHeight;
   Result := VectorTransform3D(LocalOffset, objMatrix);
@@ -2789,8 +2787,7 @@ begin
       Result := FBreakHeight
     else
     begin
-      PartInsertOffset := VertexSub(
-        FContinuationParts[PartIdx].InsertPoint, FInsertPoint);
+      PartInsertOffset := (FContinuationParts[PartIdx].InsertPoint - FInsertPoint).asPoint3d;
       Result := PartInsertOffset.y - ALocalOffset.y;
     end;
   end;
@@ -3513,7 +3510,7 @@ begin
   begin
     if DecodeBreakHeightGripVertex(rtmod.point.vertexnum, PartNumber) then
     begin
-      NewGripPoint := VertexAdd(rtmod.point.worldcoord, rtmod.dist);
+      NewGripPoint := rtmod.point.worldcoord + rtmod.dist.asVector;
       M := objMatrix;
       MatrixInvert(M);
       LocalOffset := VectorTransform3D(NewGripPoint, M);
@@ -3544,12 +3541,12 @@ begin
     PartIdx := rtmod.point.vertexnum - 1;
     if (PartIdx >= 0) and (PartIdx <= High(FContinuationParts)) then
     begin
-      NewGripPoint := VertexAdd(rtmod.point.worldcoord, rtmod.dist);
+      NewGripPoint := rtmod.point.worldcoord + rtmod.dist.asVector;
       M := objMatrix;
       MatrixInvert(M);
       LocalOffset := VectorTransform3D(NewGripPoint, M);
       FContinuationParts[PartIdx].InsertPoint :=
-        VertexAdd(FInsertPoint, LocalOffset);
+        FInsertPoint + LocalOffset.asVector;
       FBreakManualPosition := True;
       FBreakManualPositionExplicit := True;
       SetBreakManualPositionForParts(True);
@@ -3584,11 +3581,9 @@ begin
   if (FRowCount <= 0) or (FColCount <= 0) then
   begin
     vp.BoundingBox.LBN :=
-      VertexAdd(Local.P_insert,
-        CreateVertex(-0.01, -0.01, 0));
+      Local.P_insert + TzePoint3d.make(-0.01, -0.01, 0).asVector;
     vp.BoundingBox.RTF :=
-      VertexAdd(Local.P_insert,
-        CreateVertex(0.01, 0.01, 0));
+      Local.P_insert + TzePoint3d.make(0.01, 0.01, 0).asVector;
     Exit;
   end;
 
@@ -3621,9 +3616,9 @@ begin
   end;
 
   vp.BoundingBox.LBN :=
-    CreateVertex(MinX, MinY, Local.P_insert.z);
+    TzePoint3d.make(MinX, MinY, Local.P_insert.z);
   vp.BoundingBox.RTF :=
-    CreateVertex(MaxX, MaxY, Local.P_insert.z);
+    TzePoint3d.make(MaxX, MaxY, Local.P_insert.z);
 end;
 
 // --- Методы сущности ---

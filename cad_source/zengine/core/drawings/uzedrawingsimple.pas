@@ -28,7 +28,8 @@ uses
   uzestyleslayers,uzestyleslinetypes,uzeentity,UGDBSelectedObjArray,
   uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
   uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
-  uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity;
+  uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity,
+  uzestylestablesdxf;
 
 type
   TMainBlockCreateProc=procedure(_to:PTDrawingDef;Name:string) of object;
@@ -63,6 +64,22 @@ type
 
       DrawingExtensions:TDrawingExtensions;
 
+       { Таблица стилей таблиц для DXF-обмена.
+         Используется только при загрузке и сохранении DXF. }
+       DXFTableStyleTable: GDBDXFTableStyleArray;
+
+
+      { Сырой текст секции CLASSES из исходного DXF-файла.
+      Сохраняется при загрузке и записывается обратно при сохранении,
+      чтобы не потерять определения пользовательских классов. }
+      RawClassesSection: string;
+      { Сырой текст секции OBJECTS из исходного DXF-файла.
+       Содержит словари, XRECORD, VISUALSTYLE и другие объекты,
+       которые ZCAD не обрабатывает, но AutoCAD требует при открытии. }
+      RawObjectsSection: string;
+
+
+
       {styles}
       BlockDefArray:GDBObjBlockdefArray;
       TextStyleTable:GDBTextStyleArray;
@@ -89,6 +106,8 @@ type
     function GetTableStyleTable:PGDBTableStyleArray;virtual;
     function GetTextStyleTable:PGDBTextStyleArray;virtual;
     function GetDimStyleTable:PGDBDimStyleArray;virtual;
+    { Возвращает таблицу DXF-стилей таблиц для DXF-обмена }
+    function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;
     function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
     procedure RotateCameraInLocalCSXY(ux,uy:double);virtual;
     procedure MoveCameraInLocalCSXY(oldx,oldy:double;ax:TzeVector3d);virtual;
@@ -608,6 +627,11 @@ end;
 function TSimpleDrawing.GetDimStyleTable:PGDBDimStyleArray;
 begin
   Result:=@self.DimStyleTable;
+end;
+
+function TSimpleDrawing.GetDXFTableStyleTable:PGDBDXFTableStyleArray;
+begin
+     result:=@DXFTableStyleTable;
 end;
 
 procedure TSimpleDrawing.SetCurrentDWG;

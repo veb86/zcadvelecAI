@@ -189,7 +189,7 @@ end;
 function TransformTextPoint(TextObj: PGDBObjText;
   const TextMatrix: TzeTypedMatrix4d; X, Y: double): TzePoint3d;
 begin
-  Result := CreateVertex(X, Y, 0);
+  Result := TzePoint3d.make(X, Y, 0);
   Result := VectorTransform3D(Result, TextMatrix);
   Result := VectorTransform3D(Result, TextObj^.objmatrix);
 end;
@@ -263,7 +263,7 @@ begin
       MTextObj^.textprop.wfactor;
 
   lineTranslation := CreateTranslationMatrix(
-    CreateVector(LinePtr^.x - obliqueOffset, LinePtr^.y, 0));
+    TZeVector3d.make(LinePtr^.x - obliqueOffset, LinePtr^.y, 0));
   Result := MatrixMultiply(lineTranslation, Result);
 end;
 

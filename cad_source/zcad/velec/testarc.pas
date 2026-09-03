@@ -166,10 +166,10 @@ begin
   // В ZCAD матрицы транспонированы (перенос в 4-й строке), векторы умножаются справа: v' = v * M
   // Порядок умножения: M = T(-center) * R * T(center)
   // То есть: сначала T(center), потом R, потом T(-center)
-  dispmatr := CreateTranslationMatrix(CreateVector(centerPoint.x, centerPoint.y, centerPoint.z));
+  dispmatr := CreateTranslationMatrix(TZeVector3d.make(centerPoint.x, centerPoint.y, centerPoint.z));
   rotMatrix := CreateRotationMatrixZ(rotationAngle);
   rotMatrix := MatrixMultiply(rotMatrix, dispmatr);  // R * T(center)
-  dispmatr := CreateTranslationMatrix(CreateVector(-centerPoint.x, -centerPoint.y, -centerPoint.z));
+  dispmatr := CreateTranslationMatrix(TZeVector3d.make(-centerPoint.x, -centerPoint.y, -centerPoint.z));
   rotMatrix := MatrixMultiply(dispmatr, rotMatrix);  // T(-center) * (R * T(center))
   
   LogMessage(Format('   Матрица поворота [0,0]=%.4f, [0,1]=%.4f, [1,0]=%.4f, [1,1]=%.4f', 
