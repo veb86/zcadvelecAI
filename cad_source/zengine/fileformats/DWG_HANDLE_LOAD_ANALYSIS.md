@@ -12,6 +12,25 @@
 - `DWGRefHandleCandidatesValue` ставит `Ref^.obj^.handle.value` первым кандидатом, затем `absolute_ref`, затем `handleref.value`, что повторяет поведение `fpdwginspect` (`cad_source/components/fpdwg/uzedwghandle.pas:372-399`).
 - Регрессии закрыты тестами `ResolvedObjectHandleWinsOverAbsoluteRef`, `RefHandleCandidatesPreferResolvedObjectHandle`, `ObjectHandleNormalizeUsesObjectRefAbsoluteRefs` и `ObjectHandleNormalizePreservesFullHandleAgainstTruncatedRef` (`cad_source/zengine/fileformats/dwg/tests/uzedwgtestdwgproc.pas:309-451`).
 
+## Дополнение по issue #1221
+
+Новые данные из `zcad.log`, `.dwg.owners.csv`, `.dwg.refs.csv` и `.dwg.handles.csv` показывают, что после уже добавленной защиты от `absolute_ref -> obj.handle.value` проблема проявляется раньше: в raw scan сам `Dwg_Object.handle.value` приходит как `FFFF, 0, 1, 2...`, а `handles.csv` заканчивается на `FFFF`. Это означает, что handle ломается до регистрации shell-ов и resolver-а; side files только фиксируют уже поврежденный raw-поток.
+
+Самая сильная проверяемая гипотеза для #1221 - ZCAD и `fpdwginspect` фактически используют разные бинарники LibreDWG:
+
+- `fpdwginspect` лежит рядом с `cad_source/components/fpdwg/fpdwginspect/libredwg-0.dll` (`sha256=20cf92d51abc8c27f1af623f68aa4f4d90cf4993737ceac4bc482b237f1f781b`, PE timestamp `2026-03-18`).
+- Runtime ZCAD для `x86_64-win64` брал `environment/runtimefiles/x86_64-win64/common/bin/libredwg-0.dll` (`sha256=0e3302aec058b0c4d28554ed8ad8317b473c3f6bd67e1d0262f22668b57262d0`, PE timestamp `2024-02-26`).
+- `Makefile` при сборке/подготовке окружения копирует `environment/runtimefiles/$(ZPLATFORM)/common/*` в рабочий `cad/bin`, а `fpdwginspect --lib=libredwg-0.dll` обычно берет DLL из своего каталога. Поэтому ручное сравнение могло идти через новый LibreDWG в инспекторе и старый LibreDWG в основном ZCAD.
+
+План устранения для #1221:
+
+1. Синхронизировать `environment/runtimefiles/x86_64-win64/common/bin/libredwg-0.dll` с тем DLL, который уже используется `fpdwginspect` и читает проблемный DWG корректно.
+2. Пересобрать/обновить runtime ZCAD, чтобы `LoadLibrary('libredwg-0.dll')` получил новый DLL из `cad/bin`.
+3. Повторить загрузку с `ZCAD_DWG_DIAG=trace` и `ZCAD_DWG_TARGET_HANDLES=A325E`.
+4. Проверить, что raw trace больше не содержит переход `FFFF -> 0 -> 1`, а показывает полные handle выше `FFFF` (`10000`, `10001`, ... или фактический `A325E`).
+5. Проверить side files: `.dwg.handles.csv` должен содержать handle выше `FFFF`, а предупреждения `Raw scan: duplicate handle 1/2/...` должны исчезнуть для последовательности после `FFFF`.
+6. Если после синхронизации DLL проблема сохранится, следующий шаг - не "дорисовывать" старшие биты в Pascal по монотонности массива, а сначала добавить в лог точную версию/путь загруженного LibreDWG и сравнить raw output с внешним `dwgread` на том же DLL. Искусственное восстановление `10000 + low16` можно делать только как последний fallback, потому что DWG handle не обязан быть строго непрерывным во всех файлах.
+
 ## Где загружаются и используются handle
 
 ### Низкоуровневые структуры LibreDWG
