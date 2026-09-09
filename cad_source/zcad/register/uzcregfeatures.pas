@@ -13,39 +13,47 @@
 *****************************************************************************
 }
 {
-@author(Andrey Zubarev <zamtmn@yandex.ru>)
+@author(Andrey Zubarev <zamtmn@yandex.ru>) 
 }
-{$mode delphi}
-unit uzccommand_options;
 
+unit uzcRegFeatures;
 {$INCLUDE zengineconfig.inc}
 
 interface
 
-uses
-  uzcLog,
-  uzccommandsabstract,uzccommandsimpl,
-  uzcinterface,
-  uzcdrawings,
-  Varman,
-  uzcsysvars,
-  uzcstrconsts;
+uses uzcsysvars,
+     uzcinterface,uzedrawingsimple,uzcdrawings,uzccommandsmanager;
 
 implementation
 
-function Options_com(const Context:TZCADCommandContext;
-  operands:TCommandOperands):TCommandResult;
+type
+
+  TDummy=class
+    class procedure AutoSaveIdleHandler(var Done:boolean);
+  end;
+
+
+class procedure TDummy.AutoSaveIdleHandler(var Done:boolean);
+var
+  pdwg:PTSimpleDrawing;
 begin
-  zcUI.Do_PrepareObject(nil,drawings.GetUnitsFormat,SysUnit.TypeName2PTD(
-    'gdbsysvariable'),@sysvar,drawings.GetCurrentDWG);
-  zcUI.TextMessage(rscmOptions2OI,TMWOMessageBox);
-  Result:=cmd_ok;
+  pdwg:=drawings.GetCurrentDWG;
+  if pdwg<>nil then
+    if (not pdwg^.GetChangeStampt)or(pdwg.wa=nil) then
+      SysVar.SAVE.SAVE_Auto_Current_Interval^:=SysVar.SAVE.SAVE_Auto_Interval^;
+
+  if(SysVar.SAVE.SAVE_Auto_Current_Interval^<1)and(commandmanager.CurrCmd.pcommandrunning=nil)then
+    if pdwg<>nil then
+      if (pdwg.wa.param.SelDesc.Selectedobjcount=0) then begin
+        commandmanager.executecommandsilent('QSave(QS)',drawings.GetCurrentDWG,
+          drawings.GetCurrentOGLWParam);
+        SysVar.SAVE.SAVE_Auto_Current_Interval^:=SysVar.SAVE.SAVE_Auto_Interval^;
+      end;
 end;
 
 initialization
-  programlog.LogOutFormatStr(clUInit,[{$INCLUDE %FILE%}],LM_Info,UnitsInitializeLMId);
-  CreateZCADCommand(@Options_com,'Options',0,0);
+  zcUI.RegisterHandlerIdle(TDummy.AutoSaveIdleHandler);
 
 finalization
-  ProgramLog.LogOutFormatStr(clUFin,[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
 end.
+

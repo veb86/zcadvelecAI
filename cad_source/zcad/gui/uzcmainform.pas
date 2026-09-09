@@ -36,7 +36,7 @@ uses
   uzctnrVectorBytesStream,uzeTypes,
   uzcsysvars,uzcstrconsts,uzcLog,uzbLogTypes,uzbLog,
   uzsbVarmanDef,varman,UUnitManager,uzcsysinfo,
-  uzestylestexts,uzestylesdim,uzvhttpipc,
+  uzestylestexts,uzestylesdim,
   uzbexceptionscl,uzbexceptionsgui,
   {ZCAD ENTITIES}
   uzegeometrytypes,uzeentity,UGDBSelectedObjArray,uzestyleslayers,uzedrawingsimple,
@@ -59,10 +59,8 @@ uses
   uzcenitiesvariablesextender,uzglviewareageneral,UniqueInstanceRaw,
   uzmacros,uzcviewareacxmenu,uzccommand_quit,uzeMouseTimer,
   uzccommand_multiselect2objinsp{$IfDef LINUX},BaseUnix{$EndIf},uzbUnits,
-  uzbUnitsUtils;
-
-resourcestring
-  rsClosed='Closed';
+  uzbUnitsUtils,
+  uzglbackendmanager;
 
 type
   TZInfoProgress=class(TPanel)
@@ -137,6 +135,7 @@ type
     function GetEntsDesc(ents:PGDBObjOpenArrayOfPV):string;
     procedure waSetObjInsp(Sender:{TAbstractViewArea}TObject;GUIAction:TzcMessageID);
     procedure WaShowCursor(Sender:TAbstractViewArea;var DC:TDrawContext);
+    procedure WaActivate(Sender:TAbstractViewArea);
 
     //Long process support - draw progressbar. See uzelongprocesssupport unit
     procedure StartLongProcess(LPHandle:TLPSHandle;Total:TLPSCounter;
@@ -157,6 +156,7 @@ type
     procedure myKeyDown(Sender:TObject;var Key:word;Shift:TShiftState);
 
     procedure idle(Sender:TObject;var Done:boolean);virtual;
+    procedure GUIIdleHandler(var Done:boolean);
     procedure GeneralTick(Sender:TObject);
     procedure ShowFastMenu(Sender:TObject);
     procedure asynccloseapp(Data:PtrInt);
@@ -195,12 +195,18 @@ type
     procedure SwithToHintText;
 
     procedure DropFiles(Sender:TObject;const FileNames:array of string);
+    function GetActiveDocumentControl:TObject;
+    function getActiveDocumentControlIndex:Integer;
+    procedure setActiveDocumentControlIndex(AIdx:Integer);
+    function GetDocumentControl(AIdx:Integer):TComponent;
+    function GetDocumentControlsCount:Integer;
+    function CreateDWGDocumentControl(var ADrawing:TSimpleDrawing;ACaption:string;
+      out ViewControl:TCADControl;out ViewArea:TAbstractViewArea):TComponent;
   end;
 
 var
   zcMainForm:TzcMainForm;
 
-function IsRealyQuit:boolean;
 procedure RunCmdFile(const filename:string;pdata:pointer);
 
 implementation
@@ -209,6 +215,87 @@ implementation
 
 var
   LMD:TModuleDesk;
+
+function TzcMainForm.GetActiveDocumentControl:TObject;
+begin
+  if PageControl<>nil then
+    result:=PageControl.ActivePage
+  else
+    result:=nil;
+end;
+function TzcMainForm.getActiveDocumentControlIndex:Integer;
+begin
+  if PageControl<>nil then
+    result:=PageControl.ActivePageIndex
+  else
+    result:=-1;
+end;
+procedure TzcMainForm.setActiveDocumentControlIndex(AIdx:Integer);
+begin
+  if PageControl<>nil then
+    PageControl.ActivePageIndex:=AIdx;
+  ChangedDWGTab(zcMainForm.PageControl);
+end;
+
+function TzcMainForm.GetDocumentControl(AIdx:Integer):TComponent;
+begin
+  if PageControl<>nil then
+    result:=PageControl.Pages[AIdx]
+  else
+    result:=nil;
+end;
+function TzcMainForm.GetDocumentControlsCount:Integer;
+begin
+  if PageControl<>nil then
+    result:=PageControl.PageCount
+  else
+    result:=0;
+end;
+
+function TzcMainForm.CreateDWGDocumentControl(var ADrawing:TSimpleDrawing;ACaption:string;
+  out ViewControl:TCADControl;out ViewArea:TAbstractViewArea):TComponent;
+var
+  tsheet:TTabSheet;
+  //ViewArea:TAbstractViewArea;
+  //ViewControl:TCADControl;
+begin
+  if not assigned(PageControl) then
+    DockMaster.ShowControl('PageControl',True);
+  tsheet:=TTabSheet.Create(PageControl);
+  tsheet.Caption:=ACaption;
+  tsheet.Parent:=PageControl;
+
+  ViewArea:=GetCurrentBackEnd.Create(tsheet);
+  ViewArea.onCameraChanged:=zcMainForm.correctscrollbars;
+  ViewArea.OnWaMouseUp:=zcMainForm.wamu;
+  ViewArea.OnWaMouseDown:=zcMainForm.wamd;
+  ViewArea.OnWaMouseMove:=zcMainForm.wamm;
+  ViewArea.OnWaKeyPress:=zcMainForm.wakp;
+  ViewArea.OnWaMouseSelect:=zcMainForm.wams;
+  ViewArea.OnGetEntsDesc:=zcMainForm.GetEntsDesc;
+  ViewArea.ShowCXMenu:=zcMainForm.ShowCXMenu;
+  ViewArea.MainMouseMove:=zcMainForm.MainMouseMove;
+  ViewArea.MainMouseDown:=zcMainForm.MainMouseDown;
+  ViewArea.MainMouseUp:=zcMainForm.MainMouseUp;
+  ViewArea.OnWaShowCursor:=zcMainForm.WaShowCursor;
+  ViewArea.OnActivateProc:=zcMainForm.WaActivate;
+  ViewArea.OnDrawHeplGeometry:=CommandManager.DrawCommandHelpGeometry;
+  ADrawing.wa:=ViewArea;
+  ViewArea.PDWG:=@ADrawing;
+
+  drawings.SetCurrentDWG(@ADrawing);
+
+  ViewControl:=ViewArea.getviewcontrol;
+  ViewControl.align:=alClient;
+  ViewControl.Parent:=tsheet;
+  ViewControl.Visible:=True;
+  ViewArea.getareacaps;
+  ViewArea.WaResize(nil);
+  ViewControl.Show;
+  zcMainForm.PageControl.ActivePage:=tsheet;
+
+  result:=tsheet;
+end;
 
 procedure TzcMainForm.SwithToProcessBar;
 begin
@@ -614,75 +701,6 @@ begin
   ScrollArray(@CommandsHistory,0,k);
   SetArrayTop(@CommandsHistory,Command,Command,'');
   CheckArray(@CommandsHistory,low(Commandshistory),high(Commandshistory));
-end;
-
-function IsRealyQuit:boolean;
-var
-  pint:PInteger;
-  //mem:TZctnrVectorBytes;
-  i:integer;
-  dr:TZCMsgDialogResult;
-  GVA:TGeneralViewArea;
-begin
-  Result:=False;
-  if zcMainForm.PageControl<>nil then begin
-    for i:=0 to zcMainForm.PageControl.PageCount-1 do begin
-      GVA:=TGeneralViewArea(FindComponentByType(
-        TTabSheet(zcMainForm.PageControl.Pages[i]),TGeneralViewArea));
-      if {poglwnd}GVA<>nil then begin
-        if {poglwnd.wa}GVA.PDWG.GetChangeStampt then
-        begin
-          Result:=
-            True;
-          system.break;
-        end;
-      end;
-    end;
-
-  end;
-  begin
-    if not Result then begin
-      if drawings.GetCurrentDWG<>nil then
-        //i:=zcMainForm.messagebox(@rsQuitQuery[1],@rsQuitCaption[1],MB_YESNO or MB_ICONQUESTION)
-        dr:=
-          zcMsgDlg(rsQuitQuery,zcdiQuestion,[zccbYes,zccbNo],False,nil,rsQuitCaption)
-      else
-        dr.ModalResult:=ZCmrYes;
-    end else
-      dr.ModalResult:=ZCmrYes;
-    if dr.ModalResult=ZCmrYes then begin
-      Result:=True;
-
-          {if sysvar.SYS.SYS_IsHistoryLineCreated<>nil then
-          if sysvar.SYS.SYS_IsHistoryLineCreated^ then}
-      begin
-        pint:=SavedUnit.FindValue('DMenuX').Data.Addr.Instance;
-        if assigned(pint) then
-          pint^:=commandmanager.DMenu.Left;
-        pint:=SavedUnit.FindValue('DMenuY').Data.Addr.Instance;
-        if assigned(pint) then
-          pint^:=commandmanager.DMenu.Top;
-
-        pint:=SavedUnit.FindValue('VIEW_ObjInspSubV').Data.Addr.Instance;
-        if assigned(pint) then
-          if assigned(GetNameColWidthProc) then
-            pint^:=GetNameColWidthProc;
-        pint:=SavedUnit.FindValue('VIEW_ObjInspV').Data.Addr.Instance;
-        if assigned(pint) then
-          if assigned(GetOIWidthProc) then
-            pint^:=GetOIWidthProc;
-
-        if assigned(InfoForm) then
-          StoreBoundsToSavedUnit('TEdWND_',InfoForm.BoundsRect);
-
-          (*mem.init(1024);
-          SavedUnit^.SavePasToMem(mem);
-          mem.SaveToFile(expandpath(DataPath+'rtl'+PathDelim+'savedvar.pas'));
-          mem.done;*)
-      end;
-    end else
-      Result:=False;
-  end;
 end;
 
 procedure TzcMainForm.asynccloseapp(Data:PtrInt);
@@ -1100,11 +1118,20 @@ begin
       FromDirsIterator(sysvar.PATH.Preload_Paths^,'*.cmd0','stage0.cmd0',RunCmdFile,nil);
 
       CreateAnchorDockingInterface;
+
+      zcUI.onGetActiveDocumentControl:=GetActiveDocumentControl;
+      zcUI.onGetActiveDocumentControlIndex:=GetActiveDocumentControlIndex;
+      zcUI.onSetActiveDocumentControlIndex:=SetActiveDocumentControlIndex;
+      zcUI.onGetDocumentControl:=GetDocumentControl;
+      zcUI.onGetDocumentControlsCount:=GetDocumentControlsCount;
+      zcUI.onCreateDWGDocumentControl:=CreateDWGDocumentControl;
+
       zcUI.Do_GUIaction(nil,zcMsgUIActionRedraw);
       MouseTimer:=TMouseTimer.Create;
       SetupFIPCServer;
       fNeedUpdateMainMenu:=True;
       DoUpdateMainMenu;
+      zcUI.RegisterHandlerIdle(GUIIdleHandler);
     finally
       programlog.leave(IfEntered);
     end;
@@ -1339,6 +1366,19 @@ begin
   InfoProgress:=TZInfoProgress.CreateOnTB(tb);
 end;
 
+procedure TzcMainForm.GUIIdleHandler(var Done:boolean);
+begin
+  InfoProgress.SetText2;
+  DoUpdateMainMenu;
+
+  if RunTime<>SysVar.SYS.SYS_RunTime^ then begin
+    zcUI.Do_GUIaction(self,zcMsgUITimerTick);
+  end;
+  RunTime:=SysVar.SYS.SYS_RunTime^;
+  if ZCStatekInterface.CheckAndResetState(ZCSGUIChanged) then
+    zcUI.Do_SetNormalFocus;
+end;
+
 procedure TzcMainForm.idle(Sender:TObject;var Done:boolean);
 var
   pdwg:PTSimpleDrawing;
@@ -1346,25 +1386,23 @@ var
 begin
   with programlog.Enter('TZCADMainWindow.idle',LM_Debug,LMD) do begin
     try
-
-      InfoProgress.SetText2;
-
-      DoUpdateMainMenu;
-
       {IFDEF linux}
       if assigned(UniqueInstanceBase.FIPCServer) then
         if UniqueInstanceBase.FIPCServer.active then
           UniqueInstanceBase.FIPCServer.PeekMessage(0,True);
       {endif}
+	  done:=True;
 
       HTTPIPCProcessPendingCommands;
 
       done:=True;
+	
       sysvar.debug.languadedeb.UpdatePO:=_UpdatePO;
       sysvar.debug.languadedeb.NotEnlishWord:=_NotEnlishWord;
       sysvar.debug.languadedeb.DebugWord:=_DebugWord;
+
       pdwg:=drawings.GetCurrentDWG;
-      if (pdwg<>nil)and(pdwg.wa<>nil) then begin
+      if (pdwg<>nil)and(pdwg.wa<>nil) then
         if pdwg.wa.getviewcontrol<>nil then begin
           if pdwg.GetPCamera.DRAWNOTEND then begin
             rc:=pdwg.CreateDrawingRC;
@@ -1374,34 +1412,10 @@ begin
             pdwg.wa.idle(Sender,Done);
           end;
         end;
-      end else
-        SysVar.SAVE.SAVE_Auto_Current_Interval^:=SysVar.SAVE.SAVE_Auto_Interval^;
-      if pdwg<>nil then
-        if not pdwg^.GetChangeStampt then
-          SysVar.SAVE.SAVE_Auto_Current_Interval^:=SysVar.SAVE.SAVE_Auto_Interval^;
-      if (SysVar.SAVE.SAVE_Auto_Current_Interval^<1)and
-        (commandmanager.CurrCmd.pcommandrunning=nil) then
-        if (pdwg)<>nil then
-          if (pdwg.wa.param.SelDesc.Selectedobjcount=0) then begin
-            commandmanager.executecommandsilent(
-              'QSave(QS)',drawings.GetCurrentDWG,drawings.GetCurrentOGLWParam);
-            SysVar.SAVE.SAVE_Auto_Current_Interval^:=SysVar.SAVE.SAVE_Auto_Interval^;
-          end;
+
       date:=SysUtils.date;
-      if RunTime<>SysVar.SYS.SYS_RunTime^ then begin
-        zcUI.Do_GUIaction(self,zcMsgUITimerTick);
-      {if assigned(UpdateObjInspProc)then
-         UpdateObjInspProc;}
-      end;
-      RunTime:=SysVar.SYS.SYS_RunTime^;
-      if ZCStatekInterface.CheckAndResetState(ZCSGUIChanged) then
-        zcUI.Do_SetNormalFocus;
-    {if historychanged then begin
-      historychanged:=false;
-      HistoryLine.SelStart:=utflen;
-      HistoryLine.SelLength:=2;
-      HistoryLine.ClearSelection;
-    end;}
+
+      zcUI.Do_Idle(Done);
     finally
       programlog.leave(IfEntered);
     end;
@@ -1922,6 +1936,11 @@ begin
   end;
 end;
 
+procedure TzcMainForm.WaActivate(Sender:TAbstractViewArea);
+begin
+  drawings.SetCurrentDWG(Sender.PDWG);
+end;
+
 procedure TzcMainForm.waSetObjInsp;
 var
   tn:string;
@@ -2275,6 +2294,5 @@ initialization
   end
 
 finalization
-  ProgramLog.LogOutFormatStr('Unit "%s" finalization',[{$INCLUDE %FILE%}],
-    LM_Info,UnitsFinalizeLMId);
+  ProgramLog.LogOutFormatStr(clUFin,[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
 end.

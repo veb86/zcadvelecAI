@@ -130,35 +130,36 @@ begin
   end;
 end;
 
-function isGDBaseObjectInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
+{function isGDBaseObjectInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
 begin
   result:=false;
   if (PTypeDesc<>nil)and(PData<>nil) then
     if IsObjectIt(typeof(PTypeDesc^),typeof(ObjectDescriptor)) then
       if IsObjectIt(PObjectDescriptor(PTypeDesc)^.PVMT,typeof(GDBaseObject)) then
         result:=True;
-end;
+end;}
 
-function isEntityInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
+{function isEntityInstance(const PTypeDesc:PUserTypeDescriptor;const PData:pointer):boolean;
 begin
   result:=false;
   if (PTypeDesc<>nil)and(PData<>nil) then
     if IsObjectIt(typeof(PTypeDesc^),typeof(ObjectDescriptor)) then
       if IsObjectIt(PObjectDescriptor(PTypeDesc)^.PVMT,typeof(GDBObjEntity)) then
         result:=True;
-end;
+end;}
 
-procedure _onUpdateObjectInInsp(const EDContext:TEditorContext;const currobjgdbtype:PUserTypeDescriptor;const pcurcontext:pointer;const pcurrobj:pointer{;const GDBobj:boolean});
+procedure _onUpdateObjectInInsp(const EDContext:TEditorContext;const currobjgdbtype:PUserTypeDescriptor;const pcurcontext:pointer;const pcurrobj:pointer;const OnFieldModifyProc:TOnFieldModifyProc);
   function IsEntityInCurrentContext:boolean;
   begin
-    result:=PGDBObjEntity(pcurrobj).bp.ListPos.Owner=
-            PTDrawingDef(pcurcontext)^.GetCurrentRootSimple
+    result:=PGDBObjEntity(pcurrobj).bp.ListPos.Owner=PTDrawingDef(pcurcontext)^.GetCurrentRootSimple
   end;
 var
-   dc:TDrawContext;
+   //dc:TDrawContext;
    pdwg:PTSimpleDrawing;
 begin
-  if isGDBaseObjectInstance(currobjgdbtype,pcurrobj) then begin
+  if @OnFieldModifyProc<>nil then
+    OnFieldModifyProc(pcurrobj,EDContext.ppropcurrentedit^.valueAddres,currobjgdbtype);
+  {if isGDBaseObjectInstance(currobjgdbtype,pcurrobj) then begin
     dc:=PTDrawingDef(pcurcontext)^.CreateDrawingRC;
     if isEntityInstance(currobjgdbtype,pcurrobj) then begin
       PGDBObjEntity(pcurrobj)^.FormatEntity(PTDrawingDef(pcurcontext)^,dc);
@@ -170,7 +171,7 @@ begin
       if assigned(EDContext.ppropcurrentedit) then
         PGDBaseObject(pcurrobj)^.FormatAfterFielfmod(EDContext.ppropcurrentedit^.valueAddres,currobjgdbtype);
     end;
-  end;
+  end;}
   //zcUI.Do_GUIaction(nil,zcMsgUIResetOGLWNDProc);
   pdwg:=drawings.GetCurrentDWG;
   if pdwg<>nil then
@@ -382,6 +383,21 @@ begin
     result.control:=GDBobjinsp.PEditor.geteditor;
   end;
 end;
+
+procedure StoreOICfg(var AUnit:TSimpleUnit);
+var
+  pint:PInteger;
+begin
+  pint:=AUnit.FindValue('VIEW_ObjInspSubV').Data.Addr.Instance;
+  if assigned(pint) then
+    if assigned(GetNameColWidthProc) then
+      pint^:=GetNameColWidthProc;
+  pint:=AUnit.FindValue('VIEW_ObjInspV').Data.Addr.Instance;
+  if assigned(pint) then
+    if assigned(GetOIWidthProc) then
+      pint^:=GetOIWidthProc;
+end;
+
 var
   vd:vardesk;
 initialization
@@ -472,11 +488,11 @@ initialization
   //FreEditorProc:=FreEditor;
   zcUI.RegisterHandler_GUIAction(dummyclass.StoreAndFreeEditor);
   zcUI.RegisterHandler_GetFocusedControl(dummyclass.GetPeditorFocusPriority);
-  //StoreAndFreeEditorProc:=StoreAndFreeEditor;
+  zcUI.RegisterStoreProc(StoreOICfg);
   CreateZCADCommand(@ObjInspCopyToClip_com,'ObjInspCopyToClip',0,0).overlay:=true;
 
 finalization
   dummyclass.free;
-  ProgramLog.LogOutFormatStr('Unit "%s" finalization',[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
+  ProgramLog.LogOutFormatStr(clUFin,[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
 end.
 
