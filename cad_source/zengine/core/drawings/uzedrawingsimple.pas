@@ -632,10 +632,10 @@ begin
      result:=@DXFTableStyleTable;
 end;
 
-procedure TSimpleDrawing.SetCurrentDWG;
-begin
-
-end;
+//procedure TSimpleDrawing.SetCurrentDWG;
+//begin
+//
+//end;
 
 procedure TSimpleDrawing.MoveCameraInLocalCSXY(oldx,oldy:double;ax:TzeVector3d);
 var

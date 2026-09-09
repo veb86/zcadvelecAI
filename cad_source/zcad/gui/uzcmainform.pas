@@ -36,7 +36,7 @@ uses
   uzctnrVectorBytesStream,uzeTypes,
   uzcsysvars,uzcstrconsts,uzcLog,uzbLogTypes,uzbLog,
   uzsbVarmanDef,varman,UUnitManager,uzcsysinfo,
-  uzestylestexts,uzestylesdim,
+  uzestylestexts,uzestylesdim,uzvhttpipc,
   uzbexceptionscl,uzbexceptionsgui,
   {ZCAD ENTITIES}
   uzegeometrytypes,uzeentity,UGDBSelectedObjArray,uzestyleslayers,uzedrawingsimple,
