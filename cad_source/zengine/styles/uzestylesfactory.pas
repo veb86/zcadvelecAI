@@ -33,7 +33,8 @@ type
 
   TStyleDXFSaveProc=procedure(var outstream:TZctnrVectorBytes;
                               var drawing:TSimpleDrawing;
-                              var context:TIODXFSaveContext);
+                              var context:TIODXFSaveContext;
+                              const APlotTableHandle:TDWGHandle);
 
   TStyleDXFInfo=record
     DXFName:string;
