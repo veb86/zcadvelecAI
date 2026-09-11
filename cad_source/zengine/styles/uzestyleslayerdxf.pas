@@ -30,7 +30,6 @@ uses
   uzgldrawcontext,
   uzedrawingsimple,
   uzctnrVectorBytesStream,
-  uzbLogIntf,
   uzclog,
   uzestrconsts;
 
@@ -39,7 +38,7 @@ procedure LoadLayerFromDXF(var s:ansistring;const clayer:string;
   var ZCDCtx:TZDrawingContext;var context:TIODXFLoadContext);
 var
   byt:Integer;
-  lname,desk:String;
+  desk:String;
   nulisread:Boolean;
   player:PGDBLayerProp;
 begin
@@ -65,16 +64,9 @@ begin
           begin
             zDebugLn('{D}[DXF_CONTENTS]Found layer  '+s);
             s:=dxfDeCodeString(s,context.Header);
-            lname:=s;
             player:=ZCDCtx.PDrawing^.LayerTable.MergeItem(s,ZCDCtx.LoadMode);
             if player<>nil then
               player^.init(s);
-          end;
-        5:
-          begin
-            if player<>nil then
-              context.h2p.Add(DXFHandle(s),
-                TDXFHandle2ZCObject.TPointerWithType.CreateRec(player,OT_Layer));
           end;
         6:
           if player<>nil then
@@ -95,12 +87,6 @@ begin
               end;
             end;
           end;
-        1000:
-          begin
-            { Старые файлы могут содержать пользовательские XDATA в другом
-              порядке. Не изменяем существующую семантику: здесь значение
-              обрабатывается как описание только после AcAecLayerStandard. }
-          end;
         else
           begin
             if player<>nil then
@@ -117,21 +103,13 @@ begin
 end;
 
 procedure SaveLayerToDXF(var outstream:TZctnrVectorBytes;
-  var drawing:TSimpleDrawing;var context:TIODXFSaveContext);
+  var drawing:TSimpleDrawing;var context:TIODXFSaveContext;
+  const APlotTableHandle:TDWGHandle);
 var
   plp:PGDBLayerProp;
   ir:itrec;
   attr:Integer;
-  plottablehandle:TDWGHandle;
 begin
-  { Табличная запись LAYER получает хэндл текущего PLOTSTYLE TABLE. В
-    существующем writer этот хэндл вычисляется непосредственно перед
-    сериализацией LAYER. Сохраняем это значение через VarsDict, если оно
-    было подготовлено общим writer'ом; при отсутствии значения используем 0. }
-  plottablehandle:=0;
-  if not context.VarsDict.MyGetValue('$ZCAD_LAY_PLOTSTYLE_HANDLE',plottablehandle) then
-    plottablehandle:=0;
-
   plp:=drawing.LayerTable.beginiterate(ir);
   if plp<>nil then
     repeat
@@ -167,7 +145,7 @@ begin
       outstream.TXTAddStringEOL(dxfGroupCode(370));
       outstream.TXTAddStringEOL(IntToStr(plp^.lineweight));
       outstream.TXTAddStringEOL(dxfGroupCode(390));
-      outstream.TXTAddStringEOL(inttohex(plottablehandle,0));
+      outstream.TXTAddStringEOL(inttohex(APlotTableHandle,0));
 
       if plp^.desk<>'' then
       begin
