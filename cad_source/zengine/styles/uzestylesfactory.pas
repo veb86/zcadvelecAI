@@ -35,7 +35,7 @@ type
     var rdr: TZMemReader; const exitString: String; var ZCDCtx: TZDrawingContext;
     var context: TIODXFLoadContext);
 
-  TStyleDXFSaveProc = procedure(drawing: PGDBLayerArray; outstream: pointer);
+  TStyleDXFSaveProc = procedure(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes; var IODXFContext: TIODXFSaveContext);
 
   { Информация о зарегистрированном DXF-стиле }
   TStyleDXFInfo = record
