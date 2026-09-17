@@ -1,7 +1,3 @@
---- cad_source/zengine/styles/uzestylesfactory.pas (原始)
-
-
-+++ cad_source/zengine/styles/uzestylesfactory.pas (修改后)
 {
 *****************************************************************************
 *                                                                           *
@@ -28,9 +24,12 @@ interface
 
 uses
   sysutils, usimplegenerics, uzeffdxfsupport, UGDBNamedObjectsArray,
-  uzestyleslayers;
+  uzMVReader, uzeffmanager, gzctnrSTL, uzestyleslayers;
 
 type
+
+  PStyleDXFInfo = ^TStyleDXFInfo;
+
   { Типы процедур для чтения и записи DXF-стилей }
   TStyleDXFLoadProc = procedure(var s: ansistring; const styleParam: string;
     var rdr: TZMemReader; const exitString: String; var ZCDCtx: TZDrawingContext;
@@ -61,9 +60,6 @@ procedure RegisterDXFStyle(const _DXFName: String;
 function FindDXFStyle(const _DXFName: String): PStyleDXFInfo;
 
 implementation
-
-type
-  PStyleDXFInfo = ^TStyleDXFInfo;
 
 var
   StyleInfoStorage: array of TStyleDXFInfo;

@@ -28,7 +28,8 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf,
+  uzestylesfactory, uzestyleslayerdxf;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -1024,42 +1025,56 @@ begin
 end;
 procedure AddFromDXF12(var rdr:TZMemReader; const exitString: String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
-  LayerColor: Integer;
-  s, sname,scode,LayerName: String;
+  s, sname,scode: String;
   ErrorCode,GroupCode: Integer;
   tp: PGDBObjBlockdef;
   context:TIODXFLoadContext;
   lph:TLPSHandle;
+  clayer: string;
 begin
   s:='';
   lph:=lps.StartLongProcess('addfromdxf12',@rdr,rdr.CurrentPos);
   zDebugLn('{D+}AddFromDXF12');
   context.InitRec;
+  { Получаем имя текущего слоя из переменных DXF }
+  DWGVarsDict.mygetvalue('$CLAYER',clayer);
   while (not rdr.EOF) and (s <> exitString) do begin
     lps.ProgressLongProcess(lph,rdr.CurrentPos);
     s := rdr.ParseString;
     if s = dxfName_Layer then begin
       zDebugLn('{D+}[DXF_CONTENTS]Found layer table');
-      repeat
-        scode := rdr.ParseString;
-        sname := rdr.ParseString;
-        val(scode,GroupCode,ErrorCode);
-      until GroupCode=0;
-      repeat
-        if sname=dxfName_ENDTAB then system.break;
-        if sname<>dxfName_Layer then zDebugLn('{FM}''LAYER'' expected but '''+sname+''' found');
+
+      { Вызов обработчика через Style Registry для старого DXF }
+      var StyleInfo := FindDXFStyle('LAYER');
+      if Assigned(StyleInfo) then
+        StyleInfo^.LoadProc(s, clayer, rdr, exitString, ZCDCtx, context)
+      else
+      begin
+        { Fallback на упрощённую реализацию если registry не найден }
+        var LayerColor: Integer;
+        var LayerName: String;
         repeat
           scode := rdr.ParseString;
           sname := rdr.ParseString;
           val(scode,GroupCode,ErrorCode);
-          case GroupCode of
-            2:LayerName:=sname;
-            62:val(sname,LayerColor,ErrorCode);
-          end;{case}
         until GroupCode=0;
-        zDebugLn('{D}[DXF_CONTENTS]Found layer '+LayerName);
-        ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,true,'',TLOLoad);
-      until sname=dxfName_ENDTAB;
+        repeat
+          if sname=dxfName_ENDTAB then system.break;
+          if sname<>dxfName_Layer then zDebugLn('{FM}''LAYER'' expected but '''+sname+''' found');
+          repeat
+            scode := rdr.ParseString;
+            sname := rdr.ParseString;
+            val(scode,GroupCode,ErrorCode);
+            case GroupCode of
+              2:LayerName:=sname;
+              62:val(sname,LayerColor,ErrorCode);
+            end;{case}
+          until GroupCode=0;
+          zDebugLn('{D}[DXF_CONTENTS]Found layer '+LayerName);
+          ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,true,'',TLOLoad);
+        until sname=dxfName_ENDTAB;
+      end;
+
       zDebugLn('{D-}[DXF_CONTENTS]end; {layer table}');
     end else if s = 'BLOCKS' then begin
       zDebugLn('{D+}[DXF_CONTENTS]Found block table');
@@ -1243,72 +1258,9 @@ begin
     end;
   BShapeProp.Done;
 end;
-procedure ReadLayers(var s:ansistring; const clayer:string;var rdr:TZMemReader; const exitString: String;var ZCDCtx:TZDrawingContext;var context:TIODXFLoadContext);
-var
-byt: Integer;
-lname,desk: String;
-nulisread:boolean;
-player:PGDBLayerProp;
-begin
-  nulisread:=false;
-  gotodxf(rdr, 0, dxfName_Layer);
-  player:=nil;
-  while s = dxfName_Layer do
-  begin
-    byt := 2;
-    while byt <> 0 do
-    begin
-      if not nulisread then begin
-        byt:=rdr.ParseInteger;
-        s := rdr.ParseString;
-      end else
-        nulisread:=false;
-      case byt of
-        2:begin
-          zDebugLn('{D}[DXF_CONTENTS]Found layer  '+s);
-          s:=dxfDeCodeString(s,context.Header);
-          lname:=s;
-          player:=ZCDCtx.PDrawing^.LayerTable.MergeItem(s,ZCDCtx.LoadMode);
-          if player<>nil then
-            player^.init(s);
-        end;
-        6:if player<>nil then
-          player^.LT:=ZCDCtx.PDrawing^.LTypeStyleTable.getAddres(dxfDeCodeString(s,context.Header));
-        1001:begin
-          if s='AcAecLayerStandard' then begin
-            s := rdr.ParseString;
-            byt:=strtoint(s);
-            if byt<>0 then begin
-              s := rdr.ParseString;
-              s := rdr.ParseString;
-              byt:=strtoint(s);
-              if byt<>0 then begin
-                dxfLoadString(rdr,desk,context.Header);
-                //desk := rdr.ParseString;
-                if player<>nil then
-                  player^.desk:=desk;
-              end else begin
-                nulisread:=true;
-                s:=rdr.ParseString;
-              end;
-            end else begin
-                nulisread:=true;
-                s := rdr.ParseString;
-            end;
-          end;
-        end;
-        else begin
-          if player<>nil then
-            player^.SetValueFromDxf(byt,s);
-        end;
-      end;
-    end;
-    if ZCDCtx.PDrawing^.CurrentLayer=nil then
-      ZCDCtx.PDrawing^.CurrentLayer:=player
-    else if lname=clayer then
-      ZCDCtx.PDrawing^.CurrentLayer:=player;
-  end;
-end;
+
+{ Процедура ReadLayers удалена - перенесена в uzestyleslayerdxf.pas }
+
 procedure ReadTextstyles(var s:ansistring; const ctstyle:string;var rdr:TZMemReader; const exitString: String;var ZCDCtx:TZDrawingContext;var context:TIODXFLoadContext;const LogProc:TZELogProc=nil);
 var
   tstyle:GDBTextStyle;
@@ -1715,7 +1667,15 @@ begin
                       else if s = dxfName_Layer{:}then
                                     begin
                                       zDebugLn('{D+}[DXF_CONTENTS]Found layer table');
-                                      ReadLayers(s,clayer,rdr,exitString,ZCDCtx,context);
+                                      { Вызов обработчика через Style Registry }
+                                      var StyleInfo := FindDXFStyle('LAYER');
+                                      if Assigned(StyleInfo) then
+                                        StyleInfo^.LoadProc(s, clayer, rdr, exitString, ZCDCtx, context)
+                                      else
+                                      begin
+                                        { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
+                                        zDebugLn('{W}LAYER style handler not found in registry');
+                                      end;
                                       zDebugLn('{D-}[DXF_CONTENTS]end; {layer table}');
                                     end
                       else if s = dxfName_LType{:}then

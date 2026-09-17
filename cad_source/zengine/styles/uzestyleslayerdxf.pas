@@ -1,7 +1,3 @@
---- cad_source/zengine/styles/uzestyleslayerdxf.pas (原始)
-
-
-+++ cad_source/zengine/styles/uzestyleslayerdxf.pas (修改后)
 {
 *****************************************************************************
 *                                                                           *
@@ -27,7 +23,8 @@ unit uzestyleslayerdxf;
 interface
 
 uses
-  sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory;
+  sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory,
+  uzMVReader, uzeffmanager, uzbLogIntf,gzctnrVectorTypes;
 
 { Процедура чтения таблицы LAYER из DXF }
 procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
@@ -40,8 +37,40 @@ procedure SaveLayerToDXF(drawing: PGDBLayerArray; outstream: pointer);
 implementation
 
 uses
-  uzeconsts, uzeTypes, UGDBNamedObjectsArray, uzctnrVectorBytesStream,
-  uzeffdxfsupport;
+  uzeconsts, uzeTypes, UGDBNamedObjectsArray, uzctnrVectorBytesStream;
+
+
+procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
+var
+  byt: Integer;
+  s: String;
+  //error: Integer;
+begin
+  if fname<>'' then begin
+    while not rdr.EOF do begin
+      byt:=rdr.ParseInteger;
+      //s := rdr.ParseString;
+      //val(s, byt, error);
+      //if error <> 0 then
+      //  s := s{чето тут не так};
+      s := rdr.ParseString;
+      if (byt = fcode) and (s = fname) then
+        exit;
+    end;
+  end else begin
+    while not rdr.EOF do begin
+      byt:=rdr.ParseInteger;
+      //s := rdr.ParseString;
+      //val(s, byt, error);
+      //if error <> 0 then
+      //  s := s{чето тут не так};
+      if (byt = fcode) then
+        exit;
+      //s:=rdr.ParseString;
+      rdr.SkipString;
+    end;
+  end;
+end;
 
 {==============================================================================
   Чтение таблицы LAYER из DXF (современный формат)
