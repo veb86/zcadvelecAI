@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, usimplegenerics, uzeffdxfsupport, UGDBNamedObjectsArray,
-  uzMVReader, uzeffmanager, gzctnrSTL, uzctnrVectorBytesStream, uzestyleslayers;
+  uzMVReader, uzeffmanager, gzctnrSTL;
 
 type
 
@@ -35,7 +35,7 @@ type
     var rdr: TZMemReader; const exitString: String; var ZCDCtx: TZDrawingContext;
     var context: TIODXFLoadContext);
 
-  TStyleDXFSaveProc = procedure(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes;
+  TStyleDXFSaveProc = procedure(Layers: PGDBLayerArray; outstream: Pointer;
     var IODXFContext: TIODXFSaveContext);
 
   { Информация о зарегистрированном DXF-стиле }

@@ -32,8 +32,10 @@ procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
   var context: TIODXFLoadContext);
 
 { Процедура записи таблицы LAYER в DXF }
-procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes;
+procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
   var IODXFContext: TIODXFSaveContext);
+var
+  Bytes: TZctnrVectorBytes absolute outstream;
 
 implementation
 
@@ -153,9 +155,10 @@ end;
   Запись таблицы LAYER в DXF
   Перенесено из uzeffdxfout.pas
 ==============================================================================}
-procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes;
+procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
   var IODXFContext: TIODXFSaveContext);
 var
+  Bytes: TZctnrVectorBytes absolute outstream;
   plp: PGDBLayerProp;
   ir: itrec;
   attr: Integer;
@@ -165,69 +168,69 @@ begin
   { Получаем handle для plot style (по умолчанию 0xF) }
   plottablefansdle := $F;
 
-  plp := drawing^.beginiterate(ir);
+  plp := Layers^.beginiterate(ir);
   if plp <> nil then
     repeat
       { Выделяем handle для слоя }
       IODXFContext.p2h.MyGetOrCreateValue(plp, IODXFContext.handle, temphandle);
 
-      outstream.TXTAddStringEOL(dxfGroupCode(0));
-      outstream.TXTAddStringEOL(dxfName_Layer);
-      outstream.TXTAddStringEOL(dxfGroupCode(5));
-      outstream.TXTAddStringEOL(inttohex(temphandle, 0));
+      Bytes.TXTAddStringEOL(dxfGroupCode(0));
+      Bytes.TXTAddStringEOL(dxfName_Layer);
+      Bytes.TXTAddStringEOL(dxfGroupCode(5));
+      Bytes.TXTAddStringEOL(inttohex(temphandle, 0));
       Inc(IODXFContext.handle);
-      outstream.TXTAddStringEOL(dxfGroupCode(100));
-      outstream.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
-      outstream.TXTAddStringEOL(dxfGroupCode(100));
-      outstream.TXTAddStringEOL('AcDbLayerTableRecord');
-      outstream.TXTAddStringEOL(dxfGroupCode(2));
-      outstream.TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext.Header));
+      Bytes.TXTAddStringEOL(dxfGroupCode(100));
+      Bytes.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
+      Bytes.TXTAddStringEOL(dxfGroupCode(100));
+      Bytes.TXTAddStringEOL('AcDbLayerTableRecord');
+      Bytes.TXTAddStringEOL(dxfGroupCode(2));
+      Bytes.TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext.Header));
 
       { Атрибуты слоя (lock) }
       attr := 0;
       if plp^._lock then
         attr := attr + 4;
-      outstream.TXTAddStringEOL(dxfGroupCode(70));
-      outstream.TXTAddStringEOL(IntToStr(attr));
+      Bytes.TXTAddStringEOL(dxfGroupCode(70));
+      Bytes.TXTAddStringEOL(IntToStr(attr));
 
       { Цвет слоя (с учётом on/off) }
-      outstream.TXTAddStringEOL(dxfGroupCode(62));
+      Bytes.TXTAddStringEOL(dxfGroupCode(62));
       if plp^._on then
-        outstream.TXTAddStringEOL(IntToStr(plp^.color))
+        Bytes.TXTAddStringEOL(IntToStr(plp^.color))
       else
-        outstream.TXTAddStringEOL(IntToStr(-plp^.color));
+        Bytes.TXTAddStringEOL(IntToStr(-plp^.color));
 
       { Имя типа линии }
-      outstream.TXTAddStringEOL(dxfGroupCode(6));
-      outstream.TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext.Header));
+      Bytes.TXTAddStringEOL(dxfGroupCode(6));
+      Bytes.TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext.Header));
 
       { Флаг печати }
-      outstream.TXTAddStringEOL(dxfGroupCode(290));
+      Bytes.TXTAddStringEOL(dxfGroupCode(290));
       if plp^._print then
-        outstream.TXTAddStringEOL('1')
+        Bytes.TXTAddStringEOL('1')
       else
-        outstream.TXTAddStringEOL('0');
+        Bytes.TXTAddStringEOL('0');
 
       { Толщина линии }
-      outstream.TXTAddStringEOL(dxfGroupCode(370));
-      outstream.TXTAddStringEOL(IntToStr(plp^.lineweight));
+      Bytes.TXTAddStringEOL(dxfGroupCode(370));
+      Bytes.TXTAddStringEOL(IntToStr(plp^.lineweight));
 
       { Plot style handle }
-      outstream.TXTAddStringEOL(dxfGroupCode(390));
-      outstream.TXTAddStringEOL(inttohex(plottablefansdle, 0));
+      Bytes.TXTAddStringEOL(dxfGroupCode(390));
+      Bytes.TXTAddStringEOL(inttohex(plottablefansdle, 0));
 
       { Описание слоя (если есть) }
       if plp^.desk <> '' then
       begin
-        outstream.TXTAddStringEOL(dxfGroupCode(1001));
-        outstream.TXTAddStringEOL('AcAecLayerStandard');
-        outstream.TXTAddStringEOL(dxfGroupCode(1000));
-        outstream.TXTAddStringEOL('');
-        outstream.TXTAddStringEOL(dxfGroupCode(1000));
-        outstream.TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext.Header));
+        Bytes.TXTAddStringEOL(dxfGroupCode(1001));
+        Bytes.TXTAddStringEOL('AcAecLayerStandard');
+        Bytes.TXTAddStringEOL(dxfGroupCode(1000));
+        Bytes.TXTAddStringEOL('');
+        Bytes.TXTAddStringEOL(dxfGroupCode(1000));
+        Bytes.TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext.Header));
       end;
 
-      plp := drawing^.iterate(ir);
+      plp := Layers^.iterate(ir);
     until plp = nil;
 end;
 
