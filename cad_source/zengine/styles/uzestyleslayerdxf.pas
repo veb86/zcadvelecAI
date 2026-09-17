@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory,
-  uzMVReader, uzeffmanager, uzbLogIntf,gzctnrVectorTypes, uzctnrVectorBytesStream;
+  uzMVReader, uzeffmanager, uzbLogIntf, gzctnrVectorTypes;
 
 { Процедура чтения таблицы LAYER из DXF }
 procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
@@ -159,7 +159,7 @@ var
   plp: PGDBLayerProp;
   ir: itrec;
   attr: Integer;
-  temphandle: QWord;
+  temphandle: TDWGHandle;
   plottablefansdle: Integer;
 begin
   { Получаем handle для plot style (по умолчанию 0xF) }
@@ -171,60 +171,60 @@ begin
       { Выделяем handle для слоя }
       IODXFContext.p2h.MyGetOrCreateValue(plp, IODXFContext.handle, temphandle);
 
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(0));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfName_Layer);
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(5));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(inttohex(temphandle, 0));
+      outstream.TXTAddStringEOL(dxfGroupCode(0));
+      outstream.TXTAddStringEOL(dxfName_Layer);
+      outstream.TXTAddStringEOL(dxfGroupCode(5));
+      outstream.TXTAddStringEOL(inttohex(temphandle, 0));
       Inc(IODXFContext.handle);
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(100));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(100));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL('AcDbLayerTableRecord');
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(2));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext.Header));
+      outstream.TXTAddStringEOL(dxfGroupCode(100));
+      outstream.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
+      outstream.TXTAddStringEOL(dxfGroupCode(100));
+      outstream.TXTAddStringEOL('AcDbLayerTableRecord');
+      outstream.TXTAddStringEOL(dxfGroupCode(2));
+      outstream.TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext.Header));
 
       { Атрибуты слоя (lock) }
       attr := 0;
       if plp^._lock then
         attr := attr + 4;
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(70));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(IntToStr(attr));
+      outstream.TXTAddStringEOL(dxfGroupCode(70));
+      outstream.TXTAddStringEOL(IntToStr(attr));
 
       { Цвет слоя (с учётом on/off) }
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(62));
+      outstream.TXTAddStringEOL(dxfGroupCode(62));
       if plp^._on then
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(IntToStr(plp^.color))
+        outstream.TXTAddStringEOL(IntToStr(plp^.color))
       else
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(IntToStr(-plp^.color));
+        outstream.TXTAddStringEOL(IntToStr(-plp^.color));
 
       { Имя типа линии }
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(6));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext.Header));
+      outstream.TXTAddStringEOL(dxfGroupCode(6));
+      outstream.TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext.Header));
 
       { Флаг печати }
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(290));
+      outstream.TXTAddStringEOL(dxfGroupCode(290));
       if plp^._print then
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL('1')
+        outstream.TXTAddStringEOL('1')
       else
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL('0');
+        outstream.TXTAddStringEOL('0');
 
       { Толщина линии }
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(370));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(IntToStr(plp^.lineweight));
+      outstream.TXTAddStringEOL(dxfGroupCode(370));
+      outstream.TXTAddStringEOL(IntToStr(plp^.lineweight));
 
       { Plot style handle }
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(390));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(inttohex(plottablefansdle, 0));
+      outstream.TXTAddStringEOL(dxfGroupCode(390));
+      outstream.TXTAddStringEOL(inttohex(plottablefansdle, 0));
 
       { Описание слоя (если есть) }
       if plp^.desk <> '' then
       begin
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(1001));
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL('AcAecLayerStandard');
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(1000));
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL('');
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(1000));
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext.Header));
+        outstream.TXTAddStringEOL(dxfGroupCode(1001));
+        outstream.TXTAddStringEOL('AcAecLayerStandard');
+        outstream.TXTAddStringEOL(dxfGroupCode(1000));
+        outstream.TXTAddStringEOL('');
+        outstream.TXTAddStringEOL(dxfGroupCode(1000));
+        outstream.TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext.Header));
       end;
 
       plp := drawing^.iterate(ir);
