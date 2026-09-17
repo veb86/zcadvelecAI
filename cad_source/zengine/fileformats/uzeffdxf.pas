@@ -1037,7 +1037,7 @@ begin
   zDebugLn('{D+}AddFromDXF12');
   context.InitRec;
   { Получаем имя текущего слоя из переменных DXF }
-  DWGVarsDict.mygetvalue('$CLAYER',clayer);
+  context.DWGVarsDict.mygetvalue('$CLAYER',clayer);
   while (not rdr.EOF) and (s <> exitString) do begin
     lps.ProgressLongProcess(lph,rdr.CurrentPos);
     s := rdr.ParseString;
