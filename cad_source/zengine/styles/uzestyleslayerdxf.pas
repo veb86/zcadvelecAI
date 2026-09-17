@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory,
-  uzMVReader, uzeffmanager, uzbLogIntf,gzctnrVectorTypes;
+  uzMVReader, uzeffmanager, uzbLogIntf,gzctnrVectorTypes, uzctnrVectorBytesStream;
 
 { Процедура чтения таблицы LAYER из DXF }
 procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
@@ -32,27 +32,22 @@ procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
   var context: TIODXFLoadContext);
 
 { Процедура записи таблицы LAYER в DXF }
-procedure SaveLayerToDXF(drawing: PGDBLayerArray; outstream: pointer);
+procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes;
+  var IODXFContext: TIODXFSaveContext);
 
 implementation
 
 uses
-  uzeconsts, uzeTypes, UGDBNamedObjectsArray, uzctnrVectorBytesStream;
-
+  uzeconsts, uzeTypes, UGDBNamedObjectsArray;
 
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
   byt: Integer;
   s: String;
-  //error: Integer;
 begin
   if fname<>'' then begin
     while not rdr.EOF do begin
       byt:=rdr.ParseInteger;
-      //s := rdr.ParseString;
-      //val(s, byt, error);
-      //if error <> 0 then
-      //  s := s{чето тут не так};
       s := rdr.ParseString;
       if (byt = fcode) and (s = fname) then
         exit;
@@ -60,13 +55,8 @@ begin
   end else begin
     while not rdr.EOF do begin
       byt:=rdr.ParseInteger;
-      //s := rdr.ParseString;
-      //val(s, byt, error);
-      //if error <> 0 then
-      //  s := s{чето тут не так};
       if (byt = fcode) then
         exit;
-      //s:=rdr.ParseString;
       rdr.SkipString;
     end;
   end;
@@ -163,17 +153,15 @@ end;
   Запись таблицы LAYER в DXF
   Перенесено из uzeffdxfout.pas
 ==============================================================================}
-procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes);
+procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes;
+  var IODXFContext: TIODXFSaveContext);
 var
   plp: PGDBLayerProp;
   ir: itrec;
   attr: Integer;
-  IODXFContext: PTIODXFSaveContext;
-  temphandle: Integer;
+  temphandle: QWord;
   plottablefansdle: Integer;
 begin
-  IODXFContext := PTIODXFSaveContext(outstream);
-
   { Получаем handle для plot style (по умолчанию 0xF) }
   plottablefansdle := $F;
 
@@ -181,19 +169,19 @@ begin
   if plp <> nil then
     repeat
       { Выделяем handle для слоя }
-      IODXFContext^.p2h.MyGetOrCreateValue(plp, IODXFContext^.handle, temphandle);
+      IODXFContext.p2h.MyGetOrCreateValue(plp, IODXFContext.handle, temphandle);
 
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(0));
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfName_Layer);
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(5));
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(inttohex(temphandle, 0));
-      Inc(IODXFContext^.handle);
+      Inc(IODXFContext.handle);
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(100));
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(100));
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL('AcDbLayerTableRecord');
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(2));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext^.Header));
+      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.Name, IODXFContext.Header));
 
       { Атрибуты слоя (lock) }
       attr := 0;
@@ -211,7 +199,7 @@ begin
 
       { Имя типа линии }
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(6));
-      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext^.Header));
+      TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT), IODXFContext.Header));
 
       { Флаг печати }
       TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(290));
@@ -236,7 +224,7 @@ begin
         TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(1000));
         TZctnrVectorBytesStream(outstream).TXTAddStringEOL('');
         TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfGroupCode(1000));
-        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext^.Header));
+        TZctnrVectorBytesStream(outstream).TXTAddStringEOL(dxfEnCodeString(plp^.desk, IODXFContext.Header));
       end;
 
       plp := drawing^.iterate(ir);
