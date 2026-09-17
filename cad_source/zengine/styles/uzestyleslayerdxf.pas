@@ -163,7 +163,7 @@ end;
   Запись таблицы LAYER в DXF
   Перенесено из uzeffdxfout.pas
 ==============================================================================}
-procedure SaveLayerToDXF(drawing: PGDBLayerArray; outstream: pointer);
+procedure SaveLayerToDXF(drawing: PGDBLayerArray; var outstream: TZctnrVectorBytes);
 var
   plp: PGDBLayerProp;
   ir: itrec;
