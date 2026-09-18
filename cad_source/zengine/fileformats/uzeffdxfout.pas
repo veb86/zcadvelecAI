@@ -1032,10 +1032,6 @@ begin
             { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
             zDebugLn('{W}LAYER style handler not found in registry');
           end;
-
-          outstream.TXTAddStringEOL(groups);
-          outstream.TXTAddStringEOL(values);
-        end
         else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlttypetable:=False;
           ignoredsource:=False;
