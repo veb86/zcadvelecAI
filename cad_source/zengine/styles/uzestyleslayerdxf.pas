@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory,
-  uzMVReader, uzeffmanager, uzbLogIntf, gzctnrVectorTypes;
+  uzMVReader, uzeffmanager, uzbLogIntf, gzctnrVectorTypes, uzctnrVectorBytes, uzctnrVectorBytesStream;
 
 { Процедура чтения таблицы LAYER из DXF }
 procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
@@ -34,8 +34,6 @@ procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
 { Процедура записи таблицы LAYER в DXF }
 procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
   var IODXFContext: TIODXFSaveContext);
-var
-  Bytes: TZctnrVectorBytes absolute outstream;
 
 implementation
 
@@ -158,13 +156,16 @@ end;
 procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
   var IODXFContext: TIODXFSaveContext);
 var
-  Bytes: TZctnrVectorBytes absolute outstream;
   plp: PGDBLayerProp;
   ir: itrec;
   attr: Integer;
   temphandle: TDWGHandle;
   plottablefansdle: Integer;
+  Bytes: TZctnrVectorBytes;
 begin
+  // Корректное приведение типа указателя
+  Bytes := TZctnrVectorBytes(outstream^);
+
   { Получаем handle для plot style (по умолчанию 0xF) }
   plottablefansdle := $F;
 

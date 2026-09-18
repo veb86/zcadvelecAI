@@ -582,6 +582,7 @@ var
   tsCount: integer;
   tsHandlesAllocated: boolean;
   beforeProcIdx: integer;
+    StyleInfo: PStyleDXFInfo; // Добавлено объявление
 
   procedure RunObjectsSaveDxfProcs;
   var
@@ -1020,11 +1021,11 @@ begin
           inlayertable:=False;
           ignoredsource:=False;
           { Вызов обработчика записи LAYER через Style Registry }
-          var StyleInfo := FindDXFStyle('LAYER');
+          StyleInfo := FindDXFStyle('LAYER');
           if Assigned(StyleInfo) then
           begin
             { Передаём drawing и outstream в зарегистрированный writer }
-            StyleInfo^.SaveProc(@drawing.layertable, outstream, IODXFContext);
+            StyleInfo^.SaveProc(@drawing.layertable, @outstream, IODXFContext);
           end
           else
           begin

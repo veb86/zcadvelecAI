@@ -1031,6 +1031,9 @@ var
   context:TIODXFLoadContext;
   lph:TLPSHandle;
   clayer: string;
+  StyleInfo: PStyleDXFInfo; // Добавлено объявление
+  LayerColor: Integer; // Ошибка здесь
+  LayerName: String;   // И здесь
 begin
   s:='';
   lph:=lps.StartLongProcess('addfromdxf12',@rdr,rdr.CurrentPos);
@@ -1045,14 +1048,12 @@ begin
       zDebugLn('{D+}[DXF_CONTENTS]Found layer table');
 
       { Вызов обработчика через Style Registry для старого DXF }
-      var StyleInfo := FindDXFStyle('LAYER');
+      StyleInfo := FindDXFStyle('LAYER');
       if Assigned(StyleInfo) then
         StyleInfo^.LoadProc(s, clayer, rdr, exitString, ZCDCtx, context)
       else
       begin
         { Fallback на упрощённую реализацию если registry не найден }
-        var LayerColor: Integer;
-        var LayerName: String;
         repeat
           scode := rdr.ParseString;
           sname := rdr.ParseString;
@@ -1613,6 +1614,7 @@ var
   lph:TLPSHandle;
   SaveOptions:TDContextOptions;
   timer: TTimeMeter;             // Таймер для измерения времени загрузки файла
+  StyleInfo: PStyleDXFInfo; // Добавлено объявление
 begin
   ctstyle:='';
   clayer:='';
@@ -1668,7 +1670,7 @@ begin
                                     begin
                                       zDebugLn('{D+}[DXF_CONTENTS]Found layer table');
                                       { Вызов обработчика через Style Registry }
-                                      var StyleInfo := FindDXFStyle('LAYER');
+                                      StyleInfo := FindDXFStyle('LAYER');
                                       if Assigned(StyleInfo) then
                                         StyleInfo^.LoadProc(s, clayer, rdr, exitString, ZCDCtx, context)
                                       else

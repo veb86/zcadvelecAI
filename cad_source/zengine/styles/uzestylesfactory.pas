@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, usimplegenerics, uzeffdxfsupport, UGDBNamedObjectsArray,
-  uzMVReader, uzeffmanager, gzctnrSTL;
+  uzMVReader, uzeffmanager, gzctnrSTL, uzestyleslayers;
 
 type
 
