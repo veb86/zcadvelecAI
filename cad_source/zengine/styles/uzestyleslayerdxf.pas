@@ -24,7 +24,7 @@ interface
 
 uses
   sysutils, uzeffdxfsupport, uzestyleslayers, uzestylesfactory,
-  uzMVReader, uzeffmanager, uzbLogIntf, gzctnrVectorTypes, uzctnrVectorBytes, uzctnrVectorBytesStream;
+  uzMVReader, uzeffmanager, uzbLogIntf, gzctnrVectorTypes, uzctnrVectorBytes;
 
 { Процедура чтения таблицы LAYER из DXF }
 procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
