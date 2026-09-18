@@ -1025,7 +1025,7 @@ begin
           if Assigned(StyleInfo) then
           begin
             { Передаём drawing и outstream в зарегистрированный writer }
-            StyleInfo^.SaveProc(@drawing.layertable, @outstream, IODXFContext);
+            StyleInfo^.SaveProc(@drawing.layertable, @outstream);
           end
           else
           begin
