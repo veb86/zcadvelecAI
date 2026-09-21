@@ -160,6 +160,8 @@ var
   temphandle: TDWGHandle;
   plottablefansdle: Integer;
   Bytes: PTZctnrVectorBytes;
+  LayerCount: Integer;
+  TableHandle: TDWGHandle;
 begin
   { Приводим указатель к типу потока }
   Bytes := PTZctnrVectorBytes(outstream);
@@ -169,6 +171,26 @@ begin
   { Получаем handle для plot style (по умолчанию 0xF) }
   plottablefansdle := $F;
 
+  { Записываем заголовок таблицы LAYER }
+  { Выделяем handle для самой таблицы }
+  IODXFContext.p2h.MyGetOrCreateValue(@Layers^, IODXFContext.handle, TableHandle);
+  Bytes^.TXTAddStringEOL(dxfGroupCode(0));
+  Bytes^.TXTAddStringEOL('TABLE');
+  Bytes^.TXTAddStringEOL(dxfGroupCode(2));
+  Bytes^.TXTAddStringEOL('LAYER');
+  Bytes^.TXTAddStringEOL(dxfGroupCode(5));
+  Bytes^.TXTAddStringEOL(inttohex(TableHandle, 0));
+  Bytes^.TXTAddStringEOL(dxfGroupCode(330));
+  Bytes^.TXTAddStringEOL('0');
+  Bytes^.TXTAddStringEOL(dxfGroupCode(100));
+  Bytes^.TXTAddStringEOL('AcDbSymbolTable');
+  
+  { Подсчитываем количество слоёв }
+  LayerCount := Layers^.Count;
+  Bytes^.TXTAddStringEOL(dxfGroupCode(70));
+  Bytes^.TXTAddStringEOL(IntToStr(LayerCount));
+
+  { Записываем все слои }
   plp := Layers^.beginiterate(ir);
   if plp <> nil then
     repeat
@@ -233,6 +255,10 @@ begin
 
       plp := Layers^.iterate(ir);
     until plp = nil;
+  
+  { Записываем завершение таблицы }
+  Bytes^.TXTAddStringEOL(dxfGroupCode(0));
+  Bytes^.TXTAddStringEOL('ENDTAB');
 end;
 
 {==============================================================================
