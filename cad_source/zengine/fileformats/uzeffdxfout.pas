@@ -1026,13 +1026,11 @@ begin
           begin
             { Передаём drawing и outstream в зарегистрированный writer }
             StyleInfo^.SaveProc(@drawing.layertable, @outstream);
-          end
-          else
-          begin
+          end else begin
             { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
             zDebugLn('{W}LAYER style handler not found in registry');
           end;
-        else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
+        end else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlttypetable:=False;
           ignoredsource:=False;
           temphandle:=IODXFContext.handle-1;
