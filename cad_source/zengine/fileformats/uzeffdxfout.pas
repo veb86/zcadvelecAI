@@ -1025,7 +1025,7 @@ begin
           if Assigned(StyleInfo) then
           begin
             { Передаём drawing и outstream в зарегистрированный writer }
-            StyleInfo^.SaveProc(@drawing.layertable, @outstream);
+            StyleInfo^.SaveProc(@drawing.layertable, @outstream, IODXFContext);
           end else begin
             { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
             zDebugLn('{W}LAYER style handler not found in registry');
