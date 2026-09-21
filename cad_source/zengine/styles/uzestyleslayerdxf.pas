@@ -32,8 +32,7 @@ procedure LoadLayerFromDXF(var s: ansistring; const styleParam: string;
   var context: TIODXFLoadContext);
 
 { Процедура записи таблицы LAYER в DXF }
-procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
-  var IODXFContext: TIODXFSaveContext);
+procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer; var IODXFContext: TIODXFSaveContext);
 
 implementation
 
@@ -153,8 +152,7 @@ end;
   Запись таблицы LAYER в DXF
   Перенесено из uzeffdxfout.pas
 ==============================================================================}
-procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer;
-  var IODXFContext: TIODXFSaveContext);
+procedure SaveLayerToDXF(Layers: PGDBLayerArray; outstream: Pointer; var IODXFContext: TIODXFSaveContext);
 var
   plp: PGDBLayerProp;
   ir: itrec;
