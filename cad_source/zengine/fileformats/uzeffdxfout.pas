@@ -1020,7 +1020,11 @@ begin
         end else if (inlayertable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlayertable:=False;
           ignoredsource:=False;
-          { Вызов обработчика записи LAYER через Style Registry }
+          { Вызов обработчика записи LAYER через Style Registry.
+            Заголовок таблицы (0 TABLE / 2 LAYER / 5 / 330 / 100 / 70) уже
+            записан из шаблона, записи слоёв шаблона пропущены (IgnoredSource).
+            Writer должен записать только записи слоёв и завершающий ENDTAB. }
+          IODXFContext.LayerPlotStyleHandle:=plottablefansdle;
           StyleInfo := FindDXFStyle('LAYER');
           if Assigned(StyleInfo) then
           begin
@@ -1029,6 +1033,9 @@ begin
           end else begin
             { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
             zDebugLn('{W}LAYER style handler not found in registry');
+            { Таблицу всё равно нужно закрыть, иначе DXF будет испорчен }
+            outstream.TXTAddStringEOL(groups);
+            outstream.TXTAddStringEOL(values);
           end;
         end else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlttypetable:=False;

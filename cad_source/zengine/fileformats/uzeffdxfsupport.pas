@@ -120,6 +120,10 @@ type
     TableStyleNameHandleMap:TString2StringDictionary;
     TextStyleNameHandleMap:TString2StringDictionary;
 
+    { Новый хэндл стиля печати (ACDBPLACEHOLDER), на который ссылаются
+      записи слоёв (группа 390). Берётся из таблицы LAYER шаблона. }
+    LayerPlotStyleHandle:TDWGHandle;
+
     procedure InitRec;
     procedure Done;
   end;
@@ -406,6 +410,7 @@ begin
   handle := $2;
 
   AcadTableOwnerHandle:=0;
+  LayerPlotStyleHandle:=0;
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
   TextStyleNameHandleMap:=TString2StringDictionary.create;
