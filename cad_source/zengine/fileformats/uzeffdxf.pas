@@ -1025,57 +1025,46 @@ begin
 end;
 procedure AddFromDXF12(var rdr:TZMemReader; const exitString: String;var ZCDCtx:TZDrawingContext;const LogProc:TZELogProc=nil);
 var
-  s, sname,scode: String;
+  LayerColor: Integer;
+  s, sname,scode,LayerName: String;
   ErrorCode,GroupCode: Integer;
   tp: PGDBObjBlockdef;
   context:TIODXFLoadContext;
   lph:TLPSHandle;
-  clayer: string;
-  StyleInfo: PStyleDXFInfo; // Добавлено объявление
-  LayerColor: Integer; // Ошибка здесь
-  LayerName: String;   // И здесь
 begin
   s:='';
   lph:=lps.StartLongProcess('addfromdxf12',@rdr,rdr.CurrentPos);
   zDebugLn('{D+}AddFromDXF12');
   context.InitRec;
-  { Получаем имя текущего слоя из переменных DXF }
-  context.DWGVarsDict.mygetvalue('$CLAYER',clayer);
   while (not rdr.EOF) and (s <> exitString) do begin
     lps.ProgressLongProcess(lph,rdr.CurrentPos);
     s := rdr.ParseString;
     if s = dxfName_Layer then begin
       zDebugLn('{D+}[DXF_CONTENTS]Found layer table');
-
-      { Вызов обработчика через Style Registry для старого DXF }
-      StyleInfo := FindDXFStyle('LAYER');
-      if Assigned(StyleInfo) then
-        StyleInfo^.LoadProc(s, clayer, rdr, exitString, ZCDCtx, context)
-      else
-      begin
-        { Fallback на упрощённую реализацию если registry не найден }
+      { DXF R12 читается упрощённым парсером: формат таблицы LAYER в R12
+        отличается (нет хэндлов, подклассов, таблица LTYPE здесь не
+        читается), поэтому LoadLayerFromDXF (порт ReadLayers для современного
+        DXF) тут не используется. }
+      repeat
+        scode := rdr.ParseString;
+        sname := rdr.ParseString;
+        val(scode,GroupCode,ErrorCode);
+      until GroupCode=0;
+      repeat
+        if sname=dxfName_ENDTAB then system.break;
+        if sname<>dxfName_Layer then zDebugLn('{FM}''LAYER'' expected but '''+sname+''' found');
         repeat
           scode := rdr.ParseString;
           sname := rdr.ParseString;
           val(scode,GroupCode,ErrorCode);
+          case GroupCode of
+            2:LayerName:=sname;
+            62:val(sname,LayerColor,ErrorCode);
+          end;{case}
         until GroupCode=0;
-        repeat
-          if sname=dxfName_ENDTAB then system.break;
-          if sname<>dxfName_Layer then zDebugLn('{FM}''LAYER'' expected but '''+sname+''' found');
-          repeat
-            scode := rdr.ParseString;
-            sname := rdr.ParseString;
-            val(scode,GroupCode,ErrorCode);
-            case GroupCode of
-              2:LayerName:=sname;
-              62:val(sname,LayerColor,ErrorCode);
-            end;{case}
-          until GroupCode=0;
-          zDebugLn('{D}[DXF_CONTENTS]Found layer '+LayerName);
-          ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,true,'',TLOLoad);
-        until sname=dxfName_ENDTAB;
-      end;
-
+        zDebugLn('{D}[DXF_CONTENTS]Found layer '+LayerName);
+        ZCDCtx.pdrawing^.LayerTable.addlayer(LayerName,LayerColor,-3,true,false,true,'',TLOLoad);
+      until sname=dxfName_ENDTAB;
       zDebugLn('{D-}[DXF_CONTENTS]end; {layer table}');
     end else if s = 'BLOCKS' then begin
       zDebugLn('{D+}[DXF_CONTENTS]Found block table');
