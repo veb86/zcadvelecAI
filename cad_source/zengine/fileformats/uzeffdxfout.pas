@@ -30,7 +30,7 @@ uses
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
-  uzestylestablesdxf,uzclog, uzestylesfactory, uzestyleslayerdxf;
+  uzestylestablesdxf,uzclog;
 type
   { Callback, вызываемый перед началом записи DXF. Позволяет подпиться
     на pre-save обработку чертежа (например, конвертацию ProxyEntity
@@ -582,7 +582,6 @@ var
   tsCount: integer;
   tsHandlesAllocated: boolean;
   beforeProcIdx: integer;
-    StyleInfo: PStyleDXFInfo; // Добавлено объявление
 
   procedure RunObjectsSaveDxfProcs;
   var
@@ -1020,24 +1019,58 @@ begin
         end else if (inlayertable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlayertable:=False;
           ignoredsource:=False;
-          { Вызов обработчика записи LAYER через Style Registry.
-            Заголовок таблицы (0 TABLE / 2 LAYER / 5 / 330 / 100 / 70) уже
-            записан из шаблона, записи слоёв шаблона пропущены (IgnoredSource).
-            Writer должен записать только записи слоёв и завершающий ENDTAB. }
-          IODXFContext.LayerPlotStyleHandle:=plottablefansdle;
-          StyleInfo := FindDXFStyle('LAYER');
-          if Assigned(StyleInfo) then
-          begin
-            { Передаём drawing и outstream в зарегистрированный writer }
-            StyleInfo^.SaveProc(@drawing.layertable, @outstream, IODXFContext);
-          end else begin
-            { Fallback не требуется - registry всегда инициализируется при загрузке модуля uzestyleslayerdxf }
-            zDebugLn('{W}LAYER style handler not found in registry');
-            { Таблицу всё равно нужно закрыть, иначе DXF будет испорчен }
-            outstream.TXTAddStringEOL(groups);
-            outstream.TXTAddStringEOL(values);
-          end;
-        end else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
+          plp:=drawing.layertable.beginiterate(ir);
+          if plp<>nil then
+            repeat
+              outstream.TXTAddStringEOL(dxfGroupCode(0));
+              outstream.TXTAddStringEOL(dxfName_Layer);
+              outstream.TXTAddStringEOL(dxfGroupCode(5));
+              outstream.TXTAddStringEOL(inttohex(IODXFContext.handle,0));
+              Inc(IODXFContext.handle);
+              outstream.TXTAddStringEOL(dxfGroupCode(100));
+              outstream.TXTAddStringEOL(dxfName_AcDbSymbolTableRecord);
+              outstream.TXTAddStringEOL(dxfGroupCode(100));
+              outstream.TXTAddStringEOL('AcDbLayerTableRecord');
+              outstream.TXTAddStringEOL(dxfGroupCode(2));
+              outstream.TXTAddStringEOL(dxfEnCodeString(plp^.Name,IODXFContext.Header));
+              attr:=0;
+              if plp^._lock then
+                attr:=attr+4;
+              outstream.TXTAddStringEOL(dxfGroupCode(70));
+              outstream.TXTAddStringEOL(IntToStr(attr));
+              outstream.TXTAddStringEOL(dxfGroupCode(62));
+              if plp^._on then
+                outstream.TXTAddStringEOL(IntToStr(plp^.color))
+              else
+                outstream.TXTAddStringEOL(IntToStr(-plp^.color));
+              outstream.TXTAddStringEOL(dxfGroupCode(6));
+              outstream.TXTAddStringEOL(dxfEnCodeString(GetLTName(plp^.LT),IODXFContext.Header));
+              outstream.TXTAddStringEOL(dxfGroupCode(290));
+              if plp^._print then
+                outstream.TXTAddStringEOL('1')
+              else
+                outstream.TXTAddStringEOL('0');
+              outstream.TXTAddStringEOL(dxfGroupCode(370));
+              outstream.TXTAddStringEOL(IntToStr(plp^.lineweight));
+              outstream.TXTAddStringEOL(dxfGroupCode(390));
+              outstream.TXTAddStringEOL(inttohex(plottablefansdle,0));
+
+              if plp^.desk<>'' then begin
+                outstream.TXTAddStringEOL(dxfGroupCode(1001));
+                outstream.TXTAddStringEOL('AcAecLayerStandard');
+                outstream.TXTAddStringEOL(dxfGroupCode(1000));
+                outstream.TXTAddStringEOL('');
+                outstream.TXTAddStringEOL(dxfGroupCode(1000));
+                outstream.TXTAddStringEOL(dxfEnCodeString(plp^.desk,IODXFContext.Header));
+              end;
+
+              plp:=drawing.layertable.iterate(ir);
+            until plp=nil;
+
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
+        end
+        else if (inlttypetable) and ((groupi=0) and (values=dxfName_ENDTAB)) then begin
           inlttypetable:=False;
           ignoredsource:=False;
           temphandle:=IODXFContext.handle-1;
