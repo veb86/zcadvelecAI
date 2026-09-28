@@ -114,11 +114,14 @@ type
         BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
         TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342;
         TextStyleNameHandleMap  — имя текстового стиля -> новый хэндл STYLE
-          для ссылок 340 внутри CELLSTYLEMAP. }
+          для ссылок 340 внутри CELLSTYLEMAP (и 342 MLEADERSTYLE);
+        LineTypeNameHandleMap   — имя типа линии -> новый хэндл LTYPE для
+          ссылки 340 MLEADERSTYLE (этап 6 ТЗ NOD). }
     AcadTableOwnerHandle:TDWGHandle;
     BlockNameHandleMap:TString2StringDictionary;
     TableStyleNameHandleMap:TString2StringDictionary;
     TextStyleNameHandleMap:TString2StringDictionary;
+    LineTypeNameHandleMap:TString2StringDictionary;
 
     { Новый хэндл стиля печати (ACDBPLACEHOLDER), на который ссылаются
       записи слоёв (группа 390). Берётся из таблицы LAYER шаблона. }
@@ -466,6 +469,7 @@ begin
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
   TextStyleNameHandleMap:=TString2StringDictionary.create;
+  LineTypeNameHandleMap:=TString2StringDictionary.create;
   TemplateClassNames:=TStringList.Create;
   TemplateClassNames.CaseSensitive:=False;
 
@@ -479,6 +483,7 @@ begin
   BlockNameHandleMap.Free;
   TableStyleNameHandleMap.Free;
   TextStyleNameHandleMap.Free;
+  LineTypeNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;

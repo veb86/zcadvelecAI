@@ -22,7 +22,11 @@
     «ключ → хэндл + код 350/360»;
   * TZNODModel — все сырые объекты секции с индексом по хэндлу, все
     словари, корневой словарь NOD (DICTIONARY с 330=0), навигация по пути
-    от NOD, множество «забранных» обработчиками хэндлов.
+    от NOD, множество «забранных» обработчиками хэндлов;
+  * индекс символьных таблиц (этап 6): хэндл записи секции TABLES (LTYPE,
+    STYLE, BLOCK_RECORD...) → тип таблицы и имя записи. Строится по
+    требованию (LoadSymbolTablesFromText) — объекты веток ссылаются на
+    записи таблиц по хэндлам, а чертёж хранит ссылки по именам.
 
   Модель только читает данные и не имеет побочных эффектов: на этапе 1 она
   не подключена к загрузке чертежа.
@@ -90,6 +94,14 @@ type
 
   TZDXFDictionaryList = TObjectList<TZDXFDictionary>;
 
+  { Запись символьной таблицы секции TABLES }
+  TZDXFSymbolRecord = record
+    { Тип записи (значение группы 0): LTYPE, STYLE, BLOCK_RECORD... }
+    TableType: string;
+    { Имя записи (группа 2) }
+    Name: string;
+  end;
+
   { Результат разбора секции OBJECTS. }
   TZNODModel = class
   private
@@ -102,6 +114,7 @@ type
     FRootDictionaryCount: Integer;
     FDuplicateHandleCount: Integer;
     FParseError: string;
+    FSymbols: TDictionary<TDWGHandle, TZDXFSymbolRecord>;
     procedure BuildIndex;
     procedure FindNOD;
   public
@@ -128,6 +141,21 @@ type
     procedure ClaimHandle(AHandle: TDWGHandle);
     function IsHandleClaimed(AHandle: TDWGHandle): Boolean;
     function ClaimedHandleCount: Integer;
+
+    { Строит индекс символьных таблиц по тексту секции TABLES (формат —
+      как у LoadFromText; прежний индекс очищается, объекты OBJECTS не
+      меняются). ACodePage <> 0 — кодовая страница имён (DXF до 2007,
+      $DWGCODEPAGE), имена перекодируются в UTF-8; 0 — имена уже в UTF-8.
+      Хэндл записи — группа 5 (у DIMSTYLE — 105). False — структура
+      секции нарушена, индекс строится по разобранным записям. }
+    function LoadSymbolTablesFromText(const ATablesSection: string;
+      ACodePage: TSystemCodePage = 0): Boolean;
+    { Имя записи символьной таблицы по хэндлу. ATableType <> '' — запись
+      должна быть этого типа (без учёта регистра). False — нет (AName = ''). }
+    function FindSymbolName(AHandle: TDWGHandle; const ATableType: string;
+      out AName: string): Boolean;
+    { Количество записей в индексе символьных таблиц }
+    function SymbolRecordCount: Integer;
 
     property Objects: TZDXFRawObjectList read FObjects;
     property Dictionaries: TZDXFDictionaryList read FDictionaries;
@@ -289,10 +317,12 @@ begin
   FDictionaries := TZDXFDictionaryList.Create(True);
   FDictionaryByHandle := TDictionary<TDWGHandle, TZDXFDictionary>.Create;
   FClaimedHandles := TDictionary<TDWGHandle, Boolean>.Create;
+  FSymbols := TDictionary<TDWGHandle, TZDXFSymbolRecord>.Create;
 end;
 
 destructor TZNODModel.Destroy;
 begin
+  FSymbols.Free;
   FClaimedHandles.Free;
   FDictionaryByHandle.Free;
   FDictionaries.Free;
@@ -307,6 +337,7 @@ begin
   FRootDictionaryCount := 0;
   FDuplicateHandleCount := 0;
   FParseError := '';
+  FSymbols.Clear;
   FClaimedHandles.Clear;
   FDictionaryByHandle.Clear;
   FDictionaries.Clear;
@@ -466,6 +497,72 @@ end;
 function TZNODModel.ClaimedHandleCount: Integer;
 begin
   Result := FClaimedHandles.Count;
+end;
+
+function TZNODModel.LoadSymbolTablesFromText(const ATablesSection: string;
+  ACodePage: TSystemCodePage): Boolean;
+var
+  StartTick: QWord;
+  Records: TZDXFRawObjectList;
+  Obj: TZDXFRawObject;
+  Error: string;
+  H: TDWGHandle;
+  Rec: TZDXFSymbolRecord;
+  S: RawByteString;
+begin
+  FSymbols.Clear;
+  StartTick := GetTickCount64;
+  Records := TZDXFRawObjectList.Create(True);
+  try
+    Result := ParseDxfObjectsSection(ATablesSection, Records, Error);
+    if not Result then
+      NODLogWarningFormatStr('uzeffdxfnod: TABLES section parse error: %s', [Error]);
+    for Obj in Records do begin
+      { Заголовки таблиц (0/TABLE, 2/<имя таблицы>) — не записи }
+      if SameText(Obj.ObjType, 'TABLE') or SameText(Obj.ObjType, 'ENDTAB') then
+        Continue;
+      H := Obj.Handle;
+      if H = 0 then
+        TryDXFStrToHandle(Obj.ValueOf(105), H);
+      if H = 0 then
+        Continue;
+      Rec.TableType := UpperCase(Obj.ObjType);
+      Rec.Name := Obj.ValueOf(2);
+      if ACodePage <> 0 then begin
+        S := Rec.Name;
+        SetCodePage(S, ACodePage, False);
+        SetCodePage(S, CP_UTF8, True);
+        Rec.Name := S;
+      end;
+      if FSymbols.ContainsKey(H) then
+        NODLogTraceFormatStr(
+          'uzeffdxfnod: TABLES: duplicate handle %s (%s "%s"), first record is used',
+          [DXFHandleToStr(H), Rec.TableType, Rec.Name])
+      else
+        FSymbols.Add(H, Rec);
+    end;
+  finally
+    Records.Free;
+  end;
+  NODLogTraceFormatStr('uzeffdxfnod: TABLES parsed: %d symbol records, %d ms',
+    [FSymbols.Count, GetTickCount64 - StartTick]);
+end;
+
+function TZNODModel.FindSymbolName(AHandle: TDWGHandle;
+  const ATableType: string; out AName: string): Boolean;
+var
+  Rec: TZDXFSymbolRecord;
+begin
+  AName := '';
+  Result := FSymbols.TryGetValue(AHandle, Rec) and
+    ((ATableType = '') or SameText(Rec.TableType, ATableType));
+  if Result then
+    AName := Rec.Name;
+end;
+
+function TZNODModel.SymbolRecordCount: Integer;
+begin
+  Result := FSymbols.Count;
 end;
 
 end.

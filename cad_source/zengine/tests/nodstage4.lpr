@@ -44,7 +44,7 @@ uses
   uzgldrawcontext, uzeconsts, uzeTypes, uzctnrVectorBytesStream,
   uzeffdxfobjects, uzeffdxfnod, uzeffdxfnodregistry, usimplegenerics,
   uzbLogTypes, uzclog, uzeffdxfnodlog,
-  uzestylestablesdxf,
+  uzestylestablesdxf, uzestylesmleaderdxfnod,
   // Регистрация загрузчика сущности ACAD_TABLE (как в nodstage0) и запись
   // CELLSTYLEMAP стилей таблиц.
   uzeacadtable_types, uzeacadtable_model, uzeacadtable_dxf_write;
@@ -163,8 +163,11 @@ begin
     on E: Exception do
       Fail(AName + ': ' + E.ClassName + ': ' + E.Message);
   end;
+  { Обработчики тестов снимаются; адаптеры zengine (ACAD_TABLESTYLE и
+    ACAD_MLEADERSTYLE этапа 6) остаются }
   for I := NODHandlerCount - 1 downto 0 do
-    if not SameText(GetNODHandler(I).Key, TableStyleKey) then
+    if not SameText(GetNODHandler(I).Key, TableStyleKey) and
+       not SameText(GetNODHandler(I).Key, 'ACAD_MLEADERSTYLE') then
       UnregisterNODHandler(GetNODHandler(I).Key);
   Flush(Output);
 end;
@@ -883,8 +886,18 @@ begin
   OutFile := OutPath('tablestyles_2007.dxf');
   SaveSample(dsStyles, 'savetemplate2007.dxf', ZCDxf2007, OutFile);
   CheckGolden(OutFile, GoldenDir + 'tablestyles_2007.dxf');
-  CheckCanonEqual(OutFile, Root + Stage0Dir + 'tablestyles_2007.dxf',
-    'tablestyles_2007 vs stage 0 golden');
+  { Этап 6 добавил в APPID ACAD_MLEADERVER (обработчик ACAD_MLEADERSTYLE,
+    проверяется в nodstage6) — сравнение с этапом 0 без него }
+  UnregisterNODHandler(CNODMLeaderStyleKey);
+  try
+    SaveSample(dsStyles, 'savetemplate2007.dxf', ZCDxf2007,
+      OutPath('tablestyles_nomleader_2007.dxf'));
+  finally
+    RegisterMLeaderStyleNODHandler;
+  end;
+  CheckCanonEqual(OutPath('tablestyles_nomleader_2007.dxf'),
+    Root + Stage0Dir + 'tablestyles_2007.dxf',
+    'tablestyles_2007 (without ACAD_MLEADERSTYLE handler) vs stage 0 golden');
   CheckTableStyleBranch(OutFile, 'tablestyles_2007', 'Standard,ZCAD1442', True,
     UnresolvedRefs(Root + Stage0Dir + 'tablestyles_2007.dxf'));
 

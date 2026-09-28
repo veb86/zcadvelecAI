@@ -73,8 +73,10 @@ function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const Lo
 implementation
 
 uses
-  { NOD-обработчик ACAD_TABLESTYLE регистрируется в initialization модуля }
-  uzestylestablesdxfnod;
+  { NOD-обработчики ACAD_TABLESTYLE и ACAD_MLEADERSTYLE регистрируются в
+    initialization своих модулей }
+  uzestylestablesdxfnod,
+  uzestylesmleaderdxfnod;
 
 function IsIgnoredEntity(const name:String):Integer;
 var
@@ -1889,6 +1891,35 @@ begin
      BoolToStr(AModel.NOD<>nil,'found','not found'),GetTickCount64-StartTick]);
 end;
 
+{ Индекс символьных таблиц модели NOD (этап 6): только если его ждёт
+  обработчик, который будет вызван (NODLoadNeedsSymbolTables) — секция
+  TABLES читается из файла ещё раз. Имена DXF до 2007 перекодируются из
+  $DWGCODEPAGE, как dxfDeCodeString. Ошибка не прерывает загрузку. }
+procedure DXFNODLoadSymbolTables(const AFileName:string;const AHeader:TDXFHeaderInfo;AModel:TZNODModel);
+var
+  StartTick:QWord;
+  CodePage:TSystemCodePage;
+begin
+  if not NODLoadNeedsSymbolTables(AModel) then
+    exit;
+  StartTick:=GetTickCount64;
+  if AHeader.iVersion<1021 then
+    CodePage:=AHeader.iDWGCodePage
+  else
+    CodePage:=0;
+  try
+    AModel.LoadSymbolTablesFromText(ExtractDxfRawSection(AFileName,'TABLES'),CodePage);
+  except
+    on E:Exception do
+      NODLogWarningFormatStr(
+        'uzeffdxf: NOD pre-pass: TABLES section of "%s" is not parsed (%s: %s)',
+        [AFileName,E.ClassName,E.Message]);
+  end;
+  NODLogTraceFormatStr(
+    'uzeffdxf: NOD pre-pass: "%s": %d symbol records, %d ms',
+    [AFileName,AModel.SymbolRecordCount,GetTickCount64-StartTick]);
+end;
+
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
 var
   fileCtx:TIODXFLoadContext;
@@ -1994,6 +2025,8 @@ begin
                 (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
                 сущностей, которые на них ссылаются. }
               DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
+              { Хэндлы записей TABLES → имена (ссылки MLEADERSTYLE, этап 6) }
+              DXFNODLoadSymbolTables(AFileName,fileCtx.Header,fileCtx.NODModel);
               if @DXFNODModelBuiltProc<>nil then
                 DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
               { Обработчики зарегистрированных ключей NOD (этап 3) }

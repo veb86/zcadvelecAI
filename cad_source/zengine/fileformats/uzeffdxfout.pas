@@ -61,8 +61,10 @@ implementation
 
 uses
   uzeffdxfnod,uzeffdxfnodlog,
-  { NOD-обработчик ACAD_TABLESTYLE регистрируется в initialization модуля }
-  uzestylestablesdxfnod;
+  { NOD-обработчики ACAD_TABLESTYLE и ACAD_MLEADERSTYLE регистрируются в
+    initialization модулей }
+  uzestylestablesdxfnod,
+  uzestylesmleaderdxfnod;
 
 var
   BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
@@ -756,6 +758,10 @@ begin
               outstream.TXTAddStringEOL(dxfGroupCode(0));
               outstream.TXTAddStringEOL(dxfName_LTYPE);
               IODXFContext.p2h.MyGetOrCreateValue(pltp,IODXFContext.handle,temphandle);
+              { «Имя типа линии -> новый хэндл LTYPE» для ссылок 340 стилей
+                мультивыносок (этап 6 ТЗ NOD) }
+              if not IODXFContext.LineTypeNameHandleMap.MyContans(pltp^.Name) then
+                IODXFContext.LineTypeNameHandleMap.Add(pltp^.Name,inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(330));
@@ -1066,6 +1072,11 @@ begin
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_LINETYPE',@outstream,IODXFContext.handle);
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_EXT1_LINETYPE',@outstream,IODXFContext.handle);
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_EXT2_LINETYPE',@outstream,IODXFContext.handle);
+          { Приложения расширенных данных объектов NOD-обработчиков
+            (например, ACAD_MLEADERVER стилей мультивыносок, этап 6 ТЗ NOD) }
+          for i:=0 to NODSave.Count-1 do
+            if NODSave.Handlers[i].XDataAppName<>'' then
+              RegisterAcadAppInDXF(NODSave.Handlers[i].XDataAppName,@outstream,IODXFContext.handle);
 
           outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL('ENDTAB');

@@ -24,7 +24,12 @@ program nodstage0;
 //     tablestyleetalon_* — стили эталона (aits, Standard, vebts) теперь
 //     загружаются NOD-обработчиком и записываются (до этапа 5 они терялись
 //     при загрузке); tablestyles_2000 — класс CELLSTYLEMAP в DXF 2000 без
-//     группы 91, как класс TABLESTYLE и классы шаблона.
+//     группы 91, как класс TABLESTYLE и классы шаблона. Этап 6 (issue
+//     #1454) осознанно изменил эталоны DXF 2007: empty_2007,
+//     tablestyles_2007 и tablestyleetalon_2007 — запись APPID
+//     ACAD_MLEADERVER; tablestyleetalon_2007 — ещё ветка ACAD_MLEADERSTYLE
+//     со стилем Standard (создаётся при загрузке файла без стилей
+//     мультивыносок) и класс MLEADERSTYLE. Эталоны DXF 2000 не изменились.
 //
 // Использование:
 //   nodstage0 [<корень репозитория>] [--update]
