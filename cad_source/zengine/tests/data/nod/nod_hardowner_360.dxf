@@ -1,0 +1,132 @@
+ 0 
+SECTION
+ 2 
+OBJECTS
+ 0 
+DICTIONARY
+ 5 
+00c
+ 330 
+0
+ 100 
+AcDbDictionary
+ 280 
+1
+ 281 
+1
+ 3 
+ACAD_TABLESTYLE
+ 360 
+0040
+ 3 
+ACAD_GROUP
+ 360 
+d
+ 0 
+DICTIONARY
+ 5 
+D
+ 102 
+{ACAD_REACTORS
+ 330 
+C
+ 102 
+}
+ 330 
+C
+ 100 
+AcDbDictionary
+ 281 
+1
+ 0 
+DICTIONARY
+ 5 
+40
+ 102 
+{ACAD_REACTORS
+ 330 
+c
+ 102 
+}
+ 330 
+c
+ 100 
+AcDbDictionary
+ 280 
+1
+ 281 
+1
+ 3 
+Standard
+ 360 
+4a
+ 0 
+TABLESTYLE
+ 5 
+4A
+ 102 
+{ACAD_REACTORS
+ 330 
+40
+ 102 
+}
+ 102 
+{ACAD_XDICTIONARY
+ 360 
+4B
+ 102 
+}
+ 330 
+40
+ 100 
+AcDbTableStyle
+ 3 
+Standard
+ 70 
+0
+ 0 
+DICTIONARY
+ 5 
+4B
+ 102 
+{ACAD_REACTORS
+ 330 
+4A
+ 102 
+}
+ 330 
+4A
+ 100 
+AcDbDictionary
+ 280 
+1
+ 281 
+1
+ 3 
+ACAD_XREC_ROUNDTRIP
+ 360 
+4C
+ 0 
+XRECORD
+ 5 
+4C
+ 102 
+{ACAD_REACTORS
+ 330 
+4B
+ 102 
+}
+ 330 
+4B
+ 100 
+AcDbXrecord
+ 280 
+1
+ 102 
+ACAD_ROUNDTRIP_2008_TABLESTYLE
+ 1 
+data
+ 0 
+ENDSEC
+ 0 
+EOF
