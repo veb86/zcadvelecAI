@@ -208,19 +208,17 @@ type
     LineNo: Integer;
   end;
 
-{ Читает очередную строку (без \r\n / \n). False — конец текста. }
-function ReadLine(var C: TZDXFTextCursor; out ALine: string): Boolean;
-var
-  Start, Stop: Integer;
+{ Находит очередную строку: AStart..AStop-1 (без \r\n / \n), курсор
+  переходит на следующую строку. False — конец текста. }
+function NextLine(var C: TZDXFTextCursor; out AStart, AStop: Integer): Boolean;
 begin
-  if C.Pos > C.Len then begin
-    ALine := '';
+  AStart := C.Pos;
+  AStop := C.Pos;
+  if C.Pos > C.Len then
     Exit(False);
-  end;
-  Start := C.Pos;
   while (C.Pos <= C.Len) and (C.Text[C.Pos] <> #10) and (C.Text[C.Pos] <> #13) do
     Inc(C.Pos);
-  Stop := C.Pos;
+  AStop := C.Pos;
   { Перевод строки: \r\n, \n или одиночный \r }
   if C.Pos <= C.Len then begin
     if C.Text[C.Pos] = #13 then begin
@@ -230,8 +228,48 @@ begin
     end else
       Inc(C.Pos);
   end;
-  ALine := Copy(C.Text, Start, Stop - Start);
   Inc(C.LineNo);
+  Result := True;
+end;
+
+{ Читает очередную строку (без \r\n / \n). False — конец текста. }
+function ReadLine(var C: TZDXFTextCursor; out ALine: string): Boolean;
+var
+  Start, Stop: Integer;
+begin
+  Result := NextLine(C, Start, Stop);
+  ALine := Copy(C.Text, Start, Stop - Start);
+end;
+
+{ Быстрый разбор кода группы без выделения строки: необязательный минус и
+  не более 9 цифр, по краям — пробельные символы (как у Trim). Для всего
+  остального — False, и код разбирается TryStrToInt (та же семантика, что
+  до оптимизации). }
+function TryFastGroupCode(const C: TZDXFTextCursor; AStart, AStop: Integer;
+  out ACode: Integer): Boolean;
+var
+  Neg: Boolean;
+  Digits: Integer;
+begin
+  ACode := 0;
+  while (AStart < AStop) and (C.Text[AStart] <= ' ') do
+    Inc(AStart);
+  while (AStop > AStart) and (C.Text[AStop - 1] <= ' ') do
+    Dec(AStop);
+  Neg := (AStart < AStop) and (C.Text[AStart] = '-');
+  if Neg then
+    Inc(AStart);
+  Digits := AStop - AStart;
+  if (Digits < 1) or (Digits > 9) then
+    Exit(False);
+  while AStart < AStop do begin
+    if (C.Text[AStart] < '0') or (C.Text[AStart] > '9') then
+      Exit(False);
+    ACode := ACode * 10 + (Ord(C.Text[AStart]) - Ord('0'));
+    Inc(AStart);
+  end;
+  if Neg then
+    ACode := -ACode;
   Result := True;
 end;
 
@@ -244,18 +282,23 @@ function ReadPair(var C: TZDXFTextCursor; out ACode: Integer;
   out AValue: string; out AError: string): TZDXFPairReadResult;
 var
   CodeLine: string;
+  Start, Stop: Integer;
 begin
   ACode := 0;
   AValue := '';
   AError := '';
   repeat
-    if not ReadLine(C, CodeLine) then
+    if not NextLine(C, Start, Stop) then
       Exit(prEnd);
-    CodeLine := Trim(CodeLine);
-  until CodeLine <> '';
-  if not TryStrToInt(CodeLine, ACode) then begin
-    AError := Format('line %d: invalid group code "%s"', [C.LineNo, CodeLine]);
-    Exit(prError);
+    while (Start < Stop) and (C.Text[Start] <= ' ') do
+      Inc(Start);
+  until Start < Stop;
+  if not TryFastGroupCode(C, Start, Stop, ACode) then begin
+    CodeLine := Trim(Copy(C.Text, Start, Stop - Start));
+    if not TryStrToInt(CodeLine, ACode) then begin
+      AError := Format('line %d: invalid group code "%s"', [C.LineNo, CodeLine]);
+      Exit(prError);
+    end;
   end;
   if not ReadLine(C, AValue) then begin
     AError := Format('line %d: group code %d without value', [C.LineNo, ACode]);
@@ -285,7 +328,17 @@ begin
   HandleSeen := False;
   for I := 0 to AObj.PairCount - 1 do begin
     Code := AObj.Pairs[I].Code;
-    Value := Trim(AObj.Pairs[I].Value);
+    { Значение нужно только для кодов заголовка объекта: у больших объектов
+      (ACAD_TABLE/TABLECONTENT — сотни тысяч пар) лишний Trim заметен }
+    case Code of
+      5, 102, 330, 360:
+        Value := Trim(AObj.Pairs[I].Value);
+    else
+      if not InBlock then
+        if Code = 100 then
+          SubclassSeen := True;
+      Continue;
+    end;
     if Code = 102 then begin
       if (Value <> '') and (Value[1] = '{') then begin
         if InBlock then
