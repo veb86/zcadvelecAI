@@ -53,7 +53,9 @@ const
   DataDir = 'cad_source/zengine/tests/data/nod/';
   GoldenDir = 'cad_source/zengine/tests/data/nod/golden/';
   { Вывод tablestyleetalon без записи стилей таблиц (эталоны golden до
-    этапа 5): заглушка ACAD_TABLESTYLE стили не загружает и не пишет }
+    этапа 5): заглушка ACAD_TABLESTYLE стили не загружает и не пишет.
+    empty_2007 — эталон golden до этапа 6: без обработчика
+    ACAD_MLEADERSTYLE в APPID нет ACAD_MLEADERVER }
   Stage3Dir = 'cad_source/zengine/tests/data/nod/stage3/';
   EtalonFile = 'cad_source/test/tablestyleetalon.dxf';
   { Файл с сущностями и ключом ACAD_TABLESTYLE в NOD (в эталоне сущностей нет) }
@@ -700,7 +702,7 @@ const
     (Source: EtalonFile; Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'tablestyleetalon_2000.dxf'; Dir: Stage3Dir),
     (Source: EtalonFile; Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'tablestyleetalon_2007.dxf'; Dir: Stage3Dir),
     (Source: '';         Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'empty_2000.dxf'; Dir: GoldenDir),
-    (Source: '';         Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'empty_2007.dxf'; Dir: GoldenDir)
+    (Source: '';         Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'empty_2007.dxf'; Dir: Stage3Dir)
   );
 
 procedure TestRoundTripStub;
@@ -885,8 +887,11 @@ begin
   Failed := 0;
   { Этап 4: адаптер ACAD_TABLESTYLE регистрируется в initialization
     uzeffdxfout; тесты этапа 3 проверяют реестр на своих заглушках,
-    поэтому адаптер снимается (он проверяется в nodstage4). }
+    поэтому адаптер снимается (он проверяется в nodstage4). Этап 6:
+    так же снимается обработчик ACAD_MLEADERSTYLE (проверяется в
+    nodstage6). }
   UnregisterNODHandler('ACAD_TABLESTYLE');
+  UnregisterNODHandler('ACAD_MLEADERSTYLE');
   Events := TStringList.Create;
   try
     Run('TestRegistration', @TestRegistration);
