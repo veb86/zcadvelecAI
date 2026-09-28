@@ -878,6 +878,10 @@ begin
   if ParamCount > 0 then
     Root := IncludeTrailingPathDelimiter(ParamStr(1));
   Failed := 0;
+  { Этап 4: адаптер ACAD_TABLESTYLE регистрируется в initialization
+    uzeffdxfout; тесты этапа 3 проверяют реестр на своих заглушках,
+    поэтому адаптер снимается (он проверяется в nodstage4). }
+  UnregisterNODHandler('ACAD_TABLESTYLE');
   Events := TStringList.Create;
   try
     Run('TestRegistration', @TestRegistration);

@@ -123,10 +123,13 @@ procedure ReadTableStylesFromDXFObjects(
   Если нет — добавляются перед ENDSEC.
   Параметры:
     TableStyleTable   — таблица стилей для записи
-    RawObjectsSection — текст секции OBJECTS для обновления (in/out) }
+    RawObjectsSection — текст секции OBJECTS для обновления (in/out)
+  Устарела (этап 4 ТЗ NOD, issue #1450): стили таблиц пишет NOD-обработчик
+  ACAD_TABLESTYLE (uzeffdxfout), вызовов нет; удаляется на этапе 5. }
 procedure WriteTableStylesToDXFObjects(
   var TableStyleTable: GDBDXFTableStyleArray;
   var RawObjectsSection: string);
+  deprecated 'стили таблиц пишет NOD-обработчик ACAD_TABLESTYLE (ТЗ NOD, этап 4)';
 
 implementation
 
