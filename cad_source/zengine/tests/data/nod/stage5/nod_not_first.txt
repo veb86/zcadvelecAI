@@ -1,0 +1,4 @@
+Standard handle=41 xdict= 70=0 71=0 40=1.5 41=1.5 280=0 281=0 cells=1
+  cell0 7=Standard 140=2.5 170=5 62=0 63=0 283=0
+ZCAD1444 handle=42 xdict= 70=0 71=0 40=1.5 41=1.5 280=0 281=0 cells=1
+  cell0 7=Standard 140=2.5 170=5 62=0 63=0 283=0
