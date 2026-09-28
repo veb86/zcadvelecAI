@@ -364,7 +364,10 @@ begin
   RefreshListItems(nil);
 end;
 
-{ Удаляет стиль из таблицы и из ListView }
+{ Удаляет стиль из таблицы и из ListView.
+  RemoveDataFromArray только убирает указатель из массива, поэтому стиль
+  освобождается явно (Done + Freemem, как GZVectorPData.done). Строка
+  ListView удаляется до освобождения: ListView читает Item.Data. }
 procedure TTableStylesForm.DoStyleDelete(ProcessedItem: TListItem);
 var
   DrawingPtr: PTSimpleDrawing;
@@ -377,8 +380,10 @@ begin
     'uzcftablestyles: удаление стиля "%s"',
     [StylePtr^.Name], LM_Info);
 
-  DrawingPtr^.DXFTableStyleTable.RemoveDataFromArray(StylePtr);
   ListView1.Items.Delete(ListView1.Items.IndexOf(ProcessedItem));
+  DrawingPtr^.DXFTableStyleTable.RemoveDataFromArray(StylePtr);
+  StylePtr^.Done;
+  Freemem(Pointer(StylePtr));
 end;
 
 { Обработчик кнопки удаления стиля }

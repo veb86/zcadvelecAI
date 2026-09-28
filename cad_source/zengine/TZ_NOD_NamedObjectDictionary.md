@@ -311,6 +311,8 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
    убирает указатель из массива, без `Done`/`Freemem`, — удалённый стиль
    остаётся в памяти до выхода. Исправлять вместе с переводом стилей на NOD
    (этап 5); при исправлении учесть, что `ListView` читает `Item.Data`.
+   **Исправлено на этапе 5 (issue #1452)**: после удаления из списка и
+   `RemoveDataFromArray` стиль освобождается (`Done` + `Freemem`).
 3. `uzestylesmleaderdxf.pas` больше не использует `uzcinterface`: сообщение
    о пропущенном стиле с блочным содержимым выводится через
    `programlog.LogOutFormatStr(..., LM_Warning, 1, MO_SH)` — флаг `MO_SH`
@@ -820,6 +822,108 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
   совпадает с исходным;
 * существующие тесты ACAD_TABLE (`uzctacadtable`, `roundtrip1339`,
   `roundtrip1381`, `roundtrip1436`) проходят.
+
+**Статус: выполнен (issue #1452).**
+
+1. Обработчик `ACAD_TABLESTYLE` перенесён из `uzeffdxfout.pas` в
+   `cad_source/zengine/styles/uzestylestablesdxfnod.pas` (регистрируется в
+   `initialization` модуля; `ObjectType = TABLESTYLE`,
+   `DefaultName = Standard`):
+   - `LoadProc` (`LoadTableStylesFromDictionary`): для каждой записи
+     словаря-ветки — объект `TABLESTYLE` из модели этапа 1, поля
+     разбираются по парам `TZDXFRawObject` (`ParseTableStyleRawObject`,
+     логика прежнего `ParseTableStyleObject`: группа `7` начинает блок
+     ячейки, `102 {…}` пропускаются), `DXFHandle` — исходный хэндл,
+     `XDictHandle` — хэндл расширенного словаря. Запись не на `TABLESTYLE`,
+     на несуществующий объект или без имени пропускается (предупреждение в
+     лог). Если стиль с таким именем в чертеже уже есть (вставка/слияние,
+     повтор имени в словаре) — существующий не меняется. Забираются
+     хэндлы `TABLESTYLE`, его расширенного словаря и `CELLSTYLEMAP` в нём;
+     прочие записи расширенного словаря не переносятся (предупреждение);
+   - **`CELLSTYLEMAP` не хранится**: при записи карта стилей ячеек строится
+     заново по параметрам стиля (`WriteCellStyleMapObjectsToStream`, issue
+     #1409), поэтому сырые данные исходного файла не нужны;
+   - `ReserveHandlesProc`, `SaveProc`, `FindObjectHandleProc` — как у
+     адаптера этапа 4; `ClassesProc` пишет классы `TABLESTYLE` и
+     `CELLSTYLEMAP` (класс `CELLSTYLEMAP` раньше объявлял
+     `uzeacadtable_dxf_write`), если стили есть, а в шаблоне класса нет;
+     группа `91` — только с DXF 2004 (`AC1018`), поэтому в эталоне
+     `tests/data/nod/golden/tablestyles_2000.dxf` из класса `CELLSTYLEMAP` ушла пара
+     `91/2`;
+   - **R4: `MinVersion = AC1015`** — стили таблиц пишутся и в DXF 2000,
+     как на этапе 4 (AutoCAD 2000 неизвестный класс игнорирует);
+   - числа читаются и пишутся с `DXFFormat` (десятичная точка) независимо
+     от локали.
+2. Стиль `Standard` по умолчанию: новое поле контракта 4.3
+   `EnsureDefaultsProc` и `RunNODEnsureDefaults`
+   (`uzeffdxfnodregistry.pas`) — вызывается в `AddFromDXF` после
+   `RunNODLoadHandlers` (для R12 — вместо него), до `ENTITIES`, для любой
+   версии DXF и независимо от наличия ключа в NOD. Обработчик стилей
+   таблиц создаёт `Standard`, только если таблица пуста
+   (`EnsureDefaultTableStyle`), со значениями `TABLESTYLE Standard` шаблона
+   `savetemplate2007.dxf` (`FillDefaultTableStyle`: отступы `0.06`, высоты
+   `0.18/0.25/0.18`, выравнивание `2/5/5`, текстовый стиль `Standard`).
+3. `342` у `ACAD_TABLE`: стили загружаются до `ENTITIES`, поэтому
+   `GetStyleByHandle` находит стиль исходного файла (`+testtable.dxf`:
+   `342 = BA` → `vebtable`; раньше стили не загружались, и при записи
+   ссылка вела на `Standard`). Ограничение: при вставке чертежа в
+   непустой (`TLOMerge`) стиль с уже существующим именем не загружается, а
+   `342` вставляемых таблиц ищется по хэндлам исходного чертежа — стиль
+   может не найтись (берётся первый стиль таблицы, как и раньше).
+4. `ReadTableStylesFromDXFObjects`, `ExtractTableStyleDictionary`,
+   `WriteTableStylesToDXFObjects` и разбор сырого текста удалены из
+   `uzestylestablesdxf.pas` (в модуле остались типы и
+   `GDBDXFTableStyleArray`). Эквивалентность проверена до удаления
+   (`experiments/issue1452/tsequiv1452.lpr`) на 77 DXF репозитория: 75
+   совпадают; расходятся `nod_not_first.dxf` и `nod_hardowner_360.dxf`, где
+   прежний разбор ошибался (NOD не первый объект `OBJECTS`; ссылка `360`
+   вместо `350`), новый загрузчик читает их верно. Интерфейс для
+   потребителей (`GetDXFTableStyleTable`, `TGDBDXFTableStyle`) не изменился.
+5. GUI: удалённый стиль таблицы освобождается (`uzcftablestyles.pas`,
+   `uzcui_tablestylemanager.pas`, см. этап 0, п. 2); компиляция модулей
+   проверена `experiments/issue1452/compile_gui_units.sh`.
+6. Эталоны: `tests/data/nod/golden/tablestyleetalon_2000.dxf` и `_2007.dxf` теперь
+   содержат стили эталона (`aits`, `Standard`, `vebts`) и классы
+   `CELLSTYLEMAP` (и `TABLESTYLE` для 2000) — раньше стили эталона при
+   сохранении терялись. Прежние эталоны сохранены в `tests/data/nod/stage3`
+   (с ними сравнивается вывод заглушки `nodstage3`, которая стили не
+   загружает и не пишет). Ожидания `nodstage0`–`nodstage4` обновлены
+   (`nodstage4`: `342` ведёт на `vebtable`, стили берутся из файла).
+7. Тест `cad_source/zengine/tests/nodstage5.lpr` (сборка без IDE:
+   `experiments/issue1452/build_and_run.sh nodstage5`):
+   - обработчик зарегистрирован с `LoadProc`, `EnsureDefaultsProc`,
+     `MinVersion = AC1015`;
+   - стили 8 файлов (`tablestyleetalon`, `+testtable`, `testtable`,
+     `tableheighttextbug`, `bugbreaktable`, `savetemplate2007`,
+     `nod_not_first`, `nod_hardowner_360`) совпадают с эталонами
+     `tests/data/nod/stage5/*.txt` (получены прежним разбором, для двух
+     последних — проверены вручную);
+   - забраны хэндлы стилей, их расширенных словарей и `CELLSTYLEMAP`, и
+     только они;
+   - синтетическая ветка: пропуск записей не на `TABLESTYLE`, на
+     несуществующий объект и без имени; существующий стиль и повтор имени
+     не меняют таблицу;
+   - `Standard` по умолчанию для R12 и для файла без `ACAD_TABLESTYLE`;
+     непустая таблица не дополняется;
+   - `GetStyleByHandle('ba')` → `vebtable` (`+testtable.dxf`);
+   - `tablestyleetalon`: загрузка → сохранение 2000/2007 → загрузка даёт
+     те же стили (с точностью до хэндлов); класс `CELLSTYLEMAP` записан
+     один раз, группа `91` — только в 2007; по одному `TABLESTYLE` и
+     `CELLSTYLEMAP` на стиль.
+
+   Тесты `nodstage0`–`nodstage5` проходят; `roundtrip1339`, `roundtrip1381`,
+   `roundtrip1436` — OK (`experiments/issue1452/run_roundtrips.sh`,
+   проверка `experiments/issue1450/dxfcheck.py`: у `1339_testtable`
+   исчезла неразрешённая ссылка `342:BA`; `331:94` — из шаблона, было и
+   раньше). `heaptrc` (`nodstage5`): неосвобождённые блоки — только строки
+   загрузчика `ACAD_TABLE`. Тест `uzctacadtable`
+   (`testacadtable_standalone`) не собирается и на `master` (нет
+   `NulPoint`, `CreateVertex`, `VertexAdd`) — вне рамок этапа.
+
+   **Не проверено**: открытие результата в AutoCAD, `AUDIT` и диалог
+   стилей таблиц (нет AutoCAD в среде сборки) — нужна ручная проверка
+   `tests/data/nod/golden/tablestyleetalon_2007.dxf` и `tests/data/nod/golden/tablestyleetalon_2000.dxf`;
+   отображение стилей в инспекторе объектов ZCAD (GUI не запускался).
 
 ### Этап 6. Перевод `ACAD_MLEADERSTYLE` на NOD
 

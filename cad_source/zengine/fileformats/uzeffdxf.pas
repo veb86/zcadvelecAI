@@ -72,6 +72,10 @@ function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const Lo
 
 implementation
 
+uses
+  { NOD-обработчик ACAD_TABLESTYLE регистрируется в initialization модуля }
+  uzestylestablesdxfnod;
+
 function IsIgnoredEntity(const name:String):Integer;
 var
   i:Integer;
@@ -1979,6 +1983,9 @@ begin
               Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
               if @DXFNODModelBuiltProc<>nil then
                 DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
+              { NOD в R12 нет: только обязательные записи по умолчанию
+                ('Standard' стилей таблиц, этап 5) }
+              RunNODEnsureDefaults(dwgCtx.PDrawing^);
               AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
             end;
             AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
@@ -1991,6 +1998,8 @@ begin
                 DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
               { Обработчики зарегистрированных ключей NOD (этап 3) }
               RunNODLoadHandlers(fileCtx.NODModel,dwgCtx.PDrawing^);
+              { Обязательные записи, которых нет после загрузки (этап 5) }
+              RunNODEnsureDefaults(dwgCtx.PDrawing^);
               AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
             end;
             else

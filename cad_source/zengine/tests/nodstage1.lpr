@@ -17,8 +17,9 @@ program nodstage1;
 //     неизвестные ключи и ACDB_RECOMPOSE_DATA; несколько корневых
 //     словарей; нарушенная структура секции.
 //  5. Одинаковый результат при переводах строк \n и \r\n.
-//  6. Поведение загрузки чертежа не изменилось: модель к загрузке не
-//     подключена, DXFTableStyleTable после AddFromDXF пуста, как и до этапа 1.
+//  6. Загрузка чертежа: модель RawObjectsSection совпадает с моделью файла;
+//     с этапа 5 (issue #1452) DXFTableStyleTable заполняет NOD-обработчик
+//     ACAD_TABLESTYLE (до этапа 5 таблица оставалась пустой).
 //  7. Детальная трасса (модуль лога NOD) выключена по умолчанию; при
 //     включении все сообщения форматируются без ошибок.
 //  8. Новые модули не зависят от модулей слоя zcad.
@@ -372,37 +373,37 @@ begin
     end;
 end;
 
-{ Эталон: имена стилей по NOD совпадают со старым разбором
-  (ReadTableStylesFromDXFObjects + глобальный поиск словаря) там, где
-  глобальный поиск находит правильный словарь. }
-procedure TestEtalonMatchesLegacy;
+{ Эталон: имена стилей по NOD совпадают с результатом загрузчика
+  LoadTableStylesFromNOD (этап 5; до него сравнение велось со старым
+  разбором ReadTableStylesFromDXFObjects, удалённым на этапе 5). }
+procedure TestEtalonMatchesLoader;
 var
   Section: string;
   Model: TZNODModel;
   Map: TStringList;
   DictHandle: string;
-  Legacy: GDBDXFTableStyleArray;
+  Styles: GDBDXFTableStyleArray;
   I: Integer;
   Style: PTGDBDXFTableStyle;
 begin
   Section := ExtractObjectsSection(Root + EtalonFile);
   Model := LoadModel(Section, 'tablestyleetalon.dxf');
   Map := TStringList.Create;
-  Legacy.init(10);
+  Styles.init(10);
   try
     ExtractTableStyleDictionaryFromNOD(Model, Map, DictHandle);
-    ReadTableStylesFromDXFObjects(Section, Legacy);
-    CheckInt(Map.Count, Legacy.Count, 'etalon: legacy style count equals NOD');
+    LoadTableStylesFromNOD(Model, Styles);
+    CheckInt(Map.Count, Styles.Count, 'etalon: loader style count equals NOD');
     for I := 0 to Map.Count - 1 do begin
-      Style := Legacy.GetStyleByHandle(Map.Names[I]);
+      Style := Styles.GetStyleByHandle(Map.Names[I]);
       if Style = nil then
-        Fail('etalon: legacy reader has no style ' + Map[I])
+        Fail('etalon: loader has no style ' + Map[I])
       else
         CheckEquals(Map.ValueFromIndex[I], Style^.Name,
-          'etalon: legacy style ' + Map.Names[I]);
+          'etalon: loader style ' + Map.Names[I]);
     end;
   finally
-    Legacy.Done;
+    Styles.Done;
     Map.Free;
     Model.Free;
   end;
@@ -414,11 +415,11 @@ var
   Model: TZNODModel;
   Map: TStringList;
   DictHandle: string;
-  Legacy: GDBDXFTableStyleArray;
+  Styles: GDBDXFTableStyleArray;
 begin
   Model := LoadModelFromFile('nod_not_first.dxf');
   Map := TStringList.Create;
-  Legacy.init(10);
+  Styles.init(10);
   try
     CheckInt(8, Model.Objects.Count, 'not_first: object count');
     Check((Model.NOD <> nil) and (Model.Objects.IndexOf(Model.NOD.RawObject) = 3),
@@ -434,13 +435,17 @@ begin
       'not_first: THIRD_PARTY/ACAD_TABLESTYLE is the decoy XRECORD');
     CheckIntegrity(Model, 'not_first');
 
-    // Глобальный поиск 3/ACAD_TABLESTYLE находит словарь 20 (не NOD):
-    // стили 41 и 42 старым разбором не читаются.
-    ReadTableStylesFromDXFObjects(ReadFileText(Root + DataDir + 'nod_not_first.dxf'),
-      Legacy);
-    CheckInt(0, Legacy.Count, 'not_first: legacy global search misses the styles');
+    // Старый глобальный поиск 3/ACAD_TABLESTYLE (удалён на этапе 5) находил
+    // словарь 20 (не NOD) и не читал стили; загрузчик по NOD читает оба.
+    CheckInt(2, LoadTableStylesFromNOD(Model, Styles),
+      'not_first: loader reads the styles of NOD/ACAD_TABLESTYLE');
+    Check((Styles.GetStyleByHandle('41') <> nil)
+      and (Styles.GetStyleByHandle('41')^.Name = 'Standard')
+      and (Styles.GetStyleByHandle('42') <> nil)
+      and (Styles.GetStyleByHandle('42')^.Name = 'ZCAD1444'),
+      'not_first: loader styles 41=Standard, 42=ZCAD1444');
   finally
-    Legacy.Done;
+    Styles.Done;
     Map.Free;
     Model.Free;
   end;
@@ -687,8 +692,8 @@ begin
 end;
 
 { 6. Загрузка чертежа: RawObjectsSection разбирается в ту же модель, что
-  и секция файла; таблица стилей DXF после загрузки пуста (ReadTableStyles
-  к загрузке не подключён ни до, ни после этапа 1). }
+  и секция файла. До этапа 5 таблица стилей DXF после загрузки была пуста;
+  с этапа 5 её заполняет NOD-обработчик ACAD_TABLESTYLE (3 стиля эталона). }
 procedure TestLoadUnchanged;
 var
   Drawing: TSimpleDrawing;
@@ -699,8 +704,8 @@ begin
   FromFile := nil;
   try
     LoadDrawing(Root + EtalonFile, Drawing);
-    CheckInt(0, Drawing.DXFTableStyleTable.Count,
-      'load: DXFTableStyleTable is empty after AddFromDXF');
+    CheckInt(3, Drawing.DXFTableStyleTable.Count,
+      'load: DXFTableStyleTable holds the 3 etalon styles after AddFromDXF');
     Check(Drawing.RawObjectsSection <> '', 'load: RawObjectsSection is filled');
     FromDrawing := LoadModel(Drawing.RawObjectsSection, 'RawObjectsSection');
     FromFile := LoadModel(ExtractObjectsSection(Root + EtalonFile), 'etalon');
@@ -776,7 +781,8 @@ begin
 end;
 
 { 8. Новые модули zengine не используют модули слоя zcad (uzc*),
-  кроме модуля лога uzclog (общий programlog движка). }
+  кроме модуля лога uzclog (общий programlog движка) и контейнеров
+  uzctnr* (пакет zcontainers, не слой zcad). }
 procedure TestNoZcadDependency;
 const
   Units: array[0..3] of string = (
@@ -791,6 +797,7 @@ begin
   for I := Low(Units) to High(Units) do begin
     UsesText := AllUses(Root + Units[I]);
     Rest := StringReplace(UsesText, 'uzclog', '', [rfReplaceAll]);
+    Rest := StringReplace(Rest, 'uzctnr', '', [rfReplaceAll]);
     if UsesText = '' then
       Fail('cannot find uses clause in ' + Units[I])
     else if (Pos('uzc', Rest) > 0) or (Pos('uzeffdxf,', Rest + ',') > 0) then
@@ -810,7 +817,7 @@ begin
 
   Run('TestHandleHelpers', @TestHandleHelpers);
   Run('TestRealFiles', @TestRealFiles);
-  Run('TestEtalonMatchesLegacy', @TestEtalonMatchesLegacy);
+  Run('TestEtalonMatchesLoader', @TestEtalonMatchesLoader);
   Run('TestNODNotFirst', @TestNODNotFirst);
   Run('TestNODWithoutTableStyle', @TestNODWithoutTableStyle);
   Run('TestHardOwner360', @TestHardOwner360);

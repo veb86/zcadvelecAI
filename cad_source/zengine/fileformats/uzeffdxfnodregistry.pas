@@ -21,6 +21,9 @@
   ACAD_TABLESTYLE, в initialization своего модуля (как
   RegisterObjectsSaveDxfProc в uzeacadtable_dxf_write) и получает:
 
+  * чтение (AddFromDXF, до ENTITIES; этап 5): EnsureDefaultsProc —
+    обязательные записи ('Standard'), если после загрузки их нет (для
+    любой версии DXF, в т. ч. R12);
   * чтение (AddFromDXF, DXF 2000+, до ENTITIES) — LoadProc со словарём-веткой
     своего ключа, если ключ есть в NOD загружаемого файла и ссылается на
     словарь. Хэндл словаря-ветки реестр помечает «забранным», хэндлы
@@ -90,6 +93,11 @@ type
     других объектов шаблона на пропущенные объекты его ветки. }
   TNODFindObjectHandleProc = function(const AName: string;
     var AIODXFContext: TIODXFSaveContext): TDWGHandle;
+  { Чтение (необязательная): обязательные записи по умолчанию (стиль
+    'Standard' и т. п.), если после загрузки их нет в чертеже. Вызывается
+    для каждого загружаемого DXF (и R12, и 2000+) после LoadProc, до
+    ENTITIES — независимо от того, есть ли ключ в NOD файла. }
+  TNODEnsureDefaultsProc = procedure(var ADrawing: TSimpleDrawing);
 
   { Описание NOD-обработчика. Любая процедура может быть nil. }
   TZNODHandler = record
@@ -107,6 +115,7 @@ type
     SaveProc: TNODSaveProc;
     ClassesProc: TNODClassesProc;
     FindObjectHandleProc: TNODFindObjectHandleProc;
+    EnsureDefaultsProc: TNODEnsureDefaultsProc;
   end;
   TZNODHandlers = array of TZNODHandler;
 
@@ -229,6 +238,11 @@ function FindNODHandler(const AKey: string; out AHandler: TZNODHandler): Boolean
   NOD — ничего не вызывается. }
 function RunNODLoadHandlers(AModel: TZNODModel;
   var ADrawing: TSimpleDrawing): Integer;
+{ Чтение: вызывает EnsureDefaultsProc всех обработчиков (в порядке
+  регистрации) — после RunNODLoadHandlers, до ENTITIES; для DXF R12, где
+  NOD нет, — вместо него. Возвращает количество вызванных процедур.
+  Исключение в процедуре загрузку не прерывает. }
+function RunNODEnsureDefaults(var ADrawing: TSimpleDrawing): Integer;
 
 { Имя версии DXF для лога ('AC1015') }
 function ACDWGVerName(AVersion: TACDWGVer): string;
@@ -384,6 +398,30 @@ begin
       on E: Exception do
         NODLogWarningFormatStr(
           'uzeffdxfnodregistry: load: handler "%s" failed: %s: %s',
+          [Handlers[I].Key, E.ClassName, E.Message]);
+    end;
+  end;
+end;
+
+function RunNODEnsureDefaults(var ADrawing: TSimpleDrawing): Integer;
+var
+  I: Integer;
+  Handlers: TZNODHandlers;
+begin
+  Result := 0;
+  Handlers := Copy(NODHandlers);
+  for I := 0 to High(Handlers) do begin
+    if not Assigned(Handlers[I].EnsureDefaultsProc) then
+      Continue;
+    NODLogTraceFormatStr(
+      'uzeffdxfnodregistry: load: defaults of key "%s"', [Handlers[I].Key]);
+    try
+      Handlers[I].EnsureDefaultsProc(ADrawing);
+      Inc(Result);
+    except
+      on E: Exception do
+        NODLogWarningFormatStr(
+          'uzeffdxfnodregistry: load: defaults of "%s" failed: %s: %s',
           [Handlers[I].Key, E.ClassName, E.Message]);
     end;
   end;

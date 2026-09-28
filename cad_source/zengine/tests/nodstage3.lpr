@@ -18,7 +18,8 @@ program nodstage3;
 //  5. Приёмка этапа 3: с зарегистрированным обработчиком-заглушкой
 //     (ключ ACAD_TABLESTYLE) round-trip загрузка → сохранение даёт вывод,
 //     совпадающий с эталонами этапа 0 (tablestyleetalon, empty; шаблоны
-//     2000 и 2007). Заглушка вызывается при сохранении ровно по одному разу
+//     2000 и 2007; для tablestyleetalon — data/nod/stage3: с этапа 5
+//     эталоны golden содержат стили эталона, а заглушка их не пишет). Заглушка вызывается при сохранении ровно по одному разу
 //     (Classes, Reserve, Save — в порядке секций файла), в SaveProc приходит хэндл NOD
 //     сохранённого файла. Обработчик с MinVersion = AC1018 при сохранении
 //     в DXF 2000 не вызывается.
@@ -51,6 +52,9 @@ const
   TemplatesDir = 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/';
   DataDir = 'cad_source/zengine/tests/data/nod/';
   GoldenDir = 'cad_source/zengine/tests/data/nod/golden/';
+  { Вывод tablestyleetalon без записи стилей таблиц (эталоны golden до
+    этапа 5): заглушка ACAD_TABLESTYLE стили не загружает и не пишет }
+  Stage3Dir = 'cad_source/zengine/tests/data/nod/stage3/';
   EtalonFile = 'cad_source/test/tablestyleetalon.dxf';
   { Файл с сущностями и ключом ACAD_TABLESTYLE в NOD (в эталоне сущностей нет) }
   EntitiesFile = 'cad_source/test/polylinearc.dxf';
@@ -441,8 +445,8 @@ begin
   end;
 end;
 
-{ Сравнивает файл с эталоном этапа 0 }
-procedure CheckGolden(const AOutFile, AGolden: string);
+{ Сравнивает файл с эталоном (каталог ADir, по умолчанию GoldenDir) }
+procedure CheckGolden(const AOutFile, AGolden: string; const ADir: string = GoldenDir);
 var
   Actual, Expected: TStringList;
   I: Integer;
@@ -452,7 +456,7 @@ begin
   try
     Actual.LoadFromFile(AOutFile);
     NormalizeDXF(Actual);
-    Expected.LoadFromFile(Root + GoldenDir + AGolden);
+    Expected.LoadFromFile(Root + ADir + AGolden);
     for I := 0 to Actual.Count - 1 do
       if (I >= Expected.Count) or (Actual[I] <> Expected[I]) then begin
         if I < Expected.Count then
@@ -688,14 +692,15 @@ type
     Template: string;
     Ver: TZCDxfVersion;
     Golden: string;
+    Dir: string;
   end;
 
 const
   RoundTripCases: array[0..3] of TRoundTripCase = (
-    (Source: EtalonFile; Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'tablestyleetalon_2000.dxf'),
-    (Source: EtalonFile; Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'tablestyleetalon_2007.dxf'),
-    (Source: '';         Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'empty_2000.dxf'),
-    (Source: '';         Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'empty_2007.dxf')
+    (Source: EtalonFile; Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'tablestyleetalon_2000.dxf'; Dir: Stage3Dir),
+    (Source: EtalonFile; Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'tablestyleetalon_2007.dxf'; Dir: Stage3Dir),
+    (Source: '';         Template: 'savetemplate2000.dxf'; Ver: ZCDxf2000; Golden: 'empty_2000.dxf'; Dir: GoldenDir),
+    (Source: '';         Template: 'savetemplate2007.dxf'; Ver: ZCDxf2007; Golden: 'empty_2007.dxf'; Dir: GoldenDir)
   );
 
 procedure TestRoundTripStub;
@@ -715,7 +720,7 @@ begin
     if C.Source <> '' then
       Src := Root + C.Source;
     LoadAndSave(Src, C.Template, C.Ver, OutFile);
-    CheckGolden(OutFile, C.Golden);
+    CheckGolden(OutFile, C.Golden, C.Dir);
     { Секция CLASSES идёт раньше ENTITIES, поэтому ClassesProc вызывается
       до ReserveHandlesProc }
     ExpectedEvents := 'classes:stub reserve:stub save:stub:0';
@@ -738,13 +743,13 @@ begin
   Events.Clear;
   OutFile := OutPath('stub_minver_tablestyleetalon_2000.dxf');
   LoadAndSave(Root + EtalonFile, 'savetemplate2000.dxf', ZCDxf2000, OutFile);
-  CheckGolden(OutFile, 'tablestyleetalon_2000.dxf');
+  CheckGolden(OutFile, 'tablestyleetalon_2000.dxf', Stage3Dir);
   CheckEquals('load:stub:86:3:claimed', EventsText,
     'MinVersion AC1018, DXF 2000: only LoadProc is called');
   Events.Clear;
   OutFile := OutPath('stub_minver_tablestyleetalon_2007.dxf');
   LoadAndSave(Root + EtalonFile, 'savetemplate2007.dxf', ZCDxf2007, OutFile);
-  CheckGolden(OutFile, 'tablestyleetalon_2007.dxf');
+  CheckGolden(OutFile, 'tablestyleetalon_2007.dxf', Stage3Dir);
   CheckEquals('load:stub:86:3:claimed classes:stub reserve:stub save:stub:0', EventsText,
     'MinVersion AC1018, DXF 2007: all procs are called');
 end;
