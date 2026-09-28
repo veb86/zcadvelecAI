@@ -116,6 +116,15 @@ type
     ClassesProc: TNODClassesProc;
     FindObjectHandleProc: TNODFindObjectHandleProc;
     EnsureDefaultsProc: TNODEnsureDefaultsProc;
+    { Имя приложения расширенных данных (1001), которое пишут объекты ветки
+      ('ACAD_MLEADERVER'); '' — нет. При записи регистрируется в таблице
+      APPID (этап 6). }
+    XDataAppName: string;
+    { LoadProc нужен индекс символьных таблиц (хэндл → имя записи LTYPE,
+      STYLE, BLOCK_RECORD...; TZNODModel.FindSymbolName): объекты ветки
+      ссылаются на записи таблиц по хэндлам (этап 6). Секция TABLES
+      разбирается, только если такой обработчик будет вызван. }
+    NeedsSymbolTables: Boolean;
   end;
   TZNODHandlers = array of TZNODHandler;
 
@@ -243,6 +252,11 @@ function RunNODLoadHandlers(AModel: TZNODModel;
   NOD нет, — вместо него. Возвращает количество вызванных процедур.
   Исключение в процедуре загрузку не прерывает. }
 function RunNODEnsureDefaults(var ADrawing: TSimpleDrawing): Integer;
+{ Чтение: нужен ли индекс символьных таблиц — есть обработчик с
+  NeedsSymbolTables, ключ которого есть в NOD модели и ссылается на
+  непустой словарь. Вызывается после разбора OBJECTS, до
+  RunNODLoadHandlers. }
+function NODLoadNeedsSymbolTables(AModel: TZNODModel): Boolean;
 
 { Имя версии DXF для лога ('AC1015') }
 function ACDWGVerName(AVersion: TACDWGVer): string;
@@ -304,6 +318,7 @@ function RegisterNODHandler(const AKey, AObjectType: string;
 var
   H: TZNODHandler;
 begin
+  H := Default(TZNODHandler);
   H.Key := AKey;
   H.ObjectType := AObjectType;
   H.MinVersion := AMinVersion;
@@ -312,7 +327,6 @@ begin
   H.ReserveHandlesProc := AReserveHandlesProc;
   H.SaveProc := ASaveProc;
   H.ClassesProc := AClassesProc;
-  H.FindObjectHandleProc := nil;
   Result := RegisterNODHandler(H);
 end;
 
@@ -425,6 +439,28 @@ begin
           [Handlers[I].Key, E.ClassName, E.Message]);
     end;
   end;
+end;
+
+function NODLoadNeedsSymbolTables(AModel: TZNODModel): Boolean;
+var
+  I: Integer;
+  Entry: TZDXFDictEntry;
+  Dict: TZDXFDictionary;
+begin
+  Result := False;
+  if (AModel = nil) or (AModel.NOD = nil) then
+    Exit;
+  for I := 0 to High(NODHandlers) do
+    if NODHandlers[I].NeedsSymbolTables and
+       AModel.NOD.FindEntry(NODHandlers[I].Key, Entry) then begin
+      Dict := AModel.FindDictionary(Entry.TargetHandle);
+      if (Dict <> nil) and (Dict.Count > 0) then begin
+        NODLogTraceFormatStr(
+          'uzeffdxfnodregistry: load: key "%s" needs symbol tables',
+          [NODHandlers[I].Key]);
+        Exit(True);
+      end;
+    end;
 end;
 
 { Текст секции OBJECTS DXF-файла (от 0/SECTION до конца файла — разбор
