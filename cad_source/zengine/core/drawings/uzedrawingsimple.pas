@@ -725,6 +725,8 @@ begin
   BlockDefArray.Done;
   Numerator.Done;
   TableStyleTable.Done;
+  { Стили таблиц для DXF-обмена (TABLESTYLE); освобождает и вложенные CellFormats }
+  DXFTableStyleTable.Done;
   LTypeStyleTable.Done;
   DimStyleTable.Done;
   if internalcamera then
@@ -787,6 +789,10 @@ begin
   Numerator.init(10);
 
   TableStyleTable.init(10);
+
+  { Стили таблиц для DXF-обмена (TABLESTYLE). Инициализация обязательна:
+    чертёж ZCAD выделяется через Getmem без обнуления памяти (issue #1442) }
+  DXFTableStyleTable.init(10);
 
   PTempTableStyle:=TableStyleTable.AddStyle('Temp');
 

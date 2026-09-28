@@ -287,6 +287,60 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 новые тесты фиксируют текущий вывод; утечек по `heaptrc` при
 открытии/закрытии чертежа нет.
 
+**Статус: выполнен (issue #1442).**
+
+1. `TSimpleDrawing.init` вызывает `DXFTableStyleTable.init(10)`,
+   `TSimpleDrawing.done` — `DXFTableStyleTable.Done`. Раньше поле не
+   инициализировалось вовсе, а `TZCADDrawingsManager.CreateDWG` выделяет
+   чертёж через `Getmem` без обнуления, поэтому таблица содержала мусор
+   (воспроизведение: `AddStyle` на чертеже в «грязной» памяти →
+   `EAccessViolation`). `GDBDXFTableStyleArray.done`
+   (`GZVectorPData.done`) вызывает `done` каждого стиля, а
+   `TGDBDXFTableStyle.Done` освобождает `CellFormats` и строки — проверено
+   тестом по `GetFPCHeapStatus` (без `DXFTableStyleTable.Done` теряется
+   5952 байта на 20 стилей) и `heaptrc`.
+2. Потребители (`uzcregacadtable`, `uzccommand_adddxftablestyle`,
+   `uzeacadtable_stylemanager`, `uzeacadtable_dxf_write`,
+   `uzvspreadsheet_cmdcreateacadtable`, `uzcui_tablestylemanager`,
+   `uzcftablestyles`, `uzcftablestylecreate`, `uzeffdxfout`) обходят
+   таблицу через `beginiterate`/`count`/`AddStyle` и после `init` корректно
+   работают с пустой таблицей. Найдено (не исправлено, вне этапа 0):
+   удаление стиля в GUI (`uzcui_tablestylemanager.pas`,
+   `uzcftablestyles.pas`) вызывает `RemoveDataFromArray`, который только
+   убирает указатель из массива, без `Done`/`Freemem`, — удалённый стиль
+   остаётся в памяти до выхода. Исправлять вместе с переводом стилей на NOD
+   (этап 5); при исправлении учесть, что `ListView` читает `Item.Data`.
+3. `uzestylesmleaderdxf.pas` больше не использует `uzcinterface`: сообщение
+   о пропущенном стиле с блочным содержимым выводится через
+   `programlog.LogOutFormatStr(..., LM_Warning, 1, MO_SH)` — флаг `MO_SH`
+   отправляет его в историю команд (`uzcreglog.TLogerMBoxBackend`), как
+   раньше `zcUI.TextMessage(..., TMWOHistoryOut)`.
+4. Тест `cad_source/zengine/tests/nodstage0.lpr` (сборка без IDE:
+   `experiments/issue1442/build_and_run_nodstage0.sh`, перезапись
+   эталонов — ключ `--update`) сравнивает вывод `savedxf20XX` с
+   эталонами `cad_source/zengine/tests/data/nod/golden/` (значения
+   `$TDCREATE`/`$TDUCREATE`/`$TDUPDATE`/`$TDUUPDATE` заменяются на
+   `<time>`). Зафиксированное текущее поведение:
+   - `empty_2000/2007` — пустой чертёж; в 2007 из шаблона пишется один
+     стиль `Standard`;
+   - `tablestyles_2000/2007` — чертёж с двумя стилями в
+     `DXFTableStyleTable` (`Standard`, `ZCAD1442`): в 2007 оба пишутся в
+     `ACAD_TABLESTYLE`, в 2000 стили **молча теряются** (в шаблоне нет
+     словаря `ACAD_TABLESTYLE`, добавляется только класс `CELLSTYLEMAP`);
+   - `tablestyleetalon_2000/2007` — загрузка `tablestyleetalon.dxf`
+     (стили `aits`, `Standard`, `vebts`) и сохранение: пользовательские
+     стили **теряются**, так как чтение `TABLESTYLE` отключено
+     (`uzeffdxf.pas`, закомментированный вызов
+     `ReadTableStylesFromDXFObjects`); в 2007 остаётся `Standard` из
+     шаблона.
+   Изменение эталонов на следующих этапах — только осознанное, с
+   объяснением в PR.
+
+`heaptrc` (`HEAPTRC=1 experiments/issue1442/build_and_run_nodstage0.sh`):
+после всех проверок, включая загрузку/сохранение `tablestyleetalon.dxf`,
+не освобождены только 2 блока глобальных реестров форматов
+(`uzeffmanager`, секция `initialization`) — к чертежу не относятся.
+
 ### Этап 1. Модель OBJECTS/NOD (только чтение, без побочных эффектов)
 
 1. Реализовать `uzeffdxfobjects.pas`: разбор секции `OBJECTS` из

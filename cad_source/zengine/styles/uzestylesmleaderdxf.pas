@@ -37,7 +37,6 @@ uses
   uzeNamedObject,
   gzctnrVectorTypes,
   uzclog,
-  uzcinterface,
   sysutils,
   Classes;
 
@@ -824,15 +823,15 @@ begin
                   + '"%s" пропущен (блочное '
                   + 'содержимое не поддерживается)',
                   [StyleName], LM_Info);
-                zcUI.TextMessage(
-                  Format(
-                    'Стиль мультивыноски "%s" '
-                    + 'пропущен: ZCAD '
-                    + 'не поддерживает тип '
-                    + 'настройки текста '
-                    + 'мультивыносок: block',
-                    [StyleName]),
-                  TMWOHistoryOut);
+                { Сообщение пользователю в историю команд (MO_SH) — через журнал,
+                  без зависимости от uzcinterface (слой zcad) }
+                programlog.LogOutFormatStr(
+                  'Стиль мультивыноски "%s" '
+                  + 'пропущен: ZCAD '
+                  + 'не поддерживает тип '
+                  + 'настройки текста '
+                  + 'мультивыносок: block',
+                  [StyleName], LM_Warning, 1, MO_SH);
               end
               else
               begin
@@ -915,15 +914,15 @@ begin
             + '"%s" пропущен (блочное '
             + 'содержимое не поддерживается)',
             [StyleName], LM_Info);
-          zcUI.TextMessage(
-            Format(
-              'Стиль мультивыноски "%s" '
-              + 'пропущен: ZCAD '
-              + 'не поддерживает тип '
-              + 'настройки текста '
-              + 'мультивыносок: block',
-              [StyleName]),
-            TMWOHistoryOut);
+          { Сообщение пользователю в историю команд (MO_SH) — через журнал,
+            без зависимости от uzcinterface (слой zcad) }
+          programlog.LogOutFormatStr(
+            'Стиль мультивыноски "%s" '
+            + 'пропущен: ZCAD '
+            + 'не поддерживает тип '
+            + 'настройки текста '
+            + 'мультивыносок: block',
+            [StyleName], LM_Warning, 1, MO_SH);
         end
         else
         begin
