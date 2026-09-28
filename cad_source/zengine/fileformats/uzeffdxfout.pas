@@ -30,7 +30,7 @@ uses
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
-  uzestylestablesdxf,uzclog;
+  uzestylestablesdxf,uzclog,uzeffdxfnodregistry;
 type
   { Callback, вызываемый перед началом записи DXF. Позволяет подпиться
     на pre-save обработку чертежа (например, конвертацию ProxyEntity
@@ -582,11 +582,21 @@ var
   tsCount: integer;
   tsHandlesAllocated: boolean;
   beforeProcIdx: integer;
+  { NOD-обработчики, участвующие в сохранении (реестр uzeffdxfnodregistry) }
+  NODSave: TZNODSaveSession;
 
+  { Вызывается перед ENDSEC секции OBJECTS: сначала ветки NOD-обработчиков
+    (этап 3 ТЗ NOD), затем прикладные OBJECTS-callback'и. }
   procedure RunObjectsSaveDxfProcs;
   var
     objectsProcIdx: Integer;
+    nodHandle: TDWGHandle;
   begin
+    { Новый хэндл NOD: корневой словарь шаблона уже записан и перемаплен }
+    nodHandle:=0;
+    if NODSave.TemplateNODHandle<>0 then
+      nodHandle:=OldHandele2NewHandle.MyGetValue(NODSave.TemplateNODHandle);
+    NODSave.WriteObjects(outstream,drawing,IODXFContext,nodHandle);
     for objectsProcIdx:=0 to High(ObjectsSaveDxfProcs) do
       if Assigned(ObjectsSaveDxfProcs[objectsProcIdx]) then
         ObjectsSaveDxfProcs[objectsProcIdx](
@@ -597,6 +607,7 @@ var
   var
     classesProcIdx: Integer;
   begin
+    NODSave.WriteClasses(outstream,drawing,IODXFContext);
     for classesProcIdx:=0 to High(ClassesSaveDxfProcs) do
       if Assigned(ClassesSaveDxfProcs[classesProcIdx]) then
         ClassesSaveDxfProcs[classesProcIdx](
@@ -680,6 +691,10 @@ begin
     lph:=lps.StartLongProcess('Save DXF file',@outstream,drawing.pObjRoot^.ObjArray.Count);
     OldHandele2NewHandle:=TMapHandleToHandle.Create;
     templatefile.InitFromFile(TemplateFileName);
+    { Обработчики NOD, подходящие по версии; хэндл NOD шаблона — из его
+      секции OBJECTS (модель этапа 1) }
+    NODSave:=TZNODSaveSession.Create(IODXFContext.Header.Version);
+    NODSave.LoadTemplate(TemplateFileName);
     inlayertable:=False;
     inblocksec:=False;
     inblocktable:=False;
@@ -778,6 +793,8 @@ begin
             вычисляем хэндл владельца — сырые ACAD_TABLE ссылаются на них
             (issue #1339). }
           PreallocateTableStyleHandles;
+          { Хэндлы веток NOD-обработчиков — тоже до сущностей (этап 3 ТЗ NOD) }
+          NODSave.ReserveHandles(drawing,IODXFContext);
           saveentitiesdxf2000(@{p}drawing.pObjRoot^.ObjArray,outstream,drawing,IODXFContext);
         end else if (groupi=2) and (values='BLOCKS') then begin
           outstream.TXTAddStringEOL(groups);
@@ -1548,6 +1565,7 @@ begin
           { Хэндлы стилей таблиц уже могли быть выделены перед секцией
             ENTITIES (issue #1339). Вызов идемпотентен. }
           PreallocateTableStyleHandles;
+          NODSave.ReserveHandles(drawing,IODXFContext);
           if tsCount>0 then
             programlog.LogOutFormatStr(
               'uzeffdxfout: выделены хэндлы для %d стилей таблиц',
@@ -1735,6 +1753,7 @@ begin
     outstream.TXTAddStringEOL(inttohex(IODXFContext.handle+$100000000,9){'100000013'});
     outstream.Count:=i;
     OldHandele2NewHandle.Destroy;
+    NODSave.Free;
     templatefile.done;
 
     sysfilename:={$IFNDEF DELPHI}utf8tosys{$ENDIF}(SavedFileName);

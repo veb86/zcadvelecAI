@@ -29,7 +29,7 @@ uses
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,
-  uzeffdxfnod,uzeffdxfnodlog;
+  uzeffdxfnod,uzeffdxfnodlog,uzeffdxfnodregistry;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -56,8 +56,9 @@ var
   CreateExtLoadData:TCreateExtLoadData=nil;
   ClearExtLoadData:TProcessExtLoadData=nil;
   FreeExtLoadData:TProcessExtLoadData=nil;
-  { Точка наблюдения за NOD pre-pass (тесты этапа 2 ТЗ NOD). На этапе 3
-    вызов обработчиков NOD перейдёт в реестр uzeffdxfnodregistry. }
+  { Точка наблюдения за NOD pre-pass (тесты этапов 2–3 ТЗ NOD): вызывается
+    для любого файла, в том числе без NOD, до обработчиков NOD. Данные NOD
+    загружают обработчики реестра uzeffdxfnodregistry (RunNODLoadHandlers). }
   DXFNODModelBuiltProc:TDXFNODModelBuiltProc=nil;
 
 { NOD pre-pass (этап 2 ТЗ cad_source/zengine/TZ_NOD_NamedObjectDictionary.md):
@@ -1988,6 +1989,8 @@ begin
               DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
               if @DXFNODModelBuiltProc<>nil then
                 DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
+              { Обработчики зарегистрированных ключей NOD (этап 3) }
+              RunNODLoadHandlers(fileCtx.NODModel,dwgCtx.PDrawing^);
               AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
             end;
             else

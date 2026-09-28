@@ -476,9 +476,10 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 4. Закомментированный вызов `ReadTableStylesFromDXFObjects` после
    `fileCtx.Done` удалён, как и ставшая ненужной ссылка `uzeffdxf` на
    `uzestylestablesdxf`.
-5. `DXFNODModelBuiltProc` — временная точка наблюдения (вызывается сразу
+5. `DXFNODModelBuiltProc` — точка наблюдения (вызывается сразу
    после pre-pass, в том числе для R12 с пустой моделью), нужна тестам
-   этапа 2; на этапе 3 её заменит реестр `uzeffdxfnodregistry`.
+   этапа 2; загрузку данных NOD на этапе 3 взял на себя реестр
+   `uzeffdxfnodregistry`, точка наблюдения оставлена для тестов.
    Сохранение не менялось: эталоны этапа 0 совпадают.
 6. Время. Секции `OBJECTS` обычных чертежей малы: для файла
    `dxfloadbench.cmd` (`zcadelectrotech/data/examples/test_dxf/ops.dxf`,
@@ -544,6 +545,84 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 
 Приёмка: реестр с одним тестовым обработчиком-заглушкой проходит round-trip
 (загрузка → сохранение), выходной файл совпадает с эталоном этапа 0.
+
+**Статус: выполнен (issue #1448).**
+
+1. `uzeffdxfnodregistry.pas` (`zengine/fileformats`, зависимостей от `zcad`
+   нет): `TZNODHandler` — ключ NOD, `ObjectType`, `MinVersion` (по
+   умолчанию `AC1015`), `DefaultName`, `LoadProc`, `ReserveHandlesProc`,
+   `SaveProc`, `ClassesProc` (сигнатуры раздела 4.3; любая процедура
+   может быть `nil`). `RegisterNODHandler` (запись или перегрузка со
+   списком процедур) — `False` и предупреждение в лог для пустого ключа и
+   для повторной регистрации ключа (ключи сравниваются без учёта
+   регистра). `UnregisterNODHandler`, `NODHandlerCount`, `GetNODHandler`,
+   `FindNODHandler` — для тестов и выгрузки модулей. Реестр сам хэндлы не
+   выделяет и в файл ничего не пишет: без обработчиков (и с обработчиком,
+   который ничего не пишет) вывод не меняется.
+2. Чтение: `AddFromDXF` для DXF 2000+ после pre-pass (и точки наблюдения
+   `DXFNODModelBuiltProc`, оставленной для тестов этапов 2–3) вызывает
+   `RunNODLoadHandlers(fileCtx.NODModel, Drawing)` — до `TABLES`/`ENTITIES`.
+   Для каждого обработчика (в порядке регистрации; не в порядке ключей
+   NOD) с ключом, найденным в NOD: если запись ссылается не на словарь —
+   предупреждение, обработчик не вызывается; иначе хэндл словаря-ветки
+   помечается «забранным» (`ClaimHandle`) и вызывается `LoadProc`; хэндлы
+   объектов ветки помечает сам обработчик. Исключение в `LoadProc`
+   пишется в лог и не прерывает ни загрузку, ни остальные обработчики.
+   Незарегистрированные ключи пропускаются (трасса `NOD`). Для R12, файлов
+   без `OBJECTS` и с ошибкой разбора `OBJECTS` модель пустая — обработчики
+   не вызываются.
+3. Запись: `savedxf20XX` создаёт `TZNODSaveSession` (снимок обработчиков,
+   у которых `MinVersion` ≤ версии файла; для остальных — предупреждение
+   «ключ не пишется в DXF …») и находит хэндл NOD шаблона разбором его
+   секции `OBJECTS` моделью этапа 1 (только если обработчики есть).
+   - `ReserveHandlesProc` — рядом с `PreallocateTableStyleHandles` (перед
+     `ENTITIES` и, если `ENTITIES` в шаблоне нет, в начале `OBJECTS`), не
+     более одного раза за сохранение; результат — хэндл словаря-ветки;
+   - `ClassesProc` — перед `ENDSEC` секции `CLASSES`, до
+     `RunClassesSaveDxfProcs`. Секция `CLASSES` идёт раньше `ENTITIES`,
+     поэтому `ClassesProc` вызывается до `ReserveHandlesProc` и не должна
+     зависеть от выделенных хэндлов;
+   - `SaveProc(…, DictHandle, NODHandle)` — перед `ENDSEC` секции
+     `OBJECTS`, до `RunObjectsSaveDxfProcs`; `NODHandle` — новый хэндл NOD
+     шаблона (`OldHandele2NewHandle`), 0 — NOD в шаблоне нет.
+   Регистрация в `initialization` и фиксированный порядок вызова — по
+   порядку регистрации (обработчиков пока нет: `ACAD_TABLESTYLE` — этап 5,
+   `ACAD_MLEADERSTYLE` — этап 6).
+4. Пары `3/350` в NOD шаблона и пропуск шаблонной ветки ключа обработчика
+   **не** делаются — это этап 4. До этапа 4 `SaveProc` обработчика,
+   который пишет словарь-ветку, создаёт в файле словарь, не
+   зарегистрированный в NOD.
+5. Тест `cad_source/zengine/tests/nodstage3.lpr` (сборка без IDE:
+   `experiments/issue1448/build_and_run_nodstage3.sh`):
+   - регистрация: порядок, отказ для пустого и повторного ключа (другой
+     регистр), удаление;
+   - `RunNODLoadHandlers` на синтетической секции `OBJECTS`: вызовы в
+     порядке регистрации, только для ключей NOD, ссылающихся на словарь;
+     XRECORD, битая ссылка и отсутствующий ключ — без вызова;
+     словарь-ветка помечена «забранной», исключение в `LoadProc` не мешает
+     следующему обработчику; `nil` и модель без NOD — без вызовов;
+   - `AddFromDXF`: на эталоне `LoadProc` `ACAD_TABLESTYLE` получает словарь
+     `86` (3 записи), `ACAD_GROUP` — `D`; на `polylinearc.dxf` `LoadProc`
+     вызывается при 0 сущностях, после загрузки их 2; R12 и файл с ошибкой
+     `OBJECTS` — без вызовов; исключение в `LoadProc` не прерывает загрузку;
+   - `TZNODSaveSession`: фильтр `MinVersion`, хэндл NOD шаблона `C`,
+     `ReserveHandles`/`WriteObjects` идемпотентны;
+   - **приёмка**: с обработчиком-заглушкой `ACAD_TABLESTYLE`
+     round-trip `tablestyleetalon.dxf` и пустого чертежа на шаблонах
+     2000/2007 совпадает с эталонами этапа 0; заглушка вызывается по одному
+     разу (`Load`, `Classes`, `Reserve`, `Save`), в `SaveProc` приходит
+     хэндл NOD сохранённого файла; с `MinVersion = AC1018` в DXF 2000
+     вызывается только `LoadProc`, вывод совпадает с эталоном;
+   - обработчик, который пишет данные: класс `ClassesProc` — внутри
+     `CLASSES`, словарь `SaveProc` — последний объект `OBJECTS`, владелец —
+     NOD, повторяющихся хэндлов нет; хэндл `ReserveHandlesProc` меньше
+     `$HANDSEED` и хэндлов сущностей (`polylinearc.dxf`);
+   - модуль лога `NOD` выключен по умолчанию, трасса реестра при включении
+     форматируется без ошибок.
+
+   Тесты этапов 0–2 проходят без изменений. `heaptrc`: объектов реестра
+   среди неосвобождённых блоков нет (остаётся реестр форматов
+   `uzeffmanager`).
 
 ### Этап 4. NOD writer вместо ad-hoc автомата `ACAD_TABLESTYLE`
 
