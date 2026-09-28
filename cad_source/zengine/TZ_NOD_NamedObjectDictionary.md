@@ -364,6 +364,80 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 `350`; неизвестный ключ; `ACDB_RECOMPOSE_DATA`). Поведение загрузки
 чертежа **не изменилось** (модель ещё не подключена).
 
+**Статус: выполнен (issue #1444).**
+
+1. `cad_source/zengine/fileformats/uzeffdxfobjects.pas` —
+   `ParseDxfObjectsSection(Text, Objects, out Error)`: разбор текста
+   секции `OBJECTS` (формат `RawObjectsSection`: с `0/SECTION`, `2/OBJECTS`
+   или без них) одним проходом, без `TStringList`, в `TZDXFRawObject`
+   (`ObjType`, `Handle`, `OwnerHandle`, `HasOwnerGroup`, `Reactors`,
+   `XDictHandle`, все пары `Pairs` в исходном порядке, `LineNumber`).
+   * Переводы строк `\r\n`, `\n`, одиночный `\r`; пробелы вокруг кодов
+     групп; UTF-8 BOM; разбор заканчивается на `0/ENDSEC` или `0/EOF`.
+   * Блоки `102 {… 102 }` отслеживаются, реакторы берутся из
+     `{ACAD_REACTORS`, xdictionary — из `{ACAD_XDICTIONARY`, прочие блоки
+     только сохраняются в `Pairs`. Владелец (`330` вне блоков 102),
+     реакторы и xdictionary берутся **только до первой группы `100`**: после
+     маркера подкласса начинаются данные объекта (например, `330`/`360`/`102`
+     в `XRECORD`), и они не принимаются за заголовок.
+   * `NormalizeDXFHandleStr` — тот же алгоритм, что `NormalizeHandle`
+     (`uzeffdxf.pas`, в интерфейс не вынесен, модуль не менялся);
+     `TryDXFStrToHandle`/`DXFHandleToStr` — хэндл как `TDWGHandle`.
+   * Нарушенная структура (код группы — не число, пара без значения) —
+     `False` и описание с номером строки; объекты до ошибки сохраняются.
+2. `cad_source/zengine/fileformats/uzeffdxfnod.pas` — `TZNODModel`:
+   объекты, индекс по хэндлу (повторяющийся хэндл — предупреждение, в
+   индекс попадает первый объект), `TZDXFDictionary` для каждого
+   `DICTIONARY` и `ACDBDICTIONARYWDFLT` (записи `3` + `350`/`360` с
+   сохранением кода владения, `280`, `281`, `340`; ключ без хэндла
+   пропускается), NOD — первый `DICTIONARY` с `330=0` (остальные корневые
+   словари — предупреждение в общий лог, `RootDictionaryCount`),
+   `ResolvePath('ACAD_TABLESTYLE/Standard')`/`ResolveDictionary` (ключи без
+   учёта регистра), `ClaimHandle`/`IsHandleClaimed` для будущих
+   обработчиков (этап 3).
+3. `cad_source/zengine/styles/uzestylestablesdxfnod.pas` —
+   `ExtractTableStyleDictionaryFromNOD(Model, StyleNameByHandle, out
+   DictHandle)`: замена `ExtractTableStyleDictionary`, формат карты тот
+   же (`хэндл=имя`), но словарь берётся только из `NOD/ACAD_TABLESTYLE`.
+   Используется только в тестах; `uzeffdxf.pas`, `uzeffdxfout.pas` и
+   `uzestylestablesdxf.pas` не менялись — поведение загрузки и сохранения
+   прежнее (эталоны этапа 0 совпадают).
+4. `cad_source/zengine/fileformats/uzeffdxfnodlog.pas` — модуль лога `NOD`,
+   зарегистрирован выключенным. Трасса (количество объектов и словарей,
+   корневые словари, время разбора, ключи NOD, битые ссылки) включается
+   ключом `lem NOD`; предупреждения (несколько корневых словарей,
+   повторяющиеся хэндлы, ошибка разбора) пишутся в общий лог всегда.
+   Новые модули не зависят от модулей слоя zcad (кроме `uzclog`, как
+   `uzedwglog`/`uzeentproxylog`) и от `uzeffdxf`.
+5. Тест `cad_source/zengine/tests/nodstage1.lpr` (сборка без IDE:
+   `experiments/issue1444/build_and_run_nodstage1.sh`):
+   - `tablestyleetalon.dxf` (41 объект), `savetemplate2000.dxf` (11),
+     `savetemplate2007.dxf` (39), `empty.dxf` (11): NOD = `C`, ключи NOD,
+     целостность ссылок (владелец каждого объекта существует, объект записи
+     словаря принадлежит словарю), `ACAD_TABLESTYLE` = `86`
+     (`BE=aits, 87=Standard, BA=vebts` в эталоне; `87=Standard` в шаблоне
+     2007; нет в 2000). На эталоне результат совпадает со старым
+     `ReadTableStylesFromDXFObjects`;
+   - синтетические файлы `cad_source/zengine/tests/data/nod/nod_*.dxf`
+     (генератор `experiments/issue1444/gen_nod_testdata.py`):
+     `nod_not_first` — NOD четвёртый, перед ним сторонний словарь с ключом
+     `ACAD_TABLESTYLE` (старый глобальный поиск находит его и теряет оба
+     стиля, NOD-поиск — нет); `nod_no_tablestyle`; `nod_hardowner_360` —
+     `280=1`, записи `360`, `\r\n`, пробелы у кодов, хэндлы `00c`/`0040`/`d`,
+     xdictionary у `TABLESTYLE`; `nod_unknown_keys` — `ACDB_RECOMPOSE_DATA`,
+     ветка плагина с `XRECORD` (в данных `330`, `360`, блок 102), битая
+     ссылка, ключ без хэндла, `ACDBDICTIONARYWDFLT`; `nod_multiple_roots`;
+     `nod_broken` — ошибка структуры;
+   - одинаковая модель при `\n` и `\r\n`;
+   - загрузка `tablestyleetalon.dxf` через `AddFromDXF`: `RawObjectsSection`
+     даёт ту же модель, что секция файла, `DXFTableStyleTable` пуста, как и
+     до этапа 1;
+   - модуль лога `NOD` выключен по умолчанию, при включении все сообщения
+     форматируются без ошибок.
+
+   `heaptrc`: как и в `nodstage0`, не освобождены только 2 блока реестров
+   форматов `uzeffmanager`.
+
 ### Этап 2. Подключение NOD pre-pass к чтению DXF
 
 1. В `AddFromDXF` сразу после `ExtractDxfRawSection('OBJECTS')` и **до**

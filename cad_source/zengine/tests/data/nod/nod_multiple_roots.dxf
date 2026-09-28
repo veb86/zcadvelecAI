@@ -1,0 +1,144 @@
+  0
+SECTION
+  2
+OBJECTS
+  0
+DICTIONARY
+  5
+C
+330
+0
+100
+AcDbDictionary
+281
+1
+  3
+ACAD_TABLESTYLE
+350
+40
+  0
+DICTIONARY
+  5
+40
+102
+{ACAD_REACTORS
+330
+C
+102
+}
+330
+C
+100
+AcDbDictionary
+281
+1
+  3
+Standard
+350
+41
+  0
+TABLESTYLE
+  5
+41
+102
+{ACAD_REACTORS
+330
+40
+102
+}
+330
+40
+100
+AcDbTableStyle
+  3
+Standard
+ 70
+0
+ 71
+0
+ 40
+1.5
+ 41
+1.5
+280
+0
+281
+0
+  7
+Standard
+140
+2.5
+170
+5
+  0
+DICTIONARY
+  5
+90
+330
+0
+100
+AcDbDictionary
+281
+1
+  3
+ACAD_TABLESTYLE
+350
+91
+  0
+DICTIONARY
+  5
+91
+102
+{ACAD_REACTORS
+330
+90
+102
+}
+330
+90
+100
+AcDbDictionary
+281
+1
+  3
+Fake
+350
+92
+  0
+TABLESTYLE
+  5
+92
+102
+{ACAD_REACTORS
+330
+91
+102
+}
+330
+91
+100
+AcDbTableStyle
+  3
+Fake
+ 70
+0
+ 71
+0
+ 40
+1.5
+ 41
+1.5
+280
+0
+281
+0
+  7
+Standard
+140
+2.5
+170
+5
+  0
+ENDSEC
+  0
+EOF
