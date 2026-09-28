@@ -1968,37 +1968,40 @@ begin
           fileCtx.TableRowStyleTypesValid);
 
         { Модель OBJECTS/NOD (этап 2 ТЗ NOD). Для R12 и неизвестных версий
-          остаётся пустой: в R12 секции OBJECTS и NOD нет. }
+          остаётся пустой: в R12 секции OBJECTS и NOD нет. Контекст (и модель)
+          освобождается и при исключении во время разбора чертежа. }
         fileCtx.NODModel:=TZNODModel.Create;
-
-        lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
-        case fileCtx.Header.Version of
-          AC1009:begin
-            Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
-            if @DXFNODModelBuiltProc<>nil then
-              DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
-            AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
-          end;
-          AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
-            Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
-            { NOD pre-pass: до TABLES/BLOCKS/ENTITIES, чтобы обработчики NOD
-              (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
-              сущностей, которые на них ссылаются. }
-            DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
-            if @DXFNODModelBuiltProc<>nil then
-              DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
-            AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
-          end;
-          else
-            if fileCtx.Header.iVersion<>VarValueWrong then
-              Log(LogIntf,ZESGeneral,ZEMsgError,'{EM}'+rsUnknownFileFormat+' $ACADVER='+fileCtx.DWGVarsDict[dxfVar_ACADVER])
+        try
+          lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
+          case fileCtx.Header.Version of
+            AC1009:begin
+              Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+              if @DXFNODModelBuiltProc<>nil then
+                DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
+              AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
+            end;
+            AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
+              Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+              { NOD pre-pass: до TABLES/BLOCKS/ENTITIES, чтобы обработчики NOD
+                (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
+                сущностей, которые на них ссылаются. }
+              DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
+              if @DXFNODModelBuiltProc<>nil then
+                DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
+              AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
+            end;
             else
-              Log(LogIntf,ZESGeneral,ZEMsgError,rsUnknownFileFormat);
+              if fileCtx.Header.iVersion<>VarValueWrong then
+                Log(LogIntf,ZESGeneral,ZEMsgError,'{EM}'+rsUnknownFileFormat+' $ACADVER='+fileCtx.DWGVarsDict[dxfVar_ACADVER])
+              else
+                Log(LogIntf,ZESGeneral,ZEMsgError,rsUnknownFileFormat);
+          end;
+          lps.EndLongProcess(lph);
+          dwgCtx.POwner^.calcbb(dwgCtx.DC);
+          result:=fileCtx.Header;
+        finally
+          fileCtx.Done;
         end;
-        lps.EndLongProcess(lph);
-        dwgCtx.POwner^.calcbb(dwgCtx.DC);
-        result:=fileCtx.Header;
-        fileCtx.Done;
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally

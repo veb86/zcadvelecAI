@@ -249,6 +249,16 @@ begin
   Result := AddFromDXF(AFileName, ZDC);
 end;
 
+{ TSimpleDrawing.done не освобождает строковые поля (объект старого типа):
+  при повторном init той же переменной в цикле они теряются — в heaptrc это
+  выглядело бы утечкой загрузки. }
+procedure DoneDrawing(var ADrawing: TSimpleDrawing);
+begin
+  ADrawing.done;
+  ADrawing.RawClassesSection := '';
+  ADrawing.RawObjectsSection := '';
+end;
+
 function IsDXF20XX(const AHeader: TDXFHeaderInfo): Boolean;
 begin
   Result := AHeader.Version in [AC1014, AC1015, AC1018, AC1021, AC1024, AC1027, AC1032];
@@ -372,7 +382,7 @@ begin
       'etalon: DXFTableStyleTable is empty after AddFromDXF (stage 5)');
   finally
     Model.Free;
-    Drawing.done;
+    DoneDrawing(Drawing);
   end;
 end;
 
@@ -399,7 +409,7 @@ begin
     CheckInt(1, Drawing.pObjRoot^.ObjArray.Count,
       AFileName + ': LINE is loaded (loading is not interrupted)');
   finally
-    Drawing.done;
+    DoneDrawing(Drawing);
   end;
 end;
 
@@ -501,7 +511,7 @@ begin
             Model.Objects.Count, HookNODHandle, Drawing.pObjRoot^.ObjArray.Count]));
         end;
       finally
-        Drawing.done;
+        DoneDrawing(Drawing);
       end;
     end;
     Check(Count20XX >= 60, Format('DXF 2000+ files checked: %d of %d', [Count20XX, Files.Count]));
@@ -529,13 +539,13 @@ begin
     try
       LoadDrawing(Root + EtalonFile, Drawing);
     finally
-      Drawing.done;
+      DoneDrawing(Drawing);
     end;
     Drawing.init(nil);
     try
       LoadDrawing(Root + DataDir + 'nod_load_broken_objects.dxf', Drawing);
     finally
-      Drawing.done;
+      DoneDrawing(Drawing);
     end;
     Ok('log: pre-pass trace messages are formatted without errors');
   finally
@@ -575,7 +585,7 @@ begin
           LoadMs := T0;
         Section := Drawing.RawObjectsSection;
       finally
-        Drawing.done;
+        DoneDrawing(Drawing);
       end;
     end;
     { Pre-pass короткий — меряем 10 повторов и берём среднее }
