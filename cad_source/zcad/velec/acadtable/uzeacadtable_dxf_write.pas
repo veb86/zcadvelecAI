@@ -214,7 +214,9 @@ end;
 { Объявляет прикладные классы, экземпляры которых этот модуль пишет в
   ENTITIES и OBJECTS. Без этих CLASS-записей AutoCAD не связывает
   TABLECONTENT/CELLSTYLEMAP с реализацией ObjectDBX и восстанавливает стили
-  ячеек по встроенному правилу строк (issue #1409).
+  ячеек по встроенному правилу строк (issue #1409). Класс CELLSTYLEMAP
+  (карта стилей ячеек пишется вместе со стилем таблицы) объявляет
+  NOD-обработчик ACAD_TABLESTYLE (uzestylestablesdxfnod, этап 5 ТЗ NOD).
 
   В эталоне AutoCAD TABLECONTENT имеет два экземпляра класса на одну таблицу:
   данные самой таблицы и связанное содержимое сущности. }
@@ -223,7 +225,7 @@ procedure WriteAcadTableClassesToDXF(
   var ADrawing: TSimpleDrawing;
   var AIODXFContext: TIODXFSaveContext);
 var
-  AcadTableCount, CellStyleMapCount: Integer;
+  AcadTableCount: Integer;
   Entity: PGDBObjEntity;
   Iter: itrec;
 begin
@@ -238,7 +240,6 @@ begin
       Entity:=ADrawing.pObjRoot^.ObjArray.iterate(Iter);
     end;
   end;
-  CellStyleMapCount:=ADrawing.DXFTableStyleTable.Count;
 
   if AcadTableCount>0 then
   begin
@@ -253,10 +254,6 @@ begin
       'TABLEGEOMETRY', 'AcDbTableGeometry', 1152,
       AcadTableCount, 0);
   end;
-  if CellStyleMapCount>0 then
-    WriteAcadTableClassRecord(AOutStream,
-      'CELLSTYLEMAP', 'AcDbCellStyleMap', 1152,
-      CellStyleMapCount, 0);
 end;
 
 procedure ResetAcadTableDXFWriteState;
