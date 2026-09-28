@@ -945,6 +945,110 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 AutoCAD видит все стили мультивыносок с прежними параметрами; тесты
 round-trip.
 
+**Статус: выполнен (issue #1454).**
+
+1. Обработчик `ACAD_MLEADERSTYLE` — новый модуль
+   `cad_source/zengine/styles/uzestylesmleaderdxfnod.pas` (регистрируется в
+   `initialization`; `ObjectType = MLEADERSTYLE`, `DefaultName = Standard`):
+   - `LoadProc` (`LoadMLeaderStylesFromDictionary`): для каждой записи
+     словаря-ветки — объект `MLEADERSTYLE` модели этапа 1, поля
+     разбираются по парам `TZDXFRawObject` (`ParseMLeaderStyleRawObject`);
+     `DXFHandle` — исходный хэндл, `XDictHandle` — хэндл расширенного
+     словаря, `MLeaderVersion` — `1070` после `1001 ACAD_MLEADERVER`.
+     Группы тела, которые модель стиля не знает (например, `271`–`273`
+     AutoCAD 2010+), сохраняются в новом поле `ExtraPairs` и пишутся
+     обратно в исходном порядке. Запись не на `MLEADERSTYLE`, на
+     несуществующий объект или без имени пропускается (предупреждение в
+     лог); стиль с уже существующим именем не меняется. Забираются хэндлы
+     стиля и его расширенного словаря; записи расширенного словаря не
+     переносятся (предупреждение), как у стилей таблиц этапа 5;
+   - прежний разбор и запись по сырому тексту `OBJECTS` в
+     `uzestylesmleaderdxf.pas` нигде не вызывались и удалены (в модуле
+     остались типы `TGDBDXFMLeaderStyle` и `GDBDXFMLeaderStyleArray`).
+2. `TSimpleDrawing.DXFMLeaderStyleTable` (`init` в `init`, освобождение
+   стилей в `done`) и метод доступа `GetDXFMLeaderStyleTable`
+   (`uzedrawingsimple.pas`).
+3. Ссылки `340`/`341`/`342`/`343`:
+   - **загрузка**: `MLEADERSTYLE` ссылается на записи символьных таблиц,
+     а `OBJECTS` читается до `TABLES` ZCAD. Поэтому модель NOD получила
+     индекс символьных таблиц (`TZNODModel.LoadSymbolTablesFromText`,
+     `FindSymbolName`, `SymbolRecordCount`): секция `TABLES` читается
+     ещё раз (`DXFNODLoadSymbolTables` в `uzeffdxf.pas`), только если
+     обработчик с новым полем контракта 4.3 `NeedsSymbolTables` будет
+     вызван (`NODLoadNeedsSymbolTables`: ключ есть в NOD и словарь не
+     пуст). Имена DXF до 2007 перекодируются из `$DWGCODEPAGE`. Хэндл
+     переводится в имя, только если он ведёт на запись нужной таблицы
+     (`340` → `LTYPE`, `341`/`343` → `BLOCK_RECORD`, `342` → `STYLE`),
+     иначе — предупреждение, имя пустое;
+   - **запись**: по именам через `LineTypeNameHandleMap` (новая карта
+     контекста записи, заполняется при записи `LTYPE` в
+     `uzeffdxfout.pas`), `TextStyleNameHandleMap`, `BlockNameHandleMap`.
+     Запасные значения: тип линии не сохраняется — `ByBlock`
+     (`Continuous`), текстовый стиль — `Standard`, иначе `0`
+     (предупреждение в лог); блок стрелки/содержимого не сохраняется —
+     группа `341`/`343` не пишется (как у AutoCAD для стиля без блока).
+4. `MinVersion = AC1021` (DXF 2007+; в DXF 2000 ветка, стили и класс не
+   пишутся). `ClassesProc` — класс `MLEADERSTYLE` (`AcDbMLeaderStyle`,
+   `ACDB_MLEADERSTYLE_CLASS`, `90 = 4095`, `91` = число стилей), если
+   стили есть, а в шаблоне класса нет. Новое поле контракта 4.3
+   `XDataAppName`: `uzeffdxfout.pas` пишет в `APPID` приложения
+   обработчиков с подходящей `MinVersion` — `ACAD_MLEADERVER` теперь есть
+   в каждом DXF 2007 (как у AutoCAD), в DXF 2000 — нет.
+5. `Standard` по умолчанию: `EnsureDefaultsProc`
+   (`EnsureDefaultMLeaderStyle`) — если после загрузки DXF любой версии
+   стилей нет, создаётся `Standard` с параметрами стиля `Standard`
+   AutoCAD (`+mleader2008.dxf`), текстовый стиль `Standard`, тип линии
+   `ByBlock`. Шаблон `savetemplate2007.dxf` ветки `ACAD_MLEADERSTYLE` не
+   содержит — ключ добавляется в NOD механизмом этапа 4. Чертёж, не
+   загруженный из DXF (новый), стилей не получает, ветка не пишется
+   (`ReserveHandlesProc`: стилей нет — ветки нет, как на этапе 5).
+6. Эталоны: `tests/data/nod/golden/empty_2007.dxf`,
+   `tablestyles_2007.dxf` — появилась запись `APPID ACAD_MLEADERVER`
+   (сдвиг хэндлов на 1); `tablestyleetalon_2007.dxf` — ещё ветка
+   `ACAD_MLEADERSTYLE` со `Standard` и класс `MLEADERSTYLE`. Эталоны DXF
+   2000 не изменились. `nodstage3` (заглушки без обработчиков zengine)
+   сравнивает `empty_2007` с прежним эталоном
+   `tests/data/nod/stage3/empty_2007.dxf`; `nodstage4` сравнивает с
+   эталоном этапа 0 вывод без обработчика `ACAD_MLEADERSTYLE`.
+7. Тест `cad_source/zengine/tests/nodstage6.lpr` (сборка без IDE:
+   `experiments/issue1452/build_and_run.sh nodstage6`):
+   - обработчик зарегистрирован со всеми процедурами, `MinVersion =
+     AC1021`, `XDataAppName = ACAD_MLEADERVER`, `NeedsSymbolTables`;
+   - стили 4 файлов AutoCAD (`cad_source/test/+mleader2008.dxf`,
+     `mleaderblock.dxf`, `mleader2007notwork.dxf`,
+     `mleader2000notwork.dxf`) совпадают с эталонами
+     `tests/data/nod/stage6/*.txt`; эталоны сверены независимым
+     разбором на Python (`experiments/issue1454/mlsdump1454.py`);
+   - имена ссылок: блоки стрелок `_Dot`, `_BoxBlank`, блок содержимого
+     `_TagSlot`/`_DetailCallout`, тип линии `ByBlock`, текстовый стиль
+     `Standard`;
+   - забраны хэндлы стилей и их расширенных словарей, и только они;
+     индекс символьных таблиц строится, только если он нужен;
+   - синтетическая ветка: пропуск записей не на `MLEADERSTYLE`, на
+     несуществующий объект и без имени; существующий стиль и повтор имени
+     не меняют таблицу; `ExtraPairs` сохраняются; `343` на запись `STYLE`
+     не разрешается;
+   - `Standard` по умолчанию для R12, файла без `ACAD_MLEADERSTYLE`, без
+     `OBJECTS` и `tablestyleetalon.dxf` совпадает со `Standard` AutoCAD;
+   - round-trip 2007 для всех 4 файлов и `tablestyleetalon.dxf`: число
+     `MLEADERSTYLE`, класс один раз (`91` = число стилей), `APPID` один
+     раз, владельцы ветки и стилей, `1001 ACAD_MLEADERVER`, ссылки
+     `340`–`343` ведут на записи нужных таблиц сохранённого файла;
+     повторная загрузка даёт те же стили (с точностью до хэндлов);
+   - DXF 2000: ни ветки, ни класса, ни `APPID`; пустой чертёж в DXF 2007:
+     только `APPID`.
+
+   Тесты `nodstage0`–`nodstage6` проходят. Проверка чувствительности: без
+   записи `343` в `WriteMLeaderStyleObjectToStream` round-trip тесты
+   падают.
+
+   **Не проверено**: открытие результата в AutoCAD, `AUDIT` и диалог
+   стилей мультивыносок (нет AutoCAD в среде сборки) — нужна ручная
+   проверка файлов, сохранённых из `cad_source/test/+mleader2008.dxf` и
+   `mleaderblock.dxf` в DXF 2007, и `tests/data/nod/golden/tablestyleetalon_2007.dxf`.
+   Мультивыноски (`MULTILEADER`) ZCAD по-прежнему читает как прокси —
+   сохраняются ли сами мультивыноски, вне рамок этапа.
+
 ### Этап 7. Сохранение неизвестных и собственных веток NOD
 
 Цель: не терять данные сторонних приложений и позволить ZCAD хранить свои.
