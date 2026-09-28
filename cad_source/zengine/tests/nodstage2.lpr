@@ -17,8 +17,9 @@ program nodstage2;
 //  5. На всех тестовых DXF (cad_source/test, шаблоны сохранения, эталоны
 //     этапа 0) модель строится без ошибок и совпадает с моделью секции
 //     OBJECTS файла; для DXF 2000+ NOD найден.
-//  6. Стили таблиц к загрузке ещё не подключены (этап 5):
-//     DXFTableStyleTable после AddFromDXF пуста, как и до этапа 2.
+//  6. Стили таблиц загружает NOD-обработчик ACAD_TABLESTYLE (этап 5,
+//     issue #1452): DXFTableStyleTable после AddFromDXF содержит 3 стиля
+//     эталона (до этапа 5 таблица оставалась пустой).
 //  7. При включённом модуле лога NOD трасса pre-pass форматируется без ошибок.
 //
 // Режим --bench (приёмка этапа 2 по времени): для больших DXF сравнивается
@@ -377,9 +378,9 @@ begin
       'etalon: OBJECTS section of the file is parsed');
     Check(HookSignature = ModelSignature(Model),
       'etalon: model of load context equals model of the file');
-    { 6. Стили таблиц — этап 5 }
-    CheckInt(0, Drawing.DXFTableStyleTable.Count,
-      'etalon: DXFTableStyleTable is empty after AddFromDXF (stage 5)');
+    { 6. Стили таблиц загружает NOD-обработчик (этап 5) }
+    CheckInt(3, Drawing.DXFTableStyleTable.Count,
+      'etalon: DXFTableStyleTable holds the 3 etalon styles after AddFromDXF');
   finally
     Model.Free;
     DoneDrawing(Drawing);

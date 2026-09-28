@@ -6,8 +6,9 @@ program nodstage4;
 //  1. Адаптер ACAD_TABLESTYLE зарегистрирован в initialization uzeffdxfout
 //     (MinVersion AC1015, DefaultName 'Standard', процедуры записи заданы).
 //  2. Без стилей таблиц вывод побайтно совпадает с эталонами этапа 0
-//     (empty, tablestyleetalon; шаблоны 2000 и 2007): ветка
-//     ACAD_TABLESTYLE шаблона копируется как есть.
+//     (empty; шаблоны 2000 и 2007): ветка ACAD_TABLESTYLE шаблона
+//     копируется как есть. tablestyleetalon: с этапа 5 (issue #1452) стили
+//     эталона загружаются и записываются, эталоны golden обновлены.
 //  3. Со стилями таблиц (Standard, ZCAD1442):
 //     - DXF 2007 совпадает с эталоном этапа 0 (data/nod/stage0) с точностью
 //       до хэндлов и порядка объектов OBJECTS (каноническая форма: хэндлы
@@ -21,8 +22,10 @@ program nodstage4;
 //       хэндлы уникальны и меньше $HANDSEED, неразрешённые ссылки — те
 //       же, что в эталоне этапа 0.
 //  4. Ссылка 342 сущности ACAD_TABLE (+testtable.dxf) ведёт на TABLESTYLE
-//     ветки.
-//  5. Сохранённый файл загружается и сохраняется повторно.
+//     ветки — на стиль таблицы исходного файла (vebtable; до этапа 5 стили
+//     не загружались, и ссылка вела на DefaultName Standard).
+//  5. Сохранённый файл загружается и сохраняется повторно; стили берутся
+//     из загруженного файла, второй вывод совпадает с первым.
 //  6. TZNODSaveSession на синтетических шаблонах: множество пропускаемых
 //     объектов ветки (с расширенными словарями и их записями), перемапка
 //     словаря-ветки и внешних ссылок на объекты ветки (по имени через
@@ -387,10 +390,10 @@ begin
     if ASource = dsEtalon then
       LoadDrawing(Root + EtalonFile, Drawing)
     else if ASource = dsTableStyles then
+      { Стили таблиц (aitable, Standard, vebtable) загружаются из файла
+        NOD-обработчиком (этап 5) }
       LoadDrawing(Root + TableFile, Drawing);
-    if ASource = dsTableStyles then
-      AddSampleStyle(Drawing.DXFTableStyleTable, 'Standard', 2.5)
-    else if ASource = dsStyles then
+    if ASource = dsStyles then
       AddStage0Styles(Drawing);
     if not savedxf20XX(AOutFile, Root + TemplatesDir + ATemplate, Drawing, AVer) then
       Fail('savedxf20XX failed for ' + AOutFile);
@@ -728,7 +731,8 @@ begin
   Check(Assigned(H.ReserveHandlesProc) and Assigned(H.SaveProc) and
     Assigned(H.ClassesProc) and Assigned(H.FindObjectHandleProc),
     'adapter: ReserveHandlesProc, SaveProc, ClassesProc, FindObjectHandleProc');
-  Check(not Assigned(H.LoadProc), 'adapter: LoadProc is nil (reading is stage 5)');
+  Check(Assigned(H.LoadProc) and Assigned(H.EnsureDefaultsProc),
+    'adapter: LoadProc, EnsureDefaultsProc (stage 5)');
 end;
 
 { ---------- 2. Без стилей — эталоны этапа 0 ---------- }
@@ -894,7 +898,7 @@ end;
 
 { ---------- 4. Ссылка 342 ACAD_TABLE ---------- }
 
-procedure CheckTableEntityRef(const AOutFile, AName: string);
+procedure CheckTableEntityRef(const AOutFile, AName, AStyle: string);
 var
   P: TDXFPairs;
   Model: TZNODModel;
@@ -907,8 +911,8 @@ begin
   Model := ObjectsModelOfFile(AOutFile);
   try
     Dict := Model.ResolveDictionary(TableStyleKey);
-    Check((Dict <> nil) and Dict.FindEntry('Standard', Entry),
-      AName + ': ' + TableStyleKey + '/Standard exists');
+    Check((Dict <> nil) and Dict.FindEntry(AStyle, Entry),
+      AName + ': ' + TableStyleKey + '/' + AStyle + ' exists');
     if Dict = nil then
       Exit;
     S := SectionStart(P, 'ENTITIES');
@@ -930,7 +934,7 @@ begin
       end;
     Check(Tables > 0, Format('%s: ACAD_TABLE entities: %d', [AName, Tables]));
     CheckInt(Tables, Good, AName + ': ACAD_TABLE with 342 → '
-      + TableStyleKey + '/Standard (' + DXFHandleToStr(Entry.TargetHandle) + ')');
+      + TableStyleKey + '/' + AStyle + ' (' + DXFHandleToStr(Entry.TargetHandle) + ')');
   finally
     Model.Free;
   end;
@@ -940,19 +944,18 @@ procedure TestTableEntityRef;
 var
   OutFile: string;
 begin
-  { Стиль таблицы (в исходном файле — хэндл BA) определяется по стилям
-    чертежа — Standard; 342 ACAD_TABLE ведёт на Standard ветки, и
-    неразрешённых ссылок нет (без стилей в чертеже 342 остаётся BA —
-    хэндлом исходного файла, которого в сохранённом нет). }
+  { Стиль таблицы в исходном файле — vebtable (хэндл BA). С этапа 5 стили
+    загружаются из файла, 342 ACAD_TABLE ведёт на vebtable ветки, и
+    неразрешённых ссылок нет. }
   OutFile := OutPath('testtable_2007.dxf');
   SaveSample(dsTableStyles, 'savetemplate2007.dxf', ZCDxf2007, OutFile);
-  CheckTableEntityRef(OutFile, '+testtable + Standard, 2007');
-  CheckTableStyleBranch(OutFile, '+testtable + Standard, 2007', 'Standard', True, '');
+  CheckTableEntityRef(OutFile, '+testtable, 2007', 'vebtable');
+  CheckTableStyleBranch(OutFile, '+testtable, 2007', 'aitable,Standard,vebtable', True, '');
 
   OutFile := OutPath('testtable_2000.dxf');
   SaveSample(dsTableStyles, 'savetemplate2000.dxf', ZCDxf2000, OutFile);
-  CheckTableEntityRef(OutFile, '+testtable + Standard, 2000');
-  CheckTableStyleBranch(OutFile, '+testtable + Standard, 2000', 'Standard', False, '');
+  CheckTableEntityRef(OutFile, '+testtable, 2000', 'vebtable');
+  CheckTableStyleBranch(OutFile, '+testtable, 2000', 'aitable,Standard,vebtable', False, '');
 end;
 
 { ---------- 5. Повторная загрузка ---------- }
@@ -976,13 +979,14 @@ begin
       LoadDrawing(First, Drawing);
       Count1 := Drawing.pObjRoot^.ObjArray.Count;
       Check(Count1 > 0, Format('%s: reloaded, %d entities', [Templates[I], Count1]));
-      AddSampleStyle(Drawing.DXFTableStyleTable, 'Standard', 2.5);
+      CheckInt(3, Drawing.DXFTableStyleTable.Count,
+        Templates[I] + ': table styles are loaded from the first save');
       Check(savedxf20XX(Second, Root + TemplatesDir + Templates[I], Drawing, Vers[I]),
         Templates[I] + ': saved again');
     finally
       DoneDrawing(Drawing);
     end;
-    CheckTableEntityRef(Second, 'reload ' + Templates[I]);
+    CheckTableEntityRef(Second, 'reload ' + Templates[I], 'vebtable');
     CheckCanonEqual(Second, First, 'reload ' + Templates[I] + ': second save vs first');
   end;
 end;
