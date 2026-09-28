@@ -24,7 +24,7 @@ unit uzeffdxfsupport;
 interface
 uses
   uzegeometrytypes,sysutils,uzctnrVectorBytesStream,usimplegenerics,
-  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes;
+  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes,uzeffdxfnod;
 
 const
   cDXFError_WrogGroupCode='DXF group code "%d" expected but "%d" found';
@@ -191,6 +191,14 @@ type
       может (issue #1373). }
     TableRowStyleTypes:TDXFRowStyleTypeArray;
     TableRowStyleTypesValid:boolean;
+
+    { Модель секции OBJECTS и Named Object Dictionary (этап 2 ТЗ
+      cad_source/zengine/TZ_NOD_NamedObjectDictionary.md). Строится в
+      AddFromDXF до разбора TABLES/BLOCKS/ENTITIES и живёт до Done.
+      nil — контекст создан не AddFromDXF (например, в AddFromDXF12);
+      пустая модель (NOD=nil) — R12, нет секции OBJECTS или ошибка её
+      разбора. Владеет контекст: освобождается в Done. }
+    NODModel:TZNODModel;
 
     procedure InitRec;
     procedure Done;
@@ -492,6 +500,8 @@ begin
 
   SetLength(TableRowStyleTypes,0);
   TableRowStyleTypesValid:=False;
+
+  NODModel:=nil;
 end;
 
 procedure TDXFHeaderInfo.InitRec;
@@ -516,6 +526,7 @@ begin
     FreeAndNil(TableRawAcadTableEntities);
   end;
   SetLength(TableRowStyleTypes,0);
+  FreeAndNil(NODModel);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;
