@@ -28,7 +28,8 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,uzestylestablesdxf;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,
+  uzeffdxfnod,uzeffdxfnodlog;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -40,6 +41,10 @@ type
     UCASEEntName:String;
   end;
   TLongProcessIndicator=Procedure(a:integer) of object;
+  { Вызывается из AddFromDXF сразу после NOD pre-pass, до разбора
+    TABLES/BLOCKS/ENTITIES. AModel — модель из загрузочного контекста
+    (пустая для R12 и при ошибке разбора OBJECTS), живёт до конца загрузки. }
+  TDXFNODModelBuiltProc=procedure(const AModel:TZNODModel;var dwgCtx:TZDrawingContext);
 
 const
   IgnoredDXFEntsArray:array of DXFEntDesc=[
@@ -51,6 +56,16 @@ var
   CreateExtLoadData:TCreateExtLoadData=nil;
   ClearExtLoadData:TProcessExtLoadData=nil;
   FreeExtLoadData:TProcessExtLoadData=nil;
+  { Точка наблюдения за NOD pre-pass (тесты этапа 2 ТЗ NOD). На этапе 3
+    вызов обработчиков NOD перейдёт в реестр uzeffdxfnodregistry. }
+  DXFNODModelBuiltProc:TDXFNODModelBuiltProc=nil;
+
+{ NOD pre-pass (этап 2 ТЗ cad_source/zengine/TZ_NOD_NamedObjectDictionary.md):
+  строит AModel по тексту секции OBJECTS (формат RawObjectsSection).
+  Исключений не выпускает: при нарушении структуры секции или исключении
+  модель очищается (пустая модель, NOD=nil), возвращается False и описание
+  ошибки в AError — загрузка чертежа при этом должна продолжаться. }
+function BuildDXFNODModel(const AObjectsSection:string;AModel:TZNODModel;out AError:string):boolean;
 
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
 
@@ -1832,6 +1847,43 @@ begin
   lps.EndLongProcess(lph);
 end;
 
+function BuildDXFNODModel(const AObjectsSection:string;AModel:TZNODModel;out AError:string):boolean;
+begin
+  AError:='';
+  try
+    result:=AModel.LoadFromText(AObjectsSection);
+    if not result then begin
+      AError:=AModel.ParseError;
+      AModel.Clear;
+    end;
+  except
+    on E:Exception do begin
+      result:=false;
+      AError:=E.ClassName+': '+E.Message;
+      AModel.Clear;
+    end;
+  end;
+end;
+
+{ NOD pre-pass для DXF 2000+: модель OBJECTS нужна до ENTITIES (ACAD_TABLE
+  применяет стиль при загрузке сущности). Ошибка разбора не прерывает
+  загрузку — предупреждение в лог и пустая модель. }
+procedure DXFNODPrePass(const AFileName:string;const AObjectsSection:string;AModel:TZNODModel);
+var
+  StartTick:QWord;
+  Error:string;
+begin
+  StartTick:=GetTickCount64;
+  if not BuildDXFNODModel(AObjectsSection,AModel,Error) then
+    NODLogWarningFormatStr(
+      'uzeffdxf: NOD pre-pass: OBJECTS section of "%s" is not parsed (%s), NOD model is empty',
+      [AFileName,Error]);
+  NODLogTraceFormatStr(
+    'uzeffdxf: NOD pre-pass: "%s": %d objects, %d dictionaries, NOD %s, %d ms',
+    [AFileName,AModel.Objects.Count,AModel.Dictionaries.Count,
+     BoolToStr(AModel.NOD<>nil,'found','not found'),GetTickCount64-StartTick]);
+end;
+
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
 var
   fileCtx:TIODXFLoadContext;
@@ -1915,14 +1967,26 @@ begin
           fileCtx.TableRowStyleTypes,
           fileCtx.TableRowStyleTypesValid);
 
+        { Модель OBJECTS/NOD (этап 2 ТЗ NOD). Для R12 и неизвестных версий
+          остаётся пустой: в R12 секции OBJECTS и NOD нет. }
+        fileCtx.NODModel:=TZNODModel.Create;
+
         lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
         case fileCtx.Header.Version of
           AC1009:begin
             Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+            if @DXFNODModelBuiltProc<>nil then
+              DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
             AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
           end;
           AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
             Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+            { NOD pre-pass: до TABLES/BLOCKS/ENTITIES, чтобы обработчики NOD
+              (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
+              сущностей, которые на них ссылаются. }
+            DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
+            if @DXFNODModelBuiltProc<>nil then
+              DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
             AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
           end;
           else
@@ -1935,14 +1999,6 @@ begin
         dwgCtx.POwner^.calcbb(dwgCtx.DC);
         result:=fileCtx.Header;
         fileCtx.Done;
-
-        { Загружаем стили таблиц из секции OBJECTS.
-          TABLESTYLE объекты находятся в OBJECTS, а не в TABLES,
-          поэтому обрабатываем их отдельно после извлечения сырой секции. }
-        //ReadTableStylesFromDXFObjects(
-        //  dwgCtx.PDrawing^.RawObjectsSection,
-        //  dwgCtx.PDrawing^.DXFTableStyleTable);
-
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally
