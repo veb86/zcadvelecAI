@@ -250,6 +250,7 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 | `ReserveHandlesProc(var Drawing; var IODXFContext)` | Запись, **до** `ENTITIES` (там, где сейчас `PreallocateTableStyleHandles`) | Выделяет хэндлы для словаря-ветки и всех объектов через `IODXFContext.handle`, заполняет карты имя → хэндл (`TableStyleNameHandleMap`, аналогичная для MLeader). Идемпотентна. |
 | `SaveProc(var outstream; var Drawing; var IODXFContext; DictHandle, NODHandle)` | Запись, секция `OBJECTS` | Пишет `DICTIONARY` ветки (`330`=NOD, реактор NOD, `281=1`, пары `3/350`) и все объекты ветки (с `330`=словарь ветки, `102 {ACAD_REACTORS}`, xdictionary и т. п.). |
 | `ClassesProc` (опционально) | Запись, секция `CLASSES` | Объявляет классы, если их нет в шаблоне (`TABLESTYLE`, `MLEADERSTYLE`, `CELLSTYLEMAP`). |
+| `FindObjectHandleProc(const Name; var IODXFContext)` (опционально, этап 4) | Запись, после `ReserveHandlesProc` | Новый хэндл объекта ветки по имени (0 — нет). Нужна, чтобы перенаправить ссылки других объектов шаблона на пропущенные объекты его ветки; при 0 ссылка ведёт на объект с именем `DefaultName`. |
 | `MinVersion` | Запись | Минимальная версия DXF, в которой ключ пишется. Для ниже — ключ **не пишется**, выдаётся предупреждение в лог (см. 5.4). |
 | `DefaultNames` | Чтение/запись | Имя обязательной записи (`Standard`), которая создаётся, если стилей нет. |
 
@@ -666,6 +667,119 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
 * на шаблоне 2000 в NOD появляется `ACAD_TABLESTYLE`, стили таблиц
   сохраняются (сейчас теряются);
 * результат открывается в AutoCAD без сообщений об ошибках, `AUDIT` — 0 ошибок.
+
+**Статус: выполнен (issue #1450).**
+
+1. Реестр (`uzeffdxfnodregistry.pas`), `TZNODSaveSession`:
+   - `LoadTemplate` (в `savedxf20XX`, только если обработчики есть)
+     разбирает `OBJECTS` шаблона моделью этапа 1 и строит для каждого
+     ключа обработчика, найденного в NOD шаблона, множество хэндлов ветки:
+     словарь-ветка, объекты по её записям и, рекурсивно, их расширенные
+     словари (`102 {ACAD_XDICTIONARY` / `360`) с записями, а также ссылки
+     на объекты ветки из остальных объектов шаблона (`TemplateRefs`: хэндл,
+     обработчик, ключ объекта в словаре ветки). Состояния «конечного
+     автомата» больше нет;
+   - `ReserveHandlesProc` возвращает хэндл словаря-ветки; **0 — ветка
+     обработчиком не пишется, ветка шаблона копируется как есть** (так
+     сохраняется чертёж без стилей таблиц — вывод совпадает с эталонами
+     этапа 0 побайтно);
+   - `MapTemplateHandles` (после `ReserveHandles`, идемпотентна) заносит в
+     `OldHandele2NewHandle`: словарь-ветку шаблона → словарь обработчика
+     (так пара `350` записи NOD шаблона указывает на новую ветку); объекты
+     ветки, на которые ссылаются другие объекты шаблона, → объект чертежа
+     с тем же именем (`FindObjectHandleProc`, новое поле контракта 4.3),
+     иначе — объект `DefaultName`; без обработчика/имени ссылка остаётся
+     на хэндл, который выдаст обычный перемаппинг;
+   - `IsTemplateHandleSkipped`/`HasTemplateSkips` — пропуск объектов ветки
+     шаблона, если обработчик выделил свой словарь;
+   - `TakeNODInsertions(ANextKey)` — записи `3/350` ключей, которых нет в
+     NOD шаблона (`DictHandle > 0`), меньших `ANextKey` без учёта регистра;
+     каждая выдаётся один раз, по алфавиту; `''` — все оставшиеся; без NOD
+     в шаблоне — ничего (словарь пишется без записи в NOD, предупреждение
+     в лог адаптера).
+2. `savedxf20XX` (`uzeffdxfout.pas`): автомат стилей таблиц удалён
+   (`tablestyledicthandle`, `intablestyledict`, `writtenstylecount`,
+   `tsHandles`/`tsDictHandles`/`tsMapHandles`, `PreallocateTableStyleHandles`;
+   от последней остался `PreallocateAcadTableOwnerHandle` — хэндл
+   `*Model_Space` для сырых `ACAD_TABLE`, issue #1339).
+   - перед `ENTITIES` (и, если их нет, в начале `OBJECTS`) —
+     `ReserveHandles` + `MapTemplateHandles`;
+   - в объекте NOD шаблона перед каждой записью `3/<ключ>` пишутся
+     недостающие записи обработчиков (`TakeNODInsertions(ключ)`), в конце
+     NOD — оставшиеся; пары `350` перемаплены через `OldHandele2NewHandle`;
+   - объект шаблона пропускается целиком, если его хэндл (группа `5`)
+     входит во множество пропускаемых (заглядывание на одну пару вперёд);
+   - перед `ENDSEC` секции `OBJECTS` — `SaveProc` обработчиков, затем
+     `RunObjectsSaveDxfProcs`;
+   - имена классов шаблона собираются в `IODXFContext.TemplateClassNames`
+     (`uzeffdxfsupport.pas`) — для `ClassesProc`;
+   - новые хэндлы — только из `IODXFContext.handle`, `$HANDSEED` — как
+     раньше. `WriteTableStylesToDXFObjects` (хэндлы с `$F000`) помечена
+     `deprecated`, вызовов нет; удалить — на этапе 5.
+3. Временный обработчик-адаптер `ACAD_TABLESTYLE` (в `uzeffdxfout.pas`,
+   регистрируется в `initialization`; `ObjectType = TABLESTYLE`,
+   `MinVersion = AC1015`, `DefaultName = Standard`, `LoadProc = nil` —
+   чтение переводится на этапе 5):
+   - `ReserveHandlesProc` — бывший `PreallocateTableStyleHandles`: словарь,
+     затем на каждый стиль `TABLESTYLE`, его расширенный словарь и
+     `CELLSTYLEMAP` (issue #1409), карта `TableStyleNameHandleMap`;
+     повторяющееся имя стиля пропускается с предупреждением (раньше
+     писались два объекта с одним ключом); нет стилей — 0;
+   - `SaveProc` — `DICTIONARY` ветки (`330` и реактор — NOD, `281=1`,
+     записи по стилям) и `WriteTableStyleObjectToStream` по стилям;
+   - `ClassesProc` — класс `TABLESTYLE`, если стили есть, а в шаблоне
+     класса нет (шаблон 2000); группа `91` — только с DXF 2004 (`AC1018`);
+   - `FindObjectHandleProc` — хэндл стиля по имени из
+     `TableStyleNameHandleMap`.
+   В шаблонах 2000/2007 ссылок на объекты ветки `ACAD_TABLESTYLE` извне
+   нет (`CTABLESTYLE` в `AcDbVariableDictionary` хранит имя в группе `1`),
+   перенаправление ссылок проверено на синтетическом шаблоне.
+4. Эталоны: `tablestyles_2000.dxf`/`tablestyles_2007.dxf` в
+   `tests/data/nod/golden` обновлены под этап 4 (в `nodstage0` у чертежа
+   теперь два стиля таблиц, раньше ветка шаблона просто копировалась,
+   т.к. загрузка DXF не заполняет `DXFTableStyleTable`); эталоны этапа 0
+   сохранены в `tests/data/nod/stage0`. Эталоны `empty_*` и
+   `tablestyleetalon_*` не изменились.
+5. Тест `cad_source/zengine/tests/nodstage4.lpr` (сборка без IDE:
+   `experiments/issue1450/build_and_run_nodstage.sh nodstage4`):
+   - адаптер зарегистрирован, поля и процедуры — как в п. 3;
+   - без стилей вывод `empty`/`tablestyleetalon` на шаблонах 2000/2007
+     совпадает с эталонами этапа 0;
+   - **приёмка 2007**: со стилями `Standard`, `ZCAD1442` вывод совпадает с
+     эталоном этапа 0 (`stage0/tablestyles_2007.dxf`) с точностью до
+     хэндлов и порядка объектов `OBJECTS` (каноническая форма: хэндлы
+     переименованы обходом от NOD, объекты отсортированы; то же делает
+     `experiments/issue1450/dxfcanon.py`);
+   - **приёмка 2000**: в NOD появляется `ACAD_TABLESTYLE` (ключи NOD по
+     алфавиту), словарь со стилями `Standard`, `ZCAD1442`, класс
+     `TABLESTYLE` без группы `91`;
+   - в обеих версиях: одна запись `ACAD_TABLESTYLE`, владелец словаря —
+     NOD, записи — `TABLESTYLE` с владельцем-словарём и расширенным
+     словарём `ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP` → `CELLSTYLEMAP`,
+     `TABLESTYLE` шаблона в файле нет, хэндлы уникальны и меньше
+     `$HANDSEED`, неразрешённые ссылки — те же, что в эталоне этапа 0
+     (в 2007 — `331:94`: `LAYOUT` ссылается на `VPORT` шаблона, который
+     при записи заменяется; было и до этапа 4);
+   - `+testtable.dxf` + стиль `Standard`: `342` всех `ACAD_TABLE` ведёт на
+     `Standard` ветки, неразрешённых ссылок нет; файл загружается и
+     сохраняется повторно с тем же результатом (каноническая форма);
+   - `TZNODSaveSession` на синтетическом шаблоне: множество пропуска
+     (словарь, стили, расширенный словарь, `CELLSTYLEMAP`), `TemplateRefs`,
+     перемаппинг (словарь → новый, `Standard`/`Other` → по имени, запись
+     расширенного словаря → `DefaultName`), идемпотентность, без стилей —
+     ничего не пропускается и не перемапливается; вставки в NOD по
+     алфавиту и однократно (обработчик с `DictHandle = 0` не вставляется),
+     шаблон без NOD; повторяющиеся имена стилей;
+   - трасса этапа 4 при включённом модуле `NOD` форматируется без ошибок.
+
+   Тесты этапов 0–3 проходят (в `nodstage3` адаптер снимается перед
+   тестами реестра на заглушках). `heaptrc`: объектов реестра и адаптера
+   среди неосвобождённых блоков нет (остаются реестр форматов
+   `uzeffmanager` и строки загрузчика `ACAD_TABLE`).
+
+   **Не проверено**: открытие результата в AutoCAD и `AUDIT` (нет AutoCAD
+   в среде сборки) — нужна ручная проверка файлов `tablestyles_2000.dxf`,
+   `tablestyles_2007.dxf` из `tests/data/nod/golden`.
 
 ### Этап 5. Перевод `ACAD_TABLESTYLE` на NOD
 

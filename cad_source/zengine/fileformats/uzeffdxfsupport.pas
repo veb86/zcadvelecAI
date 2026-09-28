@@ -124,6 +124,12 @@ type
       записи слоёв (группа 390). Берётся из таблицы LAYER шаблона. }
     LayerPlotStyleHandle:TDWGHandle;
 
+    { Имена классов (группа 1) секции CLASSES шаблона, без учёта регистра.
+      Заполняется при копировании CLASSES, до вызова ClassesProc
+      NOD-обработчиков: класс, который уже есть в шаблоне, повторно не
+      объявляется (этап 4 ТЗ NOD). }
+    TemplateClassNames:TStringList;
+
     procedure InitRec;
     procedure Done;
   end;
@@ -460,11 +466,14 @@ begin
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
   TextStyleNameHandleMap:=TString2StringDictionary.create;
+  TemplateClassNames:=TStringList.Create;
+  TemplateClassNames.CaseSensitive:=False;
 
   Header.InitRec;
 end;
 procedure TIODXFSaveContext.Done;
 begin
+  TemplateClassNames.Free;
   p2h.Free;
   VarsDict.Free;
   BlockNameHandleMap.Free;
