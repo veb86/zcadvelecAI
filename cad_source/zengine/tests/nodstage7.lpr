@@ -183,14 +183,15 @@ end;
 
 { Загрузка DXF с установкой кодовой страницы чертежа из $DWGCODEPAGE —
   как LoadDXFviaZEnfine (cad_source/zcad/register/uzcregfileformats.pas) }
-procedure LoadDrawing(const AFileName: string; var ADrawing: TSimpleDrawing);
+procedure LoadDrawing(const AFileName: string; var ADrawing: TSimpleDrawing;
+  AMode: TLoadOpt = TLOLoad);
 var
   DC: TDrawContext;
   ZDC: TZDrawingContext;
   Hdr: TDXFHeaderInfo;
 begin
   DC := ADrawing.CreateDrawingRC;
-  ZDC.CreateRec(ADrawing, ADrawing.pObjRoot^, TLOLoad, DC);
+  ZDC.CreateRec(ADrawing, ADrawing.pObjRoot^, AMode, DC);
   Hdr := AddFromDXF(AFileName, ZDC);
   if Hdr.DWGCodePage <> CP_INVALID then
     ADrawing.DXFCodePage := SysCP2ZCCodePage(Hdr.iDWGCodePage);
@@ -644,6 +645,25 @@ begin
   try
     LoadDrawing(Root + EtalonFile, Drawing);
     Check(Drawing.PreservedNODBranches = nil, 'etalon: no preserved branches, no storage');
+  finally
+    DoneDrawing(Drawing);
+  end;
+
+  { Вставка (TLOMerge, «Merge», вставка из буфера): ветки вставляемого
+    файла не берутся — исходные хэндлы двух файлов пересекаются }
+  Drawing.init(nil);
+  try
+    LoadDrawing(Root + EtalonFile, Drawing);
+    LoadDrawing(SourceFile, Drawing, TLOMerge);
+    Check(Drawing.PreservedNODBranches = nil, 'merge: branches of merged file are not kept');
+  finally
+    DoneDrawing(Drawing);
+  end;
+  Drawing.init(nil);
+  try
+    LoadDrawing(SourceFile, Drawing);
+    LoadDrawing(SourceFile, Drawing, TLOMerge);
+    CheckLoadedStore(Drawing.PreservedNODBranches, 'source + merge of itself', True);
   finally
     DoneDrawing(Drawing);
   end;

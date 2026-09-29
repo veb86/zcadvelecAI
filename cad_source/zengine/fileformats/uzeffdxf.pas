@@ -1924,11 +1924,18 @@ end;
 { Этап 7 ТЗ NOD: ветки незарегистрированных и не шаблонных ключей NOD
   копируются в PreservedNODBranches чертежа (с определениями их классов из
   RawClassesSection), чтобы записать их при сохранении. Строки DXF до 2007
-  перекодируются из $DWGCODEPAGE. Ошибка не прерывает загрузку. }
-procedure DXFNODPreserveUnknownBranches(const AHeader:TDXFHeaderInfo;AModel:TZNODModel;var ADrawing:TSimpleDrawing);
+  перекодируются из $DWGCODEPAGE. Ошибка не прерывает загрузку.
+  При вставке (TLOMerge: «Merge», вставка из буфера) ветки вставляемого
+  файла не берутся: остаются ветки чертежа, а исходные хэндлы разных
+  файлов в хранилище пересекались бы. }
+procedure DXFNODPreserveUnknownBranches(const AHeader:TDXFHeaderInfo;AModel:TZNODModel;var ADrawing:TSimpleDrawing;ALoadMode:TLoadOpt);
 var
   CodePage:TSystemCodePage;
 begin
+  if ALoadMode=TLOMerge then begin
+    NODLogTraceFormatStr('uzeffdxf: NOD: merge, unknown branches of the file are not preserved',[]);
+    exit;
+  end;
   if AHeader.iVersion<1021 then
     CodePage:=AHeader.iDWGCodePage
   else
@@ -2055,7 +2062,7 @@ begin
               { Обработчики зарегистрированных ключей NOD (этап 3) }
               RunNODLoadHandlers(fileCtx.NODModel,dwgCtx.PDrawing^);
               { Ветки неизвестных ключей NOD сохраняются как есть (этап 7) }
-              DXFNODPreserveUnknownBranches(fileCtx.Header,fileCtx.NODModel,dwgCtx.PDrawing^);
+              DXFNODPreserveUnknownBranches(fileCtx.Header,fileCtx.NODModel,dwgCtx.PDrawing^,dwgCtx.LoadMode);
               { Обязательные записи, которых нет после загрузки (этап 5) }
               RunNODEnsureDefaults(dwgCtx.PDrawing^);
               AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
