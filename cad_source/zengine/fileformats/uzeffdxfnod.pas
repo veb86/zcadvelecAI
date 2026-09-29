@@ -418,7 +418,10 @@ begin
     'uzeffdxfnod: OBJECTS parsed: %d objects, %d dictionaries, %d root dictionaries, %d ms',
     [FObjects.Count, FDictionaries.Count, FRootDictionaryCount,
      GetTickCount64 - StartTick]);
+  if not NODLogTraceEnabled then
+    Exit;
   if FNOD <> nil then begin
+    { Список ключей собирается только для включённой трассы NOD }
     Keys := '';
     for I := 0 to FNOD.Count - 1 do begin
       if I > 0 then

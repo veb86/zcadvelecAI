@@ -110,7 +110,6 @@ uses
   SysUtils,
   gzctnrVectorTypes,
   usimplegenerics,
-  uzclog,
   uzeffdxfnodlog;
 
 var
@@ -352,9 +351,9 @@ begin
       Continue;
     ParseMLeaderStyleRawObject(AModel, Obj, Style^);
     Inc(Result);
-    programlog.LogOutFormatStr(
+    NODLogTraceFormatStr(
       'uzestylesmleaderdxfnod: стиль мультивыноски "%s" загружен (хэндл %s)',
-      [Style^.Name, Obj.HandleStr], LM_Info);
+      [Style^.Name, Obj.HandleStr]);
   end;
 end;
 
@@ -385,9 +384,9 @@ begin
   if Result = nil then
     Exit;
   FillDefaultMLeaderStyle(Result^);
-  programlog.LogOutFormatStr(
+  NODLogTraceFormatStr(
     'uzestylesmleaderdxfnod: стилей мультивыносок нет, создан "%s"',
-    [CDefaultMLeaderStyleName], LM_Info);
+    [CDefaultMLeaderStyleName]);
 end;
 
 { LoadProc обработчика }
@@ -593,9 +592,9 @@ begin
   end;
   SetLength(MLSNODStyles, n);
   SetLength(MLSNODHandles, n);
-  programlog.LogOutFormatStr(
+  NODLogTraceFormatStr(
     'uzestylesmleaderdxfnod: выделены хэндлы для %d стилей мультивыносок (словарь %s)',
-    [Length(MLSNODStyles), inttohex(Result, 0)], LM_Info);
+    [Length(MLSNODStyles), inttohex(Result, 0)]);
 end;
 
 procedure MLeaderStyleNODSave(var AOutStream: TZctnrVectorBytes;
