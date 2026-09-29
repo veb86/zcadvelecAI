@@ -26,7 +26,9 @@
   * индекс символьных таблиц (этап 6): хэндл записи секции TABLES (LTYPE,
     STYLE, BLOCK_RECORD...) → тип таблицы и имя записи. Строится по
     требованию (LoadSymbolTablesFromText) — объекты веток ссылаются на
-    записи таблиц по хэндлам, а чертёж хранит ссылки по именам.
+    записи таблиц по хэндлам, а чертёж хранит ссылки по именам;
+  * построение модели из объектов, собранных вызывающим (этап 9, DWG):
+    AddObject / AddSymbolRecord, затем EndBuild с хэндлом NOD из заголовка.
 
   Модель только читает данные и не имеет побочных эффектов: на этапе 1 она
   не подключена к загрузке чертежа.
@@ -116,7 +118,8 @@ type
     FParseError: string;
     FSymbols: TDictionary<TDWGHandle, TZDXFSymbolRecord>;
     procedure BuildIndex;
-    procedure FindNOD;
+    procedure FindNOD(APreferred: TZDXFDictionary = nil);
+    procedure TraceNODKeys;
   public
     constructor Create;
     destructor Destroy; override;
@@ -125,6 +128,20 @@ type
       модель. False — структура секции нарушена (описание в ParseError);
       модель при этом строится по объектам, разобранным до ошибки. }
     function LoadFromText(const AObjectsSection: string): Boolean;
+
+    { Этап 9 (DWG): модель строится из объектов, собранных вызывающим.
+      Порядок: Clear; AddObject/AddSymbolRecord; EndBuild. }
+    { Добавляет сырой объект (владение переходит модели). Индекс по
+      хэндлу и словари строятся в EndBuild. }
+    procedure AddObject(AObject: TZDXFRawObject);
+    { Добавляет запись символьной таблицы в индекс (см. FindSymbolName).
+      Повторный хэндл — остаётся первая запись. }
+    procedure AddSymbolRecord(AHandle: TDWGHandle; const ATableType, AName: string);
+    { Завершает построение: индекс по хэндлу, словари, NOD. ANODHandle <> 0 —
+      хэндл корневого словаря из заголовка (DWG: NAMED OBJECTS DICTIONARY);
+      если такого словаря нет — предупреждение и поиск NOD по 330=0, как
+      в LoadFromText. }
+    procedure EndBuild(ANODHandle: TDWGHandle = 0);
 
     { Объект по хэндлу, nil — нет }
     function FindObject(AHandle: TDWGHandle): TZDXFRawObject;
@@ -373,13 +390,15 @@ end;
 
 { NOD — DICTIONARY без владельца (330=0 или группы 330 нет). AutoCAD
   пишет его первым объектом OBJECTS, но порядок здесь не важен. Если таких
-  словарей несколько — берётся первый, в лог выдаётся предупреждение. }
-procedure TZNODModel.FindNOD;
+  словарей несколько — берётся первый, в лог выдаётся предупреждение.
+  APreferred — NOD, известный заранее (DWG: хэндл из заголовка); тогда
+  корневые словари только считаются. }
+procedure TZNODModel.FindNOD(APreferred: TZDXFDictionary);
 var
   I: Integer;
   Dict: TZDXFDictionary;
 begin
-  FNOD := nil;
+  FNOD := APreferred;
   FRootDictionaryCount := 0;
   for I := 0 to FDictionaries.Count - 1 do begin
     Dict := FDictionaries[I];
@@ -390,19 +409,38 @@ begin
     Inc(FRootDictionaryCount);
     if FNOD = nil then
       FNOD := Dict
-    else
+    else if APreferred = nil then
       NODLogWarningFormatStr(
         'uzeffdxfnod: several root dictionaries (330=0) in OBJECTS: %s is ignored, NOD is %s',
         [Dict.RawObject.HandleStr, FNOD.RawObject.HandleStr]);
   end;
 end;
 
+procedure TZNODModel.TraceNODKeys;
+var
+  I: Integer;
+  Keys: string;
+begin
+  if not NODLogTraceEnabled then
+    Exit;
+  if FNOD <> nil then begin
+    { Список ключей собирается только для включённой трассы NOD }
+    Keys := '';
+    for I := 0 to FNOD.Count - 1 do begin
+      if I > 0 then
+        Keys := Keys + ', ';
+      Keys := Keys + FNOD[I].Key + '=' + DXFHandleToStr(FNOD[I].TargetHandle);
+    end;
+    NODLogTraceFormatStr('uzeffdxfnod: NOD %s keys (%d): %s',
+      [FNOD.RawObject.HandleStr, FNOD.Count, Keys]);
+  end else
+    NODLogTraceFormatStr('uzeffdxfnod: NOD not found', []);
+end;
+
 function TZNODModel.LoadFromText(const AObjectsSection: string): Boolean;
 var
   StartTick: QWord;
   Error: string;
-  I: Integer;
-  Keys: string;
 begin
   Clear;
   StartTick := GetTickCount64;
@@ -418,20 +456,61 @@ begin
     'uzeffdxfnod: OBJECTS parsed: %d objects, %d dictionaries, %d root dictionaries, %d ms',
     [FObjects.Count, FDictionaries.Count, FRootDictionaryCount,
      GetTickCount64 - StartTick]);
-  if not NODLogTraceEnabled then
+  TraceNODKeys;
+end;
+
+procedure TZNODModel.AddObject(AObject: TZDXFRawObject);
+begin
+  if AObject <> nil then
+    FObjects.Add(AObject);
+end;
+
+procedure TZNODModel.AddSymbolRecord(AHandle: TDWGHandle;
+  const ATableType, AName: string);
+var
+  Rec: TZDXFSymbolRecord;
+begin
+  if AHandle = 0 then
     Exit;
-  if FNOD <> nil then begin
-    { Список ключей собирается только для включённой трассы NOD }
-    Keys := '';
-    for I := 0 to FNOD.Count - 1 do begin
-      if I > 0 then
-        Keys := Keys + ', ';
-      Keys := Keys + FNOD[I].Key + '=' + DXFHandleToStr(FNOD[I].TargetHandle);
-    end;
-    NODLogTraceFormatStr('uzeffdxfnod: NOD %s keys (%d): %s',
-      [FNOD.RawObject.HandleStr, FNOD.Count, Keys]);
-  end else
-    NODLogTraceFormatStr('uzeffdxfnod: NOD not found', []);
+  Rec.TableType := UpperCase(ATableType);
+  Rec.Name := AName;
+  if FSymbols.ContainsKey(AHandle) then
+    NODLogTraceFormatStr(
+      'uzeffdxfnod: symbol records: duplicate handle %s (%s "%s"), first record is used',
+      [DXFHandleToStr(AHandle), Rec.TableType, Rec.Name])
+  else
+    FSymbols.Add(AHandle, Rec);
+end;
+
+procedure TZNODModel.EndBuild(ANODHandle: TDWGHandle);
+var
+  Dict: TZDXFDictionary;
+begin
+  { Повторный вызов перестраивает индексы по текущему списку объектов }
+  FNOD := nil;
+  FDuplicateHandleCount := 0;
+  FDictionaryByHandle.Clear;
+  FDictionaries.Clear;
+  FObjectByHandle.Clear;
+  BuildIndex;
+  Dict := nil;
+  if ANODHandle <> 0 then
+    Dict := FindDictionary(ANODHandle);
+  FindNOD(Dict);
+  if (ANODHandle <> 0) and (Dict = nil) then begin
+    if FNOD <> nil then
+      NODLogWarningFormatStr(
+        'uzeffdxfnod: root dictionary %s from header not found, NOD is %s (no owner)',
+        [DXFHandleToStr(ANODHandle), FNOD.RawObject.HandleStr])
+    else
+      NODLogWarningFormatStr(
+        'uzeffdxfnod: root dictionary %s from header not found, no NOD',
+        [DXFHandleToStr(ANODHandle)]);
+  end;
+  NODLogTraceFormatStr(
+    'uzeffdxfnod: model built: %d objects, %d dictionaries, %d root dictionaries, %d symbol records',
+    [FObjects.Count, FDictionaries.Count, FRootDictionaryCount, FSymbols.Count]);
+  TraceNODKeys;
 end;
 
 function TZNODModel.FindObject(AHandle: TDWGHandle): TZDXFRawObject;
