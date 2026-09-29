@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Тесты NOD (ТЗ cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этап 8):
+# Тесты NOD (ТЗ cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этапы 8–9):
 # сборка cad_source/zengine/tests/nodstageN.lpr без IDE Lazarus (консольный
 # fpc + исходники Lazarus, виджетсет nogui) и запуск с корнем репозитория.
 # Используется целью nodtests в Makefile и в CI (.github/workflows/nodtests.yml).
@@ -59,6 +59,18 @@ DIRS=$(find cad_source/zengine cad_source/zcad \
 INC=$(find cad_source -name '*.inc' -exec dirname {} \; | sort -u | sed 's/^/-Fi/' | tr '\n' ' ')
 
 FAILED=()
+
+# fpdwg (привязка LibreDWG, нужна uzedwgnod, этап 9): dwg.pp без директивы
+# режима — собирается отдельно в objfpc (как в fpdwg.lpk), тесты берут
+# готовые .ppu из $OUT. libredwg.so не нужна: тесты строят объекты DWG в памяти.
+# shellcheck disable=SC2086
+if ! fpc -Mobjfpc $EXTRA -FU"$OUT" -Fucad_source/components/fpdwg \
+  cad_source/components/fpdwg/uzedwghandle.pas > "$OUT/build-fpdwg.log" 2>&1; then
+  grep -E '(Error|Fatal):' "$OUT/build-fpdwg.log"
+  echo "fpdwg: BUILD FAILED (log: $OUT/build-fpdwg.log)"
+  FAILED+=(fpdwg)
+fi
+
 for T in "${TESTS[@]}"; do
   echo "=== $T"
   # shellcheck disable=SC2086
