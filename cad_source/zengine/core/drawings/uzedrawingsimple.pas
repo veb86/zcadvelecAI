@@ -29,7 +29,7 @@ uses
   uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
   uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
   uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity,
-  uzestylestablesdxf,uzestylesmleaderdxf;
+  uzestylestablesdxf,uzestylesmleaderdxf,uzeffdxfnodpreserved;
   
 type
   TMainBlockCreateProc=procedure(_to:PTDrawingDef;Name:string) of object;
@@ -72,6 +72,10 @@ type
          ветка NOD ACAD_MLEADERSTYLE). Сущности MULTILEADER в ZCAD нет —
          стили хранятся, чтобы сохранить их без потерь. }
        DXFMLeaderStyleTable: GDBDXFMLeaderStyleArray;
+       { Ветки NOD без обработчика (ключи прикладных программ), сохранённые
+         при загрузке DXF 2000+ для записи без потерь (этап 7 ТЗ NOD).
+         nil — таких веток нет; создаётся при загрузке. }
+       PreservedNODBranches: TZNODPreservedBranches;
 
 
       { Сырой текст секции CLASSES из исходного DXF-файла.
@@ -741,6 +745,8 @@ begin
   DXFTableStyleTable.Done;
   { Стили мультивыносок для DXF-обмена (MLEADERSTYLE) }
   DXFMLeaderStyleTable.Done;
+  { Сохранённые ветки NOD (этап 7) }
+  FreeAndNil(PreservedNODBranches);
   LTypeStyleTable.Done;
   DimStyleTable.Done;
   if internalcamera then
@@ -809,6 +815,8 @@ begin
   DXFTableStyleTable.init(10);
   { Стили мультивыносок для DXF-обмена (MLEADERSTYLE) — так же обязательно }
   DXFMLeaderStyleTable.init(10);
+  { Сохранённые ветки NOD (этап 7): создаются при загрузке DXF }
+  PreservedNODBranches:=nil;
 
   PTempTableStyle:=TableStyleTable.AddStyle('Temp');
 

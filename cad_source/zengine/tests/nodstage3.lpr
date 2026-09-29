@@ -758,6 +758,43 @@ end;
 
 { ---------- 6. Контракт записи на обработчике-писателе ---------- }
 
+{ Ключ записи NOD, которой (через цепочку владельцев 330) принадлежит
+  AObj; '' — объект вне веток NOD }
+function NODKeyOf(AModel: TZNODModel; AObj: TZDXFRawObject): string;
+var
+  I, Guard: Integer;
+begin
+  Result := '';
+  if AModel.NOD = nil then
+    Exit;
+  Guard := 0;
+  while (AObj <> nil) and (Guard < 1000) do begin
+    if AObj.OwnerHandle = AModel.NOD.Handle then begin
+      for I := 0 to AModel.NOD.Count - 1 do
+        if AModel.NOD[I].TargetHandle = AObj.Handle then
+          Exit(AModel.NOD[I].Key);
+      Exit;
+    end;
+    AObj := AModel.FindObject(AObj.OwnerHandle);
+    Inc(Guard);
+  end;
+end;
+
+{ После AObj в OBJECTS идут только объекты сохранённых веток (ключи без
+  обработчика, не из шаблона) }
+function IsLastBeforePreserved(AModel: TZNODModel; AObj: TZDXFRawObject): Boolean;
+var
+  I: Integer;
+begin
+  I := AModel.Objects.IndexOf(AObj);
+  if I < 0 then
+    Exit(False);
+  for I := I + 1 to AModel.Objects.Count - 1 do
+    if not IsNODPreservableKey(NODKeyOf(AModel, AModel.Objects[I])) then
+      Exit(False);
+  Result := True;
+end;
+
 procedure CheckWriterOutput(const AOutFile, AName: string);
 var
   P: TDXFPairs;
@@ -806,8 +843,11 @@ begin
     Check((Model.NOD <> nil) and (Obj <> nil) and
       (Obj.OwnerHandle = Model.NOD.Handle) and (SavedNODHandle = Model.NOD.Handle),
       AName + ': dictionary owner = NOD handle passed to SaveProc');
-    Check((Obj <> nil) and (Model.Objects.Last = Obj),
-      AName + ': dictionary is the last object before ENDSEC');
+    { Этап 7: после веток обработчиков пишутся сохранённые «чужие» ветки
+      исходного файла (ACAD_SCALELIST, DWGPROPS...) — словарь SaveProc
+      последний среди остальных объектов }
+    Check((Obj <> nil) and IsLastBeforePreserved(Model, Obj),
+      AName + ': dictionary is the last object before preserved NOD branches');
   finally
     Model.Free;
   end;
@@ -892,6 +932,9 @@ begin
     nodstage6). }
   UnregisterNODHandler('ACAD_TABLESTYLE');
   UnregisterNODHandler('ACAD_MLEADERSTYLE');
+  { Этап 7: ключ ZCAD_DATA зарезервирован обработчиком из initialization
+    uzeffdxfnodzcad (проверяется в nodstage7) }
+  UnregisterNODHandler(CNODZCADDataKey);
   Events := TStringList.Create;
   try
     Run('TestRegistration', @TestRegistration);

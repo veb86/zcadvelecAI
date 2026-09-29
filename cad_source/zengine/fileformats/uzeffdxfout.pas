@@ -60,11 +60,12 @@ function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;va
 implementation
 
 uses
-  uzeffdxfnod,uzeffdxfnodlog,
-  { NOD-обработчики ACAD_TABLESTYLE и ACAD_MLEADERSTYLE регистрируются в
-    initialization модулей }
+  Classes,uzeffdxfnod,uzeffdxfnodlog,
+  { NOD-обработчики ACAD_TABLESTYLE, ACAD_MLEADERSTYLE и ZCAD_DATA
+    регистрируются в initialization модулей }
   uzestylestablesdxfnod,
-  uzestylesmleaderdxfnod;
+  uzestylesmleaderdxfnod,
+  uzeffdxfnodzcad;
 
 var
   BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
@@ -131,6 +132,42 @@ begin
   70
   0
   }
+end;
+
+{ Регистрирует в APPID приложения расширенных данных объектов сохранённых
+  веток NOD (этап 7 ТЗ NOD), которых нет среди записанных savedxf20XX
+  (ACAD, ZCAD, ... и XDataAppName NOD-обработчиков) }
+procedure RegisterPreservedNODApps(NODSave:TZNODSaveSession;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
+var
+  written,apps:TStringList;
+  i:Integer;
+begin
+  written:=TStringList.Create;
+  apps:=TStringList.Create;
+  try
+    written.CaseSensitive:=False;
+    apps.CaseSensitive:=False;
+    written.Add('ACAD');
+    written.Add('ACAD_PSEXT');
+    written.Add('AcAecLayerStandard');
+    written.Add(ZCADAppNameInDXF);
+    written.Add('ACAD_DSTYLE_DIM_LINETYPE');
+    written.Add('ACAD_DSTYLE_DIM_EXT1_LINETYPE');
+    written.Add('ACAD_DSTYLE_DIM_EXT2_LINETYPE');
+    for i:=0 to NODSave.Count-1 do
+      if NODSave.Handlers[i].XDataAppName<>'' then
+        written.Add(NODSave.Handlers[i].XDataAppName);
+    NODSave.GetPreservedXDataAppNames(apps);
+    for i:=0 to apps.Count-1 do
+      if written.IndexOf(apps[i])<0 then begin
+        written.Add(apps[i]);
+        NODLogTraceFormatStr('uzeffdxfout: APPID "%s" of preserved NOD objects',[apps[i]]);
+        RegisterAcadAppInDXF(apps[i],outstream,handle);
+      end;
+  finally
+    apps.Free;
+    written.Free;
+  end;
 end;
 
 
@@ -343,7 +380,9 @@ begin
     templatefile.InitFromFile(TemplateFileName);
     { Обработчики NOD, подходящие по версии; хэндл NOD шаблона — из его
       секции OBJECTS (модель этапа 1) }
-    NODSave:=TZNODSaveSession.Create(IODXFContext.Header.Version);
+    { Сохранённые при загрузке ветки неизвестных ключей NOD (этап 7)
+      пишутся сессией после веток обработчиков }
+    NODSave:=TZNODSaveSession.Create(IODXFContext.Header.Version,drawing.PreservedNODBranches);
     NODSave.LoadTemplate(TemplateFileName);
     inlayertable:=False;
     inblocksec:=False;
@@ -1077,6 +1116,9 @@ begin
           for i:=0 to NODSave.Count-1 do
             if NODSave.Handlers[i].XDataAppName<>'' then
               RegisterAcadAppInDXF(NODSave.Handlers[i].XDataAppName,@outstream,IODXFContext.handle);
+          { Приложения расширенных данных (1001) объектов сохранённых веток
+            NOD (этап 7), кроме уже записанных выше }
+          RegisterPreservedNODApps(NODSave,@outstream,IODXFContext.handle);
 
           outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL('ENDTAB');
