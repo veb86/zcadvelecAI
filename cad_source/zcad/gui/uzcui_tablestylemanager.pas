@@ -901,7 +901,13 @@ begin
     'uzcui_tablestylemanager: удалён стиль "%s"',
     [StyleName], LM_Info);
 
+  { Список перестраивается до освобождения стиля (Items.Objects списка
+    хранят указатели на стили); RemoveDataFromArray только убирает
+    указатель из массива, поэтому стиль освобождается явно, как в
+    GZVectorPData.done. }
   RefreshStyleList;
+  StylePtr^.Done;
+  Freemem(Pointer(StylePtr));
 end;
 
 { Кнопка «Закрыть» }

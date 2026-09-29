@@ -30,7 +30,7 @@ uses
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,
-  uzestylestablesdxf,uzclog;
+  uzeffdxfnodregistry;
 type
   { Callback, вызываемый перед началом записи DXF. Позволяет подпиться
     на pre-save обработку чертежа (например, конвертацию ProxyEntity
@@ -58,6 +58,14 @@ procedure RegisterClassesSaveDxfProc(proc:TClassesSaveDxfProc);
 function savedxf20XX(const SavedFileName:string;const TemplateFileName:string;var drawing:TSimpleDrawing;AVer:TZCDxfVersion):boolean;
 
 implementation
+
+uses
+  Classes,uzeffdxfnod,uzeffdxfnodlog,
+  { NOD-обработчики ACAD_TABLESTYLE, ACAD_MLEADERSTYLE и ZCAD_DATA
+    регистрируются в initialization модулей }
+  uzestylestablesdxfnod,
+  uzestylesmleaderdxfnod,
+  uzeffdxfnodzcad;
 
 var
   BeforeSaveDxfProcs:array of TBeforeSaveDxfProc;
@@ -126,352 +134,42 @@ begin
   }
 end;
 
-
-{ Преобразует вещественное число в строку DXF с гарантией десятичной точки }
-function DXFFloatStr(Value: Double): string;
-begin
-  Result := FloatToStr(Value);
-  if Pos('.', Result) = 0 then
-    Result := Result + '.0';
-end;
-
-{ Записывает блок границ ячейки в поток (коды 274-279, 284-289, 64-69).
-  Значения по умолчанию: тип линии = -2, видимость = 1, цвет = 0 }
-procedure WriteCellBordersToStream(
-  var outstream: TZctnrVectorBytes);
+{ Регистрирует в APPID приложения расширенных данных объектов сохранённых
+  веток NOD (этап 7 ТЗ NOD), которых нет среди записанных savedxf20XX
+  (ACAD, ZCAD, ... и XDataAppName NOD-обработчиков) }
+procedure RegisterPreservedNODApps(NODSave:TZNODSaveSession;outstream:PTZctnrVectorBytes;var handle:TDWGHandle);
 var
-  BorderCode, VisCode, ColorCode: Integer;
+  written,apps:TStringList;
+  i:Integer;
 begin
-  for BorderCode := 274 to 279 do
-  begin
-    VisCode := BorderCode + 10;
-    ColorCode := BorderCode - 210;
-    outstream.TXTAddStringEOL(dxfGroupCode(BorderCode));
-    outstream.TXTAddStringEOL('-2');
-    outstream.TXTAddStringEOL(dxfGroupCode(VisCode));
-    outstream.TXTAddStringEOL('1');
-    outstream.TXTAddStringEOL(dxfGroupCode(ColorCode));
-    outstream.TXTAddStringEOL('0');
+  written:=TStringList.Create;
+  apps:=TStringList.Create;
+  try
+    written.CaseSensitive:=False;
+    apps.CaseSensitive:=False;
+    written.Add('ACAD');
+    written.Add('ACAD_PSEXT');
+    written.Add('AcAecLayerStandard');
+    written.Add(ZCADAppNameInDXF);
+    written.Add('ACAD_DSTYLE_DIM_LINETYPE');
+    written.Add('ACAD_DSTYLE_DIM_EXT1_LINETYPE');
+    written.Add('ACAD_DSTYLE_DIM_EXT2_LINETYPE');
+    for i:=0 to NODSave.Count-1 do
+      if NODSave.Handlers[i].XDataAppName<>'' then
+        written.Add(NODSave.Handlers[i].XDataAppName);
+    NODSave.GetPreservedXDataAppNames(apps);
+    for i:=0 to apps.Count-1 do
+      if written.IndexOf(apps[i])<0 then begin
+        written.Add(apps[i]);
+        NODLogTraceFormatStr('uzeffdxfout: APPID "%s" of preserved NOD objects',[apps[i]]);
+        RegisterAcadAppInDXF(apps[i],outstream,handle);
+      end;
+  finally
+    apps.Free;
+    written.Free;
   end;
 end;
 
-{ Записывает один блок стиля ячейки (title/header/data) в поток }
-procedure WriteCellStyleToStream(
-  var outstream: TZctnrVectorBytes;
-  const CS: TGDBDXFTableCellStyle;
-  const TextStyleName: string);
-begin
-  outstream.TXTAddStringEOL(dxfGroupCode(7));
-  if TextStyleName <> '' then
-    outstream.TXTAddStringEOL(TextStyleName)
-  else
-    outstream.TXTAddStringEOL('Standard');
-  outstream.TXTAddStringEOL(dxfGroupCode(140));
-  outstream.TXTAddStringEOL(DXFFloatStr(CS.TextHeight));
-  outstream.TXTAddStringEOL(dxfGroupCode(170));
-  outstream.TXTAddStringEOL(IntToStr(CS.Alignment));
-  outstream.TXTAddStringEOL(dxfGroupCode(62));
-  outstream.TXTAddStringEOL(IntToStr(CS.TextColor));
-  outstream.TXTAddStringEOL(dxfGroupCode(63));
-  outstream.TXTAddStringEOL(IntToStr(CS.BackgroundColor));
-  outstream.TXTAddStringEOL(dxfGroupCode(283));
-  if CS.BackgroundColorEnabled then
-    outstream.TXTAddStringEOL('1')
-  else
-    outstream.TXTAddStringEOL('0');
-  outstream.TXTAddStringEOL(dxfGroupCode(90));
-  outstream.TXTAddStringEOL('512');
-  outstream.TXTAddStringEOL(dxfGroupCode(91));
-  outstream.TXTAddStringEOL('0');
-  outstream.TXTAddStringEOL(dxfGroupCode(1));
-  outstream.TXTAddStringEOL('');
-  WriteCellBordersToStream(outstream);
-end;
-
-{ Пара «код/значение» в поток (сокращение для читаемости кода ниже) }
-procedure dxfPairOut(var outstream: TZctnrVectorBytes;
-                     const Code: Integer; const Value: string); inline;
-begin
-  outstream.TXTAddStringEOL(dxfGroupCode(Code));
-  outstream.TXTAddStringEOL(Value);
-end;
-
-{ Записывает один блок CELLSTYLE карты стилей ячеек (AcDbCellStyleMap).
-
-  Именно этот объект даёт смысл идентификаторам стиля ячейки (90) внутри
-  TABLECELL_BEGIN объекта TABLECONTENT: без CELLSTYLEMAP AutoCAD отбрасывает
-  индивидуальные стили ячеек и применяет встроенное правило «строка 1 — Title,
-  строка 2 — Header, остальные — Data» (issue #1409).
-
-  AStyleId  — 1=_TITLE, 2=_HEADER, 3=_DATA
-  AStyleName— '_TITLE' / '_HEADER' / '_DATA'
-  AStyleType— 1 для заголовочных строк (title/header), 2 для данных
-  AFlags92  — 32768 для _TITLE (признак строки заголовка таблицы), иначе 0 }
-procedure WriteCellStyleMapEntryToStream(
-  var outstream: TZctnrVectorBytes;
-  const CS: TGDBDXFTableCellStyle;
-  const AStyleId, AStyleType, AFlags92: Integer;
-  const AStyleName: string;
-  const ATextStyleHandle: string);
-var
-  GridBit: Integer;
-begin
-  dxfPairOut(outstream, 300, 'CELLSTYLE');
-  dxfPairOut(outstream, 1, 'TABLEFORMAT_BEGIN');
-  dxfPairOut(outstream, 90, '5');
-  dxfPairOut(outstream, 170, '1');
-  dxfPairOut(outstream, 91, '0');
-  dxfPairOut(outstream, 92, IntToStr(AFlags92));
-  dxfPairOut(outstream, 62, '257');
-  dxfPairOut(outstream, 93, '1');
-
-  { Формат содержимого ячейки: выравнивание (94) и высота текста (144) }
-  dxfPairOut(outstream, 300, 'CONTENTFORMAT');
-  dxfPairOut(outstream, 1, 'CONTENTFORMAT_BEGIN');
-  dxfPairOut(outstream, 90, '0');
-  dxfPairOut(outstream, 91, '0');
-  dxfPairOut(outstream, 92, '512');
-  dxfPairOut(outstream, 93, '0');
-  dxfPairOut(outstream, 300, '');
-  dxfPairOut(outstream, 40, '0.0');
-  dxfPairOut(outstream, 140, '1.0');
-  dxfPairOut(outstream, 94, IntToStr(CS.Alignment));
-  dxfPairOut(outstream, 62, IntToStr(CS.TextColor));
-  { 340 = хэндл текстового стиля. AutoCAD пишет реальную ссылку STYLE в
-    каждом CONTENTFORMAT карты; 0 оставляет определение CELLSTYLE неполным,
-    после чего индивидуальные стили ячеек игнорируются (issue #1409). }
-  dxfPairOut(outstream, 340, ATextStyleHandle);
-  dxfPairOut(outstream, 144, DXFFloatStr(CS.TextHeight));
-  dxfPairOut(outstream, 309, 'CONTENTFORMAT_END');
-
-  dxfPairOut(outstream, 171, '1');
-  dxfPairOut(outstream, 301, 'MARGIN');
-  dxfPairOut(outstream, 1, 'CELLMARGIN_BEGIN');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '0.18');
-  dxfPairOut(outstream, 40, '0.18');
-  dxfPairOut(outstream, 309, 'CELLMARGIN_END');
-
-  { Шесть описаний линий сетки ячейки (горизонтальные/вертикальные/рамка) }
-  dxfPairOut(outstream, 94, '6');
-  GridBit := 1;
-  while GridBit <= 32 do
-  begin
-    dxfPairOut(outstream, 95, IntToStr(GridBit));
-    dxfPairOut(outstream, 302, 'GRIDFORMAT');
-    dxfPairOut(outstream, 1, 'GRIDFORMAT_BEGIN');
-    dxfPairOut(outstream, 90, '0');
-    dxfPairOut(outstream, 91, '1');
-    dxfPairOut(outstream, 62, '0');
-    dxfPairOut(outstream, 92, '-2');
-    dxfPairOut(outstream, 340, '0');
-    dxfPairOut(outstream, 93, '0');
-    dxfPairOut(outstream, 40, '0.045');
-    dxfPairOut(outstream, 309, 'GRIDFORMAT_END');
-    GridBit := GridBit * 2;
-  end;
-  dxfPairOut(outstream, 309, 'TABLEFORMAT_END');
-
-  dxfPairOut(outstream, 1, 'CELLSTYLE_BEGIN');
-  dxfPairOut(outstream, 90, IntToStr(AStyleId));
-  dxfPairOut(outstream, 91, IntToStr(AStyleType));
-  dxfPairOut(outstream, 300, AStyleName);
-  dxfPairOut(outstream, 309, 'CELLSTYLE_END');
-end;
-
-{ Записывает расширенный словарь стиля таблицы и объект CELLSTYLEMAP.
-
-  Цепочка ссылок, которую ожидает AutoCAD (issue #1409):
-    TABLESTYLE --102{ACAD_XDICTIONARY/360--> DICTIONARY
-      --(ключ ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP)--> CELLSTYLEMAP
-
-  DictHandle/MapHandle — заранее выделенные хэндлы этих двух объектов. }
-procedure WriteCellStyleMapObjectsToStream(
-  var outstream: TZctnrVectorBytes;
-  Style: PTGDBDXFTableStyle;
-  const StyleHandle, DictHandle, MapHandle: TDWGHandle;
-  TextStyleNameHandleMap: TString2StringDictionary);
-var
-  CS: array[0..2] of TGDBDXFTableCellStyle;
-  TextStyleHandles: array[0..2] of string;
-  PCellStyle: PTGDBDXFTableCellStyle;
-  CellIdx: Integer;
-  Iter: itrec;
-  DefaultAlignments: array[0..2] of Integer;
-
-  function ResolveTextStyleHandle(const StyleName: string): string;
-  begin
-    Result := '0';
-    if (StyleName <> '')
-       and TextStyleNameHandleMap.MyGetValue(StyleName, Result) then
-      Exit;
-    { Старые/неполные TABLESTYLE могут не содержать группу 7. В таком случае
-      используем реальный хэндл Standard, как делает AutoCAD. }
-    TextStyleNameHandleMap.MyGetValue('Standard', Result);
-  end;
-begin
-  { Порядок блоков ячеек в TABLESTYLE: 0=data, 1=title, 2=header }
-  DefaultAlignments[0] := 2;
-  DefaultAlignments[1] := 5;
-  DefaultAlignments[2] := 5;
-  for CellIdx := 0 to 2 do
-  begin
-    FillChar(CS[CellIdx], SizeOf(CS[CellIdx]), 0);
-    CS[CellIdx].TextHeight := 2.5;
-    CS[CellIdx].Alignment := DefaultAlignments[CellIdx];
-    TextStyleHandles[CellIdx] :=
-      ResolveTextStyleHandle(Style^.CellTextStyleName[CellIdx]);
-  end;
-  CellIdx := 0;
-  PCellStyle := Style^.CellFormats.beginiterate(Iter);
-  while (PCellStyle <> nil) and (CellIdx < 3) do
-  begin
-    CS[CellIdx] := PCellStyle^;
-    Inc(CellIdx);
-    PCellStyle := Style^.CellFormats.iterate(Iter);
-  end;
-
-  { Словарь-расширение стиля таблицы }
-  dxfPairOut(outstream, 0, 'DICTIONARY');
-  dxfPairOut(outstream, 5, inttohex(DictHandle, 0));
-  dxfPairOut(outstream, 330, inttohex(StyleHandle, 0));
-  dxfPairOut(outstream, 100, 'AcDbDictionary');
-  { 280|1 — жёсткое владение записями словаря. AutoCAD пишет этот флаг для
-    словаря-расширения стиля таблицы; без него CELLSTYLEMAP считается
-    «одолженным» объектом (issue #1409). }
-  dxfPairOut(outstream, 280, '1');
-  dxfPairOut(outstream, 281, '1');
-  dxfPairOut(outstream, 3, 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP');
-  dxfPairOut(outstream, 360, inttohex(MapHandle, 0));
-
-  { Сама карта стилей ячеек: _TITLE=1, _HEADER=2, _DATA=3 }
-  dxfPairOut(outstream, 0, 'CELLSTYLEMAP');
-  dxfPairOut(outstream, 5, inttohex(MapHandle, 0));
-  dxfPairOut(outstream, 102, '{ACAD_REACTORS');
-  dxfPairOut(outstream, 330, inttohex(DictHandle, 0));
-  dxfPairOut(outstream, 102, '}');
-  dxfPairOut(outstream, 330, inttohex(DictHandle, 0));
-  dxfPairOut(outstream, 100, 'AcDbCellStyleMap');
-  dxfPairOut(outstream, 90, '3');
-  WriteCellStyleMapEntryToStream(
-    outstream, CS[1], 1, 1, 32768, '_TITLE', TextStyleHandles[1]);
-  WriteCellStyleMapEntryToStream(
-    outstream, CS[2], 2, 1, 0, '_HEADER', TextStyleHandles[2]);
-  WriteCellStyleMapEntryToStream(
-    outstream, CS[0], 3, 2, 0, '_DATA', TextStyleHandles[0]);
-end;
-
-{ Записывает один объект TABLESTYLE в выходной поток DXF.
-  StyleHandle — заранее назначенный хэндл объекта.
-  OwnerHandle — хэндл словаря ACAD_TABLESTYLE (владелец).
-  DictHandle/MapHandle — хэндлы расширенного словаря и CELLSTYLEMAP;
-  если оба равны 0, карта стилей ячеек не записывается. }
-procedure WriteTableStyleObjectToStream(
-  var outstream: TZctnrVectorBytes;
-  Style: PTGDBDXFTableStyle;
-  const StyleHandle: TDWGHandle;
-  const OwnerHandle: TDWGHandle;
-  TextStyleNameHandleMap: TString2StringDictionary;
-  const DictHandle: TDWGHandle = 0;
-  const MapHandle: TDWGHandle = 0);
-var
-  PCellStyle: PTGDBDXFTableCellStyle;
-  DefaultCS: TGDBDXFTableCellStyle;
-  DefaultAlignments: array[0..2] of Integer;
-  CellIdx: Integer;
-  Iter: itrec;
-begin
-  DefaultAlignments[0] := 2;
-  DefaultAlignments[1] := 5;
-  DefaultAlignments[2] := 5;
-
-  outstream.TXTAddStringEOL(dxfGroupCode(0));
-  outstream.TXTAddStringEOL('TABLESTYLE');
-  outstream.TXTAddStringEOL(dxfGroupCode(5));
-  outstream.TXTAddStringEOL(inttohex(StyleHandle, 0));
-
-  { Блок ACAD_XDICTIONARY со старым хэндлом Style^.XDictHandle не пишем
-    (issue #1339): такая ссылка указывала бы на несуществующий объект.
-    Но если для стиля выделены хэндлы под словарь и CELLSTYLEMAP, эти
-    объекты записываются нами ниже, и ссылка 360 корректна (issue #1409). }
-  if (DictHandle > 0) and (MapHandle > 0) then
-  begin
-    outstream.TXTAddStringEOL(dxfGroupCode(102));
-    outstream.TXTAddStringEOL('{ACAD_XDICTIONARY');
-    outstream.TXTAddStringEOL(dxfGroupCode(360));
-    outstream.TXTAddStringEOL(inttohex(DictHandle, 0));
-    outstream.TXTAddStringEOL(dxfGroupCode(102));
-    outstream.TXTAddStringEOL('}');
-  end;
-
-  { Блок ACAD_REACTORS — принадлежность словарю }
-  outstream.TXTAddStringEOL(dxfGroupCode(102));
-  outstream.TXTAddStringEOL('{ACAD_REACTORS');
-  outstream.TXTAddStringEOL(dxfGroupCode(330));
-  outstream.TXTAddStringEOL(inttohex(OwnerHandle, 0));
-  outstream.TXTAddStringEOL(dxfGroupCode(102));
-  outstream.TXTAddStringEOL('}');
-  outstream.TXTAddStringEOL(dxfGroupCode(330));
-  outstream.TXTAddStringEOL(inttohex(OwnerHandle, 0));
-
-  { AcDbTableStyle }
-  outstream.TXTAddStringEOL(dxfGroupCode(100));
-  outstream.TXTAddStringEOL('AcDbTableStyle');
-  outstream.TXTAddStringEOL(dxfGroupCode(3));
-  outstream.TXTAddStringEOL(Style^.Name);
-  outstream.TXTAddStringEOL(dxfGroupCode(70));
-  outstream.TXTAddStringEOL(IntToStr(Style^.Flags70));
-  outstream.TXTAddStringEOL(dxfGroupCode(71));
-  outstream.TXTAddStringEOL(IntToStr(Style^.Flags71));
-  outstream.TXTAddStringEOL(dxfGroupCode(40));
-  outstream.TXTAddStringEOL(DXFFloatStr(Style^.HorzCellMargin));
-  outstream.TXTAddStringEOL(dxfGroupCode(41));
-  outstream.TXTAddStringEOL(DXFFloatStr(Style^.VertCellMargin));
-  outstream.TXTAddStringEOL(dxfGroupCode(280));
-  if Style^.TitleSuppressed then
-    outstream.TXTAddStringEOL('1')
-  else
-    outstream.TXTAddStringEOL('0');
-  outstream.TXTAddStringEOL(dxfGroupCode(281));
-  if Style^.ColumnHeadingSuppressed then
-    outstream.TXTAddStringEOL('1')
-  else
-    outstream.TXTAddStringEOL('0');
-
-  { Записываем блоки ячеек (title, header, data) }
-  CellIdx := 0;
-  PCellStyle := Style^.CellFormats.beginiterate(Iter);
-  while (PCellStyle <> nil) and (CellIdx < 3) do
-  begin
-    WriteCellStyleToStream(outstream, PCellStyle^,
-      Style^.CellTextStyleName[CellIdx]);
-    Inc(CellIdx);
-    PCellStyle := Style^.CellFormats.iterate(Iter);
-  end;
-  { Добиваем до трёх блоков значениями по умолчанию }
-  while CellIdx < 3 do
-  begin
-    FillChar(DefaultCS, SizeOf(DefaultCS), 0);
-    DefaultCS.TextHeight := 2.5;
-    DefaultCS.Alignment := DefaultAlignments[CellIdx];
-    DefaultCS.BackgroundColor := 7;
-    WriteCellStyleToStream(outstream, DefaultCS, 'Standard');
-    Inc(CellIdx);
-  end;
-
-  { Карта стилей ячеек — без неё AutoCAD игнорирует индивидуальные стили
-    ячеек в TABLECONTENT (issue #1409). }
-  if (DictHandle > 0) and (MapHandle > 0) then
-    WriteCellStyleMapObjectsToStream(outstream, Style,
-      StyleHandle, DictHandle, MapHandle, TextStyleNameHandleMap);
-
-  programlog.LogOutFormatStr(
-    'uzeffdxfout: записан TABLESTYLE "%s" handle=%s',
-    [Style^.Name, inttohex(StyleHandle, 0)], LM_Info);
-end;
 
 procedure saveentitiesdxf2000(pva:PGDBObjEntityOpenArray;var outStream:TZctnrVectorBytes;var drawing:TSimpleDrawing;var IODXFContext:TIODXFSaveContext);
 var
@@ -568,25 +266,30 @@ var
   processedvarscount:integer;
   lph:TLPSHandle;
 
-  { Переменные для сохранения стилей таблиц в секции OBJECTS }
   inobjectssec,inclassessec: boolean;
-  tablestyledicthandle: TDWGHandle;
-  tablestyleiter: itrec;
-  ptablestyle: PTGDBDXFTableStyle;
-  writtenstylecount: integer;
-  intablestyledict: boolean;
-  { Массивы предварительно выделенных хэндлов для стилей таблиц }
-  tsHandles: array of TDWGHandle;
-  tsDictHandles: array of TDWGHandle;
-  tsMapHandles: array of TDWGHandle;
-  tsCount: integer;
-  tsHandlesAllocated: boolean;
+  { Внутри объекта NOD шаблона (после его группы 5) }
+  innodobj: boolean;
+  { Пара шаблона, прочитанная заранее и ещё не обработанная }
+  pendingpair: boolean;
+  pendinggroups,pendingvalues: string;
+  peekgroups,peekvalues: string;
+  acadTableOwnerDone: boolean;
   beforeProcIdx: integer;
+  { NOD-обработчики, участвующие в сохранении (реестр uzeffdxfnodregistry) }
+  NODSave: TZNODSaveSession;
 
+  { Вызывается перед ENDSEC секции OBJECTS: сначала ветки NOD-обработчиков
+    (этап 3 ТЗ NOD), затем прикладные OBJECTS-callback'и. }
   procedure RunObjectsSaveDxfProcs;
   var
     objectsProcIdx: Integer;
+    nodHandle: TDWGHandle;
   begin
+    { Новый хэндл NOD: корневой словарь шаблона уже записан и перемаплен }
+    nodHandle:=0;
+    if NODSave.TemplateNODHandle<>0 then
+      nodHandle:=OldHandele2NewHandle.MyGetValue(NODSave.TemplateNODHandle);
+    NODSave.WriteObjects(outstream,drawing,IODXFContext,nodHandle);
     for objectsProcIdx:=0 to High(ObjectsSaveDxfProcs) do
       if Assigned(ObjectsSaveDxfProcs[objectsProcIdx]) then
         ObjectsSaveDxfProcs[objectsProcIdx](
@@ -597,57 +300,52 @@ var
   var
     classesProcIdx: Integer;
   begin
+    NODSave.WriteClasses(outstream,drawing,IODXFContext);
     for classesProcIdx:=0 to High(ClassesSaveDxfProcs) do
       if Assigned(ClassesSaveDxfProcs[classesProcIdx]) then
         ClassesSaveDxfProcs[classesProcIdx](
           outstream,drawing,IODXFContext);
   end;
 
-  { Предварительно выделяет хэндлы для стилей таблиц и строит карту
-    «имя стиля -> новый хэндл», а также вычисляет новый хэндл владельца
-    (*Model_Space) для сырых сущностей ACAD_TABLE. Должно вызываться ДО
-    записи секции ENTITIES, т.к. сырая сущность ACAD_TABLE ссылается на
-    стиль таблицы (342) и владельца (330), которые иначе пишутся позже
-    или перенумеровываются (issue #1339). }
-  procedure PreallocateTableStyleHandles;
+  { Вычисляет новый хэндл владельца (*Model_Space) для сырых сущностей
+    ACAD_TABLE. Должно вызываться ДО записи секции ENTITIES (issue #1339). }
+  procedure PreallocateAcadTableOwnerHandle;
   var
-    psIdx: integer;
-    psStyle: PTGDBDXFTableStyle;
-    psIter: itrec;
     msHandle: TDWGHandle;
   begin
-    if tsHandlesAllocated then
+    if acadTableOwnerDone then
       Exit;
-    tsHandlesAllocated:=True;
-
+    acadTableOwnerDone:=True;
     { Новый хэндл владельца сущностей пространства модели. В шаблоне и в
       исходных файлах AutoCAD блок *Model_Space всегда имеет хэндл 1F. }
     msHandle:=OldHandele2NewHandle.MyGetValue($1F);
     if msHandle>0 then
       IODXFContext.AcadTableOwnerHandle:=msHandle;
+  end;
 
-    tsCount:=drawing.DXFTableStyleTable.count;
-    if tsCount>0 then begin
-      SetLength(tsHandles, tsCount);
-      SetLength(tsDictHandles, tsCount);
-      SetLength(tsMapHandles, tsCount);
-      psIdx:=0;
-      psStyle:=drawing.DXFTableStyleTable.beginiterate(psIter);
-      while (psStyle<>nil) and (psIdx<tsCount) do begin
-        tsHandles[psIdx]:=IODXFContext.handle;
-        Inc(IODXFContext.handle);
-        { Хэндлы расширенного словаря стиля и карты стилей ячеек
-          (CELLSTYLEMAP), см. issue #1409 }
-        tsDictHandles[psIdx]:=IODXFContext.handle;
-        Inc(IODXFContext.handle);
-        tsMapHandles[psIdx]:=IODXFContext.handle;
-        Inc(IODXFContext.handle);
-        if not IODXFContext.TableStyleNameHandleMap.MyContans(psStyle^.Name) then
-          IODXFContext.TableStyleNameHandleMap.Add(
-            psStyle^.Name, inttohex(tsHandles[psIdx],0));
-        Inc(psIdx);
-        psStyle:=drawing.DXFTableStyleTable.iterate(psIter);
-      end;
+  { Хэндлы веток NOD-обработчиков (стили таблиц и т.п.): до ENTITIES, т.к.
+    сырые ACAD_TABLE ссылаются на стили (342). Затем — перемаппинг
+    словарей-веток шаблона на новые словари (этап 4 ТЗ NOD).
+    Идемпотентна. }
+  procedure ReserveNODHandles;
+  begin
+    NODSave.ReserveHandles(drawing,IODXFContext);
+    NODSave.MapTemplateHandles(OldHandele2NewHandle,IODXFContext);
+  end;
+
+  { Пишет записи NOD обработчиков, которых нет в NOD шаблона и которые по
+    алфавиту идут перед ключом ANextKey ('' — все оставшиеся). }
+  procedure WriteNODInsertions(const ANextKey:string);
+  var
+    entries:TZDXFDictEntries;
+    entryIdx:integer;
+  begin
+    entries:=NODSave.TakeNODInsertions(ANextKey);
+    for entryIdx:=0 to High(entries) do begin
+      outstream.TXTAddStringEOL(dxfGroupCode(3));
+      outstream.TXTAddStringEOL(entries[entryIdx].Key);
+      outstream.TXTAddStringEOL(dxfGroupCode(entries[entryIdx].OwnershipCode));
+      outstream.TXTAddStringEOL(inttohex(entries[entryIdx].TargetHandle,0));
     end;
   end;
 begin
@@ -680,6 +378,12 @@ begin
     lph:=lps.StartLongProcess('Save DXF file',@outstream,drawing.pObjRoot^.ObjArray.Count);
     OldHandele2NewHandle:=TMapHandleToHandle.Create;
     templatefile.InitFromFile(TemplateFileName);
+    { Обработчики NOD, подходящие по версии; хэндл NOD шаблона — из его
+      секции OBJECTS (модель этапа 1) }
+    { Сохранённые при загрузке ветки неизвестных ключей NOD (этап 7)
+      пишутся сессией после веток обработчиков }
+    NODSave:=TZNODSaveSession.Create(IODXFContext.Header.Version,drawing.PreservedNODBranches);
+    NODSave.LoadTemplate(TemplateFileName);
     inlayertable:=False;
     inblocksec:=False;
     inblocktable:=False;
@@ -691,19 +395,22 @@ begin
     inappidtable:=False;
     inobjectssec:=False;
     inclassessec:=False;
-    intablestyledict:=False;
-    tablestyledicthandle:=0;
-    writtenstylecount:=0;
-    tsCount:=0;
-    tsHandlesAllocated:=False;
-    SetLength(tsHandles, 0);
-    SetLength(tsDictHandles, 0);
-    SetLength(tsMapHandles, 0);
+    innodobj:=False;
+    pendingpair:=False;
+    pendinggroups:='';
+    pendingvalues:='';
+    acadTableOwnerDone:=False;
     MakeVariablesDict(IODXFContext.VarsDict,drawing);
     processedvarscount:=IODXFContext.VarsDict.Count;
-    while templatefile.notEOF do begin
-      groups:=templatefile.readString;
-      values:=templatefile.readString;
+    while pendingpair or templatefile.notEOF do begin
+      if pendingpair then begin
+        groups:=pendinggroups;
+        values:=pendingvalues;
+        pendingpair:=False;
+      end else begin
+        groups:=templatefile.readString;
+        values:=templatefile.readString;
+      end;
       groupi:=StrToInt(groups);
       variablenotprocessed:=True;
       if (groupi=9)and(processedvarscount>0) then begin
@@ -753,16 +460,21 @@ begin
               plottablefansdle:=lasthandle;  {поймать плоттабле}
             if indimstyletable and (groupi=5) then
               dimtablehandle:=lasthandle;  {поймать dimtable}
-            { Обнаружение словаря ACAD_TABLESTYLE по хэндлу }
-            if inobjectssec and (groupi=5)
-               and (tablestyledicthandle>0)
-               and (lasthandle=tablestyledicthandle) then
-              intablestyledict:=True;
+            { Начало объекта NOD шаблона: в него добавляются записи
+              NOD-обработчиков (этап 4 ТЗ NOD) }
+            if inobjectssec and (groupi=5) and (NODSave.TemplateNODHandle<>0)
+               and (TDWGHandle(valuei)=NODSave.TemplateNODHandle) then
+              innodobj:=True;
           end;
         end else if (groupi=2) and (values='CLASSES') then begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
           inclassessec:=True;
+        end else if inclassessec and (groupi=1) then begin
+          { Имя класса шаблона — для ClassesProc NOD-обработчиков }
+          IODXFContext.TemplateClassNames.Add(Trim(values));
+          outstream.TXTAddStringEOL(groups);
+          outstream.TXTAddStringEOL(values);
         end else if inclassessec and (groupi=0)
                     and (values=dxfName_ENDSEC) then begin
           { Прикладные модули объявляют здесь классы своих сущностей и
@@ -774,10 +486,11 @@ begin
         end else if (groupi=2) and (values='ENTITIES') then begin
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
-          { Перед записью сущностей выделяем хэндлы стилей таблиц и
-            вычисляем хэндл владельца — сырые ACAD_TABLE ссылаются на них
-            (issue #1339). }
-          PreallocateTableStyleHandles;
+          { Перед записью сущностей вычисляем хэндл владельца и выделяем
+            хэндлы веток NOD (стилей таблиц) — сырые ACAD_TABLE ссылаются
+            на них (issue #1339, этапы 3–4 ТЗ NOD). }
+          PreallocateAcadTableOwnerHandle;
+          ReserveNODHandles;
           saveentitiesdxf2000(@{p}drawing.pObjRoot^.ObjArray,outstream,drawing,IODXFContext);
         end else if (groupi=2) and (values='BLOCKS') then begin
           outstream.TXTAddStringEOL(groups);
@@ -1084,6 +797,10 @@ begin
               outstream.TXTAddStringEOL(dxfGroupCode(0));
               outstream.TXTAddStringEOL(dxfName_LTYPE);
               IODXFContext.p2h.MyGetOrCreateValue(pltp,IODXFContext.handle,temphandle);
+              { «Имя типа линии -> новый хэндл LTYPE» для ссылок 340 стилей
+                мультивыносок (этап 6 ТЗ NOD) }
+              if not IODXFContext.LineTypeNameHandleMap.MyContans(pltp^.Name) then
+                IODXFContext.LineTypeNameHandleMap.Add(pltp^.Name,inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(5));
               outstream.TXTAddStringEOL(inttohex(temphandle,0));
               outstream.TXTAddStringEOL(dxfGroupCode(330));
@@ -1394,6 +1111,14 @@ begin
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_LINETYPE',@outstream,IODXFContext.handle);
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_EXT1_LINETYPE',@outstream,IODXFContext.handle);
           RegisterAcadAppInDXF('ACAD_DSTYLE_DIM_EXT2_LINETYPE',@outstream,IODXFContext.handle);
+          { Приложения расширенных данных объектов NOD-обработчиков
+            (например, ACAD_MLEADERVER стилей мультивыносок, этап 6 ТЗ NOD) }
+          for i:=0 to NODSave.Count-1 do
+            if NODSave.Handlers[i].XDataAppName<>'' then
+              RegisterAcadAppInDXF(NODSave.Handlers[i].XDataAppName,@outstream,IODXFContext.handle);
+          { Приложения расширенных данных (1001) объектов сохранённых веток
+            NOD (этап 7), кроме уже записанных выше }
+          RegisterPreservedNODApps(NODSave,@outstream,IODXFContext.handle);
 
           outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL('ENDTAB');
@@ -1539,189 +1264,72 @@ begin
         end else if (groupi=0) and (values=dxfName_DIMSTYLE)and indimstyletable then begin
           IgnoredSource:=True;
 
-        { === Обработка секции OBJECTS: сохранение стилей таблиц === }
+        { === Секция OBJECTS: NOD шаблона и ветки NOD-обработчиков
+              (этап 4 ТЗ NOD) === }
         end else if (groupi=2) and (values='OBJECTS') then begin
-          { Вход в секцию OBJECTS.
-            Предварительно выделяем хэндлы для всех стилей таблиц из чертежа,
-            чтобы потом использовать их и в словаре, и в объектах TABLESTYLE. }
           inobjectssec:=True;
-          { Хэндлы стилей таблиц уже могли быть выделены перед секцией
-            ENTITIES (issue #1339). Вызов идемпотентен. }
-          PreallocateTableStyleHandles;
-          if tsCount>0 then
-            programlog.LogOutFormatStr(
-              'uzeffdxfout: выделены хэндлы для %d стилей таблиц',
-              [tsCount], LM_Info);
+          { Обычно уже вызваны перед ENTITIES; вызовы идемпотентны }
+          PreallocateAcadTableOwnerHandle;
+          ReserveNODHandles;
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
-        end else if inobjectssec and (groupi=3) and (values='ACAD_TABLESTYLE') then begin
-          { Нашли запись ACAD_TABLESTYLE в корневом словаре.
-            Следующая пара (350, handle) — хэндл словаря стилей таблиц.
-            Сохраняем оба хэндла (старый и перемапленный) для дальнейшего
-            отслеживания объекта словаря. }
+        end else if inobjectssec and innodobj and (groupi=3) then begin
+          { Запись NOD шаблона: перед ней — недостающие записи обработчиков,
+            которые по алфавиту идут раньше. Пары 350 записей, ветки
+            которых заменяет обработчик, перемаплены на его словарь
+            (MapTemplateHandles). }
+          WriteNODInsertions(values);
           outstream.TXTAddStringEOL(groups);
-          outstream.TXTAddStringEOL(values);
-          groups:=templatefile.readString;
-          values:=templatefile.readString;
-          groupi:=StrToInt(groups);
-          if groupi=350 then begin
-            valuei:=StrToInt('$'+values);
-            intable:=OldHandele2NewHandle.MyGetValue(valuei);
-            if intable>0 then begin
-              tablestyledicthandle:=intable;
-              lasthandle:=intable;
-            end else begin
-              OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
-              tablestyledicthandle:=IODXFContext.handle;
-              lasthandle:=IODXFContext.handle;
-              Inc(IODXFContext.handle);
-            end;
-            outstream.TXTAddStringEOL(groups);
-            outstream.TXTAddStringEOL(inttohex(tablestyledicthandle,0));
-          end else begin
-            outstream.TXTAddStringEOL(groups);
-            outstream.TXTAddStringEOL(values);
-          end;
-        end else if inobjectssec and intablestyledict and (tsCount>0) and (groupi=3) then begin
-          { Внутри словаря ACAD_TABLESTYLE: пропускаем шаблонные записи (3/350 пары).
-            Они будут заменены нашими записями. }
-          groups:=templatefile.readString;
-          values:=templatefile.readString;
-          { Пропускаем пару 350/handle шаблонной записи }
-        end else if inobjectssec and intablestyledict and (groupi=0) then begin
-          { Конец словаря ACAD_TABLESTYLE. Записываем записи для стилей из чертежа. }
-          intablestyledict:=False;
-          if tsCount>0 then begin
-            i:=0;
-            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
-            while (ptablestyle<>nil) and (i<tsCount) do begin
-              outstream.TXTAddStringEOL(dxfGroupCode(3));
-              outstream.TXTAddStringEOL(ptablestyle^.Name);
-              outstream.TXTAddStringEOL(dxfGroupCode(350));
-              outstream.TXTAddStringEOL(inttohex(tsHandles[i],0));
-              Inc(i);
-              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
-            end;
-          end;
-          { Если следующий объект — TABLESTYLE, обрабатываем его отдельно }
-          if values='TABLESTYLE' then begin
-            { Не записываем 0/TABLESTYLE — он будет заменён нашими стилями.
-              Пропускаем содержимое до следующего объекта. }
-            while True do begin
-              repeat
-                groups:=templatefile.readString;
-                values:=templatefile.readString;
-                groupi:=StrToInt(groups);
-                if (groupi=5) or (groupi=320) or (groupi=330) or (groupi=340)
-                   or (groupi=350) or (groupi=1005) or (groupi=390)
-                   or (groupi=360) or (groupi=105) then begin
-                  valuei:=StrToInt('$'+values);
-                  if valuei<>0 then begin
-                    intable:=OldHandele2NewHandle.MyGetValue(valuei);
-                    if intable<=0 then begin
-                      OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
-                      Inc(IODXFContext.handle);
-                    end;
-                  end;
-                end;
-              until (groupi=0) or (not templatefile.notEOF);
-              if values<>'TABLESTYLE' then
-                Break;
-            end;
-            { Записываем стили из чертежа }
-            if tsCount>0 then begin
-              i:=0;
-              ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
-              while (ptablestyle<>nil) and (i<tsCount) do begin
-                WriteTableStyleObjectToStream(
-                  outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
-                  IODXFContext.TextStyleNameHandleMap,
-                  tsDictHandles[i],tsMapHandles[i]);
-                Inc(writtenstylecount);
-                Inc(i);
-                ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
-              end;
-            end;
-            if values=dxfName_ENDSEC then begin
-              RunObjectsSaveDxfProcs;
-              inobjectssec:=False;
-            end;
-            outstream.TXTAddStringEOL(dxfGroupCode(0));
-            outstream.TXTAddStringEOL(values);
-          end else begin
-            { Записываем текущую пару (начало следующего объекта) }
-            outstream.TXTAddStringEOL(groups);
-            outstream.TXTAddStringEOL(values);
-          end;
-        end else if inobjectssec and (tsCount>0) and (groupi=0) and (values='TABLESTYLE') then begin
-          { Начало объекта TABLESTYLE из шаблона.
-            Пропускаем все шаблонные TABLESTYLE и заменяем стилями из чертежа. }
-          while True do begin
-            repeat
-              groups:=templatefile.readString;
-              values:=templatefile.readString;
-              groupi:=StrToInt(groups);
-              { Хэндлы внутри пропускаемого объекта регистрируем в маппинге }
-              if (groupi=5) or (groupi=320) or (groupi=330) or (groupi=340)
-                 or (groupi=350) or (groupi=1005) or (groupi=390)
-                 or (groupi=360) or (groupi=105) then begin
-                valuei:=StrToInt('$'+values);
-                if valuei<>0 then begin
-                  intable:=OldHandele2NewHandle.MyGetValue(valuei);
-                  if intable<=0 then begin
-                    OldHandele2NewHandle.Add(valuei,IODXFContext.handle);
-                    Inc(IODXFContext.handle);
-                  end;
-                end;
-              end;
-            until (groupi=0) or (not templatefile.notEOF);
-            if values<>'TABLESTYLE' then
-              Break;
-          end;
-
-          { Записываем все стили таблиц из чертежа с предварительно
-            выделенными хэндлами }
-          if tsCount>0 then begin
-            i:=0;
-            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
-            while (ptablestyle<>nil) and (i<tsCount) do begin
-              WriteTableStyleObjectToStream(
-                outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
-                  IODXFContext.TextStyleNameHandleMap,
-                  tsDictHandles[i],tsMapHandles[i]);
-              Inc(writtenstylecount);
-              Inc(i);
-              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
-            end;
-          end;
-          { Записываем текущую пару (начало следующего объекта) }
-          if values=dxfName_ENDSEC then begin
-            RunObjectsSaveDxfProcs;
-            inobjectssec:=False;
-          end;
-          outstream.TXTAddStringEOL(dxfGroupCode(0));
           outstream.TXTAddStringEOL(values);
         end else if inobjectssec and (groupi=0) and (values=dxfName_ENDSEC) then begin
-          { Конец секции OBJECTS. Если шаблон не содержал TABLESTYLE,
-            записываем стили из чертежа перед ENDSEC. }
-          if (writtenstylecount=0) and (tsCount>0)
-             and (tablestyledicthandle>0) then begin
-            i:=0;
-            ptablestyle:=drawing.DXFTableStyleTable.beginiterate(tablestyleiter);
-            while (ptablestyle<>nil) and (i<tsCount) do begin
-              WriteTableStyleObjectToStream(
-                outstream,ptablestyle,tsHandles[i],tablestyledicthandle,
-                  IODXFContext.TextStyleNameHandleMap,
-                  tsDictHandles[i],tsMapHandles[i]);
-              Inc(writtenstylecount);
-              Inc(i);
-              ptablestyle:=drawing.DXFTableStyleTable.iterate(tablestyleiter);
-            end;
+          if innodobj then begin
+            WriteNODInsertions('');
+            innodobj:=False;
           end;
+          { Ветки NOD-обработчиков, затем прикладные OBJECTS-callback'и }
           RunObjectsSaveDxfProcs;
           inobjectssec:=False;
           outstream.TXTAddStringEOL(groups);
           outstream.TXTAddStringEOL(values);
+        end else if inobjectssec and (groupi=0) then begin
+          { Начало следующего объекта шаблона: NOD закончился }
+          if innodobj then begin
+            WriteNODInsertions('');
+            innodobj:=False;
+          end;
+          if NODSave.HasTemplateSkips and templatefile.notEOF then begin
+            { Объект ветки шаблона, которую заменяет обработчик,
+              пропускается целиком — по множеству хэндлов, построенному
+              моделью этапа 1 при LoadTemplate }
+            peekgroups:=templatefile.readString;
+            peekvalues:=templatefile.readString;
+            if (StrToInt(peekgroups)=5)
+               and NODSave.IsTemplateHandleSkipped(StrToInt('$'+Trim(peekvalues))) then begin
+              NODLogTraceFormatStr('uzeffdxfout: template %s %s skipped',
+                [values,Trim(peekvalues)]);
+              while templatefile.notEOF do begin
+                peekgroups:=templatefile.readString;
+                peekvalues:=templatefile.readString;
+                if StrToInt(peekgroups)=0 then begin
+                  { Начало следующего объекта (или ENDSEC) — обработать
+                    на следующей итерации }
+                  pendinggroups:=peekgroups;
+                  pendingvalues:=peekvalues;
+                  pendingpair:=True;
+                  Break;
+                end;
+              end;
+            end else begin
+              outstream.TXTAddStringEOL(groups);
+              outstream.TXTAddStringEOL(values);
+              pendinggroups:=peekgroups;
+              pendingvalues:=peekvalues;
+              pendingpair:=True;
+            end;
+          end else begin
+            outstream.TXTAddStringEOL(groups);
+            outstream.TXTAddStringEOL(values);
+          end;
 
         end else begin
           if not ignoredsource then begin
@@ -1735,6 +1343,7 @@ begin
     outstream.TXTAddStringEOL(inttohex(IODXFContext.handle+$100000000,9){'100000013'});
     outstream.Count:=i;
     OldHandele2NewHandle.Destroy;
+    NODSave.Free;
     templatefile.done;
 
     sysfilename:={$IFNDEF DELPHI}utf8tosys{$ENDIF}(SavedFileName);
@@ -1756,5 +1365,4 @@ begin
   IODXFContext.done;
 end;
 
-begin
 end.

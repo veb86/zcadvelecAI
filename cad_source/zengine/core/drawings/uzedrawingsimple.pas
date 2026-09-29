@@ -29,7 +29,7 @@ uses
   uzestylestexts,uzbUnits,uzegeometrytypes,uzecamera,UGDBOpenArrayOfPV,uzeroot,
   uzefont,uzglviewareaabstract,uzgldrawcontext,UGDBControlPointArray,
   uzglviewareadata,uzeExtdrAbstractDrawingExtender,uzCtnrVectorPBaseEntity,
-  uzestylestablesdxf;
+  uzestylestablesdxf,uzestylesmleaderdxf,uzeffdxfnodpreserved;
   
 type
   TMainBlockCreateProc=procedure(_to:PTDrawingDef;Name:string) of object;
@@ -67,6 +67,15 @@ type
        { Таблица стилей таблиц для DXF-обмена.
          Используется только при загрузке и сохранении DXF. }
        DXFTableStyleTable: GDBDXFTableStyleArray;
+
+       { Таблица стилей мультивыносок для DXF-обмена (MLEADERSTYLE,
+         ветка NOD ACAD_MLEADERSTYLE). Сущности MULTILEADER в ZCAD нет —
+         стили хранятся, чтобы сохранить их без потерь. }
+       DXFMLeaderStyleTable: GDBDXFMLeaderStyleArray;
+       { Ветки NOD без обработчика (ключи прикладных программ), сохранённые
+         при загрузке DXF 2000+ для записи без потерь (этап 7 ТЗ NOD).
+         nil — таких веток нет; создаётся при загрузке. }
+       PreservedNODBranches: TZNODPreservedBranches;
 
 
       { Сырой текст секции CLASSES из исходного DXF-файла.
@@ -107,6 +116,8 @@ type
     function GetDimStyleTable:PGDBDimStyleArray;virtual;
     { Возвращает таблицу DXF-стилей таблиц для DXF-обмена }
     function GetDXFTableStyleTable:PGDBDXFTableStyleArray;virtual;	
+    { Возвращает таблицу DXF-стилей мультивыносок для DXF-обмена }
+    function GetDXFMLeaderStyleTable:PGDBDXFMLeaderStyleArray;virtual;
     function GetOnMouseObj:PGDBObjOpenArrayOfPV;virtual;
     procedure RotateCameraInLocalCSXY(ux,uy:double);virtual;
     procedure MoveCameraInLocalCSXY(oldx,oldy:double;ax:TzeVector3d);virtual;
@@ -632,6 +643,11 @@ begin
      result:=@DXFTableStyleTable;
 end;
 
+function TSimpleDrawing.GetDXFMLeaderStyleTable:PGDBDXFMLeaderStyleArray;
+begin
+     result:=@DXFMLeaderStyleTable;
+end;
+
 //procedure TSimpleDrawing.SetCurrentDWG;
 //begin
 //
@@ -725,6 +741,12 @@ begin
   BlockDefArray.Done;
   Numerator.Done;
   TableStyleTable.Done;
+  { Стили таблиц для DXF-обмена (TABLESTYLE); освобождает и вложенные CellFormats }
+  DXFTableStyleTable.Done;
+  { Стили мультивыносок для DXF-обмена (MLEADERSTYLE) }
+  DXFMLeaderStyleTable.Done;
+  { Сохранённые ветки NOD (этап 7) }
+  FreeAndNil(PreservedNODBranches);
   LTypeStyleTable.Done;
   DimStyleTable.Done;
   if internalcamera then
@@ -787,6 +809,14 @@ begin
   Numerator.init(10);
 
   TableStyleTable.init(10);
+
+  { Стили таблиц для DXF-обмена (TABLESTYLE). Инициализация обязательна:
+    чертёж ZCAD выделяется через Getmem без обнуления памяти (issue #1442) }
+  DXFTableStyleTable.init(10);
+  { Стили мультивыносок для DXF-обмена (MLEADERSTYLE) — так же обязательно }
+  DXFMLeaderStyleTable.init(10);
+  { Сохранённые ветки NOD (этап 7): создаются при загрузке DXF }
+  PreservedNODBranches:=nil;
 
   PTempTableStyle:=TableStyleTable.AddStyle('Temp');
 

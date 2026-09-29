@@ -1,0 +1,12 @@
+aits handle=BE xdict= 70=0 71=8 40=0.06 41=0.06 280=0 281=0 cells=3
+  cell0 7=newtext 140=18 170=2 62=0 63=7 283=0
+  cell1 7=newtext 140=40 170=5 62=0 63=7 283=0
+  cell2 7=newtext 140=28 170=5 62=0 63=7 283=0
+Standard handle=87 xdict= 70=0 71=8 40=0.06 41=0.06 280=0 281=0 cells=3
+  cell0 7=newtext 140=0.18 170=2 62=0 63=7 283=0
+  cell1 7=newtext 140=0.25 170=5 62=0 63=7 283=0
+  cell2 7=Standard 140=0.18 170=5 62=0 63=7 283=0
+vebts handle=BA xdict= 70=0 71=8 40=0.06 41=0.06 280=0 281=0 cells=3
+  cell0 7=Standard 140=1.8 170=2 62=0 63=7 283=0
+  cell1 7=Standard 140=4 170=5 62=0 63=7 283=0
+  cell2 7=newtext 140=2.8 170=5 62=0 63=7 283=0

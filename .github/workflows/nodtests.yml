@@ -1,0 +1,52 @@
+name: nodtests
+# Тесты NOD (cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этапы 8–9):
+# сборка и запуск cad_source/zengine/tests/nodstage*.lpr (fpc + исходники
+# Lazarus, виджетсет nogui), см. cad_source/zengine/tests/nodtests.sh.
+on:
+  push:
+    paths:
+      - 'cad_source/zengine/**'
+      - 'cad_source/zcad/**'
+      - 'cad_source/test/**'
+      - 'cad_source/components/**'
+      - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
+      - '.gitmodules'
+      - '.github/workflows/nodtests.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'cad_source/zengine/**'
+      - 'cad_source/zcad/**'
+      - 'cad_source/test/**'
+      - 'cad_source/components/**'
+      - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
+      - '.gitmodules'
+      - '.github/workflows/nodtests.yml'
+  workflow_dispatch:
+jobs:
+  nodtests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Submodules
+        run: |
+          git submodule update --init --depth 1 \
+            cad_source/components/zbaseutils cad_source/components/zcontainers \
+            cad_source/components/zmath cad_source/components/zreaders \
+            cad_source/components/zunits cad_source/components/zmacros \
+            cad_source/components/zundostack
+      - name: Install fpc and Lazarus sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fpc lazarus-src
+      - name: NOD tests
+        timeout-minutes: 20
+        run: make -C cad_source/zengine/tests nodtests
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodtests-logs
+          path: /tmp/zcad-nodtests/*.log

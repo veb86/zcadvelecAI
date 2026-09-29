@@ -24,7 +24,7 @@ unit uzeffdxfsupport;
 interface
 uses
   uzegeometrytypes,sysutils,uzctnrVectorBytesStream,usimplegenerics,
-  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes;
+  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes,uzeffdxfnod;
 
 const
   cDXFError_WrogGroupCode='DXF group code "%d" expected but "%d" found';
@@ -114,15 +114,24 @@ type
         BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
         TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342;
         TextStyleNameHandleMap  — имя текстового стиля -> новый хэндл STYLE
-          для ссылок 340 внутри CELLSTYLEMAP. }
+          для ссылок 340 внутри CELLSTYLEMAP (и 342 MLEADERSTYLE);
+        LineTypeNameHandleMap   — имя типа линии -> новый хэндл LTYPE для
+          ссылки 340 MLEADERSTYLE (этап 6 ТЗ NOD). }
     AcadTableOwnerHandle:TDWGHandle;
     BlockNameHandleMap:TString2StringDictionary;
     TableStyleNameHandleMap:TString2StringDictionary;
     TextStyleNameHandleMap:TString2StringDictionary;
+    LineTypeNameHandleMap:TString2StringDictionary;
 
     { Новый хэндл стиля печати (ACDBPLACEHOLDER), на который ссылаются
       записи слоёв (группа 390). Берётся из таблицы LAYER шаблона. }
     LayerPlotStyleHandle:TDWGHandle;
+
+    { Имена классов (группа 1) секции CLASSES шаблона, без учёта регистра.
+      Заполняется при копировании CLASSES, до вызова ClassesProc
+      NOD-обработчиков: класс, который уже есть в шаблоне, повторно не
+      объявляется (этап 4 ТЗ NOD). }
+    TemplateClassNames:TStringList;
 
     procedure InitRec;
     procedure Done;
@@ -191,6 +200,14 @@ type
       может (issue #1373). }
     TableRowStyleTypes:TDXFRowStyleTypeArray;
     TableRowStyleTypesValid:boolean;
+
+    { Модель секции OBJECTS и Named Object Dictionary (этап 2 ТЗ
+      cad_source/zengine/TZ_NOD_NamedObjectDictionary.md). Строится в
+      AddFromDXF до разбора TABLES/BLOCKS/ENTITIES и живёт до Done.
+      nil — контекст создан не AddFromDXF (например, в AddFromDXF12);
+      пустая модель (NOD=nil) — R12, нет секции OBJECTS или ошибка её
+      разбора. Владеет контекст: освобождается в Done. }
+    NODModel:TZNODModel;
 
     procedure InitRec;
     procedure Done;
@@ -452,16 +469,21 @@ begin
   BlockNameHandleMap:=TString2StringDictionary.create;
   TableStyleNameHandleMap:=TString2StringDictionary.create;
   TextStyleNameHandleMap:=TString2StringDictionary.create;
+  LineTypeNameHandleMap:=TString2StringDictionary.create;
+  TemplateClassNames:=TStringList.Create;
+  TemplateClassNames.CaseSensitive:=False;
 
   Header.InitRec;
 end;
 procedure TIODXFSaveContext.Done;
 begin
+  TemplateClassNames.Free;
   p2h.Free;
   VarsDict.Free;
   BlockNameHandleMap.Free;
   TableStyleNameHandleMap.Free;
   TextStyleNameHandleMap.Free;
+  LineTypeNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;
@@ -492,6 +514,8 @@ begin
 
   SetLength(TableRowStyleTypes,0);
   TableRowStyleTypesValid:=False;
+
+  NODModel:=nil;
 end;
 
 procedure TDXFHeaderInfo.InitRec;
@@ -516,6 +540,7 @@ begin
     FreeAndNil(TableRawAcadTableEntities);
   end;
   SetLength(TableRowStyleTypes,0);
+  FreeAndNil(NODModel);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;
