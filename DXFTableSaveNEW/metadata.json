@@ -1,0 +1,8 @@
+{
+  "name": "DXF Table Save & Analyzer",
+  "description": "Analyze, inspect, generate, and inject AutoCAD and ZCAD tables into DXF drawings with visual preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

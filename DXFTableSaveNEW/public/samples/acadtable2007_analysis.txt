@@ -1,0 +1,75 @@
+================================================================================
+АНАЛИЗ DXF ФАЙЛА: acadtable2007.dxf
+================================================================================
+
+1. ОБЩАЯ ИНФОРМАЦИЯ
+----------------------------------------
+Найдено ACAD_TABLE объектов: 4
+Позиции в файле: [1234, 7930, 10310, 11560]
+
+2. TABLE 1 (строка 1234)
+----------------------------------------
+  Group 5 (Handle): [4 values]
+  Group 330 (Owner Handle): 2
+  Group 100 (Subclass Marker): [6 values]
+  Group 8 (Layer): ['330', '100']
+  Group 10 (Insert X): 102
+  Group 141 (Column Width): 0.0
+  Group 142 (Row Height): 0.0
+
+2. TABLE 2 (строка 7930)
+----------------------------------------
+  Group 330 (Owner Handle): 1F
+  Group 100 (Subclass Marker): AcDbEntity
+
+2. TABLE 3 (строка 10310)
+----------------------------------------
+  Group 330 (Owner Handle): 1F
+  Group 100 (Subclass Marker): AcDbEntity
+
+2. TABLE 4 (строка 11560)
+----------------------------------------
+  Group 330 (Owner Handle): 1F
+  Group 100 (Subclass Marker): AcDbEntity
+
+3. OBJECTS SECTION
+----------------------------------------
+  TABLESTYLE found at line 12678
+  TABLECONTENT found at line 16806
+  TABLEGEOMETRY found at line 37770
+
+4. КЛЮЧЕВЫЕ ВЫВОДЫ
+----------------------------------------
+
+4.1. Тип объекта таблицы:
+    - DXF использует ACAD_TABLE как тип сущности
+    - Subclass marker: AcDbTable
+
+4.2. Структура ACAD_TABLE:
+    - Handle (group 5): уникальный идентификатор
+    - Owner (group 330): ссылка на BLOCK_RECORD
+    - Layer (group 8): слой
+    - Binary data (group 310): содержит сериализованные данные ячеек
+    - Insert point (groups 10,20,30): координаты вставки
+    - Table style (group 342): ссылка на TABLESTYLE
+    - Block record (group 343): ссылка на блок таблицы
+
+4.3. Разделение таблицы (TABLE BREAK):
+    - Обнаружено 3 отдельных ACAD_TABLE объекта
+    - Каждая таблица имеет свой insert point:
+      * Table 1: (84.67, 20.50)
+      * Table 2: (94.69, 15.05)
+      * Table 3: (107.47, 11.11)
+    - Все таблицы ссылаются на один TABLESTYLE (handle 87)
+    - Это означает, что AutoCAD использует отдельные TABLE объекты
+      для каждого фрагмента, а не встроенный механизм break
+
+4.4. Данные ячеек:
+    - Cell data хранится в binary формате (group 310)
+    - Также присутствует текстовое представление (group 302)
+    - CELL_VALUE маркер (group 301) начинает описание ячейки
+    - ACVALUE_END (group 304) завершает описание
+
+4.5. Стили:
+    - TABLESTYLE объект существует в OBJECTS секции
+    - Handle 87 используется всеми таблицами
