@@ -73,10 +73,11 @@ function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const Lo
 implementation
 
 uses
-  { NOD-обработчики ACAD_TABLESTYLE и ACAD_MLEADERSTYLE регистрируются в
-    initialization своих модулей }
+  { NOD-обработчики ACAD_TABLESTYLE, ACAD_MLEADERSTYLE и ZCAD_DATA
+    регистрируются в initialization своих модулей }
   uzestylestablesdxfnod,
-  uzestylesmleaderdxfnod;
+  uzestylesmleaderdxfnod,
+  uzeffdxfnodzcad;
 
 function IsIgnoredEntity(const name:String):Integer;
 var
@@ -1920,6 +1921,28 @@ begin
     [AFileName,AModel.SymbolRecordCount,GetTickCount64-StartTick]);
 end;
 
+{ Этап 7 ТЗ NOD: ветки незарегистрированных и не шаблонных ключей NOD
+  копируются в PreservedNODBranches чертежа (с определениями их классов из
+  RawClassesSection), чтобы записать их при сохранении. Строки DXF до 2007
+  перекодируются из $DWGCODEPAGE. Ошибка не прерывает загрузку. }
+procedure DXFNODPreserveUnknownBranches(const AHeader:TDXFHeaderInfo;AModel:TZNODModel;var ADrawing:TSimpleDrawing);
+var
+  CodePage:TSystemCodePage;
+begin
+  if AHeader.iVersion<1021 then
+    CodePage:=AHeader.iDWGCodePage
+  else
+    CodePage:=0;
+  try
+    RunNODPreserveUnknownBranches(AModel,ADrawing,ADrawing.RawClassesSection,CodePage);
+  except
+    on E:Exception do
+      NODLogWarningFormatStr(
+        'uzeffdxf: NOD: unknown branches are not preserved (%s: %s)',
+        [E.ClassName,E.Message]);
+  end;
+end;
+
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
 var
   fileCtx:TIODXFLoadContext;
@@ -2031,6 +2054,8 @@ begin
                 DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
               { Обработчики зарегистрированных ключей NOD (этап 3) }
               RunNODLoadHandlers(fileCtx.NODModel,dwgCtx.PDrawing^);
+              { Ветки неизвестных ключей NOD сохраняются как есть (этап 7) }
+              DXFNODPreserveUnknownBranches(fileCtx.Header,fileCtx.NODModel,dwgCtx.PDrawing^);
               { Обязательные записи, которых нет после загрузки (этап 5) }
               RunNODEnsureDefaults(dwgCtx.PDrawing^);
               AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
