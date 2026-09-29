@@ -1,5 +1,5 @@
 name: nodtests
-# Тесты NOD (cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этап 8):
+# Тесты NOD (cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этапы 8–9):
 # сборка и запуск cad_source/zengine/tests/nodstage*.lpr (fpc + исходники
 # Lazarus, виджетсет nogui), см. cad_source/zengine/tests/nodtests.sh.
 on:

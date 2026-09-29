@@ -431,14 +431,15 @@ begin
   for I := 0 to 8 do
     Check(Pos(Format('### Этап %d.', [I]), TZ) > 0,
       Format('TZ: stage %d section', [I]));
-  { Статус «выполнен» — у каждого из этапов 0–8 }
+  { Статус «выполнен» — у каждого из этапов 0–8 (и последующих, этап 9 —
+    issue #1459) }
   I := 0;
   P := Pos('**Статус: выполнен', TZ);
   while P > 0 do begin
     Inc(I);
     P := PosEx('**Статус: выполнен', TZ, P + 1);
   end;
-  CheckInt(9, I, 'TZ: stages with status "выполнен"');
+  Check(I >= 9, Format('TZ: stages with status "выполнен": %d (>= 9)', [I]));
 end;
 
 begin

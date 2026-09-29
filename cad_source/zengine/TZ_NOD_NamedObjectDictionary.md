@@ -171,7 +171,8 @@ GUI `uzcui_tablestylemanager`, `uzcftablestyles`, `uzcftablestylecreate`,
    (или хотя бы ODA File Converter / `AUDIT`), см. раздел 6.
 7. Логирование — через `programlog` с уровнем `LM_Info`/`LM_Debug`,
    детальные трассы — выключены по умолчанию (отдельный флаг/уровень).
-8. DWG-загрузчик (`fileformats/dwg/`) в рамках этапов 0–8 не трогается.
+8. DWG-загрузчик (`fileformats/dwg/`) в рамках этапов 0–8 не трогается;
+   этап 9 добавляет в него загрузку NOD (`uzedwgnod.pas`).
 
 ---
 
@@ -1277,12 +1278,88 @@ XRECORD` проходит round-trip без потерь; AutoCAD `AUDIT` — 0 
    nodtests`). Проверка чувствительности: без исправления модулей стилей
    `nodstage8` падает (8–13 сообщений мимо модуля `NOD` на каждый файл).
 
-### Этап 9 (будущее, вне рамок). DWG
+### Этап 9. DWG
 
 `fileformats/dwg/uzedwgcontrolobjects.pas` уже распознаёт
 `DICTIONARY`/`XRECORD`. После этапа 5 можно построить `TZNODModel` из DWG
 (корневой словарь — из заголовка DWG, `NAMED OBJECTS DICTIONARY` handle)
 и переиспользовать те же `LoadProc`. Отдельное ТЗ.
+
+**Статус: выполнен (issue #1459).**
+
+1. Модель NOD из DWG — модуль
+   `cad_source/zengine/fileformats/dwg/uzedwgnod.pas`:
+   - `BuildDWGNODModel(Raw, Model)`: объекты `Dwg_Data`, разобранные
+     LibreDWG, переводятся в те же `TZDXFRawObject`, что строит разбор
+     секции `OBJECTS` DXF (`DWGObjectToNODRawObject`), и собираются в
+     `TZNODModel`. Общие поля объекта — `5`, блоки `102 {ACAD_REACTORS`
+     и `102 {ACAD_XDICTIONARY`, владелец `330`; сущности в модель не
+     попадают; объекты, для которых нет перевода, — заглушкой (тип, хэндл,
+     владелец), этого достаточно для навигации по словарям и пометки
+     «забранных» хэндлов (расширенный словарь стиля таблиц и
+     `CELLSTYLEMAP`);
+   - группы DXF по полям DWG — как в `dwg.spec` LibreDWG:
+     `DICTIONARY` (`280`, `281`, `3` → `350`, у словаря с
+     `is_hardowner` — `360`; запись без хэндла пропускается с сообщением
+     трассы), `ACDBDICTIONARYWDFLT` (плюс `100 AcDbDictionaryWithDefault`,
+     `340`), `TABLESTYLE` (`3`, `70`; до R2007 — `71`, `40`, `41`, `280`,
+     `281` и блоки строк `7`, `140`, `170`, `62`, `63`, `283`, границы
+     `274`–`279`, `284`–`289`, `64`–`69`), `MLEADERSTYLE` (все группы
+     подкласса `AcDbMLeaderStyle`, `179`/`271`–`273` с R2010, `298` с
+     R2013; цвета `91`/`93`/`94` — упакованный `AcCmEntityColor`);
+   - индекс символьных таблиц строится по записям `LTYPE`, `STYLE` и
+     `BLOCK_HEADER` (тип `BLOCK_RECORD`) — по нему обработчик
+     `ACAD_MLEADERSTYLE` находит имена записей `340`–`343`, а перевод
+     `TABLESTYLE` — имя текстового стиля `7`. Строки DWG переводятся в
+     UTF-8 (`DWGSafeDecodeText`: кодовая страница заголовка до R2007,
+     UTF-16 с R2007);
+   - корневой словарь — `header_vars.DICTIONARY_NAMED_OBJECT`
+     (`DWGHeaderNODHandle`). Если ссылки нет или она не указывает на
+     словарь — как в DXF, первый `DICTIONARY` без владельца (предупреждение
+     в лог). Для этого `TZNODModel` получил построение модели по готовым
+     объектам: `AddObject`, `AddSymbolRecord`, `EndBuild(ANODHandle)`;
+     `FindNOD` принимает словарь, выбранный заранее (тогда предупреждения о
+     нескольких корневых словарях нет).
+2. Загрузка — `DWGNODLoad(Raw, Drawing)`: `BuildDWGNODModel`, те же
+   `RunNODLoadHandlers` и `RunNODEnsureDefaults`, что для DXF (стили таблиц
+   и мультивыносок, `Standard` при их отсутствии). Вызывается в
+   `ScanDWGImport` (`uzedwgimport.pas`) после разбора объектов и до
+   разбора сущностей — фаза таймера `dwg-import.scan.nod`. Ошибки перевода
+   не прерывают загрузку DWG (предупреждение в лог NOD), трасса — модуль
+   лога `NOD` (этап 8).
+3. Ограничения:
+   - в R2010+ `TABLESTYLE` хранится стилями ячеек, которые не переводятся
+     (блоки строк в `dwg.spec` — только до R2007): для таких файлов
+     переносится имя; направление теряется (`flow_direction` LibreDWG —
+     16-битное поле, в него пишется `property_override_flags & 0x10000`,
+     то есть всегда 0), отступы, флаги и форматы ячеек — значения по
+     умолчанию;
+   - ветки неизвестных ключей NOD из DWG не сохраняются (этап 7 работает
+     по тексту `OBJECTS` DXF): при сохранении DWG в DXF NOD строится из
+     шаблона, как до этапа 7;
+   - EED `ACAD_MLEADERVER` из DWG не переносится.
+4. Тест `cad_source/zengine/tests/nodstage9.lpr`
+   (`cad_source/zengine/tests/nodtests.sh nodstage9`). `libredwg.so` не
+   нужна: объекты DWG строятся в памяти записями `dwg.pp` (как в
+   `fileformats/dwg/tests`), `nodtests.sh` собирает модули `fpdwg`
+   (`dwg.pp` — в режиме `objfpc`, как в `fpdwg.lpk`). Проверяется:
+   - NOD — из заголовка, хотя первым идёт другой словарь без владельца;
+     сущности в модели нет, заглушки `XRECORD` и `CELLSTYLEMAP` есть;
+     индекс символьных таблиц, имена из CP1251 (R2004) и UTF-16 (R2013);
+   - эталонные группы DXF `DICTIONARY` (в том числе hard-owner и запись без
+     хэндла), `ACDBDICTIONARYWDFLT`, `TABLESTYLE` R2004 и R2013,
+     `MLEADERSTYLE` R2004 и R2013;
+   - `DWGNODLoad`: стили таблиц (отступы, флаги, текстовые стили и
+     форматы ячеек, хэндлы объекта и расширенного словаря) и мультивыносок
+     (имена записей `340`–`343`, цвета), «забранные» хэндлы;
+   - нет ссылки в заголовке или она на `XRECORD` — поиск по владельцу;
+     словарей нет — `Standard` по умолчанию;
+   - `uzedwgimport` вызывает `DWGNODLoad` (фаза `dwg-import.scan.nod`),
+     в ТЗ раздел и статус этапа 9.
+
+   Компиляция `uzedwgimport.pas` с новой фазой (модулю нужны модули `zcad`
+   и GUI-сабмодули, в `nodtests` не входит) —
+   `experiments/issue1459/build_uzedwgimport.sh`.
 
 ---
 
