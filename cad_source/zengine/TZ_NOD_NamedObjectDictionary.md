@@ -1202,6 +1202,81 @@ XRECORD` проходит round-trip без потерь; AutoCAD `AUDIT` — 0 
 3. Трассировочный лог NOD (разбор, обработчики, выделение хэндлов)
    выключен по умолчанию.
 
+**Статус: выполнен (issue #1458).**
+
+1. Тесты в `Makefile` и CI:
+   - `cad_source/zengine/tests/nodtests.sh` — сборка каждого
+     `nodstage*.lpr` консольным `fpc` без IDE (исходники Lazarus,
+     виджетсет `nogui`; ключи `-Fu`/`-Fi` — как в сценариях
+     `experiments/issue14xx`) и запуск с корнем репозитория. Без
+     аргументов — все `nodstage*.lpr`, иначе — перечисленные; `HEAPTRC=1` —
+     сборка с `heaptrc`; `LAZARUS_DIR`, `FPC_OUT`, `FPC_EXTRA_OPTS`.
+     Код возврата `1`, если хоть один тест не собрался или упал; логи
+     сборки — `$FPC_OUT/build-<тест>.log`;
+   - `cad_source/zengine/tests/Makefile`: цель `nodtests` (вызывает
+     `nodtests.sh`, выбор тестов — `make nodtests NODTESTS="nodstage5
+     nodstage7"`) и `nodtests-lazbuild` (сборка `nodstage*.lpi` через
+     `lazbuild --pcp=$(PCP)`, пакеты zengine должны быть установлены);
+   - CI: `.github/workflows/nodtests.yml` (push и pull request в `master`
+     при изменениях в `cad_source/zengine`, `cad_source/zcad`,
+     `cad_source/test`, `cad_source/components`, шаблонах сохранения;
+     ручной запуск): Ubuntu 24.04, `fpc` + `lazarus-src` из apt, сабмодули
+     `zbaseutils`, `zcontainers`, `zmath`, `zreaders`, `zunits`,
+     `zmacros`, `zundostack`, `make -C cad_source/zengine/tests nodtests`;
+     при провале логи сборки выкладываются артефактом.
+
+   Соответствие видам тестов раздела 6.2: unit-тесты модели — `nodstage1`
+   (включая `CheckIntegrity` модели); round-trip — `nodstage4`–`nodstage7`
+   (загрузка → сохранение в DXF 2007 и 2000 → загрузка); инварианты
+   выходного файла (владельцы, реакторы, записи словарей, `$HANDSEED`,
+   `CLASSES`) — `nodstage3`, `nodstage4`, `nodstage6`, `nodstage7`;
+   эталоны вывода (`tests/data/nod/golden`) — `nodstage0`, `nodstage2`–
+   `nodstage6`. **Не автоматизировано**: ручная
+   проверка в AutoCAD и `AUDIT` (п. 6.2.4), замер `dxfloadbench.cmd`
+   (п. 6.2.5, Windows и большие файлы вне репозитория). `roundtrip1339`,
+   `roundtrip1381`, `roundtrip1436` в CI не входят: им нужны GUI-сабмодули
+   (`zscript`, `fphunspell`, `zobjectinspector`, `zbaseutilsgui`,
+   `ztoolbars`), прогон — `experiments/issue1452/run_roundtrips.sh`.
+   Цель `nodtests-lazbuild` не проверена (нет `lazbuild` в окружении).
+2. Документация: статус этапов 0–8 в этом файле; комментарии новых
+   модулей и тестов — на русском.
+3. Лог NOD (`uzeffdxfnodlog.pas`):
+   - трасса (`NODLogTraceFormatStr`, уровень `LM_Info`, модуль лога `NOD`)
+     выключена по умолчанию: модули лога создаются выключенными, а для
+     выключенного модуля проходят только сообщения от `LM_Warning`.
+     Включение — ключ командной строки `lem NOD`, выключение — `ldm NOD`
+     (`uzcsysinfo.pas`); предупреждения (`NODLogWarningFormatStr`) видны
+     всегда;
+   - исправлено: `uzestylestablesdxfnod.pas` и `uzestylesmleaderdxfnod.pas`
+     писали сообщения о загрузке и записи стилей и о выделении хэндлов в
+     модуль лога по умолчанию с уровнем `LM_Info` — они выводились всегда
+     (13 сообщений на загрузку и сохранение `tablestyleetalon.dxf`).
+     Теперь это трасса NOD;
+   - `NODLogTraceEnabled` — включена ли трасса (то же условие, что у
+     `TLog.IsNeedToLog`); `TZNODModel.LoadFromText` по нему пропускает
+     сборку списка ключей NOD для сообщения трассы.
+4. Тест `cad_source/zengine/tests/nodstage8.lpr`
+   (`cad_source/zengine/tests/nodtests.sh nodstage8`); сообщения лога
+   собираются собственным бэкендом `programlog`:
+   - по умолчанию модуль `NOD` выключен, `NODLogTraceEnabled = False`;
+   - загрузка и сохранение (DXF 2007 и 2000) `tablestyleetalon.dxf`,
+     `polylinearc.dxf`, `+mleader2008.dxf`, `mleaderblock.dxf` — ни одного
+     сообщения трассы NOD и ни одного сообщения модулей NOD ниже
+     `LM_Warning` мимо модуля `NOD` (предупреждения выводятся для
+     сведения);
+   - после `EnableModule('NOD')` (как `lem NOD`) трасса есть и покрывает
+     разбор (NOD pre-pass, OBJECTS, ключи NOD, TABLES), обработчики
+     (`LoadProc`/`SaveProc` `ACAD_TABLESTYLE`, `ACAD_MLEADERSTYLE`, стили)
+     и выделение хэндлов (словари ключей, записи NOD, стили мультивыносок,
+     сохранённые ветки `polylinearc.dxf`); на уровне `LM_Warning` и после
+     `DisableModule('NOD')` (как `ldm NOD`) трассы нет;
+   - все `nodstage*.lpr` имеют `.lpi`, цели `Makefile`, `nodtests.sh` и
+     CI на месте, в ТЗ разделы и статус этапов 0–8.
+
+   Тесты `nodstage0`–`nodstage8` проходят (`make -C cad_source/zengine/tests
+   nodtests`). Проверка чувствительности: без исправления модулей стилей
+   `nodstage8` падает (8–13 сообщений мимо модуля `NOD` на каждый файл).
+
 ### Этап 9 (будущее, вне рамок). DWG
 
 `fileformats/dwg/uzedwgcontrolobjects.pas` уже распознаёт

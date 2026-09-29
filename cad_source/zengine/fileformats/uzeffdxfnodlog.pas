@@ -39,6 +39,9 @@ var
   { Модуль детальной трассы NOD. Выключен по умолчанию. }
   NODLogModuleId: TModuleDesk;
 
+{ Включена ли детальная трасса NOD (модуль NOD включён, уровень LM_Info
+  проходит). Проверяется перед сборкой дорогих сообщений трассы. }
+function NODLogTraceEnabled: Boolean;
 { Детальная трасса разбора (только при включённом модуле NOD). }
 procedure NODLogTraceFormatStr(const Fmt: String; const Args: array of const);
 { Предупреждение: пишется в общий лог независимо от модуля NOD. }
@@ -48,6 +51,13 @@ implementation
 
 uses
   uzclog;
+
+function NODLogTraceEnabled: Boolean;
+begin
+  { То же условие, что у TLog.IsNeedToLog для включённого модуля }
+  Result := programlog.isModuleEnabled(NODLogModuleId) and
+    (LM_Info >= programlog.GetCurrentLogLevel);
+end;
 
 procedure NODLogTraceFormatStr(const Fmt: String; const Args: array of const);
 begin

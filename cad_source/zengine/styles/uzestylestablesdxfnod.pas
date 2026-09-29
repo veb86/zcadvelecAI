@@ -121,7 +121,6 @@ implementation
 uses
   SysUtils,
   gzctnrVectorTypes,
-  uzclog,
   uzeffdxfnodlog;
 
 var
@@ -328,9 +327,9 @@ begin
     { Исходный хэндл — по нему ACAD_TABLE находит стиль (группа 342) }
     Style^.DXFHandle := Obj.HandleStr;
     Inc(Result);
-    programlog.LogOutFormatStr(
+    NODLogTraceFormatStr(
       'uzestylestablesdxfnod: стиль "%s" загружен (хэндл %s)',
-      [Style^.Name, Style^.DXFHandle], LM_Info);
+      [Style^.Name, Style^.DXFHandle]);
   end;
 end;
 
@@ -381,9 +380,9 @@ begin
   if Result = nil then
     Exit;
   FillDefaultTableStyle(Result^);
-  programlog.LogOutFormatStr(
+  NODLogTraceFormatStr(
     'uzestylestablesdxfnod: стилей таблиц нет, создан "%s"',
-    [CDefaultTableStyleName], LM_Info);
+    [CDefaultTableStyleName]);
 end;
 
 { LoadProc обработчика }
@@ -742,9 +741,9 @@ begin
     WriteCellStyleMapObjectsToStream(outstream, Style,
       StyleHandle, DictHandle, MapHandle, TextStyleNameHandleMap);
 
-  programlog.LogOutFormatStr(
+  NODLogTraceFormatStr(
     'uzestylestablesdxfnod: записан TABLESTYLE "%s" handle=%s',
-    [Style^.Name, inttohex(StyleHandle, 0)], LM_Info);
+    [Style^.Name, inttohex(StyleHandle, 0)]);
 end;
 
 { Хэндлы, выделенные ReserveHandlesProc, хранятся до SaveProc того же
@@ -798,9 +797,9 @@ begin
   SetLength(TSNODHandles,n);
   SetLength(TSNODXDictHandles,n);
   SetLength(TSNODMapHandles,n);
-  programlog.LogOutFormatStr(
+  NODLogTraceFormatStr(
     'uzestylestablesdxfnod: выделены хэндлы для %d стилей таблиц (словарь %s)',
-    [n,inttohex(Result,0)],LM_Info);
+    [n,inttohex(Result,0)]);
 end;
 
 procedure TableStyleNODSave(var AOutStream:TZctnrVectorBytes;
