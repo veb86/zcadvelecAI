@@ -27,7 +27,7 @@ uses
   UGDBControlPointArray,uzeentsubordinated,uzeTypes,uzeconsts,
   uzglviewareadata,uzegeometry,uzeffdxfsupport,SysUtils,uzctnrVectorBytesStream,
   uzestyleslayers,uzeenrepresentation,uzbLogIntf,uzMVReader,
-  uzCtnrVectorpBaseEntity,uzbBaseUtils;
+  uzCtnrVectorpBaseEntity,uzbBaseUtils,uzeffdxfnodacadtable;
 
 type
   taddotrac=procedure(var posr:os_record;const axis:TzePoint3d) of object;
@@ -106,6 +106,12 @@ type
       GDBObjAcadTable переопределяет метод, чтобы строки с несколькими
       заголовками загружались с правильным стилем (issue #1373). }
     procedure SetRowStyleTypes(const ATypes:array of integer);virtual;
+    { Передаёт главной ACAD_TABLE данные разрыва из индекса NOD (XRECORD
+      ACAD_XREC_ROUNDTRIP её расширенного словаря): флаги, интервал, высоты
+      и положения частей, диапазоны строк и типы строк TABLECONTENT.
+      Вызывается загрузчиком DXF до поглощения продолжений. Базовая
+      реализация ничего не делает (issue #1465). }
+    procedure SetDXFTableSplitInfo(const AInfo:TZAcadTableSplitInfo);virtual;
     { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
       его для round-trip экспорта. Базовая реализация ничего не делает. }
     procedure SetDXFRawEntityText(const ARawText:string);virtual;
@@ -489,6 +495,10 @@ begin
 end;
 
 procedure GDBObjEntity.SetRowStyleTypes(const ATypes:array of integer);
+begin
+end;
+
+procedure GDBObjEntity.SetDXFTableSplitInfo(const AInfo:TZAcadTableSplitInfo);
 begin
 end;
 

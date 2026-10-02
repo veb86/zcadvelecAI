@@ -46,7 +46,8 @@ uses
   uzeacadtable_types, uzeacadtable_styles,
   uzeacadtable_cell, uzeacadtable_merge,uzecamera,uzeSnap,
   uzeacadtable_layout, uzeacadtable_stylemanager,
-  uzeacadtable_dxf_read, uzeacadtable_dxf_write;
+  uzeacadtable_dxf_read, uzeacadtable_dxf_write, uzeffdxfnodacadtable,
+  uzeacadtable_dxf_split;
 
 const
   CAcadTableBreakHeightGripVertexBase = 100000;
@@ -188,6 +189,17 @@ type
     // Имя сгенерированного перед сохранением анонимного блока с геометрией
     // главной части (issue #1381). См. EnsureSplitPartBlocks.
     FMainPartBlockName: String;
+    // Данные разрыва из индекса NOD, переданные загрузчиком DXF главной
+    // таблице (issue #1465). Нужны при поглощении продолжений: высота
+    // разбиения каждой части берётся из записи высот XRECORD.
+    FDXFSplitInfo: TZAcadTableSplitInfo;
+    FDXFSplitInfoValid: Boolean;
+    // Отображение локальных строк рисуемой части на логические строки
+    // полной таблицы (issue #1465): строки 0..FRenderRepeatRows-1 —
+    // повторённые метки, остальные начинаются с FRenderLogicalStart.
+    // Для главной части оба значения равны 0 (тождественное отображение).
+    FRenderLogicalStart: Integer;
+    FRenderRepeatRows: Integer;
 
     // Обёртки для делегирования к модулю layout
     function GetRowHeightLocal(RowIndex: Integer): Double;
@@ -206,6 +218,17 @@ type
       var ADrawing: TDrawingDef; var ADC: TDrawContext;
       var ATarget: GDBObjEntityTreeArray; AOwner: Pointer;
       ABaseX, ABaseY: Double; ARowBaseIndex: Integer);
+    // Логическая строка полной таблицы для локальной строки рисуемой части
+    function RenderLogicalRow(ALocalRow: Integer): Integer;
+    // Явный тип логической строки рисуемой части; -1 — тип не задан
+    function RenderRowStyleType(ALocalRow: Integer): Integer;
+    // Начало логических строк и число повторённых меток каждой части
+    procedure ComputePartRowMaps(out AStarts, ARepeats: TIntegerDynArray);
+    // Включает отображение строк части APartIdx (-1 — главная часть)
+    procedure SelectRenderPart(APartIdx: Integer;
+      const AStarts, ARepeats: TIntegerDynArray);
+    // Переносит в продолжение высоту и флаги разрыва из индекса NOD
+    procedure ApplyDXFSplitInfoToPart(APartIdx: Integer);
     // Строит визуальное представление всей таблицы (главная часть и
     // все продолжения) в ConstObjArray
     procedure BuildVisualRepresentation(
@@ -388,6 +411,11 @@ type
     function SetTableStyleName(
       const AValue: String; var ADrawing: TDrawingDef): Boolean; virtual;
     procedure SetDXFRawEntityText(const ARawText: string); virtual;
+    // Применяет данные разрыва из индекса NOD (issue #1465): флаги ручного
+    // положения/высоты, интервал, высоту разбиения главной части и явные
+    // типы строк Title/Header/Data из TABLECONTENT.
+    procedure SetDXFTableSplitInfo(
+      const AInfo: TZAcadTableSplitInfo); virtual;
     // Программно строит таблицу из текстов ячеек редактора электронных
     // таблиц (issue #1357). Все ячейки имеют тип cdtText и оформляются
     // стилем Data, объединения отсутствуют. ACellTexts индексируется как
@@ -498,6 +526,10 @@ type
     // Число строк в части-продолжении по индексу (для инспекции/тестов,
     // issue #1309). Для некорректного индекса возвращает -1.
     function ContinuationPartRowCount(AIndex: Integer): Integer;
+    // Точка вставки и высота разбиения части-продолжения (для проверки
+    // round-trip, issue #1465). Для некорректного индекса — False.
+    function ContinuationPartPlacement(AIndex: Integer;
+      out AInsertPoint: TzePoint3d; out ABreakHeight: Double): Boolean;
     // Текст ячейки части-продолжения (для тестов, issue #1309). Для
     // некорректных индексов возвращает пустую строку.
     function ContinuationPartCellText(
@@ -955,6 +987,10 @@ begin
   System.SetLength(FContinuationParts, 0);
   FRawDXFEntity := '';
   FRawDXFEntityValid := False;
+  FDXFSplitInfo := Default(TZAcadTableSplitInfo);
+  FDXFSplitInfoValid := False;
+  FRenderLogicalStart := 0;
+  FRenderRepeatRows := 0;
 end;
 
 destructor GDBObjAcadTable.done;
@@ -1452,22 +1488,21 @@ begin
           // По умолчанию базовый стиль строки выбирается по её позиции
           // (0=Title, 1=Header, >=2=Data). Приоритеты:
           // 1) явно заданный или восстановленный тип строки (issue #1368,
-          //    #1373) — но только для главной части и повторяющих метки
-          //    частей-продолжений (ARowBaseIndex=0). У части-продолжения,
-          //    которая НЕ повторяет метки (ARowBaseIndex>0), локальные номера
-          //    строк не соответствуют типам строк главной части, поэтому там
-          //    используется позиционный стиль от логической базы (issue #1311);
+          //    #1373). Локальная строка части-продолжения отображается на
+          //    логическую строку полной таблицы: повторённые метки — на
+          //    верхние строки, остальные — на свой диапазон (issue #1311,
+          //    #1465), поэтому части не берут типы чужих строк главной части;
           // 2) FForceDataStyleAllRows (issue #1357) — все строки как данные;
-          // 3) позиционный выбор стиля по номеру строки.
+          // 3) позиционный выбор стиля по номеру логической строки.
           if (ARowBaseIndex = 0) and
              (FCells[RowIdx][ColIdx].StyleType >= 0) then
             StyleRowIndex := FCells[RowIdx][ColIdx].StyleType
-          else if RowStyleTypeAt(RowIdx) >= 0 then
-            StyleRowIndex := RowStyleTypeAt(RowIdx)
+          else if RenderRowStyleType(RowIdx) >= 0 then
+            StyleRowIndex := RenderRowStyleType(RowIdx)
           else if FForceDataStyleAllRows then
             StyleRowIndex := 2
           else
-            StyleRowIndex := ARowBaseIndex + RowIdx;
+            StyleRowIndex := RenderLogicalRow(RowIdx);
           CellStyleLocal := uzeacadtable_cell.ResolveCellStyleForBaseRow(
             StyleRowIndex, RowIdx, ColIdx, FTableStyle,
             FRows, FCols, FCells,
@@ -1592,6 +1627,67 @@ begin
      ConstObjArray.Count], LM_Info);
 end;
 
+// Логическая строка полной таблицы для локальной строки рисуемой части
+// (issue #1465). Повторённые метки соответствуют верхним строкам таблицы.
+function GDBObjAcadTable.RenderLogicalRow(ALocalRow: Integer): Integer;
+begin
+  if ALocalRow < FRenderRepeatRows then
+    Result := ALocalRow
+  else
+    Result := FRenderLogicalStart + ALocalRow - FRenderRepeatRows;
+end;
+
+// Явный тип логической строки рисуемой части. Во время рисования части её
+// данные обменяны с главной, но FRowStyleTypes остаётся массивом типов
+// логических строк, поэтому индекс берётся по логической строке.
+function GDBObjAcadTable.RenderRowStyleType(ALocalRow: Integer): Integer;
+var
+  LogicalRow: Integer;
+begin
+  Result := -1;
+  if (ALocalRow < 0) or (ALocalRow >= FRowCount) then
+    Exit;
+  LogicalRow := RenderLogicalRow(ALocalRow);
+  if (LogicalRow >= 0) and (LogicalRow <= High(FRowStyleTypes)) then
+    Result := FRowStyleTypes[LogicalRow];
+end;
+
+// Для каждой части-продолжения: номер первой собственной логической строки
+// и число повторённых в её начале строк-меток главной части. Вызывается до
+// обмена данными, пока поля Self описывают главную часть.
+procedure GDBObjAcadTable.ComputePartRowMaps(
+  out AStarts, ARepeats: TIntegerDynArray);
+var
+  PartIdx, BaseIdx, RepeatRows, OwnRows: Integer;
+begin
+  System.SetLength(AStarts, Length(FContinuationParts));
+  System.SetLength(ARepeats, Length(FContinuationParts));
+  RepeatRows := EffectiveRepeatTopRowCount;
+  BaseIdx := FRowCount;
+  for PartIdx := 0 to High(FContinuationParts) do
+  begin
+    ARepeats[PartIdx] := 0;
+    if (RepeatRows > 0) and
+       PartRepeatsTopLabels(FContinuationParts[PartIdx], RepeatRows) then
+      ARepeats[PartIdx] := RepeatRows;
+    AStarts[PartIdx] := BaseIdx;
+    OwnRows := FContinuationParts[PartIdx].RowCount - ARepeats[PartIdx];
+    if OwnRows > 0 then
+      Inc(BaseIdx, OwnRows);
+  end;
+end;
+
+procedure GDBObjAcadTable.SelectRenderPart(APartIdx: Integer;
+  const AStarts, ARepeats: TIntegerDynArray);
+begin
+  FRenderLogicalStart := 0;
+  FRenderRepeatRows := 0;
+  if (APartIdx < 0) or (APartIdx > High(AStarts)) then
+    Exit;
+  FRenderLogicalStart := AStarts[APartIdx];
+  FRenderRepeatRows := ARepeats[APartIdx];
+end;
+
 // Обмен данными рендеринга между Self и частью-продолжением.
 // TZctnrVectorDouble и динамические массивы обмениваются целиком
 // (3-сторонний обмен), что переносит владение буферами без копирования.
@@ -1651,6 +1747,7 @@ procedure GDBObjAcadTable.BuildVisualRepresentation(
 var
   PartIdx: Integer;
   BaseX, BaseY: Double;
+  Starts, Repeats: TIntegerDynArray;
 begin
   programlog.LogOutFormatStr(
     'AcadTable: model: BuildVisualRepresentation START ' +
@@ -1658,7 +1755,9 @@ begin
     [FRowCount, FColCount, Length(FContinuationParts)], LM_Info);
   ConstObjArray.Free;
 
+  ComputePartRowMaps(Starts, Repeats);
   // Главная часть в собственной системе координат
+  SelectRenderPart(-1, Starts, Repeats);
   RenderCurrentTable(ADrawing, ADC, ConstObjArray, @Self, 0, 0, 0);
 
   // Части-продолжения со смещением относительно главной точки вставки
@@ -1666,6 +1765,7 @@ begin
   begin
     BaseX := FContinuationParts[PartIdx].InsertPoint.x - FInsertPoint.x;
     BaseY := FContinuationParts[PartIdx].InsertPoint.y - FInsertPoint.y;
+    SelectRenderPart(PartIdx, Starts, Repeats);
     SwapTableData(FContinuationParts[PartIdx]);
     // Часть-продолжение поглощается до того, как для неё вызывается
     // BuildGeometry, поэтому её FTableStyle остаётся стилем по умолчанию.
@@ -1679,6 +1779,7 @@ begin
       FContinuationParts[PartIdx].RowBaseIndex);
     SwapTableData(FContinuationParts[PartIdx]);
   end;
+  SelectRenderPart(-1, Starts, Repeats);
 
   programlog.LogOutFormatStr(
     'AcadTable: model: BuildVisualRepresentation OK ' +
@@ -1723,6 +1824,7 @@ var
   BlockDef: PGDBObjBlockdef;
   BlockName: String;
   PartIdx: Integer;
+  Starts, Repeats: TIntegerDynArray;
 begin
   // RAW-путь пишет исходный DXF со своими блоками и ссылками 343 — тогда
   // отрисовка в AutoCAD уже корректна, генерировать блоки заново не нужно.
@@ -1742,12 +1844,15 @@ begin
   // создаёт только сущности (не блоки), поэтому BlockDefArray не растёт и
   // BlockDef не перемещается. Держать указатель через create() нельзя —
   // именно поэтому имя генерируется и блок создаётся отдельно на каждую часть.
+  ComputePartRowMaps(Starts, Repeats);
+  SelectRenderPart(-1, Starts, Repeats);
   RenderCurrentTable(ADrawing, DC, BlockDef^.ObjArray, BlockDef, 0, 0, 0);
   FMainPartBlockName := BlockName;
 
   // --- Части-продолжения: каждая рендерится в (0,0) своего блока ---
   for PartIdx := 0 to High(FContinuationParts) do
   begin
+    SelectRenderPart(PartIdx, Starts, Repeats);
     SwapTableData(FContinuationParts[PartIdx]);
     // Продолжение поглощается со стилем по умолчанию — применяем DXF-стиль
     // части (тот же handle 342, что и у главной), иначе текст рендерится
@@ -1763,6 +1868,7 @@ begin
     SwapTableData(FContinuationParts[PartIdx]);
     FContinuationParts[PartIdx].BlockName := BlockName;
   end;
+  SelectRenderPart(-1, Starts, Repeats);
 end;
 
 // Глубокое копирование данных рендеринга исходной таблицы в
@@ -1908,6 +2014,18 @@ begin
     Result := FContinuationParts[AIndex].RowCount
   else
     Result := -1;
+end;
+
+function GDBObjAcadTable.ContinuationPartPlacement(AIndex: Integer;
+  out AInsertPoint: TzePoint3d; out ABreakHeight: Double): Boolean;
+begin
+  Result := (AIndex >= 0) and (AIndex <= High(FContinuationParts));
+  AInsertPoint := cP3d__0__0__0;
+  ABreakHeight := 0;
+  if not Result then
+    Exit;
+  AInsertPoint := FContinuationParts[AIndex].InsertPoint;
+  ABreakHeight := FContinuationParts[AIndex].BreakHeight;
 end;
 
 function GDBObjAcadTable.RecomputeBreakRepeatTopLabels: Boolean;
@@ -3276,6 +3394,7 @@ begin
   // строками-метками главной части, то таблица разорвана с RepeatTop=True.
   DetectBreakRepeatTopLabels;
   DetectBreakManualPosition;
+  ApplyDXFSplitInfoToPart(PartIdx);
   if AcadTableBreakHeightHasValue(FBreakHeight) and
      (not AcadTableBreakHeightHasValue(
         FContinuationParts[PartIdx].BreakHeight)) then
@@ -3329,6 +3448,55 @@ begin
   programlog.LogOutFormatStr(
     'AcadTable: model: SetBreakOptionFlags manualpos=%d manualheight=%d',
     [Ord(FBreakManualPosition), Ord(FBreakManualHeight)], LM_Info);
+end;
+
+// Переносит в часть PartIdx данные разрыва из индекса NOD (issue #1465):
+// собственную высоту разбиения части и явные флаги ручного положения/высоты.
+procedure GDBObjAcadTable.ApplyDXFSplitInfoToPart(APartIdx: Integer);
+var
+  PartHeight: Double;
+begin
+  if not FDXFSplitInfoValid then
+    Exit;
+  if (APartIdx < 0) or (APartIdx > High(FContinuationParts)) then
+    Exit;
+  if AcadTableSplitPartHeight(FDXFSplitInfo, APartIdx + 1, PartHeight) and
+     AcadTableBreakHeightHasValue(PartHeight) then
+    FContinuationParts[APartIdx].BreakHeight := PartHeight;
+  if FBreakFlagsKnown then
+  begin
+    FContinuationParts[APartIdx].BreakManualPosition := FBreakManualPosition;
+    FContinuationParts[APartIdx].BreakManualHeight := FBreakManualHeight;
+  end;
+end;
+
+// Принимает данные разрыва таблицы из индекса NOD загрузчика DXF
+// (issue #1465): типы логических строк (Title/Header/Data), интервал и
+// высоту разбиения главной части, явные флаги ручного положения/высоты.
+// Вызывается сразу после загрузки главной части, до слияния продолжений.
+procedure GDBObjAcadTable.SetDXFTableSplitInfo(
+  const AInfo: TZAcadTableSplitInfo);
+var
+  MainHeight: Double;
+begin
+  FDXFSplitInfo := AInfo;
+  FDXFSplitInfoValid := True;
+  if Length(AInfo.RowTypes) > 0 then
+    SetRowStyleTypes(AInfo.RowTypes);
+  if not AcadTableSplitHasBreakData(AInfo) then
+    Exit;
+  if not AcadTableSplitPartHeight(AInfo, 0, MainHeight) then
+    MainHeight := FBreakHeight;
+  SetTableBreakData(AInfo.BreakSpacing, MainHeight);
+  // После SetTableBreakData: тот запускает эвристику ручных флагов
+  SetBreakOptionFlags(AcadTableSplitManualPositions(AInfo),
+    AcadTableSplitManualHeights(AInfo));
+  programlog.LogOutFormatStr(
+    'AcadTable: model: SetDXFTableSplitInfo layout=%d legacy=%d ' +
+    'flags=%d heights=%d ranges=%d rowtypes=%d',
+    [AInfo.Layout, Ord(AInfo.Legacy), AInfo.BreakFlags,
+     Length(AInfo.Heights), Length(AInfo.RowRanges),
+     Length(AInfo.RowTypes)], LM_Info);
 end;
 
 procedure GDBObjAcadTable.SetDXFRawEntityText(const ARawText: string);

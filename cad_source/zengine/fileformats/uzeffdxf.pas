@@ -29,7 +29,7 @@ uses
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
   uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,
-  uzeffdxfnod,uzeffdxfnodlog,uzeffdxfnodregistry;
+  uzeffdxfnod,uzeffdxfnodlog,uzeffdxfnodregistry,uzeffdxfnodacadtable;
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -194,39 +194,6 @@ begin
     Result := Copy(Result, I, Length(Result) - I + 1);
 end;
 
-function TryReadDxfPair(const Lines: TStrings; AIndex: Integer;
-  out ACode: Integer; out AValue: string): Boolean;
-begin
-  Result := False;
-  AValue := '';
-  if (AIndex < 0) or (AIndex >= Lines.Count - 1) then
-    Exit;
-
-  if TryStrToInt(Trim(Lines[AIndex]), ACode) then
-  begin
-    AValue := Trim(Lines[AIndex + 1]);
-    Result := True;
-  end;
-end;
-
-{ Распознаёт маркер XRECORD'а, связывающего части разорванной таблицы
-  (issue #1381). Принимает оба варианта:
-    * CAcadTableRoundtripMarkerName — «родной» маркер AutoCAD в файлах
-      R2007/2008, экспортированных самим AutoCAD;
-    * CAcadTableSplitMarkerName — приватный маркер ZCAD, которым теперь
-      сохраняет ZCAD (AutoCAD его игнорирует и показывает части отдельными
-      таблицами).
-  Это обеспечивает обратную совместимость чтения при том, что запись
-  больше не использует распознаваемый AutoCAD маркер. }
-function IsAcadTableRoundtripMarker(const Value: string): Boolean;
-var
-  Normalized: string;
-begin
-  Normalized := UpperCase(Trim(Value));
-  Result := (Normalized = UpperCase(CAcadTableRoundtripMarkerName)) or
-            (Normalized = UpperCase(CAcadTableSplitMarkerName));
-end;
-
 procedure StoreRawAcadTableEntity(
   RawEntities: TStringList; const Handle, RawText: string);
 var
@@ -311,271 +278,6 @@ begin
       programlog.LogOutFormatStr(
         'uzeffdxf: ScanAcadTableRawEntities: найдено %d raw ACAD_TABLE entity',
         [RawEntities.Count], LM_Info);
-  finally
-    Lines.Free;
-  end;
-end;
-
-{ Сканирует секцию OBJECTS, находит XRECORD'ы с маркером
-  ACAD_ROUNDTRIP_2008_TABLE_ENTITY и собирает из них хэндлы
-  ACAD_TABLE-сущностей, являющихся продолжениями разделённой таблицы.
-
-  Структура в DXF (после группы 102 / ACAD_ROUNDTRIP_2008_TABLE_ENTITY
-  в XRECORD идут параметры разбиения, а затем хэндлы продолжений
-  в виде повторяющихся групп 330). Хэндлы собираются до первой
-  группы 361 (конец блока продолжений), либо до конца объекта (код 0).
-
-  Результат сохраняется в ContinuationHandles (TStringList, отсортированный,
-  без дубликатов, значения в верхнем регистре без ведущих нулей). }
-procedure ScanTableContinuationHandles(const RawObjectsSection: string;
-  ContinuationHandles: TStringList);
-var
-  Lines: TStringList;
-  I, J, Code, BlockCode: Integer;
-  Value, BlockValue, Handle: string;
-begin
-  if (RawObjectsSection = '') or (ContinuationHandles = nil) then
-    Exit;
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawObjectsSection;
-    I := 0;
-    while I < Lines.Count - 1 do
-    begin
-      if TryReadDxfPair(Lines, I, Code, Value) and
-         (Code = 102) and IsAcadTableRoundtripMarker(Value) then
-      begin
-        { Маркер может находиться на другой чётности строк, чем начало
-          секции OBJECTS, поэтому ищем его построчно, а затем читаем пары
-          от локальной позиции самого маркера. }
-        J := I + 2;
-        while J < Lines.Count - 1 do
-        begin
-          if TryReadDxfPair(Lines, J, BlockCode, BlockValue) then
-          begin
-            if BlockCode = 0 then
-              Break
-            else if BlockCode = 330 then
-            begin
-              Handle := NormalizeHandle(BlockValue);
-              if Handle <> '' then
-                ContinuationHandles.Add(Handle);
-            end
-            else if BlockCode = 361 then
-              Break;
-
-            Inc(J, 2);
-          end
-          else
-            Inc(J);
-        end;
-      end;
-
-      Inc(I);
-    end;
-
-    if ContinuationHandles.Count > 0 then
-      programlog.LogOutFormatStr(
-        'uzeffdxf: ScanTableContinuationHandles: найдено %d handle(s) ACAD_TABLE-продолжений',
-        [ContinuationHandles.Count], LM_Info);
-  finally
-    Lines.Free;
-  end;
-end;
-
-{ Сканирует секцию OBJECTS и извлекает из XRECORD'а с маркером
-  ACAD_ROUNDTRIP_2008_TABLE_ENTITY параметры разбиения разделённой
-  таблицы. Внутри roundtrip-блока идут две группы 40: первая —
-  интервал между частями (break spacing), вторая — высота разбиения
-  (break height). Эти значения не выводятся в современный DXF
-  отдельными группами, поэтому без чтения XRECORD они теряются
-  (issue #1307).
-
-  ASpacing/ABreakHeight получают найденные значения, AValid=True,
-  если в блоке найдено хотя бы две группы 40.
-
-  Дополнительно из первой группы 90 (BreakOption) извлекаются признаки
-  ручного позиционирования (бит 8) и ручной высоты разбиения (бит 16).
-  AManualPosition/AManualHeight получают эти значения, AFlagsValid=True,
-  если группа 90 найдена (issue #1339). Эвристика по геометрии частей
-  ненадёжна (для acadtablerazdel2007_1 ложно даёт ManualHeight=true),
-  поэтому явные флаги из roundtrip-данных имеют приоритет. }
-const
-  cTableBreakAllowManualPositions = 8;
-  cTableBreakAllowManualHeights   = 16;
-
-procedure ScanTableBreakData(const RawObjectsSection: string;
-  out ASpacing, ABreakHeight: Double; out AValid: Boolean;
-  out AManualPosition, AManualHeight, AFlagsValid: Boolean);
-var
-  Lines: TStringList;
-  I, J, Code, BlockCode, Found, Found90, Flags: Integer;
-  Value, BlockValue: string;
-  V: Extended;
-begin
-  ASpacing := 0;
-  ABreakHeight := 0;
-  AValid := False;
-  AManualPosition := False;
-  AManualHeight := False;
-  AFlagsValid := False;
-  if RawObjectsSection = '' then
-    Exit;
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawObjectsSection;
-    I := 0;
-    while (I < Lines.Count - 1) and (not AValid) do
-    begin
-      if TryReadDxfPair(Lines, I, Code, Value) and
-         (Code = 102) and IsAcadTableRoundtripMarker(Value) then
-      begin
-        Found := 0;
-        Found90 := 0;
-        J := I + 2;
-        while J < Lines.Count - 1 do
-        begin
-          if TryReadDxfPair(Lines, J, BlockCode, BlockValue) then
-          begin
-            if (BlockCode = 0) or (BlockCode = 361) then
-              Break
-            else if (BlockCode = 90) and (Found90 = 0) then
-            begin
-              { Первая группа 90 — флаги BreakOption. }
-              Flags := StrToIntDef(Trim(BlockValue), 0);
-              AManualPosition :=
-                (Flags and cTableBreakAllowManualPositions) <> 0;
-              AManualHeight :=
-                (Flags and cTableBreakAllowManualHeights) <> 0;
-              AFlagsValid := True;
-              Inc(Found90);
-            end
-            else if (BlockCode = 40) and (Found < 2) then
-            begin
-              { DXF использует точку как десятичный разделитель }
-              if TextToFloat(PChar(BlockValue), V, fvExtended) then
-              begin
-                if Found = 0 then
-                  ASpacing := V
-                else
-                  ABreakHeight := V;
-                Inc(Found);
-                if Found >= 2 then
-                begin
-                  AValid := True;
-                  Break;
-                end;
-              end;
-            end;
-
-            Inc(J, 2);
-          end
-          else
-            Inc(J);
-        end
-      end;
-
-      Inc(I);
-    end;
-
-    if AValid or AFlagsValid then
-      programlog.LogOutFormatStr(
-        'uzeffdxf: ScanTableBreakData: spacing=%g breakheight=%g ' +
-        'manualPos=%d manualHeight=%d flagsValid=%d',
-        [ASpacing, ABreakHeight, Ord(AManualPosition),
-         Ord(AManualHeight), Ord(AFlagsValid)], LM_Info);
-  finally
-    Lines.Free;
-  end;
-end;
-
-{ Сканирует секцию OBJECTS и извлекает явные типы строк первой (главной)
-  таблицы из современного объекта AcDbTableContent.
-
-  Внутри AcDbTableContent данные строк хранятся повторяющимися блоками,
-  каждый из которых начинается строковым маркером TABLEROW_BEGIN (значение
-  группы 1). Сразу за маркером идёт группа 90 с типом строки в соглашении
-  AutoCAD: 1=Title, 2=Header, 3=Data. Эти типы — единственный надёжный
-  источник информации о числе строк-заголовков: позиционная логика legacy
-  AcDbTable-парсера жёстко предполагает ровно одну строку Title и одну
-  Header и не может представить таблицу с несколькими заголовками
-  (issue #1373).
-
-  Содержимое объекта распознаётся по маркеру подкласса (группа 100) =
-  'AcDbLinkedTableData'. Собираются строки только первого встретившегося
-  content-объекта (до начала следующего), что соответствует главной
-  таблице. Значения маппятся в соглашение ZCAD: 1->0, 2->1, 3->2, иное->-1.
-
-  ARowStyleTypes получает массив типов строк по порядку, AValid=True,
-  если собрана хотя бы одна строка. }
-procedure ScanTableRowStyleTypes(const RawObjectsSection: string;
-  out ARowStyleTypes: TDXFRowStyleTypeArray; out AValid: Boolean);
-var
-  Lines: TStringList;
-  I, Code, Count, DxfType, ZType: Integer;
-  Value: string;
-  InContent, PendingRowType: Boolean;
-begin
-  SetLength(ARowStyleTypes, 0);
-  AValid := False;
-  if RawObjectsSection = '' then
-    Exit;
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawObjectsSection;
-    InContent := False;
-    PendingRowType := False;
-    Count := 0;
-    I := 0;
-    while I < Lines.Count - 1 do
-    begin
-      if TryReadDxfPair(Lines, I, Code, Value) then
-      begin
-        if Code = 100 then
-        begin
-          if UpperCase(Value) = UpperCase('AcDbLinkedTableData') then
-          begin
-            { Начало следующего content-объекта — главная таблица собрана. }
-            if InContent then
-              Break;
-            InContent := True;
-          end;
-        end
-        else if InContent and (Code = 1) and (Value = 'TABLEROW_BEGIN') then
-          PendingRowType := True
-        else if InContent and PendingRowType and (Code = 90) then
-        begin
-          DxfType := StrToIntDef(Trim(Value), 0);
-          case DxfType of
-            1: ZType := 0; { Title  }
-            2: ZType := 1; { Header }
-            3: ZType := 2; { Data   }
-          else
-            ZType := -1;
-          end;
-          if Count > High(ARowStyleTypes) then
-            SetLength(ARowStyleTypes, (Count + 1) * 2);
-          ARowStyleTypes[Count] := ZType;
-          Inc(Count);
-          PendingRowType := False;
-        end;
-
-        Inc(I, 2);
-      end
-      else
-        Inc(I);
-    end;
-
-    SetLength(ARowStyleTypes, Count);
-    AValid := Count > 0;
-
-    if AValid then
-      programlog.LogOutFormatStr(
-        'uzeffdxf: ScanTableRowStyleTypes: найдено %d строк(и) с явным типом',
-        [Count], LM_Info);
   finally
     Lines.Free;
   end;
@@ -813,6 +515,56 @@ begin
       exit;
   end;
 end;
+{ Хэндл DXF загруженной сущности; 0 — хэндла нет }
+function LoadedEntityDXFHandle(pobj:PGDBObjEntity):TDWGHandle;
+begin
+  if pobj^.PExtAttrib<>nil then
+    Result:=pobj^.PExtAttrib^.dwgHandle
+  else
+    Result:=0;
+end;
+
+{ Поглощает продолжение разорванной ACAD_TABLE её главной таблицей по
+  индексу NOD (issue #1465). False — сущность не продолжение, главная
+  таблица ещё не загружена или поглощение не удалось. }
+function TryMergeAcadTableContinuation(pobj:PGDBObjEntity;
+  var context:TIODXFLoadContext):Boolean;
+var
+  Handle,MainHandle:TDWGHandle;
+  PMain:Pointer;
+begin
+  Result:=False;
+  Handle:=LoadedEntityDXFHandle(pobj);
+  if (Handle=0)or(context.TableSplitIndex=nil) then
+    exit;
+  if not context.TableSplitIndex.IsContinuation(Handle,MainHandle) then
+    exit;
+  if not context.TableMainEntities.TryGetValue(MainHandle,PMain) then
+    exit;
+  Result:=PGDBObjEntity(PMain)^.TryMergeContinuation(pobj);
+  if Result then
+    programlog.LogOutFormatStr(
+      'uzeffdxf: ACAD_TABLE continuation handle=%s merged into main=%s',
+      [inttohex(Handle,0),inttohex(MainHandle,0)],LM_Info);
+end;
+
+{ Регистрирует загруженную главную ACAD_TABLE для поглощения продолжений и
+  передаёт ей данные разрыва и типы строк из индекса NOD (issue #1465) }
+procedure RegisterAcadTableMain(pobj:PGDBObjEntity;
+  var context:TIODXFLoadContext);
+var
+  Handle:TDWGHandle;
+  Info:TZAcadTableSplitInfo;
+begin
+  Handle:=LoadedEntityDXFHandle(pobj);
+  if (Handle=0)or(context.TableSplitIndex=nil) then
+    exit;
+  if not context.TableSplitIndex.FindByEntity(Handle,Info) then
+    exit;
+  context.TableMainEntities.AddOrSetValue(Handle,pobj);
+  pobj^.SetDXFTableSplitInfo(Info);
+end;
+
 procedure addentitiesfromdxf(var rdr:TZMemReader; const exitString: String;owner:PGDBObjSubordinated;var drawing:TSimpleDrawing;DC:TDrawContext;var context:TIODXFLoadContext);
 var
   s: String;
@@ -826,12 +578,8 @@ var
   bylayerlt:Pointer;
   lph:TLPSHandle;
   rawIdx:Integer;
-  // Последняя добавленная главная ACAD_TABLE — в неё поглощаются
-  // продолжения разделённой таблицы (issue #1300).
-  pLastMainTable:PGDBObjEntity;
 begin
   s:='';
-  pLastMainTable:=nil;
   lph:=lps.StartLongProcess('addentitiesfromdxf',@rdr,rdr.Size);
   if Assigned(CreateExtLoadData) then
     PExtLoadData:=CreateExtLoadData()
@@ -872,28 +620,17 @@ begin
               context.TableRawAcadTableEntities.Objects[rawIdx]).Text);
       end;
 
-      { Если ACAD_TABLE имеет handle из списка продолжений разделённой
-        таблицы — это часть, которую AutoCAD сохранил как отдельную
-        ACAD_TABLE. Поглощаем её данные в первую (главную) ACAD_TABLE,
-        чтобы все части отображались как один объект (issue #1300).
-        После поглощения освобождаем загруженную сущность и переходим
-        к следующей. Переменную group=0 не сбрасываем: LoadFromDXF
-        остановился на коде 0 следующей сущности. Если по какой-то
-        причине главной таблицы нет или поглощение не удалось — часть
-        обрабатывается обычным образом (добавляется как отдельный объект),
-        чтобы данные не были потеряны. }
+      { Если ACAD_TABLE — продолжение разорванной таблицы по индексу NOD,
+        AutoCAD сохранил эту часть отдельной ACAD_TABLE. Поглощаем её данные
+        в СВОЮ главную ACAD_TABLE (хэндл главной берётся из XRECORD
+        ACAD_XREC_ROUNDTRIP), чтобы все части отображались одним объектом
+        (issue #1300, #1465). После поглощения освобождаем загруженную
+        сущность. Переменную group=0 не сбрасываем: LoadFromDXF остановился
+        на коде 0 следующей сущности. Если главная таблица не найдена или
+        поглощение не удалось — часть добавляется обычным образом, чтобы
+        данные не были потеряны. }
       if (uppercase(s)='ACAD_TABLE') and
-         (context.TableContinuationHandles<>nil) and
-         (context.TableContinuationHandles.Count>0) and
-         (PGDBObjEntity(pobj)^.PExtAttrib<>nil) and
-         (PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle<>0) and
-         (context.TableContinuationHandles.IndexOf(
-            NormalizeHandle(inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)))>=0) and
-         (pLastMainTable<>nil) and
-         pLastMainTable^.TryMergeContinuation(pobj) then begin
-        programlog.LogOutFormatStr(
-          'uzeffdxf: merging ACAD_TABLE continuation handle=%s into main table',
-          [inttohex(PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)], LM_Info);
+         TryMergeAcadTableContinuation(pobj,context) then begin
         pobj^.done;
         Freemem(pointer(pobj));
         if Assigned(ClearExtLoadData) then
@@ -944,37 +681,11 @@ begin
         end;
         if not trash then begin
           newowner^.DXFLoadAddMi(pobj);
-        // Запоминаем главную ACAD_TABLE для поглощения её продолжений
-        // (issue #1300). Продолжения идут после главной части в DXF.
-        if uppercase(s)='ACAD_TABLE' then begin
-          pLastMainTable:=pobj;
-          // Передаём параметры разбиения (интервал и высота), прочитанные
-          // из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY, в главную таблицу,
-          // чтобы свойства Break spacing/Break height были доступны в
-          // инспекторе объектов (issue #1307).
-          if context.TableBreakDataValid then
-            pLastMainTable^.SetTableBreakData(
-              context.TableBreakSpacing, context.TableBreakHeight);
-          { Явные флаги ручного позиционирования/высоты из roundtrip-данных
-            имеют приоритет над эвристикой по геометрии частей (issue #1339).
-            Вызывается после SetTableBreakData, т.к. тот запускает эвристику. }
-          if context.TableBreakFlagsValid then
-            pLastMainTable^.SetBreakOptionFlags(
-              context.TableBreakManualPosition,
-              context.TableBreakManualHeight);
-          { Явные типы строк из современного объекта AcDbTableContent
-            (TABLEROW_BEGIN group 90). Позволяют корректно загружать
-            таблицы с несколькими строками-заголовками, которые позиционная
-            логика legacy AcDbTable-парсера представить не может (issue #1373).
-            Применяем только к цельным (не разбитым) таблицам: у разбитой на
-            части таблицы строки в AcDbTableContent перечислены с повторами
-            заголовков по каждой части, поэтому их индексы не совпадают с
-            логическими строками склеенной таблицы (issue #1300/#1373). }
-          if context.TableRowStyleTypesValid and
-             ((context.TableContinuationHandles=nil) or
-              (context.TableContinuationHandles.Count=0)) then
-            pLastMainTable^.SetRowStyleTypes(context.TableRowStyleTypes);
-        end;
+        // Запоминаем главную ACAD_TABLE для поглощения её продолжений и
+        // передаём ей данные разрыва из индекса NOD (issue #1300, #1465).
+        // Продолжения идут после главной части в DXF.
+        if uppercase(s)='ACAD_TABLE' then
+          RegisterAcadTableMain(pobj,context);
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
             {PGDBObjEntity(pobj)^.BuildGeometry(drawing);
@@ -2005,34 +1716,6 @@ begin
           RawEntitiesSection,
           fileCtx.TableRawAcadTableEntities);
 
-        { Сканируем OBJECTS, собираем handles ACAD_TABLE-продолжений.
-          Хранятся в fileCtx, используются в addentitiesfromdxf для отбрасывания
-          повторных продолжений (их proxy graphic уже включён в первую таблицу). }
-        ScanTableContinuationHandles(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          fileCtx.TableContinuationHandles);
-
-        { Извлекаем параметры разбиения разделённой таблицы (интервал между
-          частями и высоту разбиения) из XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY.
-          Передаются в главную ACAD_TABLE через SetTableBreakData (issue #1307). }
-        ScanTableBreakData(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          fileCtx.TableBreakSpacing,
-          fileCtx.TableBreakHeight,
-          fileCtx.TableBreakDataValid,
-          fileCtx.TableBreakManualPosition,
-          fileCtx.TableBreakManualHeight,
-          fileCtx.TableBreakFlagsValid);
-
-        { Извлекаем явные типы строк (Title/Header/Data) из современного
-          объекта AcDbTableContent. Передаются в главную ACAD_TABLE через
-          SetRowStyleTypes, чтобы таблицы с несколькими строками-заголовками
-          загружались с правильным стилем строк (issue #1373). }
-        ScanTableRowStyleTypes(
-          dwgCtx.PDrawing^.RawObjectsSection,
-          fileCtx.TableRowStyleTypes,
-          fileCtx.TableRowStyleTypesValid);
-
         { Модель OBJECTS/NOD (этап 2 ТЗ NOD). Для R12 и неизвестных версий
           остаётся пустой: в R12 секции OBJECTS и NOD нет. Контекст (и модель)
           освобождается и при исключении во время разбора чертежа. }
@@ -2055,6 +1738,9 @@ begin
                 (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
                 сущностей, которые на них ссылаются. }
               DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
+              { Индекс разорванных ACAD_TABLE по модели NOD: параметры разрыва,
+                продолжения и типы строк каждой главной таблицы (issue #1465) }
+              fileCtx.TableSplitIndex:=TZAcadTableNODIndex.Create(fileCtx.NODModel);
               { Хэндлы записей TABLES → имена (ссылки MLEADERSTYLE, этап 6) }
               DXFNODLoadSymbolTables(AFileName,fileCtx.Header,fileCtx.NODModel);
               if @DXFNODModelBuiltProc<>nil then

@@ -24,7 +24,8 @@ unit uzeffdxfsupport;
 interface
 uses
   uzegeometrytypes,sysutils,uzctnrVectorBytesStream,usimplegenerics,
-  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes,uzeffdxfnod;
+  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes,Generics.Collections,uzeffdxfnod,
+  uzeffdxfnodacadtable;
 
 const
   cDXFError_WrogGroupCode='DXF group code "%d" expected but "%d" found';
@@ -146,10 +147,6 @@ type
     constructor Create(const AText:string);
   end;
 
-  { Явные типы строк таблицы в соглашении ZCAD (0=Title, 1=Header, 2=Data;
-    -1 — тип не задан), прочитанные pre-scan'ом из AcDbTableContent (#1373). }
-  TDXFRowStyleTypeArray=array of integer;
-
   TIODXFLoadContext=record
     h2p:TDXFHandle2ZCObject;
     DWGVarsDict:TString2StringDictionary;
@@ -158,12 +155,17 @@ type
 
     GDBVertexLoadCache:GDBPoint3dArray;
 
-    { Хэндлы ACAD_TABLE-сущностей, являющихся продолжениями
-      разделённой таблицы. Собираются pre-scan'ом секции OBJECTS
-      из XRECORD'ов с маркером ACAD_ROUNDTRIP_2008_TABLE_ENTITY
-      (группа 330). Такие продолжения не должны создавать отдельные
-      ProxyEntity: их proxy graphic уже включён в первую таблицу. }
-    TableContinuationHandles:TStringList;
+    { Индекс разорванных ACAD_TABLE по модели NOD (issue #1465): для каждой
+      главной таблицы — параметры разрыва, высоты/положения частей,
+      диапазоны строк, продолжения и типы строк Title/Header/Data из
+      TABLECONTENT. Строится после NOD pre-pass; nil для R12. }
+    TableSplitIndex:TZAcadTableNODIndex;
+
+    { Загруженные главные ACAD_TABLE: хэндл DXF -> сущность. Продолжение
+      поглощается именно своей главной таблицей (по индексу NOD), а не
+      последней загруженной, поэтому в файле может быть несколько
+      разорванных таблиц (issue #1465). }
+    TableMainEntities:TDictionary<TDWGHandle,Pointer>;
 
     { Сырые тексты ACAD_TABLE-сущностей из секции ENTITIES, индексированные
       по нормализованному handle. Нужны для round-trip сохранения таблиц,
@@ -171,35 +173,6 @@ type
       флаги ячеек, которые модель ZCAD пока не реконструирует полностью
       (issue #1317). }
     TableRawAcadTableEntities:TStringList;
-
-    { Параметры разбиения разделённой таблицы, прочитанные из XRECORD
-      ACAD_ROUNDTRIP_2008_TABLE_ENTITY (две группы 40: 1-я — интервал
-      между частями, 2-я — высота разбиения). Передаются в главную
-      ACAD_TABLE через SetTableBreakData, чтобы свойства Break spacing
-      и Break height отображались/редактировались в инспекторе (issue #1307). }
-    TableBreakSpacing:double;
-    TableBreakHeight:double;
-    TableBreakDataValid:boolean;
-
-    { Флаг BreakOption из того же XRECORD (первая группа 90). Биты:
-      8  (AllowManualPositions) -> AcadTableBreakManualPosition,
-      16 (AllowManualHeights)   -> AcadTableBreakManualHeight.
-      Эти признаки нельзя надёжно вычислить эвристикой по геометрии частей
-      (issue #1339), поэтому читаем их явно из roundtrip-данных. }
-    TableBreakManualPosition:boolean;
-    TableBreakManualHeight:boolean;
-    TableBreakFlagsValid:boolean;
-
-    { Явные типы строк первой (главной) таблицы, прочитанные pre-scan'ом
-      из современного объекта AcDbTableContent (каждый TABLEROW_BEGIN
-      несёт group 90 = тип строки: 1=Title, 2=Header, 3=Data). Маппятся в
-      соглашение ZCAD (0=Title, 1=Header, 2=Data; иное -> -1) и передаются
-      в главную ACAD_TABLE через SetRowStyleTypes. Нужны для таблиц с
-      несколькими строками-заголовками, которые позиционная логика
-      legacy-парсера AcDbTable (ровно 1 Title + 1 Header) представить не
-      может (issue #1373). }
-    TableRowStyleTypes:TDXFRowStyleTypeArray;
-    TableRowStyleTypesValid:boolean;
 
     { Модель секции OBJECTS и Named Object Dictionary (этап 2 ТЗ
       cad_source/zengine/TZ_NOD_NamedObjectDictionary.md). Строится в
@@ -495,25 +468,13 @@ begin
 
   GDBVertexLoadCache.init(1000);
 
-  TableContinuationHandles:=TStringList.Create;
-  TableContinuationHandles.CaseSensitive:=False;
-  TableContinuationHandles.Sorted:=True;
-  TableContinuationHandles.Duplicates:=dupIgnore;
-
   TableRawAcadTableEntities:=TStringList.Create;
   TableRawAcadTableEntities.CaseSensitive:=False;
   TableRawAcadTableEntities.Sorted:=True;
   TableRawAcadTableEntities.Duplicates:=dupIgnore;
 
-  TableBreakSpacing:=0;
-  TableBreakHeight:=0;
-  TableBreakDataValid:=False;
-  TableBreakManualPosition:=False;
-  TableBreakManualHeight:=False;
-  TableBreakFlagsValid:=False;
-
-  SetLength(TableRowStyleTypes,0);
-  TableRowStyleTypesValid:=False;
+  TableSplitIndex:=nil;
+  TableMainEntities:=TDictionary<TDWGHandle,Pointer>.Create;
 
   NODModel:=nil;
 end;
@@ -533,13 +494,13 @@ begin
   h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
-  FreeAndNil(TableContinuationHandles);
   if TableRawAcadTableEntities<>nil then begin
     for I:=0 to TableRawAcadTableEntities.Count-1 do
       TableRawAcadTableEntities.Objects[I].Free;
     FreeAndNil(TableRawAcadTableEntities);
   end;
-  SetLength(TableRowStyleTypes,0);
+  FreeAndNil(TableSplitIndex);
+  FreeAndNil(TableMainEntities);
   FreeAndNil(NODModel);
 end;
 
