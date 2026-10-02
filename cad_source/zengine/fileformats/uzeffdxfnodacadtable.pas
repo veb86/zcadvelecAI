@@ -81,8 +81,11 @@ const
   CAcadTableHeightHasPosition = 1;
   CAcadTableHeightHasHeight = 2;
 
-  { Направление разрыва по умолчанию (вправо) }
+  { Направление разрыва (TableBreakFlowDirection AutoCAD): вправо — по
+    умолчанию, вниз (вертикально), влево }
   CAcadTableBreakDirectionRight = 1;
+  CAcadTableBreakDirectionDown = 2;
+  CAcadTableBreakDirectionLeft = 4;
 
   { Тип строки в нотации ZCAD (FRowStyleTypes модели таблицы) }
   CAcadTableRowTypeUnknown = -1;

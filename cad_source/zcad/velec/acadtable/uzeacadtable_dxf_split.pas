@@ -51,11 +51,16 @@ type
 
   // Общие параметры разрыва таблицы для записи DXF
   TAcadTableSplitWriteOptions = record
+    // Разрыв включён. Без него AutoCAD всё равно пишет запись layout 1 с
+    // промежутком и высотой, но без строк-меток (одна часть, issue #1465).
+    Enabled: Boolean;
     RepeatTop: Boolean;
     RepeatBottom: Boolean;
     ManualPositions: Boolean;
     ManualHeights: Boolean;
-    DirectionRight: Boolean;
+    // Направление разрыва в нотации записи AutoCAD
+    // (CAcadTableBreakDirectionRight и т. д.)
+    Direction: Integer;
     Spacing: Double;
     TopLabelRows: Integer;
   end;
@@ -114,7 +119,9 @@ end;
 // Флаги разрыва по общим параметрам таблицы
 function SplitWriteFlags(const AOptions: TAcadTableSplitWriteOptions): Integer;
 begin
-  Result := CAcadTableBreakEnable;
+  Result := 0;
+  if AOptions.Enabled then
+    Result := CAcadTableBreakEnable;
   if AOptions.RepeatTop then
     Result := Result or CAcadTableBreakRepeatTop;
   if AOptions.RepeatBottom then
@@ -154,6 +161,17 @@ begin
   end;
 end;
 
+// Число строк-меток в начале главной части: только у включённого разрыва
+// с повтором верхних меток (иначе AutoCAD пишет 0 и диапазон с нуля).
+function SplitWriteTopLabelRows(
+  const AOptions: TAcadTableSplitWriteOptions): Integer;
+begin
+  Result := 0;
+  if AOptions.Enabled and AOptions.RepeatTop and
+     (AOptions.TopLabelRows > 0) then
+    Result := AOptions.TopLabelRows;
+end;
+
 // Диапазоны логических строк частей; первая часть начинается после меток,
 // смещение — от точки вставки главной части.
 procedure FillSplitWriteRanges(const AOptions: TAcadTableSplitWriteOptions;
@@ -162,13 +180,13 @@ var
   I, NextRow, OwnRows: Integer;
 begin
   SetLength(AInfo.RowRanges, Length(AParts));
-  NextRow := AOptions.TopLabelRows;
+  NextRow := SplitWriteTopLabelRows(AOptions);
   for I := 0 to High(AParts) do begin
     AInfo.RowRanges[I].OffsetX := AParts[I].InsertPoint.x - AParts[0].InsertPoint.x;
     AInfo.RowRanges[I].OffsetY := AParts[I].InsertPoint.y - AParts[0].InsertPoint.y;
     AInfo.RowRanges[I].OffsetZ := AParts[I].InsertPoint.z - AParts[0].InsertPoint.z;
     if I = 0 then
-      OwnRows := AParts[I].RowCount - AOptions.TopLabelRows
+      OwnRows := AParts[I].RowCount - SplitWriteTopLabelRows(AOptions)
     else
       OwnRows := AParts[I].RowCount - AParts[I].RepeatRows;
     if OwnRows < 0 then
@@ -189,12 +207,9 @@ begin
   AInfo := Default(TZAcadTableSplitInfo);
   AInfo.Layout := CAcadTableLayoutSplit;
   AInfo.BreakFlags := SplitWriteFlags(AOptions);
-  AInfo.BreakDirection := 0;
-  if AOptions.DirectionRight then
-    AInfo.BreakDirection := CAcadTableBreakDirectionRight;
+  AInfo.BreakDirection := AOptions.Direction;
   AInfo.BreakSpacing := AOptions.Spacing;
-  if AOptions.RepeatTop then
-    AInfo.TopLabelRows := AOptions.TopLabelRows;
+  AInfo.TopLabelRows := SplitWriteTopLabelRows(AOptions);
   if Length(AParts) = 0 then
     Exit;
   AInfo.EntityHandle := AParts[0].EntityHandle;

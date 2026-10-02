@@ -341,8 +341,23 @@ type
       const ASource: TAcadTablePart; var APart: TAcadTableDXFWritePart);
     procedure BuildDXFContinuationWriteParts(
       var AParts: TAcadTableDXFWritePartArray);
+    // Тип логической строки полной таблицы (0=Title, 1=Header, 2=Data) и
+    // типы строк части для писателя DXF (issue #1465).
+    function LogicalRowStyleType(ARow: Integer): Integer;
+    procedure FillDXFRowStyleTypes(AFirstRow, ARepeatRows, ARowCount: Integer;
+      var ATypes: TAcadTableIntegerArray);
+    // Логическая таблица для TABLECONTENT: строки главной части и
+    // собственные строки продолжений без повторённых меток (issue #1465).
+    procedure FillDXFContentPart(var AContent: TAcadTableDXFWritePart);
     procedure InvalidateRawDXFEntity;
     function CanSaveRawDXFEntity: Boolean;
+    // Определяет имя стиля таблицы перед raw-записью (issue #1339)
+    procedure EnsureDXFTableStyleName(var ADrawing: TDrawingDef);
+    // Запись raw-таблицы (issue #1339) с данными разрыва и TABLECONTENT из
+    // модели (issue #1465). False — raw-записать нельзя.
+    function SaveRawDXF(var AOutStream: TZctnrVectorBytes;
+      var ADrawing: TDrawingDef;
+      var AIODXFContext: TIODXFSaveContext): Boolean;
 
   public
     constructor initnul(
@@ -3953,6 +3968,10 @@ begin
   APart.BreakManualHeight := FBreakManualHeight;
   APart.BreakSpacing := FBreakSpacing;
   APart.BreakHeight := FBreakHeight;
+  // Типы строк и число повторяемых в продолжениях строк-меток нужны записи
+  // TABLECONTENT и данным разрыва round-trip записи (issue #1465).
+  FillDXFRowStyleTypes(0, 0, FRowCount, APart.RowStyleTypes);
+  APart.RepeatRows := EffectiveRepeatTopRowCount;
 end;
 
 procedure GDBObjAcadTable.FillDXFWritePartFromContinuation(
@@ -3987,13 +4006,93 @@ procedure GDBObjAcadTable.BuildDXFContinuationWriteParts(
   var AParts: TAcadTableDXFWritePartArray);
 var
   PartIdx: Integer;
+  Starts, Repeats: TIntegerDynArray;
 begin
   DetectBreakManualPosition;
   DetectBreakManualHeight;
+  ComputePartRowMaps(Starts, Repeats);
   System.SetLength(AParts, Length(FContinuationParts));
   for PartIdx := 0 to High(FContinuationParts) do
+  begin
     FillDXFWritePartFromContinuation(
       FContinuationParts[PartIdx], AParts[PartIdx]);
+    AParts[PartIdx].RepeatRows := Repeats[PartIdx];
+    FillDXFRowStyleTypes(Starts[PartIdx], Repeats[PartIdx],
+      AParts[PartIdx].RowCount, AParts[PartIdx].RowStyleTypes);
+  end;
+end;
+
+function GDBObjAcadTable.LogicalRowStyleType(ARow: Integer): Integer;
+begin
+  if (ARow >= 0) and (ARow <= High(FRowStyleTypes)) and
+     (FRowStyleTypes[ARow] >= CAcadTableRowTypeTitle) then
+    Result := FRowStyleTypes[ARow]
+  else if FForceDataStyleAllRows or (ARow < 0) then
+    Result := CAcadTableRowTypeData
+  else
+    Result := Min(ARow, CAcadTableRowTypeData);
+end;
+
+// Типы строк части: первые ARepeatRows строк повторяют метки главной части,
+// далее идут собственные строки с первой логической строкой AFirstRow.
+procedure GDBObjAcadTable.FillDXFRowStyleTypes(
+  AFirstRow, ARepeatRows, ARowCount: Integer;
+  var ATypes: TAcadTableIntegerArray);
+var
+  RowIdx: Integer;
+begin
+  System.SetLength(ATypes, Max(ARowCount, 0));
+  for RowIdx := 0 to ARowCount - 1 do
+    if RowIdx < ARepeatRows then
+      ATypes[RowIdx] := LogicalRowStyleType(RowIdx)
+    else
+      ATypes[RowIdx] := LogicalRowStyleType(AFirstRow + RowIdx - ARepeatRows);
+end;
+
+// Добавляет в логическую таблицу AContent строку ARow части-продолжения:
+// высоту, тексты и ячейки (столбцы сверх числа столбцов таблицы отбрасываются).
+procedure AppendDXFContentRow(const ASource: TAcadTablePart; ARow: Integer;
+  var AContent: TAcadTableDXFWritePart);
+var
+  Dest, ColIdx, SrcIdx: Integer;
+begin
+  Dest := AContent.RowCount;
+  Inc(AContent.RowCount);
+  System.SetLength(AContent.RowHeights, AContent.RowCount);
+  AContent.RowHeights[Dest] := 0;
+  if ARow < ASource.RowHeights.Count then
+    AContent.RowHeights[Dest] := ASource.RowHeights.getData(ARow);
+  System.SetLength(AContent.CellTexts, AContent.RowCount * AContent.ColCount);
+  for ColIdx := 0 to Min(AContent.ColCount, ASource.ColCount) - 1 do
+  begin
+    SrcIdx := ARow * ASource.ColCount + ColIdx;
+    if SrcIdx <= High(ASource.CellTexts) then
+      AContent.CellTexts[Dest * AContent.ColCount + ColIdx] :=
+        ASource.CellTexts[SrcIdx];
+  end;
+  System.SetLength(AContent.Cells, AContent.RowCount);
+  AContent.Cells[Dest] := nil;
+  if ARow <= High(ASource.Cells) then
+    AContent.Cells[Dest] := Copy(ASource.Cells[ARow]);
+end;
+
+procedure GDBObjAcadTable.FillDXFContentPart(
+  var AContent: TAcadTableDXFWritePart);
+var
+  PartIdx, RowIdx: Integer;
+  Starts, Repeats: TIntegerDynArray;
+begin
+  FillDXFWritePartFromSelf(AContent);
+  ComputePartRowMaps(Starts, Repeats);
+  { Хвост текстов главной части выравнивается по числу её строк, чтобы
+    строки продолжений легли по индексу row * ColCount + col. }
+  System.SetLength(AContent.CellTexts, AContent.RowCount * AContent.ColCount);
+  System.SetLength(AContent.Cells, AContent.RowCount);
+  for PartIdx := 0 to High(FContinuationParts) do
+    for RowIdx := Repeats[PartIdx] to
+        FContinuationParts[PartIdx].RowCount - 1 do
+      AppendDXFContentRow(FContinuationParts[PartIdx], RowIdx, AContent);
+  FillDXFRowStyleTypes(0, 0, AContent.RowCount, AContent.RowStyleTypes);
 end;
 
 procedure GDBObjAcadTable.SaveToDXF(
@@ -4001,13 +4100,14 @@ procedure GDBObjAcadTable.SaveToDXF(
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext);
 var
-  DXFPart: TAcadTableDXFWritePart;
+  DXFPart, ContentPart: TAcadTableDXFWritePart;
 begin
   DetectBreakManualPosition;
   DetectBreakManualHeight;
   FillDXFWritePartFromSelf(DXFPart);
+  FillDXFContentPart(ContentPart);
   uzeacadtable_dxf_write.WriteAcadTableToDXF(
-    AOutStream, ADrawing, AIODXFContext, DXFPart, 0);
+    AOutStream, ADrawing, AIODXFContext, DXFPart, ContentPart, 0);
 end;
 
 procedure GDBObjAcadTable.SaveToDXFFollow(
@@ -4026,40 +4126,55 @@ begin
     AOutStream, ADrawing, AIODXFContext, MainPart, Parts);
 end;
 
+procedure GDBObjAcadTable.EnsureDXFTableStyleName(var ADrawing: TDrawingDef);
+begin
+  // Перед сохранением гарантируем, что имя стиля таблицы определено.
+  // Для raw-таблиц (issue #1339) BuildGeometry мог ещё не выполняться
+  // (например, при пакетном "Сохранить как" без отрисовки), поэтому
+  // FTableStyle.Name остаётся пустым. Без имени невозможно перенумеровать
+  // ссылку 342 на актуальный хэндл TABLESTYLE — и таблица сохраняется со
+  // ссылкой на старый (чужой после перенумерации) хэндл.
+  if (FTableStyle.Name = '') and (FTableStyleHandle <> '') then
+    uzeacadtable_stylemanager.ApplyDXFTableStyle(
+      FTableStyle, FTableStyleHandle, ADrawing);
+end;
+
+function GDBObjAcadTable.SaveRawDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var ADrawing: TDrawingDef;
+  var AIODXFContext: TIODXFSaveContext): Boolean;
+var
+  RawParts: array of String;
+  PartIdx: Integer;
+  MainPart, ContentPart: TAcadTableDXFWritePart;
+  Parts: TAcadTableDXFWritePartArray;
+begin
+  EnsureDXFTableStyleName(ADrawing);
+  System.SetLength(RawParts, Length(FContinuationParts));
+  for PartIdx := 0 to High(FContinuationParts) do
+    RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
+  // Признаки ручного управления разрывами должны попасть в roundtrip-запись
+  // (issue #1339), иначе при пересохранении BreakOption теряет манульные биты.
+  // Данные разрыва и TABLECONTENT собираются из модели, как в модельном
+  // пути записи (issue #1465).
+  DetectBreakManualPosition;
+  DetectBreakManualHeight;
+  FillDXFWritePartFromSelf(MainPart);
+  FillDXFContentPart(ContentPart);
+  BuildDXFContinuationWriteParts(Parts);
+  Result := uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
+    AOutStream, AIODXFContext, MainPart, ContentPart, Parts,
+    FRawDXFEntity, RawParts);
+end;
+
 procedure GDBObjAcadTable.DXFOut(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext);
-var
-  RawParts: array of String;
-  PartIdx: Integer;
 begin
-  if CanSaveRawDXFEntity then
-  begin
-    // Перед сохранением гарантируем, что имя стиля таблицы определено.
-    // Для raw-таблиц (issue #1339) BuildGeometry мог ещё не выполняться
-    // (например, при пакетном "Сохранить как" без отрисовки), поэтому
-    // FTableStyle.Name остаётся пустым. Без имени невозможно перенумеровать
-    // ссылку 342 на актуальный хэндл TABLESTYLE — и таблица сохраняется со
-    // ссылкой на старый (чужой после перенумерации) хэндл.
-    if (FTableStyle.Name = '') and (FTableStyleHandle <> '') then
-      uzeacadtable_stylemanager.ApplyDXFTableStyle(
-        FTableStyle, FTableStyleHandle, ADrawing);
-
-    System.SetLength(RawParts, Length(FContinuationParts));
-    for PartIdx := 0 to High(FContinuationParts) do
-      RawParts[PartIdx] := FContinuationParts[PartIdx].RawDXFEntity;
-    // Признаки ручного управления разрывами должны попасть в roundtrip-запись
-    // (issue #1339), иначе при пересохранении BreakOption теряет манульные биты.
-    DetectBreakManualPosition;
-    DetectBreakManualHeight;
-    if uzeacadtable_dxf_write.WriteRawAcadTablePartsToDXF(
-      AOutStream, AIODXFContext, FRawDXFEntity, RawParts,
-      FBreakSpacing, FBreakHeight,
-      FBreakManualPosition, FBreakManualHeight, Self.TableStyleName) then
-      Exit;
-  end;
-
+  if CanSaveRawDXFEntity and
+     SaveRawDXF(AOutStream, ADrawing, AIODXFContext) then
+    Exit;
   inherited DXFOut(AOutStream, ADrawing, AIODXFContext);
 end;
 
