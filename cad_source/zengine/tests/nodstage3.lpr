@@ -40,7 +40,7 @@ uses
   SysUtils, Classes, Interfaces,
   uzeffdxf, uzeffdxfout, uzedrawingsimple, uzeffmanager, uzeffdxfsupport,
   uzgldrawcontext, uzeconsts, uzeTypes, uzctnrVectorBytesStream,
-  uzeffdxfobjects, uzeffdxfnod, uzeffdxfnodregistry,
+  uzeffdxfobjects, uzeffdxfnod, uzeffdxfnodregistry, uzeffdxfnodacadtable,
   uzbLogTypes, uzclog, uzeffdxfnodlog,
   // Регистрация загрузчика сущности ACAD_TABLE (как в nodstage0), чтобы
   // tablestyleetalon.dxf читался и сохранялся как в ZCAD.
@@ -935,6 +935,9 @@ begin
   { Этап 7: ключ ZCAD_DATA зарезервирован обработчиком из initialization
     uzeffdxfnodzcad (проверяется в nodstage7) }
   UnregisterNODHandler(CNODZCADDataKey);
+  { Этап 10: ключ ACDB_RECOMPOSE_DATA регистрирует initialization
+    uzeacadtable_dxf_nod (проверяется в nodstage10) }
+  UnregisterNODHandler(CAcadTableRecomposeKey);
   Events := TStringList.Create;
   try
     Run('TestRegistration', @TestRegistration);

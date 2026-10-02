@@ -28,7 +28,9 @@
     своего ключа, если ключ есть в NOD загружаемого файла и ссылается на
     словарь. Хэндл словаря-ветки реестр помечает «забранным», хэндлы
     объектов ветки помечает сам обработчик. Исключение в LoadProc загрузку
-    не прерывает;
+    не прерывает. Если ключ ссылается прямо на объект типа ObjectType
+    (не словарь, например XRECORD ACDB_RECOMPOSE_DATA), объект помечается
+    «забранным» без вызова LoadProc (issue #1465);
   * чтение (этап 7, после LoadProc): ветки незарегистрированных ключей,
     которые не пишутся из шаблона (CNODTemplateKeys), копируются в
     TSimpleDrawing.PreservedNODBranches (RunNODPreserveUnknownBranches) и
@@ -451,6 +453,26 @@ begin
     AHandler := Default(TZNODHandler);
 end;
 
+{ Ключ NOD, ссылающийся не на словарь, а прямо на объект типа
+  AHandler.ObjectType (ACDB_RECOMPOSE_DATA → XRECORD, issue #1465): хэндл
+  помечается «забранным», LoadProc (ему нужен словарь) не вызывается —
+  такие записи обработчик читает из модели NOD сам. }
+function ClaimNODObjectEntry(AModel: TZNODModel; const AHandler: TZNODHandler;
+  ATarget: TDWGHandle): Boolean;
+var
+  Obj: TZDXFRawObject;
+begin
+  Obj := AModel.FindObject(ATarget);
+  Result := (Obj <> nil) and (AHandler.ObjectType <> '') and
+    SameText(Obj.ObjType, AHandler.ObjectType);
+  if not Result then
+    Exit;
+  AModel.ClaimHandle(ATarget);
+  NODLogTraceFormatStr(
+    'uzeffdxfnodregistry: load: key "%s" refers to %s %s, claimed',
+    [AHandler.Key, Obj.ObjType, Obj.HandleStr]);
+end;
+
 function RunNODLoadHandlers(AModel: TZNODModel;
   var ADrawing: TSimpleDrawing): Integer;
 var
@@ -479,6 +501,9 @@ begin
       Continue;
     end;
     Dict := AModel.FindDictionary(Entry.TargetHandle);
+    if (Dict = nil) and ClaimNODObjectEntry(AModel, Handlers[I],
+         Entry.TargetHandle) then
+      Continue;
     if Dict = nil then begin
       NODLogWarningFormatStr(
         'uzeffdxfnodregistry: load: NOD key "%s" refers to %s, which is not a dictionary; skipped',
