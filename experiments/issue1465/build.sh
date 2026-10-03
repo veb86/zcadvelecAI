@@ -4,7 +4,11 @@
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT" || exit 1
-L=${LAZARUS_DIR:-/tmp/fpcdl/root/usr/lib/lazarus/3.0}
+L=${LAZARUS_DIR:-}
+if [ -z "$L" ]; then
+  L=$(ls -d /usr/lib/lazarus/*/ /tmp/fpcdl/root/usr/lib/lazarus/*/ 2>/dev/null | sort -V | tail -n 1)
+  L=${L%/}
+fi
 OUT=${2:-/tmp/zcad-issue1465}
 mkdir -p "$OUT"
 DIRS=$(find cad_source/zengine cad_source/zcad \
@@ -19,6 +23,8 @@ INC=$(find cad_source -name '*.inc' -exec dirname {} \; | sort -u | sed 's/^/-Fi
 # отдельно в objfpc, как в их .lpk; основная сборка берёт готовые .ppu.
 for U in cad_source/components/zscriptbase/src/*.pas \
   cad_source/components/zscript/src/varman.pas; do
+  # Подмодули zscriptbase/zscript могут быть не инициализированы
+  [ -f "$U" ] || continue
   # shellcheck disable=SC2086
   fpc -Mobjfpc -Sh -FU"$OUT" $DIRS $INC \
     -Fu$L/components/lazutils -Fi$L/components/lazutils \
