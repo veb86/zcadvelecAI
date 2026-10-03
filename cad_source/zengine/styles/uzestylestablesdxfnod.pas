@@ -24,8 +24,9 @@
   OBJECTS. Имя стиля — ключ словаря, DXFHandle — исходный хэндл объекта
   (по нему ACAD_TABLE находит стиль по группе 342), XDictHandle — хэндл
   расширенного словаря. Объект стиля, его расширенный словарь и
-  CELLSTYLEMAP помечаются «забранными». CELLSTYLEMAP не хранится: при
-  записи он строится заново по параметрам стиля (issue #1409).
+  CELLSTYLEMAP помечаются «забранными». Из CELLSTYLEMAP берутся поля ячеек
+  (CELLMARGIN) стилей _TITLE/_HEADER/_DATA, сам объект не хранится: при
+  записи он строится заново по параметрам стиля (issues #1409, #1465).
   Стиль с именем, которое уже есть в чертеже (вставка/слияние чертежей),
   не меняется.
 
@@ -126,6 +127,14 @@ uses
 var
   { Формат вещественных чисел DXF: десятичная точка независимо от локали }
   DXFFormat: TFormatSettings;
+
+{ Преобразует вещественное число в строку DXF с гарантией десятичной точки }
+function DXFFloatStr(Value: Double): string;
+begin
+  Result := FloatToStr(Value, DXFFormat);
+  if Pos('.', Result) = 0 then
+    Result := Result + '.0';
+end;
 
 function ExtractTableStyleDictionaryFromNOD(
   AModel: TZNODModel;
@@ -249,9 +258,150 @@ begin
     AStyle.CellFormats.PushBackData(CellStyle);
 end;
 
+{ Переносит поля ячеек (CELLMARGIN) из объекта CELLSTYLEMAP в стиль.
+
+  Блок карты: 300|CELLSTYLE, TABLEFORMAT_BEGIN ... 1|CELLMARGIN_BEGIN,
+  шесть групп 40, 309|CELLMARGIN_END ... TABLEFORMAT_END, затем
+  1|CELLSTYLE_BEGIN, 90|<id> (1=_TITLE, 2=_HEADER, 3=_DATA).
+  AutoCAD 2008+ берёт поля ячеек именно отсюда, а не из групп 40/41
+  TABLESTYLE; если при записи подставить другие значения, AutoCAD
+  пересчитает ширины колонок и высоты строк таблицы (issue #1465). }
+procedure ParseCellStyleMapMargins(AMap: TZDXFRawObject;
+  var AStyle: TGDBDXFTableStyle);
+var
+  I, Code, IntVal, MarginCount, CellIdx: Integer;
+  Value: string;
+  InMargin, InCellStyle, HaveMargins: Boolean;
+  Margins: array[0..5] of Double;
+  PCellStyle: PTGDBDXFTableCellStyle;
+begin
+  InMargin := False;
+  InCellStyle := False;
+  HaveMargins := False;
+  MarginCount := 0;
+  FillChar(Margins, SizeOf(Margins), 0);
+  for I := 0 to AMap.PairCount - 1 do begin
+    Code := AMap.Pairs[I].Code;
+    Value := Trim(AMap.Pairs[I].Value);
+    if (Code = 300) and (Value = 'CELLSTYLE') then begin
+      { Начало очередного стиля ячейки }
+      HaveMargins := False;
+      InCellStyle := False;
+      Continue;
+    end;
+    if Code = 1 then begin
+      if Value = 'CELLMARGIN_BEGIN' then begin
+        InMargin := True;
+        MarginCount := 0;
+        FillChar(Margins, SizeOf(Margins), 0);
+      end else if Value = 'CELLSTYLE_BEGIN' then
+        InCellStyle := True;
+      Continue;
+    end;
+    if Code = 309 then begin
+      if Value = 'CELLMARGIN_END' then begin
+        InMargin := False;
+        HaveMargins := MarginCount = Length(Margins);
+      end else if Value = 'CELLSTYLE_END' then
+        InCellStyle := False;
+      Continue;
+    end;
+    if InMargin and (Code = 40) then begin
+      if MarginCount <= High(Margins) then
+        Margins[MarginCount] := StrToFloatDef(Value, 0, DXFFormat);
+      Inc(MarginCount);
+      Continue;
+    end;
+    if InCellStyle and (Code = 90) and HaveMargins
+       and TryStrToInt(Value, IntVal) then begin
+      { Порядок блоков ячеек в TABLESTYLE: 0=data, 1=title, 2=header }
+      case IntVal of
+        1: CellIdx := 1;
+        2: CellIdx := 2;
+        3: CellIdx := 0;
+      else
+        CellIdx := -1;
+      end;
+      if (CellIdx >= 0) and (CellIdx < AStyle.CellFormats.Count) then begin
+        PCellStyle := AStyle.CellFormats.getDataMutable(CellIdx);
+        Move(Margins, PCellStyle^.Margins, SizeOf(Margins));
+        PCellStyle^.MarginsLoaded := True;
+        NODLogTraceFormatStr(
+          'uzestylestablesdxfnod: style "%s": cell style %d margins %s/%s/%s/%s/%s/%s',
+          [AStyle.Name, IntVal, DXFFloatStr(Margins[0]),
+           DXFFloatStr(Margins[1]), DXFFloatStr(Margins[2]),
+           DXFFloatStr(Margins[3]), DXFFloatStr(Margins[4]),
+           DXFFloatStr(Margins[5])]);
+      end;
+      HaveMargins := False;
+    end;
+  end;
+end;
+
+{ Поля стиля ячеек _DATA (если прочитаны) согласованы с группами 40/41
+  стиля таблицы: верх/низ = 41, право/лево = 40. Так во всех файлах
+  AutoCAD (cad_source/test, cad_source/testacadtable). }
+function CellStyleMapMatchesStyle(const AStyle: TGDBDXFTableStyle): Boolean;
+const
+  Eps = 1e-9;
+var
+  M: array[0..5] of Double;
+  PCellStyle: PTGDBDXFTableCellStyle;
+begin
+  Result := True;
+  if AStyle.CellFormats.Count = 0 then
+    Exit;
+  PCellStyle := AStyle.CellFormats.getDataMutable(0);
+  if not PCellStyle^.MarginsLoaded then
+    Exit;
+  Move(PCellStyle^.Margins, M, SizeOf(M));
+  Result := (Abs(M[0] - AStyle.VertCellMargin) < Eps)
+        and (Abs(M[2] - AStyle.VertCellMargin) < Eps)
+        and (Abs(M[1] - AStyle.HorzCellMargin) < Eps)
+        and (Abs(M[3] - AStyle.HorzCellMargin) < Eps);
+end;
+
+{ Находит CELLSTYLEMAP в расширенном словаре стиля и переносит из него
+  поля ячеек в стиль (issue #1465). Карта, не согласованная с группами
+  40/41 стиля (запись ZCAD до исправления), не используется. }
+procedure LoadTableStyleCellStyleMap(AModel: TZNODModel; AObj: TZDXFRawObject;
+  var AStyle: TGDBDXFTableStyle);
+var
+  XDict: TZDXFDictionary;
+  I: Integer;
+  Entry: TZDXFDictEntry;
+  MapObj: TZDXFRawObject;
+begin
+  if AObj.XDictHandle = 0 then
+    Exit;
+  XDict := AModel.FindDictionary(AObj.XDictHandle);
+  if XDict = nil then
+    Exit;
+  for I := 0 to XDict.Count - 1 do begin
+    Entry := XDict[I];
+    if not SameText(Entry.Key, CDXFCellStyleMapKey) then
+      Continue;
+    MapObj := AModel.FindObject(Entry.TargetHandle);
+    if (MapObj <> nil)
+       and SameText(MapObj.ObjType, CDXFCellStyleMapObjType) then
+      ParseCellStyleMapMargins(MapObj, AStyle);
+  end;
+  if not CellStyleMapMatchesStyle(AStyle) then begin
+    { AutoCAD держит поля _DATA равными группам 40/41 стиля таблицы.
+      Расхождение — карта прежней записи ZCAD (жёстко 1.5): ей не верим,
+      при записи поля берутся из групп 40/41 (issue #1465). }
+    NODLogTraceFormatStr(
+      'uzestylestablesdxfnod: style "%s": CELLSTYLEMAP margins differ from 40/41, ignored',
+      [AStyle.Name]);
+    for I := 0 to AStyle.CellFormats.Count - 1 do
+      AStyle.CellFormats.getDataMutable(I)^.MarginsLoaded := False;
+  end;
+end;
+
 { Помечает забранными расширенный словарь стиля и его CELLSTYLEMAP:
-  карта при записи строится заново по параметрам стиля. Другие записи
-  расширенного словаря не переносятся (в лог — предупреждение). }
+  карта при записи строится заново по параметрам стиля (поля ячеек
+  переносит LoadTableStyleCellStyleMap). Другие записи расширенного
+  словаря не переносятся (в лог — предупреждение). }
 procedure ClaimTableStyleXDict(AModel: TZNODModel; AObj: TZDXFRawObject;
   const AStyleName: string);
 var
@@ -324,6 +474,7 @@ begin
     if Style = nil then
       Continue;
     ParseTableStyleRawObject(Obj, Style^);
+    LoadTableStyleCellStyleMap(AModel, Obj, Style^);
     { Исходный хэндл — по нему ACAD_TABLE находит стиль (группа 342) }
     Style^.DXFHandle := Obj.HandleStr;
     Inc(Result);
@@ -400,14 +551,6 @@ end;
 
 { === Запись === }
 
-{ Преобразует вещественное число в строку DXF с гарантией десятичной точки }
-function DXFFloatStr(Value: Double): string;
-begin
-  Result := FloatToStr(Value, DXFFormat);
-  if Pos('.', Result) = 0 then
-    Result := Result + '.0';
-end;
-
 { Записывает блок границ ячейки в поток (коды 274-279, 284-289, 64-69).
   Значения по умолчанию: тип линии = -2, видимость = 1, цвет = 0 }
 procedure WriteCellBordersToStream(
@@ -469,6 +612,31 @@ begin
   outstream.TXTAddStringEOL(Value);
 end;
 
+type
+  { Поля ячейки CELLMARGIN: верх, право, низ, лево, интервалы }
+  TCellStyleMargins = array[0..5] of Double;
+
+{ Поля ячейки для CELLSTYLEMAP: прочитанные из исходной карты или, если
+  их нет, построенные по отступам стиля (верх/низ — вертикальный отступ
+  41, право/лево — горизонтальный 40; интервалы — 0.18, как у AutoCAD). }
+function CellStyleMargins(const CS: TGDBDXFTableCellStyle;
+  Style: PTGDBDXFTableStyle): TCellStyleMargins;
+var
+  I: Integer;
+begin
+  if CS.MarginsLoaded then begin
+    for I := 0 to High(Result) do
+      Result[I] := CS.Margins[I];
+    Exit;
+  end;
+  Result[0] := Style^.VertCellMargin;
+  Result[1] := Style^.HorzCellMargin;
+  Result[2] := Style^.VertCellMargin;
+  Result[3] := Style^.HorzCellMargin;
+  Result[4] := 0.18;
+  Result[5] := 0.18;
+end;
+
 { Записывает один блок CELLSTYLE карты стилей ячеек (AcDbCellStyleMap).
 
   Именно этот объект даёт смысл идентификаторам стиля ячейки (90) внутри
@@ -485,9 +653,10 @@ procedure WriteCellStyleMapEntryToStream(
   const CS: TGDBDXFTableCellStyle;
   const AStyleId, AStyleType, AFlags92: Integer;
   const AStyleName: string;
-  const ATextStyleHandle: string);
+  const ATextStyleHandle: string;
+  const AMargins: TCellStyleMargins);
 var
-  GridBit: Integer;
+  GridBit, I: Integer;
 begin
   dxfPairOut(outstream, 300, 'CELLSTYLE');
   dxfPairOut(outstream, 1, 'TABLEFORMAT_BEGIN');
@@ -517,15 +686,14 @@ begin
   dxfPairOut(outstream, 144, DXFFloatStr(CS.TextHeight));
   dxfPairOut(outstream, 309, 'CONTENTFORMAT_END');
 
+  { Поля ячейки. AutoCAD 2008+ раскладывает таблицу по ним, а не по
+    группам 40/41 TABLESTYLE: прежние жёсткие 1.5 вместо 0.06 заставляли
+    AutoCAD расширять колонки и строки (issue #1465). }
   dxfPairOut(outstream, 171, '1');
   dxfPairOut(outstream, 301, 'MARGIN');
   dxfPairOut(outstream, 1, 'CELLMARGIN_BEGIN');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '1.5');
-  dxfPairOut(outstream, 40, '0.18');
-  dxfPairOut(outstream, 40, '0.18');
+  for I := 0 to High(AMargins) do
+    dxfPairOut(outstream, 40, DXFFloatStr(AMargins[I]));
   dxfPairOut(outstream, 309, 'CELLMARGIN_END');
 
   { Шесть описаний линий сетки ячейки (горизонтальные/вертикальные/рамка) }
@@ -630,11 +798,14 @@ begin
   dxfPairOut(outstream, 100, 'AcDbCellStyleMap');
   dxfPairOut(outstream, 90, '3');
   WriteCellStyleMapEntryToStream(
-    outstream, CS[1], 1, 1, 32768, '_TITLE', TextStyleHandles[1]);
+    outstream, CS[1], 1, 1, 32768, '_TITLE', TextStyleHandles[1],
+    CellStyleMargins(CS[1], Style));
   WriteCellStyleMapEntryToStream(
-    outstream, CS[2], 2, 1, 0, '_HEADER', TextStyleHandles[2]);
+    outstream, CS[2], 2, 1, 0, '_HEADER', TextStyleHandles[2],
+    CellStyleMargins(CS[2], Style));
   WriteCellStyleMapEntryToStream(
-    outstream, CS[0], 3, 2, 0, '_DATA', TextStyleHandles[0]);
+    outstream, CS[0], 3, 2, 0, '_DATA', TextStyleHandles[0],
+    CellStyleMargins(CS[0], Style));
 end;
 
 { Записывает один объект TABLESTYLE в выходной поток DXF.
