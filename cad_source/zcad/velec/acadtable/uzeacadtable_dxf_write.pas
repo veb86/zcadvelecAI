@@ -1172,9 +1172,8 @@ begin
 end;
 
 // Контрольная сумма содержимого ячейки, которую AutoCAD хранит в
-// ACAD_ROUNDTRIP_2008_CELL_CHECKSUM: сумма кодов символов текста ячейки.
-// Проверено на файле, пересохранённом AutoCAD: для односимвольных ячеек
-// значение равно коду символа Unicode ('1'=49, 'ф'=1092 и т.д.).
+// ACAD_ROUNDTRIP_2008_CELL_CHECKSUM: сумма кодов символов текста ячейки,
+// умноженных на позицию символа ('1'=49, 'ф'=1092, 'Title-1'=2192).
 function CellTextChecksum(const AText: String): Int64;
 var
   U: UnicodeString;
@@ -1182,8 +1181,12 @@ var
 begin
   Result := 0;
   U := UTF8Decode(AText);
+  // Сумма «код символа × позиция (с 1)»: так считает AutoCAD — формула
+  // сверена по всем 75 ячейкам testacadtable/acadtable2007.dxf
+  // (experiments/issue1465/checksum_check.py, issue #1465). Простая сумма
+  // кодов совпадала только для однобуквенных ячеек.
   for I := 1 to Length(U) do
-    Result := Result + Ord(U[I]);
+    Result := Result + Int64(Ord(U[I])) * I;
 end;
 
 // DATAMAP ячейки с контрольной суммой её содержимого. AutoCAD сверяет эту

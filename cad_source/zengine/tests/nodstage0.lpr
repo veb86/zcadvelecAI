@@ -30,6 +30,9 @@ program nodstage0;
 //     ACAD_MLEADERVER; tablestyleetalon_2007 — ещё ветка ACAD_MLEADERSTYLE
 //     со стилем Standard (создаётся при загрузке файла без стилей
 //     мультивыносок) и класс MLEADERSTYLE. Эталоны DXF 2000 не изменились.
+//     Issue #1465 осознанно изменил tablestyleetalon_*: поля ячеек
+//     CELLSTYLEMAP (CELLMARGIN, группы 40) берутся из стиля (0.06 —
+//     группы 40/41 TABLESTYLE эталона) вместо жёстко заданных 1.5.
 //
 // Использование:
 //   nodstage0 [<корень репозитория>] [--update]

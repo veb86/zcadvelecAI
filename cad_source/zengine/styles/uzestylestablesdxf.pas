@@ -58,6 +58,13 @@ type
     BackgroundColor: Integer;
     { Признак включения цвета фона (группа DXF 283) }
     BackgroundColorEnabled: Boolean;
+    { Поля ячейки из CELLSTYLEMAP (блок CELLMARGIN_BEGIN, шесть групп 40):
+      верх, право, низ, лево, горизонтальный и вертикальный интервалы.
+      По ним AutoCAD 2008+ раскладывает ячейки (issue #1465). }
+    Margins: array[0..5] of Double;
+    { Margins прочитаны из CELLSTYLEMAP. Если False — при записи берутся
+      отступы стиля таблицы (группы 40/41 TABLESTYLE). }
+    MarginsLoaded: Boolean;
   end;
   PTGDBDXFTableCellStyle = ^TGDBDXFTableCellStyle;
 

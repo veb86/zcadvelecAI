@@ -97,7 +97,55 @@ NOD 3 ACDB_RECOMPOSE_DATA 350 <XRECORD>
 
 Запуск: `cad_source/zengine/tests/nodtests.sh nodstage10save`.
 
-## 6. Ограничения
+## 6. Размеры ячеек в AutoCAD (комментарий к issue от 2026-10-03)
+
+Файл `cad_source/testacadtable/acadtable2007.dxf`, сохранённый ZCAD
+(`ZCADTABLE2007.dxf`), в ZCAD открывался верно, а в AutoCAD ширины и
+высоты ячеек были искажены.
+
+**Причина.** AutoCAD 2008+ раскладывает ячейки по полям из
+`CELLSTYLEMAP` стиля таблицы (блок `CELLMARGIN_BEGIN`: шесть групп `40` —
+верх, право, низ, лево, горизонтальный и вертикальный интервалы), а не по
+группам `40/41` `TABLESTYLE`. ZCAD писал там жёстко `1.5` вместо `0.06`
+исходного файла: при ширине столбца 2.5 и высоте строки 0.36 AutoCAD
+расширял столбцы и строки под поля 1.5.
+
+Вторая ошибка — контрольная сумма текста ячейки
+`ACAD_ROUNDTRIP_2008_CELL_CHECKSUM`: это сумма кодов символов,
+умноженных на позицию символа (`'Title-1'` = 2192), а не простая сумма.
+Формула сверена на всех ячейках `acadtable2007` (75), `bugbreaktable`
+(2331) и `tableheighttextbug` (27) скриптом
+`experiments/issue1465/checksum_check.py`.
+
+**Исправление.**
+
+* `uzestylestablesdxf.pas`: у стиля ячейки (`TGDBDXFTableCellStyle`)
+  поля `Margins[0..5]` и `MarginsLoaded`.
+* `uzestylestablesdxfnod.pas`: при загрузке стиля таблицы
+  `LoadTableStyleCellStyleMap` читает `CELLSTYLEMAP` из расширенного
+  словаря стиля (id стиля ячейки 1 → `_TITLE`, 2 → `_HEADER`,
+  3 → `_DATA`); при записи `CellStyleMargins` пишет прочитанные поля, а
+  если `CELLSTYLEMAP` у стиля нет (например, `tablestyleetalon.dxf`, новые
+  стили) — поля из групп `40/41` стиля таблицы и интервалы 0.18.
+* `uzeacadtable_dxf_write.pas`: `CellTextChecksum` — сумма с весом
+  позиции символа.
+
+Эталоны `nodstage0`/`nodstage4` `tablestyleetalon_*` обновлены: в
+`CELLMARGIN` вместо `1.5` пишется `0.06` (группы 40/41 стиля эталона).
+
+**Тест** `nodstage11`: на `acadtable2007`, `bugbreaktable`,
+`tableheighttextbug` (режимы raw и после правки) поля `CELLSTYLEMAP`,
+контрольные суммы ячеек и размеры строк и столбцов сохранённого файла
+совпадают с исходным файлом AutoCAD. До исправления — 14 ошибок.
+
+Запуск: `cad_source/zengine/tests/nodtests.sh nodstage11`.
+
+Остающиеся отличия от файла AutoCAD (на раскладку не влияют):
+`TABLEGEOMETRY` пишется пустым (issue #1409); пользовательские стили
+ячеек (id > 3) из `CELLSTYLEMAP` не переносятся; у round-trip `XRECORD`
+нет `ACAD_REACTORS`.
+
+## 7. Ограничения
 
 * Проверка в AutoCAD в среде разработки недоступна: формат сверен с
   файлами AutoCAD (`acadtablerazdel2007_*.dxf`, `tablerazdel2.dxf`,
