@@ -338,8 +338,32 @@ begin
   end;
 end;
 
+{ Поля стиля ячеек _DATA (если прочитаны) согласованы с группами 40/41
+  стиля таблицы: верх/низ = 41, право/лево = 40. Так во всех файлах
+  AutoCAD (cad_source/test, cad_source/testacadtable). }
+function CellStyleMapMatchesStyle(const AStyle: TGDBDXFTableStyle): Boolean;
+const
+  Eps = 1e-9;
+var
+  M: array[0..5] of Double;
+  PCellStyle: PTGDBDXFTableCellStyle;
+begin
+  Result := True;
+  if AStyle.CellFormats.Count = 0 then
+    Exit;
+  PCellStyle := AStyle.CellFormats.getDataMutable(0);
+  if not PCellStyle^.MarginsLoaded then
+    Exit;
+  Move(PCellStyle^.Margins, M, SizeOf(M));
+  Result := (Abs(M[0] - AStyle.VertCellMargin) < Eps)
+        and (Abs(M[2] - AStyle.VertCellMargin) < Eps)
+        and (Abs(M[1] - AStyle.HorzCellMargin) < Eps)
+        and (Abs(M[3] - AStyle.HorzCellMargin) < Eps);
+end;
+
 { Находит CELLSTYLEMAP в расширенном словаре стиля и переносит из него
-  поля ячеек в стиль (issue #1465). }
+  поля ячеек в стиль (issue #1465). Карта, не согласованная с группами
+  40/41 стиля (запись ZCAD до исправления), не используется. }
 procedure LoadTableStyleCellStyleMap(AModel: TZNODModel; AObj: TZDXFRawObject;
   var AStyle: TGDBDXFTableStyle);
 var
@@ -361,6 +385,16 @@ begin
     if (MapObj <> nil)
        and SameText(MapObj.ObjType, CDXFCellStyleMapObjType) then
       ParseCellStyleMapMargins(MapObj, AStyle);
+  end;
+  if not CellStyleMapMatchesStyle(AStyle) then begin
+    { AutoCAD держит поля _DATA равными группам 40/41 стиля таблицы.
+      Расхождение — карта прежней записи ZCAD (жёстко 1.5): ей не верим,
+      при записи поля берутся из групп 40/41 (issue #1465). }
+    NODLogTraceFormatStr(
+      'uzestylestablesdxfnod: style "%s": CELLSTYLEMAP margins differ from 40/41, ignored',
+      [AStyle.Name]);
+    for I := 0 to AStyle.CellFormats.Count - 1 do
+      AStyle.CellFormats.getDataMutable(I)^.MarginsLoaded := False;
   end;
 end;
 

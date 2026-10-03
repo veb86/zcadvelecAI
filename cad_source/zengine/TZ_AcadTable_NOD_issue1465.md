@@ -127,6 +127,11 @@ NOD 3 ACDB_RECOMPOSE_DATA 350 <XRECORD>
   3 → `_DATA`); при записи `CellStyleMargins` пишет прочитанные поля, а
   если `CELLSTYLEMAP` у стиля нет (например, `tablestyleetalon.dxf`, новые
   стили) — поля из групп `40/41` стиля таблицы и интервалы 0.18.
+  Во всех файлах AutoCAD поля `_DATA` равны группам `40/41` стиля
+  (верх/низ = 41, право/лево = 40); карта, нарушающая это правило (запись
+  ZCAD до исправления: 1.5 при 40/41 = 0.06), не используется — файлы,
+  уже сохранённые с ошибкой (`ZCADTABLE2007.dxf`), исправляются
+  пересохранением.
 * `uzeacadtable_dxf_write.pas`: `CellTextChecksum` — сумма с весом
   позиции символа.
 
@@ -136,7 +141,9 @@ NOD 3 ACDB_RECOMPOSE_DATA 350 <XRECORD>
 **Тест** `nodstage11`: на `acadtable2007`, `bugbreaktable`,
 `tableheighttextbug` (режимы raw и после правки) поля `CELLSTYLEMAP`,
 контрольные суммы ячеек и размеры строк и столбцов сохранённого файла
-совпадают с исходным файлом AutoCAD. До исправления — 14 ошибок.
+совпадают с исходным файлом AutoCAD; `ZCADTABLE2007.dxf` после
+пересохранения совпадает по этим пунктам с `acadtable2007.dxf`. До
+исправления — 14 ошибок на образцах AutoCAD.
 
 Запуск: `cad_source/zengine/tests/nodtests.sh nodstage11`.
 

@@ -20,6 +20,10 @@ program nodstage11;
 //     что записал AutoCAD; в исходном файле AutoCAD все суммы обязаны
 //     совпасть с формулой «код × позиция»;
 //  3. ширины колонок и высоты строк TABLECONTENT.
+// Кроме того, ZCADTABLE2007.dxf (запись ZCAD до исправления) после
+// пересохранения должен совпасть по этим пунктам с acadtable2007.dxf:
+// карта CELLSTYLEMAP, не согласованная с группами 40/41 стиля, не
+// используется, суммы ячеек пересчитываются.
 //
 // Использование:
 //   nodstage11 [<корень репозитория>]
@@ -42,6 +46,8 @@ const
     'cad_source/testacadtable/acadtable2007',
     'cad_source/test/bugbreaktable',
     'cad_source/test/tableheighttextbug');
+  { acadtable2007, сохранённый ZCAD до исправления (из замечания) }
+  OldZCADSample = 'cad_source/testacadtable/ZCADTABLE2007';
   { Ключ карты стилей ячеек в расширенном словаре TABLESTYLE }
   CellStyleMapKey = 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP';
   ChecksumKey = 'ACAD_ROUNDTRIP_2008_CELL_CHECKSUM';
@@ -404,7 +410,8 @@ begin
   end;
 end;
 
-procedure TestSample(const ASample: string);
+{ ASample сохраняется ZCAD и сверяется с файлом AutoCAD AReference }
+procedure TestSample(const ASample, AReference: string);
 var
   Pairs, Margins, Checksums, Sizes: TStringList;
   Objects: string;
@@ -415,11 +422,11 @@ begin
   Checksums := TStringList.Create;
   Sizes := TStringList.Create;
   try
-    Objects := LoadObjectsPairs(Root + ASample + '.dxf', Pairs);
+    Objects := LoadObjectsPairs(Root + AReference + '.dxf', Pairs);
     DumpMargins(Objects, Margins);
     DumpChecksums(Pairs, Checksums);
     DumpSizes(Pairs, Sizes);
-    CheckSourceChecksums(Checksums, ExtractFileName(ASample));
+    CheckSourceChecksums(Checksums, ExtractFileName(AReference));
     RoundTripSample(ASample, False, Margins, Checksums, Sizes);
     RoundTripSample(ASample, True, Margins, Checksums, Sizes);
   finally
@@ -453,7 +460,11 @@ begin
   try
     TestKnownValues;
     for I := Low(Samples) to High(Samples) do
-      TestSample(Samples[I]);
+      TestSample(Samples[I], Samples[I]);
+    { Файл, записанный ZCAD до исправления (поля 1.5 в CELLSTYLEMAP при
+      группах 40/41 = 0.06, простые суммы ячеек): после пересохранения —
+      как исходный файл AutoCAD }
+    TestSample(OldZCADSample, Samples[0]);
   except
     on E: Exception do
       Fail('nodstage11: ' + E.ClassName + ': ' + E.Message);
