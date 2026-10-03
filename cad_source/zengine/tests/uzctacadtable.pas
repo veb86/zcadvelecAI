@@ -534,6 +534,22 @@ begin
   end;
 end;
 
+// Минимальная часть таблицы 1x1 для записи raw-сущностей (issue #1465):
+// главная часть и логическое содержимое TABLECONTENT.
+function CreateSingleCellWritePart(
+  const AStyleName: String): TAcadTableDXFWritePart;
+begin
+  Result := Default(TAcadTableDXFWritePart);
+  Result.RowCount := 1;
+  Result.ColCount := 1;
+  SetLength(Result.RowHeights, 1);
+  Result.RowHeights[0] := 1.0;
+  SetLength(Result.ColWidths, 1);
+  Result.ColWidths[0] := 1.0;
+  SetLength(Result.CellTexts, 1);
+  Result.TableStyleName := AStyleName;
+end;
+
 function LoadDrawingFromDXF(const AFileName: string; var ADrawing: TSimpleDrawing): Integer;
 var
   DC: TDrawContext;
@@ -1145,18 +1161,20 @@ begin
       'Ячейки таблицы должны сохраняться как CELL_VALUE');
     CheckTrue(Pos('Zagolovok', DXFText) > 0,
       'DXF должен содержать текст ячейки из исходной таблицы');
-    // issue #1381: запись больше НЕ использует распознаваемый AutoCAD маркер
-    // ACAD_ROUNDTRIP_2008_TABLE_ENTITY (из-за него AutoCAD пересобирал части
-    // в одну цельную таблицу). Вместо него пишется приватный маркер ZCAD,
-    // который AutoCAD игнорирует и показывает части отдельными таблицами.
-    CheckEquals(0,
-      CountDxfPairs(
-        DXFText, '102', 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY'),
-      'Распознаваемый AutoCAD round-trip маркер не должен записываться (issue #1381)');
+    // issue #1465: разорванная таблица пишется так же, как AutoCAD и
+    // эталон DXFTableSaveNEW, — одной записью layout 1 с маркером
+    // ACAD_ROUNDTRIP_2008_TABLE_ENTITY в словаре главной части: в ней
+    // диапазоны строк и ссылки на продолжения, поэтому AutoCAD собирает
+    // части как разорванную таблицу. Приватный маркер ZCAD (issue #1381)
+    // больше не пишется, но по-прежнему читается.
     CheckEquals(1,
       CountDxfPairs(
+        DXFText, '102', 'ACAD_ROUNDTRIP_2008_TABLE_ENTITY'),
+      'Для разделённой таблицы должна писаться одна round-trip запись');
+    CheckEquals(0,
+      CountDxfPairs(
         DXFText, '102', 'ZCAD_SPLIT_TABLE_ENTITY'),
-      'Для разделённой таблицы должен сохраняться приватный split-XRECORD ZCAD');
+      'Приватный split-XRECORD ZCAD больше не пишется (issue #1465)');
   finally
     Drawing.done;
   end;
@@ -1273,6 +1291,7 @@ var
   RawText, DXFText: String;
   OutStream: TZctnrVectorBytes;
   SaveContext: TIODXFSaveContext;
+  MainPart: TAcadTableDXFWritePart;
   Ok: Boolean;
 begin
   Raw := TStringList.Create;
@@ -1308,8 +1327,9 @@ begin
     SaveContext.BlockNameHandleMap.Add('*T1', '5B3');
 
     ResetAcadTableDXFWriteState;
+    MainPart := CreateSingleCellWritePart('Standard');
     Ok := WriteRawAcadTablePartsToDXF(
-      OutStream, SaveContext, RawText, [], 0.0, 0.0, False, False, 'Standard');
+      OutStream, SaveContext, MainPart, MainPart, nil, RawText, []);
     DXFText := DxfStreamToText(OutStream);
   finally
     ResetAcadTableDXFWriteState;
@@ -1319,9 +1339,12 @@ begin
 
   CheckTrue(Ok, 'Сырая ACAD_TABLE должна успешно записаться');
 
-  // Висячий расширенный словарь должен быть удалён целиком.
-  CheckEquals(0, Pos('ACAD_XDICTIONARY', DXFText),
-    'Блок 102/ACAD_XDICTIONARY должен удаляться при сохранении');
+  // Висячий расширенный словарь удаляется; вместо него сущность ссылается
+  // на свежий словарь своей round-trip записи (хэндл 3, issue #1465).
+  CheckEquals(1, CountDxfPairs(DXFText, '102', '{ACAD_XDICTIONARY'),
+    'Сущность должна иметь ровно один блок 102/ACAD_XDICTIONARY');
+  CheckTrue(HasDxfSequence(DXFText, ['102', '{ACAD_XDICTIONARY', '360', '3']),
+    'Расширенный словарь должен ссылаться на свежий хэндл 3');
   CheckFalse(HasDxfSequence(DXFText, ['360', '357']),
     'Висячая ссылка 360 на словарь не должна сохраняться');
 
@@ -2423,6 +2446,8 @@ var
   MainText, ContText, DXFText: String;
   OutStream: TZctnrVectorBytes;
   SaveContext: TIODXFSaveContext;
+  MainPart: TAcadTableDXFWritePart;
+  Parts: TAcadTableDXFWritePartArray;
   Drawing: TSimpleDrawing;
   Ok: Boolean;
 begin
@@ -2473,9 +2498,16 @@ begin
     SaveContext.handle := $100;
 
     ResetAcadTableDXFWriteState;
+    // Разрыв с ручной высотой: промежуток 0.99, высота частей 2.05.
+    MainPart := CreateSingleCellWritePart('Standard');
+    MainPart.BreakEnabled := True;
+    MainPart.BreakManualHeight := True;
+    MainPart.BreakSpacing := 0.99;
+    MainPart.BreakHeight := 2.05;
+    SetLength(Parts, 1);
+    Parts[0] := MainPart;
     Ok := WriteRawAcadTablePartsToDXF(
-      OutStream, SaveContext, MainText, [ContText],
-      0.99, 2.05, False, True, 'Standard');
+      OutStream, SaveContext, MainPart, MainPart, Parts, MainText, [ContText]);
     WriteAcadTableRoundTripObjectsToDXF(OutStream, Drawing, SaveContext);
     DXFText := DxfStreamToText(OutStream);
   finally
@@ -2486,11 +2518,13 @@ begin
 
   CheckTrue(Ok, 'Сырые части ACAD_TABLE должны успешно записаться');
 
-  // Свежие хэндлы из счётчика: главная — 100, продолжение — 101.
+  // Свежие хэндлы из счётчика (issue #1465): главная — 100, затем объекты
+  // её round-trip (словарь 101, XRECORD 102, TABLECONTENT 103,
+  // TABLEGEOMETRY 104), продолжение — 105.
   CheckTrue(HasDxfSequence(DXFText, ['5', '100']),
     'Главная таблица должна получить свежий хэндл 100');
-  CheckTrue(HasDxfSequence(DXFText, ['5', '101']),
-    'Часть-продолжение должна получить свежий хэндл 101');
+  CheckTrue(HasDxfSequence(DXFText, ['5', '105']),
+    'Часть-продолжение должна получить свежий хэндл 105');
 
   // Исходные (потенциально конфликтующие) хэндлы не должны протекать в файл.
   CheckEquals(0, CountDxfPairs(DXFText, '5', 'EB'),
@@ -2498,12 +2532,13 @@ begin
   CheckEquals(0, CountDxfPairs(DXFText, '5', '54C'),
     'Исходный хэндл продолжения 54C не должен оставаться (issue #1344)');
 
-  // Round-trip XRECORD должен ссылаться на новые хэндлы.
-  CheckTrue(HasDxfSequence(DXFText, ['360', '100']),
-    'Round-trip 360 должен указывать на новый хэндл главной таблицы');
-  CheckTrue(HasDxfSequence(DXFText, ['361', '100']),
-    'Round-trip 361 должен указывать на новый хэндл главной таблицы');
-  CheckTrue(HasDxfSequence(DXFText, ['330', '101']),
+  // Round-trip XRECORD (layout 1) в словаре главной таблицы ссылается на
+  // новые хэндлы: словарь — из сущности, продолжение — группой 330.
+  CheckTrue(HasDxfSequence(DXFText, ['360', '101']),
+    'Главная таблица должна ссылаться на свой расширенный словарь 101');
+  CheckTrue(HasDxfSequence(DXFText, ['70', '1']),
+    'Разорванная таблица пишется записью layout 1, как в AutoCAD');
+  CheckTrue(HasDxfSequence(DXFText, ['330', '105', '361', '104']),
     'Round-trip 330 должен указывать на новый хэндл продолжения');
   CheckEquals(0, CountDxfPairs(DXFText, '360', 'EB'),
     'Round-trip не должен ссылаться на исходный хэндл EB');

@@ -19,9 +19,17 @@
 {
   Модуль: uzeacadtable_dxf_write
   Назначение: Экспорт данных таблицы ACAD_TABLE в DXF-поток.
+  Главная часть таблицы получает расширенный словарь с round-trip XRECORD
+  AutoCAD (ACAD_ROUNDTRIP_2008_TABLE_ENTITY) и объектами TABLECONTENT /
+  TABLEGEOMETRY. TABLECONTENT содержит все логические строки таблицы (главная
+  часть и собственные строки продолжений) с типами Title/Header/Data. Данные
+  разрыва (флаги, промежуток, высоты и положения частей, диапазоны строк,
+  продолжения) пишутся в той же записи в формате layout 1 — как их пишет
+  AutoCAD и читает индекс NOD (uzeffdxfnodacadtable, issue #1465).
+  Продолжения пишутся без расширенного словаря.
   Зависимости: uzeacadtable_types, uzctnrVectorBytesStream,
                uzedrawingdef, uzedrawingsimple, uzeffdxfsupport,
-               uzclog
+               uzeffdxfnodacadtable, uzeacadtable_dxf_split, uzclog
 }
 
 unit uzeacadtable_dxf_write;
@@ -38,6 +46,7 @@ uses
 
 type
   TAcadTableDoubleArray = array of Double;
+  TAcadTableIntegerArray = array of Integer;
 
   TAcadTableDXFWritePart = record
     HandleKey: Pointer;
@@ -77,6 +86,12 @@ type
     BreakManualHeight: Boolean;
     BreakSpacing: Double;
     BreakHeight: Double;
+    // Типы строк (0=Title, 1=Header, 2=Data) для ячеек без явного типа;
+    // пустой массив — правило «строка 0 — заголовок, 1 — шапка».
+    RowStyleTypes: TAcadTableIntegerArray;
+    // Главная часть: число строк-меток в её начале, повторяемых в
+    // продолжениях; продолжение: число повторённых строк-меток.
+    RepeatRows: Integer;
   end;
 
   TAcadTableDXFWritePartArray = array of TAcadTableDXFWritePart;
@@ -88,8 +103,19 @@ procedure WriteAcadTableToDXF(
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart;
-  APartIndex: Integer = 0);
+  APartIndex: Integer = 0); overload;
 
+// Главная часть таблицы; AContent — логическое содержимое всей таблицы
+// (строки всех частей без повторённых меток) для TABLECONTENT.
+procedure WriteAcadTableToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var ADrawing: TDrawingDef;
+  var AIODXFContext: TIODXFSaveContext;
+  const APart, AContent: TAcadTableDXFWritePart;
+  APartIndex: Integer = 0); overload;
+
+// Продолжения таблицы (после главной части): пишутся без расширенного
+// словаря, данные разрыва добавляются в round-trip запись главной части.
 procedure WriteAcadTableContinuationPartsToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
@@ -97,14 +123,16 @@ procedure WriteAcadTableContinuationPartsToDXF(
   const AMainPart: TAcadTableDXFWritePart;
   const AParts: TAcadTableDXFWritePartArray);
 
+// Сырые (raw) сущности частей таблицы из загруженного файла. Хэндл главной
+// части берётся по AMainPart.HandleKey; round-trip запись и TABLECONTENT
+// строятся по модели (AMainPart, AContent, AParts), как в модельном пути.
 function WriteRawAcadTablePartsToDXF(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
+  const AMainPart, AContent: TAcadTableDXFWritePart;
+  const AParts: TAcadTableDXFWritePartArray;
   const AMainRawEntity: String;
-  const AContinuationRawEntities: array of String;
-  ABreakSpacing, ABreakHeight: Double;
-  ABreakManualPosition, ABreakManualHeight: Boolean;
-  const ATableStyleName: String): Boolean;
+  const AContinuationRawEntities: array of String): Boolean;
 
 procedure WriteAcadTableRoundTripObjectsToDXF(
   var AOutStream: TZctnrVectorBytes;
@@ -114,7 +142,8 @@ procedure WriteAcadTableRoundTripObjectsToDXF(
 implementation
 
 uses
-  SysUtils, Classes, uzeffdxfout, uzeentity;
+  SysUtils, Classes, uzeffdxfout, uzeentity, uzeffdxfobjects,
+  uzeffdxfnodacadtable, uzeacadtable_dxf_split, uzeacadtable_dxf_nod;
 
 const
   { Идентификаторы стилей ячеек AutoCAD (CELLSTYLEMAP / TABLECELL_BEGIN.90):
@@ -150,9 +179,13 @@ const
   CAcadTableGeometryDataFlag = 7;
   CAcadTableGeometryNoCache = 0;
 
+  { Минимальная высота разбиения части, считающаяся заданной (как
+    CAcadTableBreakHeightTolerance модели таблицы) }
+  CAcadTableSplitHeightTolerance = 1e-6;
+
 type
-  TAcadTableIntegerArray = array of Integer;
   TAcadTableStringArray = array of String;
+  TAcadTableHandleArray = array of TDWGHandle;
 
   { Данные для объекта TABLECONTENT (round-trip AutoCAD 2008+), в котором
     хранится ИНДИВИДУАЛЬНЫЙ стиль каждой ячейки (issue #1409). В самой
@@ -177,23 +210,13 @@ type
     RowStyleIds: TAcadTableIntegerArray;
     CellStyleIds: TAcadTableIntegerArray;
     CellTexts: TAcadTableStringArray;
-  end;
-
-  TAcadTableRoundTripRecord = record
-    MainHandle: TDWGHandle;
-    ContinuationHandles: array of TDWGHandle;
-    BreakSpacing: Double;
-    BreakHeight: Double;
-    { Признаки ручного управления разрывами (issue #1339). Влияют на
-      BreakOption-флаг (первая группа 90) в split-XRECORD таблицы:
-        8  (AllowManualPositions) <- BreakManualPosition,
-        16 (AllowManualHeights)   <- BreakManualHeight. }
-    BreakManualPosition: Boolean;
-    BreakManualHeight: Boolean;
+    { Данные разрыва (layout 1, issue #1465). False — запись без данных
+      разрыва (layout 2, как у неразорванной таблицы AutoCAD). }
+    HasSplit: Boolean;
+    Split: TZAcadTableSplitInfo;
   end;
 
 var
-  RoundTripRecords: array of TAcadTableRoundTripRecord;
   ContentRecords: array of TAcadTableContentRecord;
 
 procedure WriteAcadTableClassRecord(
@@ -257,20 +280,8 @@ begin
 end;
 
 procedure ResetAcadTableDXFWriteState;
-var
-  I: Integer;
 begin
-  for I := 0 to High(RoundTripRecords) do
-    System.SetLength(RoundTripRecords[I].ContinuationHandles, 0);
-  System.SetLength(RoundTripRecords, 0);
-  for I := 0 to High(ContentRecords) do
-  begin
-    System.SetLength(ContentRecords[I].RowHeights, 0);
-    System.SetLength(ContentRecords[I].ColWidths, 0);
-    System.SetLength(ContentRecords[I].RowStyleIds, 0);
-    System.SetLength(ContentRecords[I].CellStyleIds, 0);
-    System.SetLength(ContentRecords[I].CellTexts, 0);
-  end;
+  // Управляемые поля записей финализируются при уменьшении длины массива
   System.SetLength(ContentRecords, 0);
 end;
 
@@ -374,6 +385,9 @@ begin
   if (ARow >= 0) and (ARow <= High(APart.Cells)) and
      (ACol >= 0) and (ACol <= High(APart.Cells[ARow])) then
     Result := APart.Cells[ARow][ACol].StyleType;
+  if ((Result < 0) or (Result > 2)) and
+     (ARow >= 0) and (ARow <= High(APart.RowStyleTypes)) then
+    Result := APart.RowStyleTypes[ARow];
   if (Result < 0) or (Result > 2) then
     if ARow < 2 then
       Result := ARow
@@ -496,10 +510,13 @@ begin
     for RowIdx := 0 to RowCount - 1 do
     begin
       RowHeights[RowIdx] := RowHeightAt(APart, RowIdx);
-      { Стиль строки берём по первой ячейке — он всё равно перекрывается
-        индивидуальным стилем каждой ячейки ниже. }
-      RowStyleIds[RowIdx] :=
-        AcadCellStyleId(CellStyleTypeAt(APart, RowIdx, 0));
+      { Стиль строки — тип логической строки (issue #1465); без него —
+        по первой ячейке (перекрывается стилем каждой ячейки ниже). }
+      if RowIdx <= High(APart.RowStyleTypes) then
+        RowStyleIds[RowIdx] := AcadCellStyleId(APart.RowStyleTypes[RowIdx])
+      else
+        RowStyleIds[RowIdx] :=
+          AcadCellStyleId(CellStyleTypeAt(APart, RowIdx, 0));
       for ColIdx := 0 to ColCount - 1 do
       begin
         CellStyleIds[RowIdx * ColCount + ColIdx] :=
@@ -535,10 +552,14 @@ begin
   Result := AFallbackHandle;
 end;
 
+// AWithContent = False — продолжение разорванной таблицы: у него нет
+// расширенного словаря, его строки входят в TABLECONTENT главной части
+// (так пишет AutoCAD, issue #1465).
 procedure WriteEntityPrefix(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
-  const APart: TAcadTableDXFWritePart;
+  const APart, AContent: TAcadTableDXFWritePart;
+  AWithContent: Boolean;
   out AHandle: TDWGHandle);
 var
   DictionaryHandle: TDWGHandle;
@@ -550,8 +571,8 @@ begin
   { Расширенный словарь сущности со ссылкой на round-trip XRECORD, через
     который AutoCAD получает TABLECONTENT с индивидуальными стилями ячеек
     (issue #1409). Сами объекты пишутся позже, в секцию OBJECTS. }
-  if AddAcadTableContentRecord(APart, AHandle, AIODXFContext,
-       DictionaryHandle) then
+  if AWithContent and AddAcadTableContentRecord(AContent, AHandle,
+       AIODXFContext, DictionaryHandle) then
   begin
     dxfStringWithoutEncodeOut(AOutStream, 102, '{ACAD_XDICTIONARY');
     dxfStringWithoutEncodeOut(AOutStream, 360,
@@ -726,32 +747,6 @@ begin
         RowIdx, ColIdx);
 end;
 
-procedure AddRoundTripRecord(
-  AMainHandle: TDWGHandle;
-  const AContinuationHandles: array of TDWGHandle;
-  ABreakSpacing, ABreakHeight: Double;
-  ABreakManualPosition, ABreakManualHeight: Boolean);
-var
-  RecIdx, HandleIdx: Integer;
-begin
-  if Length(AContinuationHandles) = 0 then
-    Exit;
-
-  RecIdx := Length(RoundTripRecords);
-  System.SetLength(RoundTripRecords, RecIdx + 1);
-  RoundTripRecords[RecIdx].MainHandle := AMainHandle;
-  RoundTripRecords[RecIdx].BreakSpacing := ABreakSpacing;
-  RoundTripRecords[RecIdx].BreakHeight := ABreakHeight;
-  RoundTripRecords[RecIdx].BreakManualPosition := ABreakManualPosition;
-  RoundTripRecords[RecIdx].BreakManualHeight := ABreakManualHeight;
-  System.SetLength(
-    RoundTripRecords[RecIdx].ContinuationHandles,
-    Length(AContinuationHandles));
-  for HandleIdx := 0 to High(AContinuationHandles) do
-    RoundTripRecords[RecIdx].ContinuationHandles[HandleIdx] :=
-      AContinuationHandles[HandleIdx];
-end;
-
 function RawAcadTableHandle(
   const ARawEntity: String; out AHandle: TDWGHandle): Boolean;
 var
@@ -793,25 +788,39 @@ end;
 //   330 — владелец сущности (*Model_Space);
 //   342 — стиль таблицы (по имени стиля ATableStyleName);
 //   343 — анонимный блок таблицы (по имени блока из предшествующей пары 2);
-//   блок расширенного словаря 102/ACAD_XDICTIONARY удаляется, т.к. он не
-//        круглорейсится и иначе оставляет висячую ссылку (360).
+//   блок расширенного словаря 102/ACAD_XDICTIONARY исходного файла
+//        удаляется (его объекты не копируются); если ADictionaryHandle <> 0,
+//        после группы 5 пишется ссылка на новый словарь с round-trip
+//        записью таблицы (issue #1465).
+procedure WriteRawXDictionaryRef(
+  var AOutStream: TZctnrVectorBytes;
+  ADictionaryHandle: TDWGHandle);
+begin
+  if ADictionaryHandle = 0 then
+    Exit;
+  dxfStringWithoutEncodeOut(AOutStream, 102, '{ACAD_XDICTIONARY');
+  dxfStringWithoutEncodeOut(AOutStream, 360, IntToHex(ADictionaryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 102, '}');
+end;
+
 procedure WriteRawEntityText(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
   const ATableStyleName: String;
   const ARawEntity: String;
-  ANewHandle: TDWGHandle);
+  ANewHandle, ADictionaryHandle: TDWGHandle);
 var
   Lines: TStringList;
   I: Integer;
   Code, OutValue, LastBlockName, MappedValue: String;
-  HandleRewritten: Boolean;
+  HandleRewritten, WriteXDict: Boolean;
 begin
   Lines := TStringList.Create;
   try
     Lines.Text := ARawEntity;
     LastBlockName := '';
     HandleRewritten := False;
+    WriteXDict := False;
     I := 0;
     while I < Lines.Count do
     begin
@@ -859,6 +868,7 @@ begin
           код 5 (хэндл сущности), значения ячеек (302="5") не затрагиваем. }
         OutValue := IntToHex(ANewHandle, 0);
         HandleRewritten := True;
+        WriteXDict := True;
       end
       else if Code = '330' then
       begin
@@ -882,6 +892,9 @@ begin
 
       AOutStream.TXTAddStringEOL(Lines[I]);
       AOutStream.TXTAddStringEOL(OutValue);
+      if WriteXDict then
+        WriteRawXDictionaryRef(AOutStream, ADictionaryHandle);
+      WriteXDict := False;
       Inc(I, 2);
     end;
   finally
@@ -893,12 +906,13 @@ procedure WriteAcadTablePartToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext;
-  const APart: TAcadTableDXFWritePart;
+  const APart, AContent: TAcadTableDXFWritePart;
+  AWithContent: Boolean;
   APartIndex: Integer;
   out AEntityHandle: TDWGHandle);
 begin
-  WriteEntityPrefix(AOutStream, AIODXFContext, APart,
-    AEntityHandle);
+  WriteEntityPrefix(AOutStream, AIODXFContext, APart, AContent,
+    AWithContent, AEntityHandle);
   WriteBlockReference(AOutStream, APart, APartIndex);
   WriteTableHeader(AOutStream, AIODXFContext, APart);
   WriteTableDimensions(AOutStream, APart);
@@ -910,17 +924,120 @@ begin
     LM_Info);
 end;
 
+// Индекс записи TABLECONTENT главной части с хэндлом AEntityHandle
+// (-1 — запись не создавалась, например у пустой таблицы).
+function FindContentRecord(AEntityHandle: TDWGHandle): Integer;
+var
+  RecIdx: Integer;
+begin
+  for RecIdx := High(ContentRecords) downto 0 do
+    if ContentRecords[RecIdx].EntityHandle = AEntityHandle then
+      Exit(RecIdx);
+  Result := -1;
+end;
+
+// Направление разрыва в нотации round-trip записи AutoCAD
+// (в группе 282 сущности нотация другая, см. BreakDirectionToDXF).
+function BreakDirectionToSplit(
+  ADirection: TAcadTableBreakDirection): Integer;
+begin
+  case ADirection of
+    atbdDown:
+      Result := CAcadTableBreakDirectionDown;
+    atbdLeft:
+      Result := CAcadTableBreakDirectionLeft;
+  else
+    Result := CAcadTableBreakDirectionRight;
+  end;
+end;
+
+// True, если у таблицы настраивался разрыв: AutoCAD тогда пишет запись
+// layout 1 даже для неразорванной таблицы (промежуток и высота части).
+function PartHasBreakData(const APart: TAcadTableDXFWritePart): Boolean;
+begin
+  Result := APart.BreakEnabled or (APart.BreakSpacing <> 0) or
+    (APart.BreakHeight >= CAcadTableSplitHeightTolerance);
+end;
+
+function SplitWriteOptionsFromPart(const AMainPart: TAcadTableDXFWritePart;
+  AHasContinuations: Boolean): TAcadTableSplitWriteOptions;
+begin
+  Result := Default(TAcadTableSplitWriteOptions);
+  Result.Enabled := AMainPart.BreakEnabled or AHasContinuations;
+  Result.RepeatTop := AMainPart.BreakRepeatTopLabels;
+  Result.RepeatBottom := AMainPart.BreakRepeatBottomLabels;
+  Result.ManualPositions := AMainPart.BreakManualPosition;
+  Result.ManualHeights := AMainPart.BreakManualHeight;
+  Result.Direction := BreakDirectionToSplit(AMainPart.BreakDirection);
+  Result.Spacing := AMainPart.BreakSpacing;
+  Result.TopLabelRows := AMainPart.RepeatRows;
+end;
+
+function SplitWritePartFrom(const APart: TAcadTableDXFWritePart;
+  AHandle: TDWGHandle; ARepeatRows: Integer): TAcadTableSplitWritePart;
+begin
+  Result.EntityHandle := AHandle;
+  Result.InsertPoint := APart.InsertPoint;
+  Result.RowCount := APart.RowCount;
+  Result.RepeatRows := ARepeatRows;
+  Result.BreakHeight := APart.BreakHeight;
+end;
+
+// Добавляет данные разрыва в round-trip запись главной части. Без
+// продолжений запись получает данные только при настроенном разрыве.
+procedure AttachSplitToContentRecord(AMainHandle: TDWGHandle;
+  const AMainPart: TAcadTableDXFWritePart;
+  const AParts: TAcadTableDXFWritePartArray;
+  const AHandles: array of TDWGHandle);
+var
+  RecIdx, PartIdx: Integer;
+  SplitParts: TAcadTableSplitWriteParts;
+begin
+  RecIdx := FindContentRecord(AMainHandle);
+  if (RecIdx < 0) or
+     ((Length(AParts) = 0) and not PartHasBreakData(AMainPart)) then
+    Exit;
+  System.SetLength(SplitParts, Length(AParts) + 1);
+  SplitParts[0] := SplitWritePartFrom(AMainPart, AMainHandle, 0);
+  for PartIdx := 0 to High(AParts) do
+    SplitParts[PartIdx + 1] := SplitWritePartFrom(AParts[PartIdx],
+      AHandles[PartIdx], AParts[PartIdx].RepeatRows);
+  BuildAcadTableSplitWriteInfo(
+    SplitWriteOptionsFromPart(AMainPart, Length(AParts) > 0),
+    SplitParts, ContentRecords[RecIdx].Split);
+  ContentRecords[RecIdx].HasSplit := True;
+  programlog.LogOutFormatStr(
+    'AcadTable: dxf_write: split data for %s, parts=%d',
+    [IntToHex(AMainHandle, 0), Length(SplitParts)], LM_Debug);
+end;
+
 procedure WriteAcadTableToDXF(
   var AOutStream: TZctnrVectorBytes;
   var ADrawing: TDrawingDef;
   var AIODXFContext: TIODXFSaveContext;
   const APart: TAcadTableDXFWritePart;
   APartIndex: Integer = 0);
+begin
+  WriteAcadTableToDXF(AOutStream, ADrawing, AIODXFContext, APart, APart,
+    APartIndex);
+end;
+
+procedure WriteAcadTableToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var ADrawing: TDrawingDef;
+  var AIODXFContext: TIODXFSaveContext;
+  const APart, AContent: TAcadTableDXFWritePart;
+  APartIndex: Integer = 0);
 var
   EntityHandle: TDWGHandle;
+  NoParts: TAcadTableDXFWritePartArray;
 begin
   WriteAcadTablePartToDXF(AOutStream, ADrawing, AIODXFContext,
-    APart, APartIndex, EntityHandle);
+    APart, AContent, True, APartIndex, EntityHandle);
+  // Данные разрыва самой главной части; продолжения (если есть) дополнят
+  // запись в WriteAcadTableContinuationPartsToDXF.
+  NoParts := nil;
+  AttachSplitToContentRecord(EntityHandle, APart, NoParts, []);
 end;
 
 procedure WriteAcadTableContinuationPartsToDXF(
@@ -932,137 +1049,92 @@ procedure WriteAcadTableContinuationPartsToDXF(
 var
   MainHandle: TDWGHandle;
   ContinuationHandles: array of TDWGHandle;
-  ContinuationHandle: TDWGHandle;
   PartIdx: Integer;
 begin
-  if Length(AParts) = 0 then
+  if (Length(AParts) = 0) or (AMainPart.HandleKey = nil) then
     Exit;
-
-  if AMainPart.HandleKey <> nil then
-    AIODXFContext.p2h.MyGetOrCreateValue(
-      AMainPart.HandleKey, AIODXFContext.handle, MainHandle)
-  else
-    Exit;
+  MainHandle := EntityHandleForPart(AMainPart, AIODXFContext);
 
   System.SetLength(ContinuationHandles, Length(AParts));
   for PartIdx := 0 to High(AParts) do
-  begin
     WriteAcadTablePartToDXF(AOutStream, ADrawing, AIODXFContext,
-      AParts[PartIdx], PartIdx + 1, ContinuationHandle);
-    ContinuationHandles[PartIdx] := ContinuationHandle;
-  end;
+      AParts[PartIdx], AParts[PartIdx], False, PartIdx + 1,
+      ContinuationHandles[PartIdx]);
 
-  AddRoundTripRecord(MainHandle, ContinuationHandles,
-    AMainPart.BreakSpacing, AMainPart.BreakHeight,
-    AMainPart.BreakManualPosition, AMainPart.BreakManualHeight);
+  AttachSplitToContentRecord(MainHandle, AMainPart, AParts,
+    ContinuationHandles);
+end;
+
+// Все raw-сущности частей должны иметь исходный хэндл (группа 5), а число
+// продолжений — совпадать с моделью. Иначе сущности не пригодны для
+// round-trip, и управление возвращается модельному сохранению.
+function RawAcadTablePartsValid(const AMainRawEntity: String;
+  const AContinuationRawEntities: array of String;
+  APartCount: Integer): Boolean;
+var
+  RawHandle: TDWGHandle;
+  PartIdx: Integer;
+begin
+  Result := False;
+  if Length(AContinuationRawEntities) <> APartCount then
+    Exit;
+  if not RawAcadTableHandle(AMainRawEntity, RawHandle) then
+    Exit;
+  for PartIdx := 0 to High(AContinuationRawEntities) do
+    if not RawAcadTableHandle(AContinuationRawEntities[PartIdx],
+         RawHandle) then
+      Exit;
+  Result := True;
+end;
+
+// Пишет raw-сущности продолжений с новыми анонимными хэндлами (без
+// расширенного словаря: данные разрыва хранит запись главной части).
+procedure WriteRawContinuationEntities(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ATableStyleName: String;
+  const AContinuationRawEntities: array of String;
+  out AHandles: TAcadTableHandleArray);
+var
+  PartIdx: Integer;
+begin
+  System.SetLength(AHandles, Length(AContinuationRawEntities));
+  for PartIdx := 0 to High(AContinuationRawEntities) do
+  begin
+    AHandles[PartIdx] := NextAnonymousHandle(AIODXFContext);
+    WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
+      AContinuationRawEntities[PartIdx], AHandles[PartIdx], 0);
+  end;
 end;
 
 function WriteRawAcadTablePartsToDXF(
   var AOutStream: TZctnrVectorBytes;
   var AIODXFContext: TIODXFSaveContext;
+  const AMainPart, AContent: TAcadTableDXFWritePart;
+  const AParts: TAcadTableDXFWritePartArray;
   const AMainRawEntity: String;
-  const AContinuationRawEntities: array of String;
-  ABreakSpacing, ABreakHeight: Double;
-  ABreakManualPosition, ABreakManualHeight: Boolean;
-  const ATableStyleName: String): Boolean;
+  const AContinuationRawEntities: array of String): Boolean;
 var
-  MainHandle: TDWGHandle;
-  ContinuationHandles: array of TDWGHandle;
-  PartIdx: Integer;
+  MainHandle, DictionaryHandle: TDWGHandle;
+  ContinuationHandles: TAcadTableHandleArray;
 begin
-  Result := False;
-  { Валидируем raw-сущности: у каждой части должен быть исходный хэндл
-    (группа 5). Если нет — это не пригодная для round-trip сущность, и
-    управление возвращается обычному (модельному) сохранению. Сами
-    исходные значения хэндлов далее не используются — каждая часть
-    получает свежий хэндл (issue #1344). }
-  if not RawAcadTableHandle(AMainRawEntity, MainHandle) then
+  Result := RawAcadTablePartsValid(AMainRawEntity,
+    AContinuationRawEntities, Length(AParts));
+  if not Result then
     Exit;
-
-  System.SetLength(ContinuationHandles, Length(AContinuationRawEntities));
-  for PartIdx := 0 to High(AContinuationRawEntities) do
-    if not RawAcadTableHandle(
-      AContinuationRawEntities[PartIdx],
-      ContinuationHandles[PartIdx]) then
-      Exit;
-
-  { Выдаём свежие хэндлы из общего счётчика документа. К моменту записи
-    секции ENTITIES счётчик уже прошёл секцию BLOCKS, поэтому новые хэндлы
-    гарантированно не сталкиваются с хэндлами анонимных блоков таблицы
-    (issue #1344). Эти же значения попадают в round-trip XRECORD (360/330/
-    361), оставаясь согласованными с группой 5 сущностей. }
-  MainHandle := NextAnonymousHandle(AIODXFContext);
-  WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-    AMainRawEntity, MainHandle);
-
-  for PartIdx := 0 to High(AContinuationRawEntities) do
-  begin
-    ContinuationHandles[PartIdx] := NextAnonymousHandle(AIODXFContext);
-    WriteRawEntityText(AOutStream, AIODXFContext, ATableStyleName,
-      AContinuationRawEntities[PartIdx], ContinuationHandles[PartIdx]);
-  end;
-
-  AddRoundTripRecord(MainHandle, ContinuationHandles,
-    ABreakSpacing, ABreakHeight,
-    ABreakManualPosition, ABreakManualHeight);
-  Result := True;
-end;
-
-procedure WriteRoundTripRecordToDXF(
-  var AOutStream: TZctnrVectorBytes;
-  var AIODXFContext: TIODXFSaveContext;
-  const ARecord: TAcadTableRoundTripRecord);
-const
-  { Базовые биты BreakOption: EnableBreaks(1) + RepeatTopLabels(2) = 3. }
-  cTableBreakBaseFlags = 3;
-  cTableBreakAllowManualPositions = 8;
-  cTableBreakAllowManualHeights = 16;
-var
-  ObjectHandle: TDWGHandle;
-  HandleIdx: Integer;
-  BreakOptionFlags: Integer;
-begin
-  ObjectHandle := NextAnonymousHandle(AIODXFContext);
-
-  { Восстанавливаем BreakOption-флаг из признаков ручного управления
-    разрывами (issue #1339). Раньше здесь была жёстко зашита 3, из-за чего
-    при пересохранении терялись AllowManualPositions/AllowManualHeights. }
-  BreakOptionFlags := cTableBreakBaseFlags;
-  if ARecord.BreakManualPosition then
-    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualPositions;
-  if ARecord.BreakManualHeight then
-    BreakOptionFlags := BreakOptionFlags or cTableBreakAllowManualHeights;
-
-  dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
-  dxfStringWithoutEncodeOut(AOutStream, 5, IntToHex(ObjectHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 330, '0');
-  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
-  dxfIntegerout(AOutStream, 280, 1);
-  { Пишем приватный маркер ZCAD вместо «родного» ACAD-маркера (issue #1381).
-    AutoCAD не распознаёт его и показывает части разорванной таблицы как
-    несколько отдельных таблиц (как и было сохранено в ZCAD), а не
-    пересобирает их в одну цельную. ZCAD по этому маркеру восстанавливает
-    единую разорванную таблицу при повторной загрузке. }
-  dxfStringWithoutEncodeOut(AOutStream, 102,
-    CAcadTableSplitMarkerName);
-  dxfStringWithoutEncodeOut(AOutStream, 360,
-    IntToHex(ARecord.MainHandle, 0));
-  dxfIntegerout(AOutStream, 70, 1);
-  dxfIntegerout(AOutStream, 90, BreakOptionFlags);
-  dxfIntegerout(AOutStream, 90, 1);
-  dxfDoubleout(AOutStream, 40, ARecord.BreakSpacing);
-  dxfIntegerout(AOutStream, 90, 2);
-  dxfIntegerout(AOutStream, 90, 0);
-  dxfIntegerout(AOutStream, 90, 1);
-  dxfDoubleout(AOutStream, 10, 0);
-  dxfDoubleout(AOutStream, 20, 0);
-  dxfDoubleout(AOutStream, 30, 0);
-  dxfDoubleout(AOutStream, 40, ARecord.BreakHeight);
-  for HandleIdx := 0 to High(ARecord.ContinuationHandles) do
-    dxfStringWithoutEncodeOut(AOutStream, 330,
-      IntToHex(ARecord.ContinuationHandles[HandleIdx], 0));
-  dxfStringWithoutEncodeOut(AOutStream, 361,
-    IntToHex(ARecord.MainHandle, 0));
+  { Хэндлы — из общего счётчика документа (issue #1344): главная часть —
+    по ключу объекта, как в модельном пути (на неё ссылается
+    ACDB_RECOMPOSE_DATA), продолжения — новые анонимные хэндлы. }
+  MainHandle := EntityHandleForPart(AMainPart, AIODXFContext);
+  if not AddAcadTableContentRecord(AContent, MainHandle, AIODXFContext,
+       DictionaryHandle) then
+    DictionaryHandle := 0;
+  WriteRawEntityText(AOutStream, AIODXFContext, AMainPart.TableStyleName,
+    AMainRawEntity, MainHandle, DictionaryHandle);
+  WriteRawContinuationEntities(AOutStream, AIODXFContext,
+    AMainPart.TableStyleName, AContinuationRawEntities, ContinuationHandles);
+  AttachSplitToContentRecord(MainHandle, AMainPart, AParts,
+    ContinuationHandles);
 end;
 
 // Блок CONTENTFORMAT. AutoCAD использует две разные пары type/flags:
@@ -1341,32 +1413,12 @@ begin
   end;
 end;
 
-// Пишет четвёрку объектов round-trip AutoCAD 2008 для одной таблицы:
-// расширенный словарь сущности -> XRECORD -> TABLECONTENT + TABLEGEOMETRY
-// (issue #1409).
-procedure WriteAcadTableContentToDXF(
+// Тело round-trip записи таблицы без данных разрыва (layout 2): так AutoCAD
+// пишет таблицу, у которой разрыв не настраивался.
+procedure WriteSingleRoundTripBody(
   var AOutStream: TZctnrVectorBytes;
-  var AIODXFContext: TIODXFSaveContext;
   const ARecord: TAcadTableContentRecord);
 begin
-  dxfStringWithoutEncodeOut(AOutStream, 0, 'DICTIONARY');
-  dxfStringWithoutEncodeOut(AOutStream, 5,
-    IntToHex(ARecord.DictionaryHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 330,
-    IntToHex(ARecord.EntityHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbDictionary');
-  dxfIntegerout(AOutStream, 280, 1);
-  dxfIntegerout(AOutStream, 281, 1);
-  dxfStringWithoutEncodeOut(AOutStream, 3, 'ACAD_XREC_ROUNDTRIP');
-  dxfStringWithoutEncodeOut(AOutStream, 360,
-    IntToHex(ARecord.XRecordHandle, 0));
-
-  dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
-  dxfStringWithoutEncodeOut(AOutStream, 5,
-    IntToHex(ARecord.XRecordHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 330,
-    IntToHex(ARecord.DictionaryHandle, 0));
-  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
   dxfIntegerout(AOutStream, 280, 1);
   dxfStringWithoutEncodeOut(AOutStream, 102,
     'ACAD_ROUNDTRIP_2008_TABLE_ENTITY');
@@ -1386,6 +1438,70 @@ begin
   dxfIntegerout(AOutStream, 90, CAcadTableRoundTripTailValue);
   dxfStringWithoutEncodeOut(AOutStream, 361,
     IntToHex(ARecord.GeometryHandle, 0));
+end;
+
+// Тело round-trip записи с данными разрыва (layout 1). Пары собирает модуль
+// NOD таблиц (BuildAcadTableSplitPairs) — тот же формат, что разбирает
+// индекс NOD при чтении (issue #1465).
+procedure WriteSplitRoundTripBody(
+  var AOutStream: TZctnrVectorBytes;
+  const ARecord: TAcadTableContentRecord);
+var
+  Info: TZAcadTableSplitInfo;
+  Pairs: TZDXFRawObject;
+  PairIdx: Integer;
+begin
+  Info := ARecord.Split;
+  Info.ContentHandle := ARecord.ContentHandle;
+  Info.GeometryHandle := ARecord.GeometryHandle;
+  Pairs := TZDXFRawObject.Create;
+  try
+    BuildAcadTableSplitPairs(Info, Pairs);
+    for PairIdx := 0 to Pairs.PairCount - 1 do
+      dxfStringWithoutEncodeOut(AOutStream, Pairs.Pairs[PairIdx].Code,
+        Pairs.Pairs[PairIdx].Value);
+  finally
+    Pairs.Free;
+  end;
+end;
+
+// Пишет четвёрку объектов round-trip AutoCAD 2008 для одной таблицы:
+// расширенный словарь сущности -> XRECORD -> TABLECONTENT + TABLEGEOMETRY
+// (issue #1409).
+// Расширенный словарь сущности с единственной записью ACAD_XREC_ROUNDTRIP
+procedure WriteRoundTripDictionary(
+  var AOutStream: TZctnrVectorBytes;
+  const ARecord: TAcadTableContentRecord);
+begin
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'DICTIONARY');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.DictionaryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.EntityHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbDictionary');
+  dxfIntegerout(AOutStream, 280, 1);
+  dxfIntegerout(AOutStream, 281, 1);
+  dxfStringWithoutEncodeOut(AOutStream, 3, 'ACAD_XREC_ROUNDTRIP');
+  dxfStringWithoutEncodeOut(AOutStream, 360,
+    IntToHex(ARecord.XRecordHandle, 0));
+end;
+
+procedure WriteAcadTableContentToDXF(
+  var AOutStream: TZctnrVectorBytes;
+  var AIODXFContext: TIODXFSaveContext;
+  const ARecord: TAcadTableContentRecord);
+begin
+  WriteRoundTripDictionary(AOutStream, ARecord);
+  dxfStringWithoutEncodeOut(AOutStream, 0, 'XRECORD');
+  dxfStringWithoutEncodeOut(AOutStream, 5,
+    IntToHex(ARecord.XRecordHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 330,
+    IntToHex(ARecord.DictionaryHandle, 0));
+  dxfStringWithoutEncodeOut(AOutStream, 100, 'AcDbXrecord');
+  if ARecord.HasSplit then
+    WriteSplitRoundTripBody(AOutStream, ARecord)
+  else
+    WriteSingleRoundTripBody(AOutStream, ARecord);
 
   WriteTableContentObject(AOutStream, AIODXFContext, ARecord);
   WriteTableGeometryObject(AOutStream, ARecord);
@@ -1401,9 +1517,6 @@ begin
   for RecIdx := 0 to High(ContentRecords) do
     WriteAcadTableContentToDXF(
       AOutStream, AIODXFContext, ContentRecords[RecIdx]);
-  for RecIdx := 0 to High(RoundTripRecords) do
-    WriteRoundTripRecordToDXF(
-      AOutStream, AIODXFContext, RoundTripRecords[RecIdx]);
   ResetAcadTableDXFWriteState;
 end;
 

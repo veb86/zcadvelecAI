@@ -1,0 +1,81 @@
+# Сводка таблиц до/после round-trip на master (до issue #1465), шаблон savetemplate2007
+=== acadtablerazdel2007_1
+--- before
+table rows=5 cols=5 ins=(84.665,20.503) style=
+  break en=1 rtop=1 rbot=0 mpos=0 mh=0 sp=0.99 h=2.049
+  row 0 type=0 h=0.456: [Zagolovok] [] [] [] []
+  row 1 type=1 h=0.36: [A] [B] [C] [D] [E]
+  row 2 type=2 h=0.36: [1] [2] [3] [4] [5]
+  row 3 type=2 h=0.36: [6] [7] [8] [9] [0]
+  row 4 type=1 h=0.36: [F] [G] [H] [SS] [FF]
+  part 0 rows=5 ins=(98.155,20.503) h=2.049: [Zagolovok] [A] [11] [] []
+  part 1 rows=4 ins=(111.645,20.503) h=2.049: [Zagolovok] [A] [] []
+
+--- after
+table rows=5 cols=5 ins=(84.665,20.503) style=
+  break en=1 rtop=1 rbot=0 mpos=0 mh=0 sp=0.99 h=2.049
+  row 0 type=0 h=0.456: [Zagolovok] [] [] [] []
+  row 1 type=1 h=0.36: [A] [B] [C] [D] [E]
+  row 2 type=2 h=0.36: [1] [2] [3] [4] [5]
+  row 3 type=2 h=0.36: [6] [7] [8] [9] [0]
+  row 4 type=2 h=0.36: [F] [G] [H] [SS] [FF]
+  part 0 rows=5 ins=(98.155,20.503) h=2.049: [Zagolovok] [A] [11] [] []
+  part 1 rows=4 ins=(111.645,20.503) h=2.049: [Zagolovok] [A] [] []
+
+DIFF line 6:   row 4 type=1 h=0.36: [F] [G] [H] [SS] [FF]
+ROUNDTRIP DIFFERS
+=== tablerazdel2
+--- before
+table rows=10 cols=5 ins=(84.665,20.503) style=
+  break en=0 rtop=0 rbot=0 mpos=0 mh=0 sp=0.99 h=2.049
+  row 0 type=0 h=0.456: [Zagolovok] [] [] [] []
+  row 1 type=1 h=0.36: [A] [B] [C] [D] [E]
+  row 2 type=2 h=0.36: [1] [2] [3] [4] [5]
+  row 3 type=2 h=0.36: [6] [7] [8] [9] [0]
+  row 4 type=1 h=0.36: [F] [G] [H] [SS] [FF]
+  row 5 type=2 h=0.36: [11] [12] [13] [14] [15]
+  row 6 type=2 h=0.36: [] [] [] [] []
+  row 7 type=2 h=0.36: [] [] [] [] []
+  row 8 type=2 h=0.36: [] [] [] [] []
+  row 9 type=2 h=0.36: [] [] [] [] []
+
+--- after
+table rows=10 cols=5 ins=(84.665,20.503) style=
+  break en=0 rtop=0 rbot=0 mpos=0 mh=0 sp=0 h=0
+  row 0 type=0 h=0.456: [Zagolovok] [] [] [] []
+  row 1 type=1 h=0.36: [A] [B] [C] [D] [E]
+  row 2 type=2 h=0.36: [1] [2] [3] [4] [5]
+  row 3 type=2 h=0.36: [6] [7] [8] [9] [0]
+  row 4 type=2 h=0.36: [F] [G] [H] [SS] [FF]
+  row 5 type=2 h=0.36: [11] [12] [13] [14] [15]
+  row 6 type=2 h=0.36: [] [] [] [] []
+  row 7 type=2 h=0.36: [] [] [] [] []
+  row 8 type=2 h=0.36: [] [] [] [] []
+  row 9 type=2 h=0.36: [] [] [] [] []
+
+DIFF line 1:   break en=0 rtop=0 rbot=0 mpos=0 mh=0 sp=0.99 h=2.049
+DIFF line 6:   row 4 type=1 h=0.36: [F] [G] [H] [SS] [FF]
+ROUNDTRIP DIFFERS
+=== tablebugheader
+--- before
+table rows=6 cols=3 ins=(96.523,-59.008) style=
+  break en=0 rtop=0 rbot=0 mpos=0 mh=0 sp=0 h=0
+  row 0 type=0 h=9.667: [Титул] [] []
+  row 1 type=1 h=7.667: [1] [2] [3]
+  row 2 type=1 h=7.667: [a] [b] [c]
+  row 3 type=2 h=6.333: [2] [] []
+  row 4 type=2 h=6.333: [3] [] []
+  row 5 type=2 h=6.333: [4] [] []
+
+--- after
+table rows=6 cols=3 ins=(96.523,-59.008) style=
+  break en=0 rtop=0 rbot=0 mpos=0 mh=0 sp=0 h=0
+  row 0 type=0 h=9.667: [Титул] [] []
+  row 1 type=1 h=7.667: [1] [2] [3]
+  row 2 type=2 h=7.667: [a] [b] [c]
+  row 3 type=2 h=6.333: [2] [] []
+  row 4 type=2 h=6.333: [3] [] []
+  row 5 type=2 h=6.333: [4] [] []
+
+DIFF line 4:   row 2 type=1 h=7.667: [a] [b] [c]
+ROUNDTRIP DIFFERS

@@ -1361,6 +1361,40 @@ XRECORD` проходит round-trip без потерь; AutoCAD `AUDIT` — 0 
    и GUI-сабмодули, в `nodtests` не входит) —
    `experiments/issue1459/build_uzedwgimport.sh`.
 
+### Этап 10. Разрыв таблиц `ACAD_TABLE` через NOD
+
+Данные разрыва таблицы AutoCAD 2008+ (round-trip `XRECORD` в расширенном
+словаре сущности, `TABLECONTENT`, ключ NOD `ACDB_RECOMPOSE_DATA`)
+читаются и пишутся через модель NOD вместо прежних сканов текста
+`OBJECTS` и приватной записи `ZCAD_SPLIT_TABLE_ENTITY`. Исследование,
+формат и расхождения с эталоном `DXFTableSaveNEW` —
+`cad_source/zengine/TZ_AcadTable_NOD_issue1465.md`.
+
+**Статус: выполнен (issue #1465).**
+
+1. Индекс `TZAcadTableNODIndex` (`fileformats/uzeffdxfnodacadtable.pas`):
+   «хэндл сущности → данные разрыва» для каждой таблицы файла (раньше —
+   только первая запись), продолжения, типы логических строк,
+   ссылки `ACDB_RECOMPOSE_DATA`. Реестр «забирает» запись
+   `ACDB_RECOMPOSE_DATA` (`ClaimNODObjectEntry`), чтобы этап 7 не
+   сохранял её как неизвестную ветку.
+2. Загрузка: данные разрыва передаются таблице из индекса
+   (`GDBObjEntity.SetDXFTableSplitInfo`,
+   `velec/acadtable/uzeacadtable_dxf_split.pas`).
+3. Запись (`velec/acadtable/uzeacadtable_dxf_write.pas`): запись AutoCAD
+   layout 1 (`BuildAcadTableSplitWriteInfo` → `BuildAcadTableSplitPairs`)
+   и логический `TABLECONTENT` — в модельном и raw-пути.
+4. NOD-обработчик `ACDB_RECOMPOSE_DATA`
+   (`velec/acadtable/uzeacadtable_dxf_nod.pas`, `MinVersion = AC1021`):
+   `XRECORD` со ссылками `330` на все `TABLESTYLE` и главные `ACAD_TABLE`;
+   не пишется, если таблиц в чертеже нет.
+5. Тесты: `nodstage10` (индекс) и `nodstage10save` (сквозной цикл
+   DXF → NOD → объект ZCAD → NOD → DXF на 14 образцах, с правкой таблицы
+   и без; сводка таблиц до и после совпадает, NOD сохранённого файла
+   содержит записи разрыва и `ACDB_RECOMPOSE_DATA`). `nodstage3` снимает
+   регистрацию обработчика `ACDB_RECOMPOSE_DATA` перед проверкой пустого
+   реестра.
+
 ---
 
 ## 6. Тестирование
