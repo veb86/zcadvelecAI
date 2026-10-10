@@ -131,25 +131,25 @@ end;
 procedure InitVolumeFromPoint(out Volume: TBoundingBox;
   const Point: TzePoint3d);
 begin
-  Volume.LBN := Point;
-  Volume.RTF := Point;
+  Volume.pMin := Point;
+  Volume.pMax := Point;
 end;
 
 procedure AddPointToVolume(var Volume: TBoundingBox; const Point: TzePoint3d);
 begin
-  if Point.x < Volume.LBN.x then
-    Volume.LBN.x := Point.x;
-  if Point.y < Volume.LBN.y then
-    Volume.LBN.y := Point.y;
-  if Point.z < Volume.LBN.z then
-    Volume.LBN.z := Point.z;
+  if Point.x < Volume.pMin.x then
+    Volume.pMin.x := Point.x;
+  if Point.y < Volume.pMin.y then
+    Volume.pMin.y := Point.y;
+  if Point.z < Volume.pMin.z then
+    Volume.pMin.z := Point.z;
 
-  if Point.x > Volume.RTF.x then
-    Volume.RTF.x := Point.x;
-  if Point.y > Volume.RTF.y then
-    Volume.RTF.y := Point.y;
-  if Point.z > Volume.RTF.z then
-    Volume.RTF.z := Point.z;
+  if Point.x > Volume.pMax.x then
+    Volume.pMax.x := Point.x;
+  if Point.y > Volume.pMax.y then
+    Volume.pMax.y := Point.y;
+  if Point.z > Volume.pMax.z then
+    Volume.pMax.z := Point.z;
 end;
 
 // Увеличить объём слова относительно его центра в Factor раз,
@@ -161,16 +161,16 @@ begin
   if Factor <= 1 then
     Exit;
 
-  center.x := (Volume.LBN.x + Volume.RTF.x) / 2;
-  center.y := (Volume.LBN.y + Volume.RTF.y) / 2;
-  center.z := (Volume.LBN.z + Volume.RTF.z) / 2;
+  center.x := (Volume.pMin.x + Volume.pMax.x) / 2;
+  center.y := (Volume.pMin.y + Volume.pMax.y) / 2;
+  center.z := (Volume.pMin.z + Volume.pMax.z) / 2;
 
-  Volume.LBN.x := center.x + (Volume.LBN.x - center.x) * Factor;
-  Volume.LBN.y := center.y + (Volume.LBN.y - center.y) * Factor;
-  Volume.LBN.z := center.z + (Volume.LBN.z - center.z) * Factor;
-  Volume.RTF.x := center.x + (Volume.RTF.x - center.x) * Factor;
-  Volume.RTF.y := center.y + (Volume.RTF.y - center.y) * Factor;
-  Volume.RTF.z := center.z + (Volume.RTF.z - center.z) * Factor;
+  Volume.pMin.x := center.x + (Volume.pMin.x - center.x) * Factor;
+  Volume.pMin.y := center.y + (Volume.pMin.y - center.y) * Factor;
+  Volume.pMin.z := center.z + (Volume.pMin.z - center.z) * Factor;
+  Volume.pMax.x := center.x + (Volume.pMax.x - center.x) * Factor;
+  Volume.pMax.y := center.y + (Volume.pMax.y - center.y) * Factor;
+  Volume.pMax.z := center.z + (Volume.pMax.z - center.z) * Factor;
 end;
 
 procedure PadVolume(var Volume: TBoundingBox; Padding: double);
@@ -178,12 +178,12 @@ begin
   if Padding < eps then
     Padding := 1;
 
-  Volume.LBN.x := Volume.LBN.x - Padding;
-  Volume.LBN.y := Volume.LBN.y - Padding;
-  Volume.LBN.z := Volume.LBN.z - Padding;
-  Volume.RTF.x := Volume.RTF.x + Padding;
-  Volume.RTF.y := Volume.RTF.y + Padding;
-  Volume.RTF.z := Volume.RTF.z + Padding;
+  Volume.pMin.x := Volume.pMin.x - Padding;
+  Volume.pMin.y := Volume.pMin.y - Padding;
+  Volume.pMin.z := Volume.pMin.z - Padding;
+  Volume.pMax.x := Volume.pMax.x + Padding;
+  Volume.pMax.y := Volume.pMax.y + Padding;
+  Volume.pMax.z := Volume.pMax.z + Padding;
 end;
 
 function TransformTextPoint(TextObj: PGDBObjText;

@@ -36,7 +36,7 @@ uses
   uzcOI,uzcdrawing,uzbUnits,uzeBaseUtils,uzcTypes,uzObjectInspectorManager;
 type
     AsyncCommHelper=class
-                         class procedure GetVertex(Pinstance:PtrInt);
+                         //class procedure GetVertex(Pinstance:PtrInt);
                          //class procedure GetLength(Pinstance:PtrInt);
                          //class procedure GetVertexX(Pinstance:PtrInt);
                          //class procedure GetVertexY(Pinstance:PtrInt);
@@ -122,7 +122,7 @@ begin
                                    p:=NO.iterate(ir);
                              until p=nil;
 
-     result.mode:=TEM_Integrate;
+     result.mode:=EM_Inplace;
 end;
 function LineWeightDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
 var
@@ -153,7 +153,7 @@ begin
           addLWtoC(GetLWNameFromN(i),lwarray[i]);
      end;
      cbedit.ItemIndex:=seli;
-     result.mode:=TEM_Integrate;
+     result.mode:=EM_Inplace;
 end;
 function LayersDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
 begin
@@ -291,7 +291,7 @@ begin
 end;
 function CreateEmptyEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
 begin
-     result.mode:=TEM_Nothing;
+     result.mode:=EM_Nothing;
      result.Editor:=nil;
 end;
 procedure runOSwnd(PInstance:Pointer);
@@ -335,7 +335,7 @@ begin
      addColorToC(rsSelectColor,ClSelColor);
 
      cbedit.ItemIndex:=seli;
-     result.mode:=TEM_Integrate;
+     result.mode:=EM_Inplace;
 end;
 
 function TColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
@@ -346,7 +346,7 @@ begin
   SetComboSize(cbedit,sysvar.INTF.INTF_DefaultControlHeight^-6);
   cbedit.Style:=cbedit.Style+[cbStandardColors,cbExtendedColors,cbSystemColors,cbIncludeDefault];
   cbedit.Selected:=PColor(pinstance)^;
-  result.mode:=TEM_Integrate;
+  result.mode:=EM_Inplace;
 end;
 
 function TGetterSetterTColorDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
@@ -357,7 +357,7 @@ begin
   SetComboSize(cbedit,sysvar.INTF.INTF_DefaultControlHeight^-6);
   cbedit.Style:=cbedit.Style+[cbStandardColors,cbExtendedColors,cbSystemColors,cbIncludeDefault];
   cbedit.Selected:=PTGetterSetterTColor(pinstance)^.Getter{PColor(pinstance)^};
-  result.mode:=TEM_Integrate;
+  result.mode:=EM_Inplace;
 end;
 function TGetterSetterTColorDecorator(PInstance:Pointer):String;
 begin
@@ -414,7 +414,7 @@ begin
        cbedit.ItemIndex:=selected
      else
        cbedit.ItemIndex:=0;
-     result.mode:=TEM_Integrate;
+     result.mode:=EM_Inplace;
 end;
 function IsArrowStyleDataIndex(index:integer):boolean;
 begin
@@ -468,7 +468,7 @@ begin
        cbedit.ItemIndex:=selected
      else
        cbedit.ItemIndex:=0;
-     result.mode:=TEM_Integrate;
+     result.mode:=EM_Inplace;
 end;
 procedure RunStringEditor(PInstance:Pointer);
 var
@@ -478,7 +478,7 @@ begin
      if not assigned(InfoForm) then
      begin
      InfoForm:=TInfoForm.createnew(application.MainForm);
-     InfoForm.BoundsRect:=GetBoundsFromSavedUnit('TEdWND',ZCSysParams.notsaved.ScreenX,ZCSysParams.notsaved.Screeny);
+     InfoForm.BoundsRect:=GetBoundsFromUnit(SavedUnit^,'TEdWND',ZCSysParams.notsaved.ScreenX,ZCSysParams.notsaved.Screeny);
      end;
      InfoForm.caption:=(rsTextEdCaption);
      if assigned(SysVar.INTF.INTF_DefaultEditorFontHeight) then
@@ -489,7 +489,7 @@ begin
      if modalresult=ZCMrOk then
                          begin
                               pString(PInstance)^:=InfoForm.memo.text;
-                              StoreBoundsToSavedUnit('TEdWND',InfoForm.BoundsRect);
+                              StoreBoundsToUnit(SavedUnit^,'TEdWND',InfoForm.BoundsRect);
                          end;
 end;
 procedure RunAnsiStringEditor(PInstance:Pointer);
@@ -500,7 +500,7 @@ begin
      if not assigned(InfoForm) then
      begin
      InfoForm:=TInfoForm.createnew(application.MainForm);
-     InfoForm.BoundsRect:=GetBoundsFromSavedUnit('TEdWND',ZCSysParams.notsaved.ScreenX,ZCSysParams.notsaved.Screeny);
+     InfoForm.BoundsRect:=GetBoundsFromUnit(SavedUnit^,'TEdWND',ZCSysParams.notsaved.ScreenX,ZCSysParams.notsaved.Screeny);
      end;
      InfoForm.caption:=(rsTextEdCaption);
      if assigned(SysVar.INTF.INTF_DefaultEditorFontHeight) then
@@ -511,10 +511,10 @@ begin
      if modalresult=ZCMrOk then
                          begin
                               PAnsiString(PInstance)^:=ConvertToDxfString(InfoForm.memo.text);
-                              StoreBoundsToSavedUnit('TEdWND',InfoForm.BoundsRect);
+                              StoreBoundsToUnit(SavedUnit^,'TEdWND',InfoForm.BoundsRect);
                          end;
 end;
-class procedure AsyncCommHelper.GetVertex(Pinstance:PtrInt);
+(*class procedure AsyncCommHelper.GetVertex(Pinstance:PtrInt);
 var
    p:pointer;
 begin
@@ -527,7 +527,7 @@ begin
                     begin
                          commandmanager.PushValue('','PzePoint3d',@PInstance);
                          if {GDBobjinsp.GDBobj}true then
-                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.CurrData.PObj)
+                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.fDisplayedData.PData)
                                               else
                                                   begin
                                                        p:=nil;
@@ -536,7 +536,7 @@ begin
                          commandmanager.executecommand('GetPoint',drawings.GetCurrentDWG,drawings.GetCurrentOGLWParam);
                          GDBobjinsp.UpdateObjectInInsp;
                     end;
-end;
+end;*)
 
 (*class procedure AsyncCommHelper.GetLength(Pinstance:PtrInt);
 var
@@ -551,7 +551,7 @@ begin
                     begin
                          commandmanager.PushValue('','PGDBLength',@PInstance);
                          if {GDBobjinsp.GDBobj}true then
-                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.CurrData.PObj)
+                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.fDisplayedData.PData)
                                               else
                                                   begin
                                                        p:=nil;
@@ -574,7 +574,7 @@ begin
                     begin
                          commandmanager.PushValue('','PGDBXCoordinate',@PInstance);
                          if {GDBobjinsp.GDBobj}true then
-                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.CurrData.PObj)
+                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.fDisplayedData.PData)
                                               else
                                                   begin
                                                        p:=nil;
@@ -597,7 +597,7 @@ begin
                     begin
                          commandmanager.PushValue('','PGDBYCoordinate',@PInstance);
                          if {GDBobjinsp.GDBobj}true then
-                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.CurrData.PObj)
+                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.fDisplayedData.PData)
                                               else
                                                   begin
                                                        p:=nil;
@@ -620,7 +620,7 @@ begin
                     begin
                          commandmanager.PushValue('','PGDBZCoordinate',@PInstance);
                          if {GDBobjinsp.GDBobj}true then
-                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.CurrData.PObj)
+                                                  commandmanager.PushValue('','PGDBObjEntity',@GDBobjinsp.fDisplayedData.PData)
                                               else
                                                   begin
                                                        p:=nil;

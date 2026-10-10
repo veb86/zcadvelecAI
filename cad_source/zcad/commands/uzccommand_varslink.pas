@@ -32,6 +32,8 @@ uses
 resourcestring
   rscmSelectEntityWithMainFunction='Select entity with main function';
   rscmSelectLinkedEntity='Select linked entity';
+  rscmSelectEntityWithextdrVariables='Please select entity with '+VariablesExtenderName;
+  rscmCannotBeLinked='Cannot be linked';
 
 implementation
 
@@ -45,24 +47,38 @@ var
 begin
   pmainobj:=nil;
   repeat
+    //пробуем выбрать примитив главную функцию
     if pmainobj=nil then
       if commandmanager.getentity(rscmSelectEntityWithMainFunction,pmainobj)<>IRNormal then
         exit(cmd_ok);
+    //у примитива должно быть расширение переменных
     pCentralVarext:=pmainobj^.GetExtension<TVariablesExtender>;
     if pCentralVarext=nil then begin
       pmainobj:=nil;
-      zcUI.TextMessage('Please select device with variables',TMWOSilentShowError);
+      zcUI.TextMessage(rscmSelectEntityWithextdrVariables,TMWOShowError);
+    //примитив должен уметь добавлять делегатов (сам не являться делегатом)
+    end else if not pCentralVarext.canAddDelegate then begin
+      zcUI.TextMessage(rscmSelectEntityWithMainFunction,TMWOShowError);
+      pmainobj:=nil;
+      pCentralVarext:=nil;
     end;
   until pCentralVarext<>nil;
 
   repeat
+    //пробуем выбрать примитив делегата
     if commandmanager.getentity(rscmSelectLinkedEntity,pobj)<>IRNormal then
       exit(cmd_ok);
+    //у примитива должно быть расширение переменных
     pVarext:=pobj^.GetExtension<TVariablesExtender>;
     if pVarext=nil then begin
-      zcUI.TextMessage('Please select device with variables',TMWOSilentShowError);
+      zcUI.TextMessage(rscmSelectEntityWithextdrVariables,TMWOShowError);
+    //примитив главной функции должен добавить этого делегата
+    //(проверки на зацикленгности и добавление самого себя)
+    end else if not pCentralVarext.canAddDelegate(pobj,pVarext) then begin
+      zcUI.TextMessage(rscmCannotBeLinked,TMWOShowError);
     end else begin
-      pCentralVarext.addDelegate({pmainobj,}pobj,pVarext);
+      //все ок, добавляем
+      pCentralVarext.addDelegate(pobj,pVarext);
     end;
   until False;
 

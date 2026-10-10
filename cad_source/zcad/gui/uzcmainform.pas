@@ -1412,9 +1412,6 @@ begin
             pdwg.wa.idle(Sender,Done);
           end;
         end;
-
-      date:=SysUtils.date;
-
       zcUI.Do_Idle(Done);
     finally
       programlog.leave(IfEntered);
@@ -1438,11 +1435,11 @@ var
 begin
   if sysvar.SYS.SYS_RunTime<>nil then begin
     Inc(sysvar.SYS.SYS_RunTime^);
-    if SysVar.SAVE.SAVE_Auto_On^ then begin
+    if SysVar.LOADSAVE.AutoSave.Enable^ then begin
       pdwg:=drawings.GetCurrentDWG;
       if pdwg<>nil then begin
         if pdwg^.GetAutoSavedStampt then
-          Dec(sysvar.SAVE.SAVE_Auto_Current_Interval^);
+          Dec(sysvar.LOADSAVE.AutoSave.CurrentInterval^);
       end;
     end;
   end;
@@ -1770,7 +1767,8 @@ begin
   else if onmouseobject<>nil then
     if ((MZW_LBUTTON and zc)<>0)and((MZW_SHIFT and zc)=0) then
       MouseTimer.&Set(mp,sysvarDSGNEntityMoveStartOffset,
-        [RMDown,RMUp,RReSet,RLeave],StartEntityDrag,sysvarDSGNEntityMoveStartTimerInterval);
+        [RMDown,RMUp,RReSet,RLeave],StartEntityDrag,sysvarDSGNEntityMoveStartTimerInterval,
+        sysvarDSGNEntityMoveStartOffsetMinTime);
 
   //zcUI.Do_GUIaction(self,zcMsgUIActionRedraw);
 
@@ -1995,18 +1993,18 @@ begin
         bb:=pdwg.GetCurrentROOT.vp.BoundingBox;
         size:=round(pdwg.wa.getviewcontrol.ClientWidth*pdwg.GetPCamera^.prop.zoom);
         position:=round(-pdwg.GetPCamera^.prop.point.x);
-        min:=round(bb.LBN.x+size/2);
-        max:=round(bb.RTF.x+{$IFNDEF LCLWIN32}-{$ENDIF}size/2);
+        min:=round(bb.pMin.x+size/2);
+        max:=round(bb.pMax.x+{$IFNDEF LCLWIN32}-{$ENDIF}size/2);
         if max<min then
           max:=min;
         zcMainForm.HScrollBar.SetParams(position,min,max,size);
 
         size:=round(pdwg.wa.getviewcontrol.ClientHeight*pdwg.GetPCamera^.prop.zoom);
-        min:=round(bb.LBN.y+size/2);
-        max:=round(bb.RTF.y+{$IFNDEF LCLWIN32}-{$ENDIF}size/2);
+        min:=round(bb.pMin.y+size/2);
+        max:=round(bb.pMax.y+{$IFNDEF LCLWIN32}-{$ENDIF}size/2);
         if max<min then
           max:=min;
-        position:=round((bb.LBN.y+bb.RTF.y+pdwg.GetPCamera^.prop.point.y));
+        position:=round((bb.pMin.y+bb.pMax.y+pdwg.GetPCamera^.prop.point.y));
         zcMainForm.VScrollBar.SetParams(position,min,max,size);
       end;
 end;

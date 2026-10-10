@@ -75,6 +75,8 @@ TVariablesExtender=class(TBaseVariablesExtender)
     ////**Если примитив - кабель, тогда возвращает ссылку на кабель. Если примитив - не кабель, тогда возвращает ноль
     //function getMainFuncCable:PGDBObjCable;
 
+    function canAddDelegate(pDelegateEntity:PGDBObjEntity;pDelegateEntityVarext:TVariablesExtender):boolean;overload;
+    function canAddDelegate:boolean;overload;
     procedure addDelegate(pDelegateEntity:PGDBObjEntity;pDelegateEntityVarext:TVariablesExtender);
     procedure removeDelegate(pDelegateEntity:PGDBObjEntity;pDelegateEntityVarext:TVariablesExtender);
 
@@ -148,6 +150,22 @@ end;
 //  if getMainFuncEntity^.GetObjType=GDBCableID then
 //     result:=PGDBObjCable(getMainFuncEntity);
 //end;
+
+function TVariablesExtender.canAddDelegate(pDelegateEntity:PGDBObjEntity;pDelegateEntityVarext:TVariablesExtender):boolean;
+begin
+  if pDelegateEntity=fpThisEntity then
+    exit(false);
+  if pDelegateEntityVarext.pMainFuncEntity<>nil then
+    exit(false);
+  result:=true;
+end;
+
+function TVariablesExtender.canAddDelegate:boolean;overload;
+begin
+  if pMainFuncEntity<>nil then
+    exit(false);
+  result:=true;
+end;
 
 procedure TVariablesExtender.addDelegate(pDelegateEntity:PGDBObjEntity;pDelegateEntityVarext:TVariablesExtender);
 begin
@@ -533,7 +551,7 @@ begin
        pvd:=vardata.entityunit.InterfaceVariables.vardescarray.beginiterate(ir);
        if pvd<>nil then
          repeat
-           if (pvd^.data.PTD.GetTypeAttributes and TA_COMPOUND)=0 then begin
+           if not(TA_COMPOUND in pvd^.data.PTD.GetTypeAttributes) then begin
              sv:=PBaseTypeDescriptor(pvd^.data.ptd)^.GetValueAsString(pvd^.data.Addr.Instance);
              sv:=StringReplace(sv,#0,'',[rfReplaceAll]);
              sv:=StringReplace(sv,#10,'',[rfReplaceAll]);

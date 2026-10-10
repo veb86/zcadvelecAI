@@ -261,6 +261,8 @@ uses
 
   uzcCommand_PlaceDelegate,
 
+  uzcCommand_ZCTable2CSV,
+
   uzccommand_scale2,  //Created using AI
   uzccommand_align,   //Created using AI
   uzccommand_createblockinsert,   //Created using AI
@@ -362,8 +364,15 @@ uses
 
   {$IFDEF ELECTROTECH}
   uzcregelectrotechfeatures,
-  uzccomelectrical,
-  uzccomops,
+  //uzccomelectrical,
+  uzcCommand_Connection2Dot,uzcCommand_ElAutoGenCableRemove,uzcCommand_ElCableSelect,
+  uzcCommand_ElCableInvert,uzcCommand_ElCableJoin,uzcCommand_ElCableLegend,
+  uzcCommand_ElMaterialLegend,uzcCommand_ElExternalKZ,uzcCommand_KIPCableMark,uzcCommand_ElLeader,
+  uzcCommand_ElWire,uzcCommand_ElCable,uzcCommand_KIPLugTableBuild,uzcCommand_KIPCDBuild,
+  uzcCommand_RegenZEnts,
+  //uzccomops,
+  uzcCommand_PlaceSmokeDetectorOrto,uzcCommand_OrtoDevPlace,uzcCommand_OPSSPBuild,
+  uzcCommand_OPSSensorMark,
   //uzccommaps,
   uzceCommand_SCHConnection,
   {$ENDIF}

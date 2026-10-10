@@ -3763,9 +3763,9 @@ begin
 
   if (FRowCount <= 0) or (FColCount <= 0) then
   begin
-    vp.BoundingBox.LBN :=
+    vp.BoundingBox.pMin :=
       Local.P_insert + TzePoint3d.make(-0.01, -0.01, 0).asVector;
-    vp.BoundingBox.RTF :=
+    vp.BoundingBox.pMax :=
       Local.P_insert + TzePoint3d.make(0.01, 0.01, 0).asVector;
     Exit;
   end;
@@ -3798,9 +3798,9 @@ begin
     if PartMaxY > MaxY then MaxY := PartMaxY;
   end;
 
-  vp.BoundingBox.LBN :=
+  vp.BoundingBox.pMin :=
     TzePoint3d.make(MinX, MinY, Local.P_insert.z);
-  vp.BoundingBox.RTF :=
+  vp.BoundingBox.pMax :=
     TzePoint3d.make(MaxX, MaxY, Local.P_insert.z);
 end;
 

@@ -191,7 +191,7 @@ begin
       else
       begin
         // Объединяем bounding box
-        ConcatBB(bb, psd^.objaddr^.vp.BoundingBox);
+        bb.CheckAndConcat(psd^.objaddr^.vp.BoundingBox);
       end;
     end;
 
@@ -201,9 +201,9 @@ begin
   // Вычисляем центр bounding box
   if not firstObject then
   begin
-    Result.x := (bb.LBN.x + bb.RTF.x) / 2;
-    Result.y := (bb.LBN.y + bb.RTF.y) / 2;
-    Result.z := (bb.LBN.z + bb.RTF.z) / 2;
+    Result.x := (bb.pMin.x + bb.pMax.x) / 2;
+    Result.y := (bb.pMin.y + bb.pMax.y) / 2;
+    Result.z := (bb.pMin.z + bb.pMax.z) / 2;
   end;
 end;
 

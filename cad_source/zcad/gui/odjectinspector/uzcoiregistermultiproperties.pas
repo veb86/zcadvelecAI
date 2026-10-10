@@ -29,7 +29,7 @@ uses
   uzeentity,
   Varman,
   uzcoimultipropertiesutil,
-  uzeentcircle,uzeentarc,uzeentline,uzeentblockinsert,uzeenttext,
+  uzeentcircle,uzeentarc,uzeentline,uzeentblockinsert,uzeentpoint,uzeenttext,
   uzeentmtext,uzeentpolyline,uzeentlwpolyline,uzcentelleader,uzeentdimension,uzeentellipse,
   uzeEntSpline,
   uzeenthatch,uzeenttable,
@@ -81,7 +81,7 @@ begin
      inc(ChangedData.PGetDataInEtity,sizeof(TzePoint3d));
      V2:=PzePoint3d(ChangedData.PGetDataInEtity)^;
      l1:=v1.LengthTo(v2);
-     if @ecp=nil then pvd^.attrib:=pvd^.attrib or vda_RO;
+     if @ecp=nil then pvd^.attrib:=pvd^.attrib+[vda_RO];
      if fistrun then
                     mp.MPType^.CopyValueToInstance(@l1,pvdata)
                 else
@@ -98,7 +98,7 @@ begin
      V2:=PzeVector3d(ChangedData.PGetDataInEtity)^;
      v1:=v2-v1;
      v1.Normalize;
-     l1:=scalardot(v1,cV3d__1__0__0);
+     l1:=ScalarDot(v1,cV3d__1__0__0);
      l1:=arccos(l1){*180/pi};
      if v1.y<-eps then l1:={360}2*pi-l1;
      ChangedData.PGetDataInEtity:=@l1;
@@ -112,7 +112,7 @@ var
 begin
      V1:=PGDBObjWithLocalCS(ChangedData.PGetDataInEtity)^.Local.basis.ox;
      V2:=GetXfFromZ(PGDBObjWithLocalCS(ChangedData.PGetDataInEtity)^.Local.basis.oz);
-     l1:=scalardot(v1,v2);
+     l1:=ScalarDot(v1,v2);
      l1:=arccos(l1);
      if v1.y<-eps then l1:=2*pi-l1;
      ChangedData.PGetDataInEtity:=@l1;
@@ -128,7 +128,7 @@ begin
 
      if PGDBObjEntity(ChangedData.PGetDataInEtity)^.bp.ListPos.owner<>nil then begin
        V1:=PGDBObjEntity(ChangedData.PGetDataInEtity)^.bp.ListPos.owner^.GetMatrix^.mtr.v[0].Slice;
-       l0:=scalardot(V1.Normalized,cV3d__1__0__0);
+       l0:=ScalarDot(V1.Normalized,cV3d__1__0__0);
        l0:=arccos(l0);
        if v1.y<-eps then l0:=2*pi-l0;
        //a0:=l0*180/pi
@@ -137,7 +137,7 @@ begin
 
      V1:=PGDBObjWithLocalCS(ChangedData.PGetDataInEtity)^.Local.basis.ox;
      V2:=GetXfFromZ(PGDBObjWithLocalCS(ChangedData.PGetDataInEtity)^.Local.basis.oz);
-     l1:=scalardot(v1,v2);
+     l1:=ScalarDot(v1,v2);
      l1:=arccos(l1);
      if v1.y<-eps then l1:=2*pi-l1;
      //a1:=l0*180/pi;
@@ -279,7 +279,7 @@ var
 begin
   l1:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^/2;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=l1;
 end;
@@ -290,7 +290,7 @@ var
 begin
   R:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^/(2*PI);
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=R;
 end;
@@ -301,7 +301,7 @@ var
 begin
   R:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^/PGDBObjArc(ChangedData.pentity)^.angle;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=R;
 end;
@@ -312,7 +312,7 @@ var
 begin
   R:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=sqrt(PDouble(pvardesk(pdata)^.data.Addr.Instance)^/PI);
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=R;
 end;
@@ -324,7 +324,7 @@ begin
   delta:=PDouble(ChangedData.PSetDataInEtity)^;
   inc(ChangedData.PSetDataInEtity,sizeof(TzePoint3d));
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=delta+PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=oldValue;
 end;
@@ -341,7 +341,7 @@ begin
   V2:=V2-V1;
   V2.Normalize;
   V2:=V2*l1;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 
   PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
   cp:=UCmdChgField.CreateAndPush(PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
@@ -366,7 +366,7 @@ begin
   SinCos(l1,V2.y,V2.x);
   V2.z:=0;
   V2:=V2*d;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 
   PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
   cp:=UCmdChgField.CreateAndPush(PTZCADDrawing(drawings.GetCurrentDWG)^.UndoStack,
@@ -383,7 +383,7 @@ begin
   angle:=PDouble(pvardesk(pdata)^.data.Addr.Instance)^;
   {TODO: Надо пересчитать из текущих едениц чертежа в градусы}
   //PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=angle;
 end;
@@ -398,7 +398,7 @@ begin
   else
     PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=sqrt(PDouble(pvardesk(pdata)^.data.Addr.Instance)^/(PGDBObjArc(ChangedData.pentity)^.angle/2+0.5*sin(PGDBObjArc(ChangedData.pentity)^.angle)));
   ChangedData.PSetDataInEtity:=@PGDBObjArc(ChangedData.pentity)^.R;
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   GeneralFromPtrEntChangeProc(UMPlaced,pu,pdata,ChangedData,mp);
   PDouble(pvardesk(pdata)^.data.Addr.Instance)^:=R;
 end;
@@ -510,7 +510,7 @@ var
   a:Double;
   cp:UCmdChgField;
 begin
-  ProcessVariableAttributes(pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
   mp.MPType^.CopyValueToInstance(pvardesk(pdata)^.data.Addr.Instance,@a);
 
   PlaceUndoStartMarkerPropertyChangedIfNeed(UMPlaced);
@@ -586,10 +586,10 @@ var
 begin
   PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
+    PVD^.attrib+=[vda_RO];
   rowCount := PGDBObjTable(ChangedData.PEntity)^.tbl.Count;
   if fistrun then begin
-    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    PVD^.attrib-=[vda_different];
     mp.MPType^.CopyValueToInstance(
       @rowCount, PVD^.data.Addr.Instance);
     PTOneVarData(pdata)^.StrValue :=
@@ -597,12 +597,11 @@ begin
   end else begin
     if mp.MPType^.Compare(
       @rowCount, PVD^.data.Addr.Instance) <> CREqual then
-      ProcessVariableAttributes(
-        PVD^.attrib, vda_approximately, 0);
+      PVD^.attrib+=[vda_approximately];
     if PTOneVarData(pdata)^.StrValue <>
       mp.MPType^.GetDecoratedValueAsString(@rowCount, f) then
-      ProcessVariableAttributes(
-        PVD^.attrib, vda_different, vda_approximately);
+      PVD^.attrib+=[vda_different];
+      PVD^.attrib-=[vda_approximately];
   end;
 end;
 
@@ -620,14 +619,14 @@ var
 begin
   PVD := PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp = nil then
-    ProcessVariableAttributes(PVD^.attrib, vda_RO, 0);
+    PVD^.attrib+=[vda_RO];
   if PGDBObjTable(ChangedData.PEntity)^.PTableStyle <> nil then
     colCount := PGDBObjTable(
       ChangedData.PEntity)^.PTableStyle^.tblformat.Count
   else
     colCount := 0;
   if fistrun then begin
-    ProcessVariableAttributes(PVD^.attrib, 0, vda_different);
+    PVD^.attrib-=[vda_different];
     mp.MPType^.CopyValueToInstance(
       @colCount, PVD^.data.Addr.Instance);
     PTOneVarData(pdata)^.StrValue :=
@@ -635,12 +634,11 @@ begin
   end else begin
     if mp.MPType^.Compare(
       @colCount, PVD^.data.Addr.Instance) <> CREqual then
-      ProcessVariableAttributes(
-        PVD^.attrib, vda_approximately, 0);
+      PVD^.attrib+=[vda_approximately];
     if PTOneVarData(pdata)^.StrValue <>
       mp.MPType^.GetDecoratedValueAsString(@colCount, f) then
-      ProcessVariableAttributes(
-        PVD^.attrib, vda_different, vda_approximately);
+      PVD^.attrib+=[vda_different];
+      PVD^.attrib-=[vda_approximately];
   end;
 end;
 
@@ -653,8 +651,9 @@ const
      pcircle:PGDBObjCircle=nil;
      parc:PGDBObjArc=nil;
      pline:PGDBObjLine=nil;
-     pfacemesh:PGDBObjPolyFaceMesh=nil;
+	 pfacemesh:PGDBObjPolyFaceMesh=nil;
      pblockinsert:PGDBObjBlockInsert=nil;
+     ppoint:PGDBObjPoint=nil;
      ptext:PGDBObjText=nil;
      pmtext:PGDBObjMText=nil;
      p3dpoly:PGDBObjPolyline=nil;
@@ -664,12 +663,11 @@ const
      pelleader:PGDBObjElLeader=nil;
      pdim:PGDBObjDimension=nil;
      pellipse:PGDBObjEllipse=nil;
-     ptable:PGDBObjTable=nil;
+	 ptable:PGDBObjTable=nil;
      LayerControlExtender:TLayerControlExtender=nil;
      SmartTextEntExtender:TSmartTextEntExtender=nil;
      ReportExtender:TReportExtender=nil;
      NetConnectorExtender:TSCHConnectorExtender=nil;
-
 var
   ptype:PUserTypeDescriptor;
 begin
@@ -774,6 +772,14 @@ begin
     {--Summary}
     //MultiPropertiesManager.RegisterPhysMultiproperty('TotalLength','Total length',sysunit^.TypeName2PTD('Double'),MPCSummary,GDBEllipseID,PtrInt(@pellipse^.RR),PtrInt(@pellipse^.RR),@GetOneVarData,@FreeOneVarData,@DoubleR2SumCircumferenceEntIterateProc,nil);
     //MultiPropertiesManager.RegisterPhysMultiproperty('TotalArea','Total area',sysunit^.TypeName2PTD('Double'),MPCSummary,GDBEllipseID,PtrInt(@pellipse^.RR),PtrInt(@pellipse^.RR),@GetOneVarData,@FreeOneVarData,@DoubleR2SumAreaEntIterateProc,nil);
+
+
+    {Point uzegeometry}
+    MultiPropertiesManager.RestartMultipropertySortID;
+    MultiPropertiesManager.RegisterPhysMultiproperty('INSERT_X','Insert X',sysunit^.TypeName2PTD('TzeXUnits'),MPCGeometry,GDBPointID,nil,PtrInt(@ppoint^.P_insertInOCS),PtrInt(@ppoint^.P_insertInOCS.x),OneVarDataMIPD,TEntIterateProcsData.create(nil,@VertexXOCSEntIterateProc,@GeneralFromVarEntChangeProc));
+    MultiPropertiesManager.RegisterPhysMultiproperty('INSERT_Y','Insert Y',sysunit^.TypeName2PTD('TzeYUnits'),MPCGeometry,GDBPointID,nil,PtrInt(@ppoint^.P_insertInOCS),PtrInt(@ppoint^.P_insertInOCS.y),OneVarDataMIPD,TEntIterateProcsData.create(nil,@VertexYOCSEntIterateProc,@GeneralFromVarEntChangeProc));
+    MultiPropertiesManager.RegisterPhysMultiproperty('INSERT_Z','Insert Z',sysunit^.TypeName2PTD('TzeZUnits'),MPCGeometry,GDBPointID,nil,PtrInt(@ppoint^.P_insertInOCS),PtrInt(@ppoint^.P_insertInOCS.z),OneVarDataMIPD,TEntIterateProcsData.create(nil,@VertexZOCSEntIterateProc,@GeneralFromVarEntChangeProc));
+
 
     {Line uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;
@@ -902,8 +908,8 @@ begin
     {--Summary}
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyLineID,nil,PtrInt(@p3dpoly^.VertexArrayInOCS.Count),PtrInt(@p3dpoly^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalLength','Total length',sysunit^.TypeName2PTD('Double'),MPCSummary,GDBPolyLineID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@GDBPolyLineSumLengthEntIterateProc,nil));
-
-    {PolyFaceMesh uzegeometry}
+    
+	{PolyFaceMesh uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;
     MultiPropertiesManager.RegisterPhysMultiproperty('VertexCount','Vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,OneVarRODataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('Vertex3DControl_','Vertex control',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInWCS),PtrInt(@pfacemesh^.VertexArrayInOCS),TMainIterateProcsData.Create(@GetVertex3DControlData,@FreeVertex3DControlData),TEntIterateProcsData.Create(@PolylineVertex3DControlBeforeEntIterateProc,@PolylineVertex3DControlEntIterateProc,@PolylineVertex3DControlFromVarEntChangeProc));
@@ -938,7 +944,7 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Y','Pattern origin Y',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.y),PtrInt(@phatch^.Origin.y),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Z','Pattern origin Z',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.z),PtrInt(@phatch^.Origin.z),OneVarDataMIPD,OneVarDataEIPD);
 
-    {Table — геометрия}
+	{Table — геометрия}
     MultiPropertiesManager.RestartMultipropertySortID;
     MultiPropertiesManager.RegisterPhysMultiproperty(
       'INSERT_X', 'X',
@@ -1058,3 +1064,4 @@ finalization
   ProgramLog.LogOutFormatStr(clUFin,[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
   finalize;
 end.
+

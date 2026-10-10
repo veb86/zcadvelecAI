@@ -25,7 +25,7 @@ uses
   SysUtils,
   lptypes,lpvartypes,lpparser,lpcompiler,lpeval,
   LazUTF8,
-  {uzbLogTypes,}uzcLog,
+  uzcLog,
   uzeentity,uzeExtdrAbstractEntityExtender,
   uzeentline,uzeEntSpline,uzeentdevice,
   uzeentityfactory,uzeconsts,
@@ -39,12 +39,14 @@ uses
   uzeEntBase,gzctnrVectorTypes,uzcEnitiesVariablesExtender,uzcExtdrIncludingVolume,
   uzsbVarmanDef,UBaseTypeDescriptor,uzcregisterenitiesfeatures,
   uzcCounter,varman,uzcdevicebaseabstract,Masks,Generics.Defaults,Generics.Collections,
-  gzctnrSTL;
+  gzctnrSTL,uzeTypes;
 
 type
 
   TDrawingAction=(DBRedraw,DBUndo);
   TDrawingBehavior=set of TDrawingAction;
+  PGVResult=^TGVResult;
+  TGVResult=(GVRNotFound,GVRWrongType,GVRImplicitCast,GVROk);
 
 const
   cEScriptAVmsg='Access violation: "%s" not created or already freed';
@@ -569,7 +571,7 @@ var
   pt:PGDBObjTable;
   row:TStringsArray;
   i:integer;
-  psl:PTZctnrVectorStrings;
+  psl:PDXFEntsInternalVectorStrings;
   DC:TDrawContext;
 begin
   ctx:=TCurrentDrawingContext(Params^[0]);

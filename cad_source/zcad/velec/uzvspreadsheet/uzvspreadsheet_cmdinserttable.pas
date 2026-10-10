@@ -157,7 +157,7 @@ function CreateTableFromWorksheet(
 ): PGDBObjTable;
 var
   pt: PGDBObjTable;
-  pvs: PTZctnrVectorStrings;
+  pvs: PDXFEntsInternalVectorStrings;
   row, col: Cardinal;
   cell: PCell;
   cellValue: string;

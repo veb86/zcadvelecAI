@@ -59,7 +59,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+        PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.Width;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -75,7 +75,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+              PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.Height;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -138,20 +138,20 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+     PVD^.attrib+=[vda_RO];
   EnumData:=PTEnumData(PVD^.data.Addr.Instance);
   EnumIndex:=AcadTableStyleNameToEnumIndex(
     EnumData,PGDBObjAcadTable(ChangedData.PEntity)^.TableStyleName);
   if EnumIndex<0 then
   begin
-    ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+            PVD^.attrib+=[vda_different];
     exit;
   end;
   if fistrun then
     PTEnumData(PVD^.data.Addr.Instance)^.Selected:=EnumIndex
   else
     if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>EnumIndex then
-      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+      PVD^.attrib+=[vda_different];
 end;
 
 // Запись выбранного DXF-стиля таблицы из инспектора объектов (issue #1336).
@@ -186,8 +186,7 @@ begin
     exit;
   Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение количества строк (только чтение, не редактируется)
@@ -200,7 +199,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.RowCount;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -216,7 +215,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.ColCount;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -232,7 +231,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakEnabled;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -262,8 +261,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение признака повтора верхних подписей (только чтение)
@@ -276,7 +274,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakRepeatTopLabels;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -304,8 +302,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение признака повтора нижних подписей (только чтение)
@@ -318,7 +315,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakRepeatBottomLabels;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -336,7 +333,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualPosition;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -362,8 +359,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение признака ручной высоты разбиения (issue #1321).
@@ -377,7 +373,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakManualHeight;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -402,8 +398,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение интервала между частями разбиения (issue #1307, часть 1).
@@ -418,7 +413,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakSpacing;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -445,8 +440,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Чтение высоты разбиения (issue #1307, часть 2).
@@ -461,7 +455,7 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   v:=PGDBObjAcadTable(ChangedData.PEntity)^.BreakHeight;
   ChangedData.PGetDataInEtity:=@v;
   GeneralEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
@@ -489,8 +483,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 // Подготовка списка значений направления разбиения для комбобокса.
@@ -526,13 +519,13 @@ var
 begin
   PVD:=PTOneVarData(pdata)^.VDAddr.Instance;
   if @ecp=nil then
-    ProcessVariableAttributes(PVD^.attrib,vda_RO,0);
+    PVD^.attrib+=[vda_RO];
   enumindex:=ord(PGDBObjAcadTable(ChangedData.PEntity)^.BreakDirection);
   if fistrun then
     PTEnumData(PVD^.data.Addr.Instance)^.Selected:=enumindex
   else
     if PTEnumData(PVD^.data.Addr.Instance)^.Selected<>enumindex then
-      ProcessVariableAttributes(PVD^.attrib,vda_different,0);
+      PVD^.attrib+=[vda_different];
 end;
 
 // Запись направления разбиения (issue #1315). Изменение направления
@@ -561,8 +554,7 @@ begin
   if drawings.GetCurrentDWG<>nil then
     Table^.YouChanged(drawings.GetCurrentDWG^);
 
-  ProcessVariableAttributes(
-    pvardesk(pdata)^.attrib,0,vda_approximately or vda_different);
+  pvardesk(pdata)^.attrib-=[vda_approximately,vda_different];
 end;
 
 procedure RegisterAcadTableProperties;
@@ -624,6 +616,8 @@ begin
     OneVarDataMIPD,
     TEntIterateProcsData.Create(nil,@AcadTableRowCountEntIterateProc,nil));
   MultiPropertiesManager.RegisterPhysMultiproperty(
+
+
     'AcadTableColCount','Columns',sysunit^.TypeName2PTD('TArrayIndex'),
     MPCMisc,GDBAcadTableID,nil,0,0,
     OneVarDataMIPD,

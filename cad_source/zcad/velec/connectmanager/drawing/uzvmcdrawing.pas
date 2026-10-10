@@ -28,7 +28,7 @@ uses
   uzsbvarmandef, gzctnrVectorTypes,Dialogs,
   uzvmcstruct, uzccablemanager, uzcentcable, uzegeometry,
   uzglviewareadata, uzcsysvars, uzeentityfactory, uzcutils,
-  uzeroot, uzcenitiesvariablesextender, uzccomelectrical,
+  uzeroot, uzcenitiesvariablesextender,
   uzgldrawcontext,uzeEntBase, uzcinterface,uzegeometrytypes;
 
 type

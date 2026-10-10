@@ -152,12 +152,12 @@ var
    startcountur:boolean;
    k:Double;
    tesselator:TessObj;
-   lastv:GDBFontVertex2D;
+   lastv:TzePoint2FontFloat;
    tparrayindex:integer;
    tv:TzePoint3d;
    p:TzePoint2d;
    glyphBounds:TRect;
-procedure CompareAndTess(const v:GDBFontVertex2D);
+procedure CompareAndTess(const v:TzePoint2FontFloat);
 begin
   if (abs(lastv.x-v.x)>eps)or(abs(lastv.y-v.y)>eps) then begin
     inc(tparrayindex);
@@ -287,8 +287,8 @@ begin
   if si.LLPrimitiveCount>0 then begin
     VDCopyParam:=FontData.GetCopyParam(si.LLPrimitiveStartIndex,si.LLPrimitiveCount);
     symoutbound:=FontData.GetBoundingBbox(VDCopyParam.EID.GeomIndexMin,VDCopyParam.EID.GeomIndexMax);
-    si.SymMaxY:=symoutbound.RTF.y;
-    si.SymMinY:=symoutbound.LBN.y;
+    si.SymMaxY:=symoutbound.pMax.y;
+    si.SymMinY:=symoutbound.pMin.y;
   end;
 end;
 function TZETFFFontImpl.GetSymbolInfo(symbol:Integer):PGDBsymdolinfo;
