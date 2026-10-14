@@ -36,6 +36,11 @@ function AppendErrorsFromText(const AText: string;
   ErrorManager: TSpellErrorManager; ABasePosition: integer = 0;
   AEntityPtr: Pointer = nil): integer;
 
+// Добавить ошибки текстового примитива внутри определения блока
+function AppendErrorsFromText(const AText: string;
+  ErrorManager: TSpellErrorManager; ABasePosition: integer;
+  AEntityPtr: Pointer; const ABlockPath: TSpellBlockPath): integer;
+
 // Получить варианты исправления для слова
 function GetSuggestions(const AWord: string): TStringList;
 
@@ -144,10 +149,10 @@ begin
   Result := (spellResult = TSpeller.WrongLang);
 end;
 
-// Разбить текст на слова и проверить каждое
+// Разбить текст на слова и проверить каждое с учётом цепочки вставок блоков
 function AppendErrorsFromText(const AText: string;
   ErrorManager: TSpellErrorManager; ABasePosition: integer;
-  AEntityPtr: Pointer): integer;
+  AEntityPtr: Pointer; const ABlockPath: TSpellBlockPath): integer;
 var
   currentPos: integer;
   wordStart, wordEnd: integer;
@@ -184,7 +189,7 @@ begin
         sentence := ExtractSentence(AText, currentPos);
         absolutePosition := ABasePosition + currentPos;
         ErrorManager.AddError(currentWord, sentence, absolutePosition,
-          AEntityPtr, currentPos);
+          AEntityPtr, currentPos, ABlockPath);
         Inc(Result);
       end;
     end;
@@ -194,6 +199,15 @@ begin
 
   programlog.LogOutFormatStr('AppendErrorsFromText: found %d errors',
     [Result], LM_Info);
+end;
+
+// Разбить текст на слова и проверить каждое (примитив модели)
+function AppendErrorsFromText(const AText: string;
+  ErrorManager: TSpellErrorManager; ABasePosition: integer;
+  AEntityPtr: Pointer): integer;
+begin
+  Result := AppendErrorsFromText(AText, ErrorManager, ABasePosition,
+    AEntityPtr, nil);
 end;
 
 // Найти все ошибки в тексте

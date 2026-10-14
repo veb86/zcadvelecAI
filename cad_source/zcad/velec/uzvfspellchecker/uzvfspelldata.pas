@@ -26,6 +26,10 @@ uses
   Classes, SysUtils, fgl;
 
 type
+  // Цепочка вставок блоков от вставки в модели до вложенной вставки,
+  // через которую найден текстовый примитив определения блока
+  TSpellBlockPath = array of Pointer;
+
   // Одна орфографическая ошибка
   PSpellError = ^TSpellError;
   TSpellError = record
@@ -34,6 +38,9 @@ type
     Position: integer;      // Позиция ошибки в исходном тексте
     EntityPosition: integer; // Позиция ошибки в тексте примитива
     EntityPtr: Pointer;      // Текстовый примитив чертежа
+    // Вставки блоков (от внешней к вложенной), если примитив находится
+    // внутри определения блока; пусто для примитивов модели
+    BlockPath: TSpellBlockPath;
   end;
 
   // Список ошибок
@@ -55,6 +62,10 @@ type
     function AddError(const AWord, ASentence: string;
       APosition: integer; AEntityPtr: Pointer = nil;
       AEntityPosition: integer = 0): PSpellError;
+    // Добавить ошибку в текстовом примитиве внутри определения блока
+    function AddError(const AWord, ASentence: string;
+      APosition: integer; AEntityPtr: Pointer; AEntityPosition: integer;
+      const ABlockPath: TSpellBlockPath): PSpellError;
 
     // Очистить весь список ошибок
     procedure ClearErrors;
@@ -97,6 +108,7 @@ begin
   if Assigned(ErrorPtr) then begin
     ErrorPtr^.ErrorWord := '';
     ErrorPtr^.Sentence := '';
+    ErrorPtr^.BlockPath := nil;
     Dispose(ErrorPtr);
   end;
 end;
@@ -105,17 +117,28 @@ end;
 function TSpellErrorManager.AddError(const AWord, ASentence: string;
   APosition: integer; AEntityPtr: Pointer; AEntityPosition: integer): PSpellError;
 begin
+  Result := AddError(AWord, ASentence, APosition, AEntityPtr,
+    AEntityPosition, nil);
+end;
+
+// Добавить новую ошибку с цепочкой вставок блоков
+function TSpellErrorManager.AddError(const AWord, ASentence: string;
+  APosition: integer; AEntityPtr: Pointer; AEntityPosition: integer;
+  const ABlockPath: TSpellBlockPath): PSpellError;
+begin
   New(Result);
   Result^.ErrorWord := AWord;
   Result^.Sentence := ASentence;
   Result^.Position := APosition;
   Result^.EntityPtr := AEntityPtr;
   Result^.EntityPosition := AEntityPosition;
+  Result^.BlockPath := Copy(ABlockPath);
   FErrorList.Add(Result);
 
   programlog.LogOutFormatStr(
-    'TSpellErrorManager.AddError: word="%s", position=%d, entityPosition=%d',
-    [AWord, APosition, AEntityPosition], LM_Info);
+    'TSpellErrorManager.AddError: word="%s", position=%d, ' +
+    'entityPosition=%d, blockDepth=%d',
+    [AWord, APosition, AEntityPosition, Length(ABlockPath)], LM_Info);
 end;
 
 // Очистить список ошибок
