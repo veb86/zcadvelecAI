@@ -125,8 +125,9 @@ implementation
 uses
   gzctnrVectorTypes,
   uzcdrawing, uzcdrawings, uzcutils, uzeconsts, uzeentity, uzeenttext,
+  uzeblockdef, uzeentblockinsert,
   uzetypes, uzgldrawcontext, uzvfspellzoom, uzvfspelluserdict,
-  zUndoCmdSaveEntityState;
+  uzvfspellblocks, zUndoCmdSaveEntityState;
 
 {$R *.lfm}
 
@@ -220,49 +221,148 @@ begin
   DrawingText := DrawingText + EntityText;
 end;
 
+type
+  // Состояние сканирования текстов чертежа
+  TSpellScanState = record
+    ErrorManager: TSpellErrorManager;
+    DrawingText: string;
+    TextEntityCount: integer;
+    SkippedTextCount: integer;
+    EntityCount: integer;
+    ErrorCount: integer;
+    BlockCount: integer;
+    // Уже просканированные определения блоков: каждый блок проверяется
+    // один раз, по первой попавшей под сканирование вставке
+    ScannedBlockDefs: TFPList;
+  end;
+
+procedure ScanSpellEntity(EntityPtr: PGDBObjEntity;
+  const BlockPath: TSpellBlockPath; var State: TSpellScanState); forward;
+
+// Проверить текстовый примитив модели или определения блока
+procedure ScanSpellTextEntity(EntityPtr: PGDBObjEntity;
+  const BlockPath: TSpellBlockPath; var State: TSpellScanState);
+var
+  EntityText: string;
+  BasePosition: integer;
+begin
+  Inc(State.TextEntityCount);
+  EntityText := GetSpellTextContent(EntityPtr);
+
+  if Trim(EntityText) = '' then
+    Inc(State.SkippedTextCount)
+  else begin
+    BasePosition := Length(State.DrawingText);
+    if State.DrawingText <> '' then
+      BasePosition := BasePosition + Length(DRAWING_TEXT_SEPARATOR);
+    AppendDrawingText(State.DrawingText, EntityText);
+    State.ErrorCount := State.ErrorCount + AppendErrorsFromText(EntityText,
+      State.ErrorManager, BasePosition, EntityPtr, BlockPath);
+  end;
+
+  programlog.LogOutFormatStr(
+    'TSpellCheckerForm.LoadCurrentDrawingText: text entity type=%d, ' +
+    'text length=%d, block depth=%d',
+    [EntityPtr^.GetObjType, Length(EntityText), Length(BlockPath)], LM_Info);
+end;
+
+// Проверить тексты определения блока, если блок ещё не сканировался
+procedure ScanSpellBlockInsert(InsertPtr: PGDBObjEntity;
+  const ParentPath: TSpellBlockPath; var State: TSpellScanState);
+var
+  BlockDef: PGDBObjBlockdef;
+  BlockPath: TSpellBlockPath;
+  EntityPtr: PGDBObjEntity;
+  Iterator: itrec;
+begin
+  BlockDef := GetSpellBlockDef(InsertPtr);
+  if not Assigned(BlockDef) then begin
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.LoadCurrentDrawingText: block definition "%s" ' +
+      'not found', [PGDBObjBlockInsert(InsertPtr)^.Name], LM_Info);
+    Exit;
+  end;
+
+  if State.ScannedBlockDefs.IndexOf(BlockDef) >= 0 then
+    Exit;
+
+  if Length(ParentPath) >= MAX_SPELL_BLOCK_NESTING then begin
+    programlog.LogOutFormatStr(
+      'TSpellCheckerForm.LoadCurrentDrawingText: block "%s" skipped, ' +
+      'nesting depth limit %d', [BlockDef^.Name, MAX_SPELL_BLOCK_NESTING],
+      LM_Info);
+    Exit;
+  end;
+
+  State.ScannedBlockDefs.Add(BlockDef);
+  Inc(State.BlockCount);
+
+  BlockPath := Copy(ParentPath);
+  SetLength(BlockPath, Length(BlockPath) + 1);
+  BlockPath[High(BlockPath)] := InsertPtr;
+
+  programlog.LogOutFormatStr(
+    'TSpellCheckerForm.LoadCurrentDrawingText: scan block "%s", ' +
+    'entities=%d, depth=%d',
+    [BlockDef^.Name, BlockDef^.ObjArray.Count, Length(BlockPath)], LM_Info);
+
+  EntityPtr := BlockDef^.ObjArray.beginiterate(Iterator);
+  if EntityPtr <> nil then
+    repeat
+      ScanSpellEntity(EntityPtr, BlockPath, State);
+      EntityPtr := BlockDef^.ObjArray.iterate(Iterator);
+    until EntityPtr = nil;
+end;
+
+// Проверить примитив: текст или вставку блока
+procedure ScanSpellEntity(EntityPtr: PGDBObjEntity;
+  const BlockPath: TSpellBlockPath; var State: TSpellScanState);
+begin
+  Inc(State.EntityCount);
+
+  if IsSpellTextEntity(EntityPtr) then
+    ScanSpellTextEntity(EntityPtr, BlockPath, State)
+  else if IsSpellBlockInsert(EntityPtr) then
+    ScanSpellBlockInsert(EntityPtr, BlockPath, State);
+end;
+
 function LoadCurrentDrawingText(ErrorManager: TSpellErrorManager;
   out TextEntityCount, SkippedTextCount, EntityCount, ErrorCount: integer): string;
 var
   EntityPtr: PGDBObjEntity;
   Iterator: itrec;
-  EntityText: string;
-  BasePosition: integer;
+  State: TSpellScanState;
 begin
-  Result := '';
-  TextEntityCount := 0;
-  SkippedTextCount := 0;
-  EntityCount := 0;
-  ErrorCount := 0;
+  State.ErrorManager := ErrorManager;
+  State.DrawingText := '';
+  State.TextEntityCount := 0;
+  State.SkippedTextCount := 0;
+  State.EntityCount := 0;
+  State.ErrorCount := 0;
+  State.BlockCount := 0;
+  State.ScannedBlockDefs := TFPList.Create;
+  try
+    EntityPtr := drawings.GetCurrentDWG^.GetCurrentROOT^.ObjArray.beginiterate(
+      Iterator);
+    if EntityPtr <> nil then
+      repeat
+        ScanSpellEntity(EntityPtr, nil, State);
+        EntityPtr := drawings.GetCurrentDWG^.GetCurrentROOT^.ObjArray.iterate(
+          Iterator);
+      until EntityPtr = nil;
+  finally
+    State.ScannedBlockDefs.Free;
+  end;
 
-  EntityPtr := drawings.GetCurrentDWG^.GetCurrentROOT^.ObjArray.beginiterate(
-    Iterator);
-  if EntityPtr <> nil then
-    repeat
-      Inc(EntityCount);
-      if IsSpellTextEntity(EntityPtr) then begin
-        Inc(TextEntityCount);
-        EntityText := GetSpellTextContent(EntityPtr);
+  Result := State.DrawingText;
+  TextEntityCount := State.TextEntityCount;
+  SkippedTextCount := State.SkippedTextCount;
+  EntityCount := State.EntityCount;
+  ErrorCount := State.ErrorCount;
 
-        if Trim(EntityText) = '' then
-          Inc(SkippedTextCount)
-        else begin
-          BasePosition := Length(Result);
-          if Result <> '' then
-            BasePosition := BasePosition + Length(DRAWING_TEXT_SEPARATOR);
-          AppendDrawingText(Result, EntityText);
-          ErrorCount := ErrorCount + AppendErrorsFromText(EntityText,
-            ErrorManager, BasePosition, EntityPtr);
-        end;
-
-        programlog.LogOutFormatStr(
-          'TSpellCheckerForm.LoadCurrentDrawingText: text entity type=%d, ' +
-          'text length=%d',
-          [EntityPtr^.GetObjType, Length(EntityText)], LM_Info);
-      end;
-
-      EntityPtr := drawings.GetCurrentDWG^.GetCurrentROOT^.ObjArray.iterate(
-        Iterator);
-    until EntityPtr = nil;
+  programlog.LogOutFormatStr(
+    'TSpellCheckerForm.LoadCurrentDrawingText: scanned blocks=%d',
+    [State.BlockCount], LM_Info);
 end;
 
 { TSpellCheckerForm }
@@ -545,6 +645,16 @@ begin
   if not ReplaceTextAtPosition(entityText, ErrorPtr^.EntityPosition,
     ErrorPtr^.ErrorWord, SuggestionText, newEntityText) then
     Exit;
+
+  // Текст внутри блока исправляется в определении блока,
+  // после чего перестраиваются все его вставки
+  if Length(ErrorPtr^.BlockPath) > 0 then begin
+    Result := ApplySpellBlockTextCorrection(EntityPtr, ErrorPtr^.BlockPath,
+      newEntityText, SPELLCHECKER_UNDO_COMMAND);
+    if Result then
+      zcRedrawCurrentDrawing;
+    Exit;
+  end;
 
   drawing := PTZCADDrawing(drawings.GetCurrentDWG);
   zcStartUndoCommand(drawing^, SPELLCHECKER_UNDO_COMMAND, False);
