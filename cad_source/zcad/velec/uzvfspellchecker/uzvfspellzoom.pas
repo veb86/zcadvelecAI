@@ -37,7 +37,7 @@ uses
   uzclog,
   uzcdrawing, uzcdrawings,
   uzeconsts, uzeentity, uzeenttext, uzeentmtext, uzegeometry, uzetypes,
-  uzefont, uzglgeometry, uzgldrawcontext;
+  uzefont, uzglgeometry, uzgldrawcontext, uzvfspellblocks;
 
 const
   WORD_VOLUME_PADDING_FACTOR = 0.35;
@@ -359,6 +359,28 @@ begin
   Result := True;
 end;
 
+// Перевести габарит примитива внутри блока из локальной системы координат
+// блока в мировую по цепочке вставок, найденной при сканировании
+function TransformBlockVolumeToWorld(ErrorPtr: PSpellError;
+  var Volume: TBoundingBox): boolean;
+var
+  blockMatrix: TzeTypedMatrix4d;
+begin
+  Result := True;
+
+  if Length(ErrorPtr^.BlockPath) = 0 then
+    Exit;
+
+  Result := TryGetSpellBlockMatrix(ErrorPtr^.BlockPath, blockMatrix);
+  if Result then
+    Volume := TransformSpellVolume(Volume, blockMatrix);
+
+  programlog.LogOutFormatStr(
+    'TransformBlockVolumeToWorld: word="%s", blockDepth=%d, ok=%s',
+    [ErrorPtr^.ErrorWord, Length(ErrorPtr^.BlockPath),
+     BoolToStr(Result, True)], LM_Info);
+end;
+
 function TryGetSpellErrorWordVolume(ErrorPtr: PSpellError;
   out Volume: TBoundingBox): boolean;
 var
@@ -381,6 +403,9 @@ begin
       Result := TryGetTextWordVolume(PGDBObjText(entityPtr), ErrorPtr,
         Volume);
   end;
+
+  if Result then
+    Result := TransformBlockVolumeToWorld(ErrorPtr, Volume);
 end;
 
 function ZoomToSpellEntity(ErrorPtr: PSpellError): boolean;
@@ -404,6 +429,8 @@ begin
   drawContext := drawing^.CreateDrawingRC;
   entityPtr^.getonlyoutbound(drawContext);
   volume := entityPtr^.vp.BoundingBox;
+  if not TransformBlockVolumeToWorld(ErrorPtr, volume) then
+    Exit;
   drawings.GetCurrentDWG^.wa.ZoomToVolume(volume);
   Result := True;
 end;
