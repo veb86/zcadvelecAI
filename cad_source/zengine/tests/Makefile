@@ -1,4 +1,4 @@
-.PHONY: clean all checkallvars checkvars nodtests nodtests-lazbuild
+.PHONY: clean all checkallvars checkvars nodtests nodtests-lazbuild meshdisplaytests
 default: all
 
 OSDETECT:=
@@ -95,6 +95,10 @@ NODTESTS:=$(basename $(wildcard nodstage*.lpr))
 
 nodtests:
 	bash nodtests.sh $(NODTESTS)
+
+# Регрессии режимов отображения PolyFaceMesh без IDE и видеокарты.
+meshdisplaytests:
+	bash nodtests.sh polyfacemeshdisplay
 
 # nodtests-lazbuild - сборка проектов nodstage*.lpi через lazbuild
 # (пакеты zengine должны быть установлены в $(PCP)) и запуск

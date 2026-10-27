@@ -44,6 +44,9 @@ jobs:
       - name: NOD tests
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
+      - name: Polyface mesh display tests
+        timeout-minutes: 5
+        run: make -C cad_source/zengine/tests meshdisplaytests
       - name: Upload build logs
         if: failure()
         uses: actions/upload-artifact@v4
