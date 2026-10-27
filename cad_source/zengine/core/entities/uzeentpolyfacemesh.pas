@@ -29,8 +29,7 @@ uses
   uzestyleslayers,uzeentsubordinated,uzeentcurve,UGDBSelectedObjArray,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,uzesnap,
-  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector,
-  uzcinterface;
+  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector;
 
 type
   // Структура для хранения индексов вершин грани
@@ -76,8 +75,16 @@ type
 
     // Вспомогательная процедура для формирования уникальных рёбер
     procedure BuildEdgePairs(out edgePairs:GDBEdgePairArray; out edgeCount: Integer);
-    
+    // Проверяет индексы, не смешивая невидимость рёбер с видимостью грани.
+    function GetFacePoints(const Face:TFaceIndices;out Points:OutBound4V):Boolean;
+    // Передаёт невырожденный треугольник с нормалью устройству вывода.
+    procedure DrawFaceTriangle(const Point1,Point2,Point3:TzePoint3d;
+      var DC:TDrawContext);
+    // Заполняет грани по актуальным координатам после трансформации.
+    procedure DrawFilledFaces(var DC:TDrawContext);
+
   public
+    ShowSolid:Boolean; // False — каркас; True — заполненные грани и каркас.
     constructor init(own:Pointer;layeraddres:PGDBLayerProp;
       LW:smallint);
     constructor initnul(owner:PGDBObjGenericWithSubordinated);
@@ -124,6 +131,7 @@ begin
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul;
+  ShowSolid := False;
 end;
 
 constructor GDBObjPolyFaceMesh.initnul(owner:PGDBObjGenericWithSubordinated);
@@ -132,6 +140,64 @@ begin
   FVertexCount := 0;
   FFaceCount := 0;
   FFaces.initnul;
+  ShowSolid := False;
+end;
+
+function GDBObjPolyFaceMesh.GetFacePoints(const Face:TFaceIndices;
+  out Points:OutBound4V):Boolean;
+var
+  Indices:array[0..3] of Integer;
+  VertexIndex:Int64;
+  i:Integer;
+begin
+  Result:=False;
+  if (Face.VertexCount<>3) and (Face.VertexCount<>4) then
+    Exit;
+  Indices[0]:=Face.Vertex1;
+  Indices[1]:=Face.Vertex2;
+  Indices[2]:=Face.Vertex3;
+  Indices[3]:=Face.Vertex4;
+  for i:=0 to Face.VertexCount-1 do begin
+    // Int64 позволяет безопасно обработать даже Low(Integer).
+    VertexIndex:=Abs(Int64(Indices[i]));
+    if (VertexIndex=0) or (VertexIndex>VertexArrayInWCS.Count) then
+      Exit;
+    Points[i]:=VertexArrayInWCS.Items[VertexIndex-1];
+  end;
+  Result:=True;
+end;
+
+procedure GDBObjPolyFaceMesh.DrawFaceTriangle(const Point1,Point2,Point3:TzePoint3d;
+  var DC:TDrawContext);
+var
+  Normal:TzeVector3d;
+begin
+  Normal:=VectorDot(Point2-Point1,Point3-Point1);
+  if Normal.SqrLength=0 then
+    Exit;
+  DC.drawer.DrawTriangle3DInModelSpace(Normal.Normalized.asPoint3d,
+    Point1,Point2,Point3,DC.DrawingContext.matrixs);
+end;
+
+procedure GDBObjPolyFaceMesh.DrawFilledFaces(var DC:TDrawContext);
+var
+  i:Integer;
+  Face:TFaceIndices;
+  Points:OutBound4V;
+begin
+  {$IFDEF POLYFACEMESH_TRACE}
+  programlog.LogOutFormatStr('PolyFaceMesh: solid faces=%d, vertices=%d',
+    [FFaces.Count,VertexArrayInWCS.Count],LM_Info);
+  {$ENDIF}
+  for i:=0 to FFaces.Count-1 do begin
+    Face:=GetFaceVertices(i);
+    if not GetFacePoints(Face,Points) then
+      Continue;
+    DrawFaceTriangle(Points[0],Points[1],Points[2],DC);
+    // Вершины DXF идут по контуру; SOLID использует иной порядок углов.
+    if Face.VertexCount=4 then
+      DrawFaceTriangle(Points[0],Points[2],Points[3],DC);
+  end;
 end;
 
 procedure GDBObjPolyFaceMesh.BuildEdgePairs(out edgePairs: GDBEdgePairArray;
@@ -537,6 +603,9 @@ begin
     Это необходимо потому, что при трансформации (перемещении/повороте)
     вершины смещаются правильно, но Representation не перестраивается. }
 
+  if ShowSolid then
+    DrawFilledFaces(DC);
+
   edgePairs.initnul;
   try
     { Формируем уникальные рёбра через общую процедуру (как в FormatEntity) }
@@ -605,6 +674,7 @@ begin
   // Копируем данные о гранях
   tpo^.FVertexCount := FVertexCount;
   tpo^.FFaceCount := FFaceCount;
+  tpo^.ShowSolid := ShowSolid;
   tpo^.FFaces.initnul;
   for i := 0 to FFaces.Count - 1 do
     tpo^.FFaces.PushBackData(FFaces.parray^[i]);

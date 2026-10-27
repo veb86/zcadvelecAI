@@ -914,6 +914,12 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('VertexCount','Vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,OneVarRODataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('Vertex3DControl_','Vertex control',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInWCS),PtrInt(@pfacemesh^.VertexArrayInOCS),TMainIterateProcsData.Create(@GetVertex3DControlData,@FreeVertex3DControlData),TEntIterateProcsData.Create(@PolylineVertex3DControlBeforeEntIterateProc,@PolylineVertex3DControlEntIterateProc,@PolylineVertex3DControlFromVarEntChangeProc));
     MultiPropertiesManager.RegisterPhysMultiproperty('FaceCount','Face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));
+    {--Misc}
+    // Стандартный обработчик обеспечивает редактирование, undo/redo и обновление вида.
+    MultiPropertiesManager.RegisterPhysMultiproperty('ShowSolid','Solid faces',
+      sysunit^.TypeName2PTD('Boolean'),MPCMisc,GDBPolyFaceMeshID,nil,
+      PtrInt(@pfacemesh^.ShowSolid),PtrInt(@pfacemesh^.ShowSolid),
+      OneVarDataMIPD,OneVarDataEIPD);
     {--Summary}
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalFaceCount','Total face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));

@@ -2600,6 +2600,10 @@ msgctxt "zcadexternal.oimultiproperty~vertexcount"
 msgid "Vertex count"
 msgstr "Количество вершин"
 
+#: zcadexternal.oimultiproperty~showsolid
+msgid "Solid faces"
+msgstr "Заполнение граней"
+
 #: zcadexternal.oimultiproperty~width
 msgctxt "zcadexternal.oimultiproperty~width"
 msgid "Width"

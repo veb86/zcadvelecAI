@@ -2492,6 +2492,10 @@ msgstr ""
 msgid "Vertex count"
 msgstr ""
 
+#: zcadexternal.oimultiproperty~showsolid
+msgid "Solid faces"
+msgstr ""
+
 #: zcadexternal.oimultiproperty~width
 msgctxt "zcadexternal.oimultiproperty~width"
 msgid "Width"

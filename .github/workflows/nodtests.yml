@@ -2,6 +2,7 @@ name: nodtests
 # Тесты NOD (cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этапы 8–9):
 # сборка и запуск cad_source/zengine/tests/nodstage*.lpr (fpc + исходники
 # Lazarus, виджетсет nogui), см. cad_source/zengine/tests/nodtests.sh.
+# Также проверяются режимы PolyFaceMesh и их headless OpenGL-рендеры.
 on:
   push:
     paths:
@@ -10,6 +11,7 @@ on:
       - 'cad_source/test/**'
       - 'cad_source/components/**'
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
+      - 'experiments/issue1470/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   pull_request:
@@ -20,6 +22,7 @@ on:
       - 'cad_source/test/**'
       - 'cad_source/components/**'
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
+      - 'experiments/issue1470/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   workflow_dispatch:
@@ -40,10 +43,22 @@ jobs:
       - name: Install fpc and Lazarus sources
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fpc lazarus-src
+          sudo apt-get install -y --no-install-recommends fpc lazarus-src \
+            libegl1 libgl1 libgl1-mesa-dri
       - name: NOD tests
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
+      - name: Polyface mesh display tests
+        timeout-minutes: 5
+        run: make -C cad_source/zengine/tests meshdisplaytests
+      - name: Polyface mesh OpenGL visual regression
+        timeout-minutes: 2
+        run: bash experiments/issue1470/run_visual.sh
+      - name: Upload mesh renders
+        uses: actions/upload-artifact@v4
+        with:
+          name: polyfacemesh-renders
+          path: /tmp/zcad-nodtests/mesh-renders/*.png
       - name: Upload build logs
         if: failure()
         uses: actions/upload-artifact@v4
