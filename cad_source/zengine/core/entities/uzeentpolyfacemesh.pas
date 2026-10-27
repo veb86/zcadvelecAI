@@ -29,8 +29,7 @@ uses
   uzestyleslayers,uzeentsubordinated,uzeentcurve,UGDBSelectedObjArray,
   uzeentity,uzctnrVectorBytesStream,uzeTypes,uzeconsts,uzglviewareadata,
   uzegeometrytypes,uzegeometry,uzeffdxfsupport,SysUtils,uzesnap,
-  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector,
-  uzcinterface;
+  uzMVReader,uzCtnrVectorpBaseEntity,uzbLogIntf,uzclog, gzctnrVector;
 
 type
   // Структура для хранения индексов вершин грани
