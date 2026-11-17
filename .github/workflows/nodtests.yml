@@ -12,6 +12,7 @@ on:
       - 'cad_source/components/**'
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
       - 'experiments/issue1470/**'
+      - 'experiments/issue1472/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   pull_request:
@@ -23,6 +24,7 @@ on:
       - 'cad_source/components/**'
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
       - 'experiments/issue1470/**'
+      - 'experiments/issue1472/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   workflow_dispatch:
@@ -45,6 +47,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fpc lazarus-src \
             libegl1 libgl1 libgl1-mesa-dri
+      - name: HTTP server CORS regression
+        timeout-minutes: 1
+        run: node experiments/issue1472/test_httpserver.mjs
       - name: NOD tests
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
