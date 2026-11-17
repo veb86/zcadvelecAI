@@ -34,7 +34,7 @@ const
   Razdel4File = TestDir + 'acadtablerazdel2007_4.dxf';
   BugBreakFile = TestDir + 'bugbreaktable.dxf';
   LegacyFile = TestDir + 'tablebugheader3.dxf';
-  Acad2007File = 'DXFTableSaveNEW/acadtable2007.dxf';
+  Acad2007File = 'cad_source/testacadtable/acadtable2007.dxf';
   { Допуск сравнения вещественных значений }
   Eps = 1e-6;
 
