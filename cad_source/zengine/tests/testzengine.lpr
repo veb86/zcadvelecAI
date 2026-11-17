@@ -5,12 +5,8 @@ program testzengine;
 uses
   //MemCheck,
   Classes, consoletestrunner,
-  Logtest,BoundaryPathSimpletest, uzctdwgdimstylelinetype,
-  uzctEntityArc, uzctmtextwrap, uzctenttextjustify, uzctacadtable, uzctentproxy,
-  uzctentpolyfacemesh, uzctentleader, uzctdwgblockreserve, uzctdwgentleader,
-  uzctenttextnilstyle,
-  uzctmtextcontentsave,
-  uzctenttransformscalars;
+  Logtest,BoundaryPathSimpletest,
+  uzctEntityArc;
 
 var
   Application: TTestRunner;

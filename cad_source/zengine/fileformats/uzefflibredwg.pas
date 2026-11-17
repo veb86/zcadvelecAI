@@ -47,8 +47,6 @@ uses
   uzeffLibreDWG2Ents,
   uzedwglog,
   uzedwgtimerlog,
-  uzedwgcodepage,
-  uzeffdxfsupport,
   uzeTypes;
 
 procedure DebugDWG(dwg:PDwg_Data);
@@ -76,23 +74,6 @@ begin
     [Integer(dwg^.num_classes), Integer(dwg^.num_objects),
      Integer(dwg^.num_alloced_objects), Integer(dwg^.num_entities),
      Integer(dwg^.num_object_refs)]);
-end;
-
-{ Задаёт кодовую страницу чертежа по заголовку DWG (issue #1438).
-  После чтения DWG все строки хранятся в UTF-8, а при сохранении в DXF2000
-  перекодируются в DXFCodePage чертежа. Раньше DXFCodePage оставалась
-  ZCCPINVALID, строки кодировались в 1252 и кириллица становилась '?'.
-  При вставке (TLOMerge) кодовая страница целевого чертежа сохраняется. }
-procedure ApplyDWGCodePageToDrawing(var ZCDCtx:TZDrawingContext;
-  const dwg:Dwg_Data);
-begin
-  if (ZCDCtx.PDrawing=nil) or ((ZCDCtx.LoadMode<>TLOLoad) and
-    (ZCDCtx.PDrawing^.DXFCodePage<>ZCCPINVALID)) then
-    exit;
-  ZCDCtx.PDrawing^.DXFCodePage:=
-    DWGHeaderCodePageToZCCodePage(dwg.header.codepage);
-  DWGLogInfoFormatStr('drawing DXFCodePage: %s (header.codepage=%d)',
-    [ZCCP2Str(ZCDCtx.PDrawing^.DXFCodePage),Integer(dwg.header.codepage)]);
 end;
 
 procedure PLP(const Data:TData;const Counter:TCounter);
@@ -166,7 +147,6 @@ begin
         [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
-    ApplyDWGCodePageToDrawing(ZCDCtx,dwg);
     PhaseTimer := TTimeMeter.StartMeasure;
     lph:=LPSHEmpty;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);
@@ -265,7 +245,6 @@ begin
         [Success, DWGReadCodeToText(Success)]);
       exit;
     end;
-    ApplyDWGCodePageToDrawing(ZCDCtx,dwg);
     PhaseTimer := TTimeMeter.StartMeasure;
     lph:=LPSHEmpty;
     lph:=lps.StartLongProcess('Parse DWG data',nil,dwg.num_objects);

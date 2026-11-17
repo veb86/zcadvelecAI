@@ -42,8 +42,8 @@ interface
 uses
   SysUtils,
   fpspreadsheet,
-  fpsTypes,
-  uzeacadtable_types;
+  fpsTypes;
+  //uzeacadtable_types;
 
 const
   // Масштаб перевода размера ячейки листа (мм) в единицы чертежа ACAD.
@@ -91,12 +91,12 @@ function SetWorksheetRowHeightsMM(AWorksheet: TsWorksheet;
 
 { Собирает ширины столбцов листа в единицах чертежа (для передачи в
   GDBObjAcadTable.BuildFromCellTextsWithSizes). }
-function CollectColWidths(AWorksheet: TsWorksheet;
-  AColCount: Integer): TTableSizeArray;
-
-{ Собирает высоты строк листа в единицах чертежа. }
-function CollectRowHeights(AWorksheet: TsWorksheet;
-  ARowCount: Integer): TTableSizeArray;
+//function CollectColWidths(AWorksheet: TsWorksheet;
+//  AColCount: Integer): TTableSizeArray;
+//
+//{ Собирает высоты строк листа в единицах чертежа. }
+//function CollectRowHeights(AWorksheet: TsWorksheet;
+//  ARowCount: Integer): TTableSizeArray;
 
 { Преобразует пару выравниваний fpspreadsheet (горизонтальное и вертикальное)
   в код выравнивания AutoCAD (group 170, значения 1..9). Значения "по
@@ -114,8 +114,8 @@ procedure AcadAlignmentToWorksheet(AAlignment: Integer;
   GDBObjAcadTable.BuildFromCellTextsWithSizesAndAlignments (issue #1363).
   Значения "по умолчанию" преобразуются в фактическое выравнивание листа
   слева/сверху, а не в наследование от стиля таблицы (issue #1399). }
-function CollectCellAlignments(AWorksheet: TsWorksheet;
-  ARowCount, AColCount: Integer): TTableAlignmentArray;
+//function CollectCellAlignments(AWorksheet: TsWorksheet;
+//  ARowCount, AColCount: Integer): TTableAlignmentArray;
 
 implementation
 
@@ -190,33 +190,33 @@ begin
       Inc(Result);
 end;
 
-function CollectColWidths(AWorksheet: TsWorksheet;
-  AColCount: Integer): TTableSizeArray;
-var
-  ColIdx: Integer;
-begin
-  System.SetLength(Result, 0);
-  if (AWorksheet = nil) or (AColCount <= 0) then
-    Exit;
-  System.SetLength(Result, AColCount);
-  for ColIdx := 0 to AColCount - 1 do
-    Result[ColIdx] :=
-      WorksheetToAcadSize(GetWorksheetColWidthMM(AWorksheet, ColIdx));
-end;
-
-function CollectRowHeights(AWorksheet: TsWorksheet;
-  ARowCount: Integer): TTableSizeArray;
-var
-  RowIdx: Integer;
-begin
-  System.SetLength(Result, 0);
-  if (AWorksheet = nil) or (ARowCount <= 0) then
-    Exit;
-  System.SetLength(Result, ARowCount);
-  for RowIdx := 0 to ARowCount - 1 do
-    Result[RowIdx] :=
-      WorksheetToAcadSize(GetWorksheetRowHeightMM(AWorksheet, RowIdx));
-end;
+//function CollectColWidths(AWorksheet: TsWorksheet;
+//  AColCount: Integer): TTableSizeArray;
+//var
+//  ColIdx: Integer;
+//begin
+//  System.SetLength(Result, 0);
+//  if (AWorksheet = nil) or (AColCount <= 0) then
+//    Exit;
+//  System.SetLength(Result, AColCount);
+//  for ColIdx := 0 to AColCount - 1 do
+//    Result[ColIdx] :=
+//      WorksheetToAcadSize(GetWorksheetColWidthMM(AWorksheet, ColIdx));
+//end;
+//
+//function CollectRowHeights(AWorksheet: TsWorksheet;
+//  ARowCount: Integer): TTableSizeArray;
+//var
+//  RowIdx: Integer;
+//begin
+//  System.SetLength(Result, 0);
+//  if (AWorksheet = nil) or (ARowCount <= 0) then
+//    Exit;
+//  System.SetLength(Result, ARowCount);
+//  for RowIdx := 0 to ARowCount - 1 do
+//    Result[RowIdx] :=
+//      WorksheetToAcadSize(GetWorksheetRowHeightMM(AWorksheet, RowIdx));
+//end;
 
 { Группа горизонтального выравнивания: 0 - левое, 1 - центр, 2 - правое.
   Совпадает с логикой комбобокса выравнивания редактора (issue #1352). }
@@ -273,35 +273,35 @@ begin
   AVert := VertByGroup[AlignmentIndex div 3];
 end;
 
-function CollectCellAlignments(AWorksheet: TsWorksheet;
-  ARowCount, AColCount: Integer): TTableAlignmentArray;
-var
-  RowIdx, ColIdx: Integer;
-  Cell: PCell;
-  Hor: TsHorAlignment;
-  Vert: TsVertAlignment;
-begin
-  System.SetLength(Result, 0);
-  if (AWorksheet = nil) or (ARowCount <= 0) or (AColCount <= 0) then
-    Exit;
-  System.SetLength(Result, ARowCount * AColCount);
-  for RowIdx := 0 to ARowCount - 1 do
-    for ColIdx := 0 to AColCount - 1 do
-    begin
-      // Пустая ячейка не имеет записи fpspreadsheet и получает фактическое
-      // выравнивание листа по умолчанию: слева/сверху (код AutoCAD 1).
-      Result[RowIdx * AColCount + ColIdx] :=
-        WorksheetAlignmentToAcad(fpsTypes.haDefault, fpsTypes.vaDefault);
-      Cell := AWorksheet.FindCell(Cardinal(RowIdx), Cardinal(ColIdx));
-      if Cell = nil then
-        Continue;
-      Hor := AWorksheet.ReadHorAlignment(Cell);
-      Vert := AWorksheet.ReadVertAlignment(Cell);
-      // Даже полностью стандартное выравнивание надо записывать явно.
-      // Иначе ACAD_TABLE применяет MiddleCenter из стиля таблицы.
-      Result[RowIdx * AColCount + ColIdx] :=
-        WorksheetAlignmentToAcad(Hor, Vert);
-    end;
-end;
+//function CollectCellAlignments(AWorksheet: TsWorksheet;
+//  ARowCount, AColCount: Integer): TTableAlignmentArray;
+//var
+//  RowIdx, ColIdx: Integer;
+//  Cell: PCell;
+//  Hor: TsHorAlignment;
+//  Vert: TsVertAlignment;
+//begin
+//  System.SetLength(Result, 0);
+//  if (AWorksheet = nil) or (ARowCount <= 0) or (AColCount <= 0) then
+//    Exit;
+//  System.SetLength(Result, ARowCount * AColCount);
+//  for RowIdx := 0 to ARowCount - 1 do
+//    for ColIdx := 0 to AColCount - 1 do
+//    begin
+//      // Пустая ячейка не имеет записи fpspreadsheet и получает фактическое
+//      // выравнивание листа по умолчанию: слева/сверху (код AutoCAD 1).
+//      Result[RowIdx * AColCount + ColIdx] :=
+//        WorksheetAlignmentToAcad(fpsTypes.haDefault, fpsTypes.vaDefault);
+//      Cell := AWorksheet.FindCell(Cardinal(RowIdx), Cardinal(ColIdx));
+//      if Cell = nil then
+//        Continue;
+//      Hor := AWorksheet.ReadHorAlignment(Cell);
+//      Vert := AWorksheet.ReadVertAlignment(Cell);
+//      // Даже полностью стандартное выравнивание надо записывать явно.
+//      // Иначе ACAD_TABLE применяет MiddleCenter из стиля таблицы.
+//      Result[RowIdx * AColCount + ColIdx] :=
+//        WorksheetAlignmentToAcad(Hor, Vert);
+//    end;
+//end;
 
 end.

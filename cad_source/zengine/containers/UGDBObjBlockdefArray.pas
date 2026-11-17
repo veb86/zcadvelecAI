@@ -57,12 +57,12 @@ begin
     p:=iterate(ir);
     until p=nil;
 end;
-procedure GDBObjBlockdefArray.Grow(newmax: Integer);
+procedure GDBObjBlockdefArray.Grow;
 var
   p:PGDBObjBlockdef;
       ir:itrec;
 begin
-  inherited Grow(newmax);
+  inherited;
   p:=beginiterate(ir);
   if p<>nil then
   repeat

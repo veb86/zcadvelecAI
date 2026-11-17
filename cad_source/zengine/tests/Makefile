@@ -1,4 +1,4 @@
-.PHONY: clean all checkallvars checkvars nodtests nodtests-lazbuild meshdisplaytests
+.PHONY: clean all checkallvars checkvars 
 default: all
 
 OSDETECT:=
@@ -87,21 +87,3 @@ clean:
 
 all: checkvars
 	$(LAZBUILD) --pcp=$(PCP) testzengine.lpr
-
-# Тесты NOD (cad_source/zengine/TZ_NOD_NamedObjectDictionary.md, этап 8).
-# nodtests - сборка консольным fpc без IDE (как в CI), см. nodtests.sh;
-# выбрать тесты: make nodtests NODTESTS="nodstage5 nodstage7"
-NODTESTS:=$(basename $(wildcard nodstage*.lpr))
-
-nodtests:
-	bash nodtests.sh $(NODTESTS)
-
-# Регрессии режимов отображения PolyFaceMesh без IDE и видеокарты.
-meshdisplaytests:
-	bash nodtests.sh polyfacemeshdisplay
-
-# nodtests-lazbuild - сборка проектов nodstage*.lpi через lazbuild
-# (пакеты zengine должны быть установлены в $(PCP)) и запуск
-nodtests-lazbuild: checkvars
-	$(foreach T,$(NODTESTS),$(LAZBUILD) --pcp=$(PCP) $(T).lpi &&) true
-	$(foreach T,$(NODTESTS),.$(PATHDELIM)$(T) ..$(PATHDELIM)..$(PATHDELIM).. &&) true

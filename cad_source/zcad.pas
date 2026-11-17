@@ -303,7 +303,7 @@ uses
   uzvcommand_spaceshowhide, //команда показ спрятать
   //****//
   {Подсистема ACAD_TABLE — таблица AutoCAD из формата DXF}
-  uzeacadtable_manager,
+  //uzeacadtable_manager,
   //****//
   //FPSpreadsheet//
   uzvspreadsheet_register,
@@ -327,9 +327,9 @@ uses
   testscale2,
   uzvrotate_main,
   //uzccommand_align,
-  uzccommand_adddxftablestyle,
-  uzccommand_tablestyles,
-  uzccommand_tablestylemanager,
+  //uzccommand_adddxftablestyle,
+  //uzccommand_tablestyles,
+  //uzccommand_tablestylemanager,
 
   //**IPC Server for remote control**//
   uzvhttpserver,
@@ -386,7 +386,7 @@ uses
   uzcregisterenitiesextenders,
   uzcoiregistermultiproperties,
   uzcregleader,
-  uzcregacadtable,
+  //uzcregacadtable,
   uzclibraryblocksregister,
   {$IF not((DEFINED(WINDOWS))and(DEFINED(LCLQT5)))}uzglviewareaogl,uzglviewareaoglmodern,{$ENDIF}
   uzglviewareagdi,uzglviewareacanvas,

@@ -28,8 +28,7 @@ uses
   uzegeometrytypes,sysutils,uzeconsts,UGDBObjBlockdefArray,
   uzctnrVectorBytesStream,UGDBVisibleOpenArray,uzeentity,uzeblockdef,uzestyleslayers,
   uzeffmanager,uzbLogIntf,uzeLogIntf,
-  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils,Classes,uzclog,
-  uzeffdxfnod,uzeffdxfnodlog,uzeffdxfnodregistry,uzeffdxfnodacadtable;
+  uzMVSMemoryMappedFile,uzMVReader,uzbBaseUtils{,uzclog};
 
 resourcestring
   rsLoadDXFFile='Load DXF file';
@@ -41,10 +40,6 @@ type
     UCASEEntName:String;
   end;
   TLongProcessIndicator=Procedure(a:integer) of object;
-  { Вызывается из AddFromDXF сразу после NOD pre-pass, до разбора
-    TABLES/BLOCKS/ENTITIES. AModel — модель из загрузочного контекста
-    (пустая для R12 и при ошибке разбора OBJECTS), живёт до конца загрузки. }
-  TDXFNODModelBuiltProc=procedure(const AModel:TZNODModel;var dwgCtx:TZDrawingContext);
 
 const
   IgnoredDXFEntsArray:array of DXFEntDesc=[
@@ -56,28 +51,10 @@ var
   CreateExtLoadData:TCreateExtLoadData=nil;
   ClearExtLoadData:TProcessExtLoadData=nil;
   FreeExtLoadData:TProcessExtLoadData=nil;
-  { Точка наблюдения за NOD pre-pass (тесты этапов 2–3 ТЗ NOD): вызывается
-    для любого файла, в том числе без NOD, до обработчиков NOD. Данные NOD
-    загружают обработчики реестра uzeffdxfnodregistry (RunNODLoadHandlers). }
-  DXFNODModelBuiltProc:TDXFNODModelBuiltProc=nil;
-
-{ NOD pre-pass (этап 2 ТЗ cad_source/zengine/TZ_NOD_NamedObjectDictionary.md):
-  строит AModel по тексту секции OBJECTS (формат RawObjectsSection).
-  Исключений не выпускает: при нарушении структуры секции или исключении
-  модель очищается (пустая модель, NOD=nil), возвращается False и описание
-  ошибки в AError — загрузка чертежа при этом должна продолжаться. }
-function BuildDXFNODModel(const AObjectsSection:string;AModel:TZNODModel;out AError:string):boolean;
 
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
 
 implementation
-
-uses
-  { NOD-обработчики ACAD_TABLESTYLE, ACAD_MLEADERSTYLE и ZCAD_DATA
-    регистрируются в initialization своих модулей }
-  uzestylestablesdxfnod,
-  uzestylesmleaderdxfnod,
-  uzeffdxfnodzcad;
 
 function IsIgnoredEntity(const name:String):Integer;
 var
@@ -112,180 +89,14 @@ begin
   end;
   { Кастомная неизвестная сущность: загружаем как proxy-объект }
   if ObjID2EntInfoData.MyGetValue(GDBAcdProxyID, EntInfoData) then begin
-    programlog.LogOutFormatStr(
-      'uzeffdxf: unknown entity "%s" treated as proxy', [name], LM_Info);
+    zDebugLn('{I}uzeffdxf: unknown entity "%s" treated as proxy',[name]);
     Result := True;
   end else
     Result := False;
 end;
-
-{ Извлекает сырой текст секции из DXF-файла.
-  Ищет секцию SectionName (CLASSES, OBJECTS и т.д.) и возвращает её содержимое
-  включая строки 0/SECTION, 2/SectionName, ..., 0/ENDSEC.
-  Используется для сохранения секций, которые ZCAD не обрабатывает. }
-function ExtractDxfRawSection(const AFileName: string;
-  const SectionName: string): string;
-var
-  Lines: TStringList;
-  I, SectionStart, SectionEnd: Integer;
-begin
-  Result := '';
-  Lines := TStringList.Create;
-  try
-    Lines.LoadFromFile(AFileName);
-    SectionStart := -1;
-    SectionEnd := -1;
-    I := 0;
-    while I < Lines.Count - 3 do
-    begin
-      { Ищем начало секции: 0 / SECTION / 2 / SectionName }
-      if (Trim(Lines[I]) = '0') and
-         (Trim(Lines[I + 1]) = 'SECTION') and
-         (Trim(Lines[I + 2]) = '2') and
-         (Trim(Lines[I + 3]) = SectionName) then
-      begin
-        SectionStart := I;
-        Break;
-      end;
-      Inc(I);
-    end;
-    if SectionStart < 0 then
-      Exit;
-    { Ищем конец секции: 0 / ENDSEC }
-    I := SectionStart + 4;
-    while I < Lines.Count - 1 do
-    begin
-      if (Trim(Lines[I]) = '0') and
-         (Trim(Lines[I + 1]) = 'ENDSEC') then
-      begin
-        SectionEnd := I + 1;
-        Break;
-      end;
-      Inc(I);
-    end;
-    if SectionEnd < 0 then
-      Exit;
-    { Собираем строки секции }
-    for I := SectionStart to SectionEnd do
-    begin
-      if I > SectionStart then
-        Result := Result + LineEnding;
-      Result := Result + Lines[I];
-    end;
-    programlog.LogOutFormatStr(
-      'uzeffdxf: ExtractDxfRawSection: секция %s извлечена (%d строк)',
-      [SectionName, SectionEnd - SectionStart + 1], LM_Info);
-  finally
-    Lines.Free;
-  end;
-end;
-
-{ Нормализует DXF-handle к верхнему регистру без ведущих нулей.
-  Используется при сравнении handles из разных источников. }
-function NormalizeHandle(const S: string): string;
-var
-  I: Integer;
-begin
-  Result := UpperCase(Trim(S));
-  I := 1;
-  while (I < Length(Result)) and (Result[I] = '0') do
-    Inc(I);
-  if I > 1 then
-    Result := Copy(Result, I, Length(Result) - I + 1);
-end;
-
-procedure StoreRawAcadTableEntity(
-  RawEntities: TStringList; const Handle, RawText: string);
-var
-  Idx: Integer;
-begin
-  if (RawEntities = nil) or (Handle = '') or (RawText = '') then
-    Exit;
-
-  Idx := RawEntities.IndexOf(Handle);
-  if Idx >= 0 then
-  begin
-    RawEntities.Objects[Idx].Free;
-    RawEntities.Objects[Idx] := TDXFRawTextObject.Create(RawText);
-  end
-  else
-    RawEntities.AddObject(Handle, TDXFRawTextObject.Create(RawText));
-end;
-
-{ Сканирует секцию ENTITIES и сохраняет исходный текст каждой ACAD_TABLE
-  по handle. Это нужно для точного round-trip сохранения: таблицы AutoCAD
-  содержат binary chunks (310) и детальные флаги ячеек, которые обычная
-  модель таблицы пока не умеет полностью восстановить (issue #1317). }
-procedure ScanAcadTableRawEntities(
-  const RawEntitiesSection: string; RawEntities: TStringList);
-var
-  Lines: TStringList;
-  I, J, K, EntityStart, EntityEnd: Integer;
-  Handle, RawText: string;
-begin
-  if (RawEntitiesSection = '') or (RawEntities = nil) then
-    Exit;
-
-  Lines := TStringList.Create;
-  try
-    Lines.Text := RawEntitiesSection;
-    I := 0;
-    while I < Lines.Count - 1 do
-    begin
-      if (Trim(Lines[I]) = '0') and
-         (UpperCase(Trim(Lines[I + 1])) = 'ACAD_TABLE') then
-      begin
-        EntityStart := I;
-        EntityEnd := Lines.Count;
-        J := I + 2;
-        while J < Lines.Count - 1 do
-        begin
-          if Trim(Lines[J]) = '0' then
-          begin
-            EntityEnd := J;
-            Break;
-          end;
-          Inc(J, 2);
-        end;
-
-        Handle := '';
-        K := EntityStart + 2;
-        while K < EntityEnd - 1 do
-        begin
-          if Trim(Lines[K]) = '5' then
-          begin
-            Handle := NormalizeHandle(Lines[K + 1]);
-            Break;
-          end;
-          Inc(K, 2);
-        end;
-
-        RawText := '';
-        for K := EntityStart to EntityEnd - 1 do
-        begin
-          if K > EntityStart then
-            RawText := RawText + LineEnding;
-          RawText := RawText + Lines[K];
-        end;
-        StoreRawAcadTableEntity(RawEntities, Handle, RawText);
-        I := EntityEnd;
-        Continue;
-      end;
-      Inc(I, 2);
-    end;
-
-    if RawEntities.Count > 0 then
-      programlog.LogOutFormatStr(
-        'uzeffdxf: ScanAcadTableRawEntities: найдено %d raw ACAD_TABLE entity',
-        [RawEntities.Count], LM_Info);
-  finally
-    Lines.Free;
-  end;
-end;
-
 procedure gotodxf(var rdr:TZMemReader; fcode: Integer; const fname: String);
 var
-  byt: Integer;
+  byt: Byte;
   s: String;
   //error: Integer;
 begin
@@ -502,7 +313,7 @@ end;
 
 function GoToDXForENDTAB(var rdr:TZMemReader; fcode: Integer; const fname: String):boolean;
 var
-  byt:Integer;
+  byt:Byte;
   s:String;
 begin
   result:=false;
@@ -515,60 +326,11 @@ begin
       exit;
   end;
 end;
-{ Хэндл DXF загруженной сущности; 0 — хэндла нет }
-function LoadedEntityDXFHandle(pobj:PGDBObjEntity):TDWGHandle;
-begin
-  if pobj^.PExtAttrib<>nil then
-    Result:=pobj^.PExtAttrib^.dwgHandle
-  else
-    Result:=0;
-end;
-
-{ Поглощает продолжение разорванной ACAD_TABLE её главной таблицей по
-  индексу NOD (issue #1465). False — сущность не продолжение, главная
-  таблица ещё не загружена или поглощение не удалось. }
-function TryMergeAcadTableContinuation(pobj:PGDBObjEntity;
-  var context:TIODXFLoadContext):Boolean;
-var
-  Handle,MainHandle:TDWGHandle;
-  PMain:Pointer;
-begin
-  Result:=False;
-  Handle:=LoadedEntityDXFHandle(pobj);
-  if (Handle=0)or(context.TableSplitIndex=nil) then
-    exit;
-  if not context.TableSplitIndex.IsContinuation(Handle,MainHandle) then
-    exit;
-  if not context.TableMainEntities.TryGetValue(MainHandle,PMain) then
-    exit;
-  Result:=PGDBObjEntity(PMain)^.TryMergeContinuation(pobj);
-  if Result then
-    programlog.LogOutFormatStr(
-      'uzeffdxf: ACAD_TABLE continuation handle=%s merged into main=%s',
-      [inttohex(Handle,0),inttohex(MainHandle,0)],LM_Info);
-end;
-
-{ Регистрирует загруженную главную ACAD_TABLE для поглощения продолжений и
-  передаёт ей данные разрыва и типы строк из индекса NOD (issue #1465) }
-procedure RegisterAcadTableMain(pobj:PGDBObjEntity;
-  var context:TIODXFLoadContext);
-var
-  Handle:TDWGHandle;
-  Info:TZAcadTableSplitInfo;
-begin
-  Handle:=LoadedEntityDXFHandle(pobj);
-  if (Handle=0)or(context.TableSplitIndex=nil) then
-    exit;
-  if not context.TableSplitIndex.FindByEntity(Handle,Info) then
-    exit;
-  context.TableMainEntities.AddOrSetValue(Handle,pobj);
-  pobj^.SetDXFTableSplitInfo(Info);
-end;
-
 procedure addentitiesfromdxf(var rdr:TZMemReader; const exitString: String;owner:PGDBObjSubordinated;var drawing:TSimpleDrawing;DC:TDrawContext;var context:TIODXFLoadContext);
 var
   s: String;
   group:integer;
+  objid: Integer;
   pobj,postobj: PGDBObjEntity;
   newowner:PGDBObjSubordinated;
   m4:TzeTypedMatrix4d;
@@ -577,7 +339,6 @@ var
   EntInfoData:TEntInfoData;
   bylayerlt:Pointer;
   lph:TLPSHandle;
-  rawIdx:Integer;
 begin
   s:='';
   lph:=lps.StartLongProcess('addentitiesfromdxf',@rdr,rdr.Size);
@@ -604,40 +365,6 @@ begin
         PGDBObjEntity(pobj)^.vp.LineType:=bylayerlt;
       if assigned(PGDBObjEntity(pobj)^.EntExtensions) then
         PGDBObjEntity(pobj)^.EntExtensions.RunSupportOldVersions(pobj,drawing);
-
-      if (uppercase(s)='ACAD_TABLE') and
-         (context.TableRawAcadTableEntities<>nil) and
-         (PGDBObjEntity(pobj)^.PExtAttrib<>nil) and
-         (PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle<>0) then
-      begin
-        rawIdx := context.TableRawAcadTableEntities.IndexOf(
-          NormalizeHandle(inttohex(
-            PGDBObjEntity(pobj)^.PExtAttrib^.dwgHandle,0)));
-        if (rawIdx >= 0) and
-           (context.TableRawAcadTableEntities.Objects[rawIdx]<>nil) then
-          PGDBObjEntity(pobj)^.SetDXFRawEntityText(
-            TDXFRawTextObject(
-              context.TableRawAcadTableEntities.Objects[rawIdx]).Text);
-      end;
-
-      { Если ACAD_TABLE — продолжение разорванной таблицы по индексу NOD,
-        AutoCAD сохранил эту часть отдельной ACAD_TABLE. Поглощаем её данные
-        в СВОЮ главную ACAD_TABLE (хэндл главной берётся из XRECORD
-        ACAD_XREC_ROUNDTRIP), чтобы все части отображались одним объектом
-        (issue #1300, #1465). После поглощения освобождаем загруженную
-        сущность. Переменную group=0 не сбрасываем: LoadFromDXF остановился
-        на коде 0 следующей сущности. Если главная таблица не найдена или
-        поглощение не удалось — часть добавляется обычным образом, чтобы
-        данные не были потеряны. }
-      if (uppercase(s)='ACAD_TABLE') and
-         TryMergeAcadTableContinuation(pobj,context) then begin
-        pobj^.done;
-        Freemem(pointer(pobj));
-        if Assigned(ClearExtLoadData) then
-          ClearExtLoadData(PExtLoadData);
-        continue;
-      end;
-
       pointer(postobj):=PGDBObjEntity(pobj)^.FromDXFPostProcessBeforeAdd(PExtLoadData,drawing);
       trash:=false;
       if postobj=nil  then begin
@@ -681,11 +408,6 @@ begin
         end;
         if not trash then begin
           newowner^.DXFLoadAddMi(pobj);
-        // Запоминаем главную ACAD_TABLE для поглощения её продолжений и
-        // передаём ей данные разрыва из индекса NOD (issue #1300, #1465).
-        // Продолжения идут после главной части в DXF.
-        if uppercase(s)='ACAD_TABLE' then
-          RegisterAcadTableMain(pobj,context);
         if not(IsObjectIt(TypeOf(owner^),TypeOf(GDBObjBlockdef))) then begin
           if PGDBObjEntity(pobj)^.DXFDelayedBuildGeometry then begin
             {PGDBObjEntity(pobj)^.BuildGeometry(drawing);
@@ -1399,16 +1121,11 @@ var
   Handle2BlockName:TMapBlockHandle_BlockNames;
   lph:TLPSHandle;
   SaveOptions:TDContextOptions;
-  timer: TTimeMeter;             // Таймер для измерения времени загрузки файла
 begin
   ctstyle:='';
   clayer:='';
   cltype:='';
   cdimstyle:='';
-
-  // Запускаем таймер для измерения времени загрузки DXF файла
-  timer := TTimeMeter.StartMeasure;
-
   lph:=lps.StartLongProcess('addfromdxf2000',@rdr,rdr.CurrentPos);
   Handle2BlockName:=TMapBlockHandle_BlockNames.Create;
   blockload:=false;
@@ -1562,108 +1279,7 @@ begin
   {$ENDIF}
   zDebugLn('{D-}[DXF_CONTENTS]end; {AddFromDXF2000}');
   //programlog.LogOutStr('end; {AddFromDXF2000}',lp_DecPos,LM_Debug);
-
-  // Завершаем измерение времени и выводим результат
-  timer.EndMeasure;
-  //programlog.LogOutFormatStr('AddFromDXF20XX: Загрузка DXF файла завершена, время загрузки: %d мс', [timer.ElapsedMiliSec], LM_Info);
-  //zcUI.TextMessage(Format('Загрузка содержимого DXF файла завершена, время: %d мс', [timer.ElapsedMiliSec]), TMWOHistoryOut);
-
   lps.EndLongProcess(lph);
-end;
-
-function BuildDXFNODModel(const AObjectsSection:string;AModel:TZNODModel;out AError:string):boolean;
-begin
-  AError:='';
-  try
-    result:=AModel.LoadFromText(AObjectsSection);
-    if not result then begin
-      AError:=AModel.ParseError;
-      AModel.Clear;
-    end;
-  except
-    on E:Exception do begin
-      result:=false;
-      AError:=E.ClassName+': '+E.Message;
-      AModel.Clear;
-    end;
-  end;
-end;
-
-{ NOD pre-pass для DXF 2000+: модель OBJECTS нужна до ENTITIES (ACAD_TABLE
-  применяет стиль при загрузке сущности). Ошибка разбора не прерывает
-  загрузку — предупреждение в лог и пустая модель. }
-procedure DXFNODPrePass(const AFileName:string;const AObjectsSection:string;AModel:TZNODModel);
-var
-  StartTick:QWord;
-  Error:string;
-begin
-  StartTick:=GetTickCount64;
-  if not BuildDXFNODModel(AObjectsSection,AModel,Error) then
-    NODLogWarningFormatStr(
-      'uzeffdxf: NOD pre-pass: OBJECTS section of "%s" is not parsed (%s), NOD model is empty',
-      [AFileName,Error]);
-  NODLogTraceFormatStr(
-    'uzeffdxf: NOD pre-pass: "%s": %d objects, %d dictionaries, NOD %s, %d ms',
-    [AFileName,AModel.Objects.Count,AModel.Dictionaries.Count,
-     BoolToStr(AModel.NOD<>nil,'found','not found'),GetTickCount64-StartTick]);
-end;
-
-{ Индекс символьных таблиц модели NOD (этап 6): только если его ждёт
-  обработчик, который будет вызван (NODLoadNeedsSymbolTables) — секция
-  TABLES читается из файла ещё раз. Имена DXF до 2007 перекодируются из
-  $DWGCODEPAGE, как dxfDeCodeString. Ошибка не прерывает загрузку. }
-procedure DXFNODLoadSymbolTables(const AFileName:string;const AHeader:TDXFHeaderInfo;AModel:TZNODModel);
-var
-  StartTick:QWord;
-  CodePage:TSystemCodePage;
-begin
-  if not NODLoadNeedsSymbolTables(AModel) then
-    exit;
-  StartTick:=GetTickCount64;
-  if AHeader.iVersion<1021 then
-    CodePage:=AHeader.iDWGCodePage
-  else
-    CodePage:=0;
-  try
-    AModel.LoadSymbolTablesFromText(ExtractDxfRawSection(AFileName,'TABLES'),CodePage);
-  except
-    on E:Exception do
-      NODLogWarningFormatStr(
-        'uzeffdxf: NOD pre-pass: TABLES section of "%s" is not parsed (%s: %s)',
-        [AFileName,E.ClassName,E.Message]);
-  end;
-  NODLogTraceFormatStr(
-    'uzeffdxf: NOD pre-pass: "%s": %d symbol records, %d ms',
-    [AFileName,AModel.SymbolRecordCount,GetTickCount64-StartTick]);
-end;
-
-{ Этап 7 ТЗ NOD: ветки незарегистрированных и не шаблонных ключей NOD
-  копируются в PreservedNODBranches чертежа (с определениями их классов из
-  RawClassesSection), чтобы записать их при сохранении. Строки DXF до 2007
-  перекодируются из $DWGCODEPAGE. Ошибка не прерывает загрузку.
-  При вставке (TLOMerge: «Merge», вставка из буфера) ветки вставляемого
-  файла не берутся: остаются ветки чертежа, а исходные хэндлы разных
-  файлов в хранилище пересекались бы. }
-procedure DXFNODPreserveUnknownBranches(const AHeader:TDXFHeaderInfo;AModel:TZNODModel;var ADrawing:TSimpleDrawing;ALoadMode:TLoadOpt);
-var
-  CodePage:TSystemCodePage;
-begin
-  if ALoadMode=TLOMerge then begin
-    NODLogTraceFormatStr('uzeffdxf: NOD: merge, unknown branches of the file are not preserved',[]);
-    exit;
-  end;
-  if AHeader.iVersion<1021 then
-    CodePage:=AHeader.iDWGCodePage
-  else
-    CodePage:=0;
-  try
-    RunNODPreserveUnknownBranches(AModel,ADrawing,ADrawing.RawClassesSection,CodePage);
-  except
-    on E:Exception do
-      NODLogWarningFormatStr(
-        'uzeffdxf: NOD: unknown branches are not preserved (%s: %s)',
-        [E.ClassName,E.Message]);
-  end;
 end;
 
 function AddFromDXF(const AFileName: String;var dwgCtx:TZDrawingContext;const LogIntf:TZELogProc=nil):TDXFHeaderInfo;
@@ -1672,18 +1288,12 @@ var
   lph:TLPSHandle;
   DxfStream:TZMVSMemoryMappedFile;
   rdr:TZMemReader;
-  globalTimer: TTimeMeter;
-  RawEntitiesSection: string;
 const
    ffs='%s (%s)';
 begin
   DefaultFormatSettings.DecimalSeparator:='.';
   result.InitRec;
   zDebugLn('{D+}AddFromDXF("%s")',[AFileName]);
-
-  // Запускаем таймер для измерения общего времени загрузки DXF файла
-  globalTimer := TTimeMeter.StartMeasure;
-
   try
     Log(LogIntf,ZESGeneral,ZEMsgCriticalInfo,format(rsLoadingFile,[AFileName]));
     try
@@ -1704,72 +1314,26 @@ begin
           fileCtx.Header.iDWGCodePage:=1252;
           fileCtx.Header.iVersion:=1009;
         end;
-
-        { Извлекаем сырые секции CLASSES и OBJECTS до загрузки сущностей.
-          Секция OBJECTS в DXF идёт после ENTITIES, но нам нужны данные
-          из неё (XRECORD'ы ACAD_ROUNDTRIP_2008_TABLE_ENTITY) для определения
-          продолжений разделённых ACAD_TABLE до того, как они будут загружены
-          как отдельные ProxyEntity. }
-        dwgCtx.PDrawing^.RawClassesSection :=
-          ExtractDxfRawSection(AFileName, 'CLASSES');
-        dwgCtx.PDrawing^.RawObjectsSection :=
-          ExtractDxfRawSection(AFileName, 'OBJECTS');
-        RawEntitiesSection :=
-          ExtractDxfRawSection(AFileName, 'ENTITIES');
-
-        ScanAcadTableRawEntities(
-          RawEntitiesSection,
-          fileCtx.TableRawAcadTableEntities);
-
-        { Модель OBJECTS/NOD (этап 2 ТЗ NOD). Для R12 и неизвестных версий
-          остаётся пустой: в R12 секции OBJECTS и NOD нет. Контекст (и модель)
-          освобождается и при исключении во время разбора чертежа. }
-        fileCtx.NODModel:=TZNODModel.Create;
-        try
-          lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
-          case fileCtx.Header.Version of
-            AC1009:begin
-              Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
-              if @DXFNODModelBuiltProc<>nil then
-                DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
-              { NOD в R12 нет: только обязательные записи по умолчанию
-                ('Standard' стилей таблиц, этап 5) }
-              RunNODEnsureDefaults(dwgCtx.PDrawing^);
-              AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
-            end;
-            AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
-              Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
-              { NOD pre-pass: до TABLES/BLOCKS/ENTITIES, чтобы обработчики NOD
-                (стили таблиц и т. п., этапы 3–6) загрузили данные раньше
-                сущностей, которые на них ссылаются. }
-              DXFNODPrePass(AFileName,dwgCtx.PDrawing^.RawObjectsSection,fileCtx.NODModel);
-              { Индекс разорванных ACAD_TABLE по модели NOD: параметры разрыва,
-                продолжения и типы строк каждой главной таблицы (issue #1465) }
-              fileCtx.TableSplitIndex:=TZAcadTableNODIndex.Create(fileCtx.NODModel);
-              { Хэндлы записей TABLES → имена (ссылки MLEADERSTYLE, этап 6) }
-              DXFNODLoadSymbolTables(AFileName,fileCtx.Header,fileCtx.NODModel);
-              if @DXFNODModelBuiltProc<>nil then
-                DXFNODModelBuiltProc(fileCtx.NODModel,dwgCtx);
-              { Обработчики зарегистрированных ключей NOD (этап 3) }
-              RunNODLoadHandlers(fileCtx.NODModel,dwgCtx.PDrawing^);
-              { Ветки неизвестных ключей NOD сохраняются как есть (этап 7) }
-              DXFNODPreserveUnknownBranches(fileCtx.Header,fileCtx.NODModel,dwgCtx.PDrawing^,dwgCtx.LoadMode);
-              { Обязательные записи, которых нет после загрузки (этап 5) }
-              RunNODEnsureDefaults(dwgCtx.PDrawing^);
-              AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
-            end;
-            else
-              if fileCtx.Header.iVersion<>VarValueWrong then
-                Log(LogIntf,ZESGeneral,ZEMsgError,'{EM}'+rsUnknownFileFormat+' $ACADVER='+fileCtx.DWGVarsDict[dxfVar_ACADVER])
-              else
-                Log(LogIntf,ZESGeneral,ZEMsgError,rsUnknownFileFormat);
+        lph:=lps.StartLongProcess(rsLoadDXFFile,@rdr,rdr.Size,LPSOSilent);
+        case fileCtx.Header.Version of
+          AC1009:begin
+            Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+            AddFromDXF12(rdr,dxf_EOF,dwgCtx,LogIntf);
           end;
-          lps.EndLongProcess(lph);
-          dwgCtx.POwner^.calcbb(dwgCtx.DC);
-          result:=fileCtx.Header;
-        finally
-          fileCtx.Done;
+          AC1014,AC1015,AC1018,AC1021,AC1024,AC1027,AC1032:begin
+            Log(LogIntf,ZESGeneral,ZEMsgInfo,format(rsFileFormat,[format(ffs,[ACVer2DXFVerStr(fileCtx.Header.iVersion),ACVer2ACVerStr(fileCtx.Header.iVersion)])]));
+            AddFromDXF20XX(rdr,dxf_EOF,dwgCtx,fileCtx,LogIntf)
+          end;
+          else
+            if fileCtx.Header.iVersion<>VarValueWrong then
+              Log(LogIntf,ZESGeneral,ZEMsgError,'{EM}'+rsUnknownFileFormat+' $ACADVER='+fileCtx.DWGVarsDict[dxfVar_ACADVER])
+            else
+              Log(LogIntf,ZESGeneral,ZEMsgError,rsUnknownFileFormat);
         end;
+        lps.EndLongProcess(lph);
+        dwgCtx.POwner^.calcbb(dwgCtx.DC);
+        result:=fileCtx.Header;
+        fileCtx.Done;
       end else
         Log(LogIntf,ZESGeneral,ZEMsgError,'Can not open file: '+AFileName);
     finally
@@ -1777,12 +1341,7 @@ begin
       rdr.Free;
     end;
   finally
-    // Завершаем измерение общего времени загрузки и выводим результат
-    globalTimer.EndMeasure;
-    //programlog.LogOutFormatStr('AddFromDXF: Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [AFileName, globalTimer.ElapsedMiliSec], LM_Info);
-    //zcUI.TextMessage(Format('Полная загрузка DXF файла "%s" завершена, общее время: %d мс', [ExtractFileName(AFileName), globalTimer.ElapsedMiliSec]), TMWOHistoryOut);
-
-    zDebugLn('{D-}end; {AddFromDXF}');
+      zDebugLn('{D-}end; {AddFromDXF}');
   end;
 end;
 

@@ -27,7 +27,7 @@ uses
   UGDBControlPointArray,uzeentsubordinated,uzeTypes,uzeconsts,
   uzglviewareadata,uzegeometry,uzeffdxfsupport,SysUtils,uzctnrVectorBytesStream,
   uzestyleslayers,uzeenrepresentation,uzbLogIntf,uzMVReader,
-  uzCtnrVectorpBaseEntity,uzbBaseUtils,uzeffdxfnodacadtable;
+  uzCtnrVectorpBaseEntity,uzbBaseUtils;
 
 type
   taddotrac=procedure(var posr:os_record;const axis:TzePoint3d) of object;
@@ -79,42 +79,6 @@ type
     function FromDXFPostProcessBeforeAdd(ptu:PExtensionData;
       const drawing:TDrawingDef):PGDBObjSubordinated;virtual;
     procedure FromDXFPostProcessAfterAdd;virtual;
-    { Пытается поглотить продолжение разделённой составной сущности
-      (например, очередную часть разбитой по ширине таблицы ACAD_TABLE,
-      сохранённой в DXF как несколько сущностей ради совместимости).
-      Базовая реализация ничего не делает и возвращает False. Специализированные
-      сущности переопределяют метод и при успехе копируют данные AOther в себя.
-      Возвращает True, если данные AOther поглощены и вызывающая сторона может
-      освободить AOther (issue #1300). }
-    function TryMergeContinuation(AOther:PGDBObjEntity):boolean;virtual;
-    { Передаёт сущности параметры разбиения разделённой таблицы
-      (интервал между частями и высоту разбиения), прочитанные из
-      XRECORD ACAD_ROUNDTRIP_2008_TABLE_ENTITY в секции OBJECTS.
-      Базовая реализация ничего не делает и возвращает False.
-      GDBObjAcadTable переопределяет метод и сохраняет значения в себя,
-      чтобы свойства Break spacing/Break height отображались и
-      редактировались в инспекторе объектов (issue #1307). }
-    function SetTableBreakData(ASpacing,ABreakHeight:double):boolean;virtual;
-    { Passes explicit table break flags read from
-      ACAD_ROUNDTRIP_2008_TABLE_ENTITY. Base implementation does nothing;
-      table entities override it (issue #1339). }
-    procedure SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);virtual;
-    { Передаёт сущности явные типы строк, прочитанные загрузчиком DXF из
-      современного объекта AcDbTableContent (TABLEROW_BEGIN group 90).
-      ATypes индексируется по номеру строки (0=Title, 1=Header, 2=Data;
-      значение < 0 — тип не задан). Базовая реализация ничего не делает;
-      GDBObjAcadTable переопределяет метод, чтобы строки с несколькими
-      заголовками загружались с правильным стилем (issue #1373). }
-    procedure SetRowStyleTypes(const ATypes:array of integer);virtual;
-    { Передаёт главной ACAD_TABLE данные разрыва из индекса NOD (XRECORD
-      ACAD_XREC_ROUNDTRIP её расширенного словаря): флаги, интервал, высоты
-      и положения частей, диапазоны строк и типы строк TABLECONTENT.
-      Вызывается загрузчиком DXF до поглощения продолжений. Базовая
-      реализация ничего не делает (issue #1465). }
-    procedure SetDXFTableSplitInfo(const AInfo:TZAcadTableSplitInfo);virtual;
-    { Передаёт сущности исходный текст DXF-entity, если загрузчик сохранил
-      его для round-trip экспорта. Базовая реализация ничего не делает. }
-    procedure SetDXFRawEntityText(const ARawText:string);virtual;
     procedure postload(var context:TIODXFLoadContext);virtual;
     procedure createfield;virtual;
     function AddExtAttrib:PTExtAttrib;
@@ -477,32 +441,6 @@ begin
 end;
 
 procedure GDBObjEntity.FromDXFPostProcessAfterAdd;
-begin
-end;
-
-function GDBObjEntity.TryMergeContinuation(AOther:PGDBObjEntity):boolean;
-begin
-  Result:=false;
-end;
-
-function GDBObjEntity.SetTableBreakData(ASpacing,ABreakHeight:double):boolean;
-begin
-  Result:=false;
-end;
-
-procedure GDBObjEntity.SetBreakOptionFlags(AManualPosition,AManualHeight:boolean);
-begin
-end;
-
-procedure GDBObjEntity.SetRowStyleTypes(const ATypes:array of integer);
-begin
-end;
-
-procedure GDBObjEntity.SetDXFTableSplitInfo(const AInfo:TZAcadTableSplitInfo);
-begin
-end;
-
-procedure GDBObjEntity.SetDXFRawEntityText(const ARawText:string);
 begin
 end;
 
