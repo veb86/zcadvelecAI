@@ -16,30 +16,35 @@
 @author(Andrey Zubarev <zamtmn@yandex.ru>)
 }
 {$mode delphi}
-unit uzceCommand_SCHConnection;
+unit uzcComSCHConnection;
 
 {$INCLUDE zengineconfig.inc}
 
 interface
 uses
   uzcLog,
-  uzccommandsabstract,uzccommandsimpl,
-  uzcstrconsts,
-  uzccommandsmanager,
+  uzccommandsabstract,
   uzeentity,
-  uzcExtdrSCHConnection,
-  uzccommand_line;
+  uzcExtdrSCHConnection,uzcExtdrSCHConnector;
+
+function AddExtdrSCHConnection(const AStage:TEntitySetupStage;const APEnt:PGDBObjEntity;
+  const ASD:TEntitySetupData):boolean;
 
 implementation
 
-function AddExtdrSCHConnection(const AStage:TEntitySetupStage;const APEnt:PGDBObjEntity):boolean;
+function AddExtdrSCHConnection(const AStage:TEntitySetupStage;const APEnt:PGDBObjEntity;
+  const ASD:TEntitySetupData):boolean;
+var
+  extdr:TSCHConnectionExtender;
 begin
   case AStage of
     ESSSuppressCommandParams:
       result:=true;
     ESSSetEntity:begin
       if APEnt<>nil then begin
-        AddSCHConnectionExtenderToEntity(APEnt);
+        extdr:=AddSCHConnectionExtenderToEntity(APEnt);
+        if extdr<>nil then
+          extdr.FNetType:=TNetTypeHandle(ASD);
         result:=true;
       end else
         result:=False;
@@ -51,14 +56,8 @@ begin
   end;
 end;
 
-function SCHConnection_com(const Context:TZCADCommandContext;operands:TCommandOperands):TCommandResult;
-begin
- Result:=InteractiveDrawLines(Context,rscmSpecifyFirstPoint,rscmSpecifyNextPoint,AddExtdrSCHConnection);
-end;
-
 initialization
-  programlog.LogOutFormatStr(clUInit,[{$INCLUDE %FILE%}],LM_Info,UnitsInitializeLMId);
-  CreateZCADCommand(@SCHConnection_com,'SCHConnection',CADWG,0);
+  ProgramLog.LogOutFormatStr(clUInit,[{$INCLUDE %FILE%}],LM_Info,UnitsInitializeLMId);
 finalization
   ProgramLog.LogOutFormatStr(clUFin,[{$INCLUDE %FILE%}],LM_Info,UnitsFinalizeLMId);
 end.

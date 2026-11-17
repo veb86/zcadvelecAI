@@ -37,7 +37,8 @@ uses
   uzgldrawerogl,uzgldrawergdi,
   uzcSysParams,
   uzcdevicebaseabstract,uzcdevicebase,uzcRegSysVars,Graphics,
-  URecordDescriptor,uzcTypeDescriprors,uzcTypes,uzcgui2arrows,uzObjectInspectorManager;
+  URecordDescriptor,uzcTypeDescriprors,uzcTypes,uzcgui2arrows,uzObjectInspectorManager,
+  uzcExtdrSCHConnector,UGDBGraf;
 
 implementation
 
@@ -488,6 +489,10 @@ begin
 
   RegisterVarCategory('ENTID','ENTID',@InterfaceTranslate);
   RegisterVarCategory('INSTRUMENT','INSTRUMENT',@InterfaceTranslate);
+
+  RegisterVarCategory('RPRTSRC','RPRTSRC',@InterfaceTranslate);
+  RegisterVarCategory('RPRTFLTR','RPRTFLTR',@InterfaceTranslate);
+  RegisterVarCategory('RPRTBUILD','RPRTBUILD',@InterfaceTranslate);
 
 
   otd:=ptsu^.RegisterObjectType(TypeInfo(CommandObjectDef),
@@ -1147,6 +1152,13 @@ begin
     otd^.AddMetod('','initnul','',@CableDeviceBaseObject.initnul,[mm_constructor]);
   end;
   ptsu^.RegisterType(TypeInfo(PCableDeviceBaseObject),'PCableDeviceBaseObject');
+
+  ptsu^.RegisterType(TypeInfo(TLinkType),'TLinkType');
+
+  utd:=ptsu^.RegisterType(TypeInfo(TConnectorType),'TConnectorType');
+  ptsu^.SetTypeDesk2(utd,['CTInfo','CTPin','CTSetter'],[FNUser,FNProgram]);
+
+  utd:=ptsu^.RegisterType(TypeInfo(TNetTypeHandle),'TNetTypeHandle');
 
   RegSysVars(ptsu);
 end;

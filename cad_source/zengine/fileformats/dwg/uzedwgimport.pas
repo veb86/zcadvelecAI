@@ -51,7 +51,7 @@ uses
   uzedwglog,
   uzedwgtimerlog,
   uzedwgfinalize,uzeEntitiesTree,
-  uzedwgnod;
+  uzedwgtext,uzeffdxfsupport;
 
 { Stage 2 hooks called by uzefflibredwg.pas around parseDwg_Data. They open
   and close the per-file load context that decouples DWG read order from ZCAD
@@ -64,7 +64,7 @@ uses
   raw-scan over the LibreDWG object array that pre-registers handle -> raw
   index entries so duplicate detection happens once and mappers can upgrade
   placeholders instead of fighting the duplicate-handle warning. }
-procedure BeginDWGImport(var ZContext: TZDrawingContext;
+procedure BeginDWGImport(var ZContext: TZDrawingContext;var Raw: Dwg_Data;
   const ASourcePath: String = '');
 procedure ScanDWGImport(var Raw: Dwg_Data);
 procedure EndDWGImport(var ZContext: TZDrawingContext);
@@ -837,13 +837,14 @@ begin
   DWGAttachRefWithContext(Entity, Ref, Context);
 end;
 
-procedure BeginDWGImport(var ZContext: TZDrawingContext;
+procedure BeginDWGImport(var ZContext: TZDrawingContext;var Raw: Dwg_Data;
   const ASourcePath: String = '');
 var
   ByLayerLT: PGDBLtypeProp;
   SysLayer: PGDBLayerProp;
   StdStyle: PGDBTextStyle;
   StdDimStyle: PGDBDimStyle;
+  DWGCodePage:TSystemCodePage;
   Timer: TTimeMeter;
 begin
   Timer := TTimeMeter.StartMeasure;
@@ -899,6 +900,12 @@ begin
     LoadCtx.RegisterShell(0, dokModelSpace, ZContext.PDrawing^.pObjRoot, -1);
     DWGLogInfoFormatStr('DWG [begin] source=%s drawing=%p root=%p',
       [ASourcePath, ZContext.PDrawing, ZContext.PDrawing^.pObjRoot]);
+    if ZContext.PDrawing<>nil then begin
+      if DWGLibreCodePageToSystem(Raw.header.codepage,DWGCodePage) then
+        ZContext.PDrawing^.DXFCodePage:=SysCP2ZCCodePage(DWGCodePage)
+      else
+        ZContext.PDrawing^.DXFCodePage:=ZCCPINVALID
+    end;
   finally
     DWGFinishTimer(Timer, 'dwg-import.begin',
       Format('source="%s"', [ASourcePath]));
@@ -915,7 +922,7 @@ end;
 
 procedure ScanDWGImport(var Raw: Dwg_Data);
 var
-  HandlesBefore, NODHandlers: Integer;
+  HandlesBefore: Integer;
   TotalTimer, PhaseTimer: TTimeMeter;
 begin
   // R4 (TZ §3.4): Phase 1 raw scan runs between BeginDWGImport and
@@ -975,18 +982,6 @@ begin
       Format('objects=%d handles_registered=%d handles_total=%d',
         [Integer(Raw.num_objects), LoadCtx.Handles.Count - HandlesBefore,
          LoadCtx.Handles.Count]));
-
-    // Этап 9 ТЗ NOD: стили таблиц и мультивыносок из Named Object
-    // Dictionary (корень — DICTIONARY_NAMED_OBJECT заголовка) теми же
-    // NOD-обработчиками, что и для DXF; до разбора сущностей.
-    NODHandlers := 0;
-    PhaseTimer := TTimeMeter.StartMeasure;
-    if LoadDrawing <> nil then
-      NODHandlers := DWGNODLoad(Raw, LoadDrawing^);
-    DWGFinishTimer(PhaseTimer, 'dwg-import.scan.nod',
-      Format('drawing=%s handlers=%d',
-        [BoolToStr(LoadDrawing <> nil, True), NODHandlers]));
-
     DWGLogInfoFormatStr(
       'DWG [scan-summary] classes=%d objects=%d alloced_objects=%d entities=%d object_refs=%d handles_registered=%d handles_total=%d',
       [Raw.num_classes, Raw.num_objects, Raw.num_alloced_objects,

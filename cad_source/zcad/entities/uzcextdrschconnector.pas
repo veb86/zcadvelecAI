@@ -17,10 +17,15 @@
 }
 unit uzcExtdrSCHConnector;
 {$INCLUDE zengineconfig.inc}
+{$Mode delphi}{$H+}
+{$ModeSwitch advancedrecords}
 
 interface
+
 uses
-  sysutils,uzedrawingdef,uzeExtdrAbstractEntityExtender,
+  SysUtils,
+  uzbHandles,uzbNamedHandles,uzbNamedHandlesWithData,
+  uzedrawingdef,uzeExtdrAbstractEntityExtender,
   uzeExtdrBaseEntityExtender,
   uzeentgenericsubentry,uzeentline,
   uzeentdevice,uzctnrVectorBytesStream,
@@ -29,11 +34,42 @@ uses
   gzctnrVectorTypes,uzeBaseExtender,uzgldrawcontext,
   uzcsysvars,gzctnrVectorSimple,gzctnrVectorP,UGDBOpenArrayOfPV,
   gzctnrVector;
+
+type
+  TKnotType=(KTEmpty,KTArc,KTNormal,KTCircle,KTFilledCircle);
+  TIntersectKnotType=KTEmpty..KTNormal;
+  TJoinKnotType=KTNormal..KTFilledCircle;
+  TNetTypeData=record
+    IntersectRadius:Double;
+    ConnectRadius:Double;
+    IntersectType:TKnotType;
+    TConnectType:TKnotType;
+    LConnectType:TKnotType;
+    constructor CreateRec(const AIntersectRadius,AConnectSize:Double;
+      const AIntersectType:TIntersectKnotType;const ATConnectType,ALConnectType:TJoinKnotType);
+  end;
+  PNetTypeData=^TNetTypeData;
+
 const
   ConnectionExtenderName='extdrSCHConnector';
+  NetDefaultData:TNetTypeData=(
+  IntersectRadius:0.05;
+  ConnectRadius:0.05;
+  IntersectType:KTEmpty;
+  TConnectType:KTFilledCircle;
+  );
+
+
 type
 
   TNet=class;
+  TNetTypeHandle=Integer;
+  PNetTypeHandle=^TNetTypeHandle;
+  TNetTypeName=AnsiString;
+
+  TNetTypeHandles=GTNamedHandlesWithData<TNetTypeHandle,GTLinearIncHandleManipulator<TNetTypeHandle>,
+    TNetTypeName,GTStringNamesUPPERCASE<TNetTypeName>,TNetTypeData>;
+
   TBaseSCHConnectExtender=class(TBaseEntityExtender)
     Net:TNet;
     constructor Create(pEntity:Pointer);override;
@@ -43,43 +79,51 @@ type
   TConnectExtendersVector=GZVectorP<TBaseSCHConnectExtender>;
 
   TNet=class
-    Connections:TConnectExtendersVector;
-    Setters:TConnectExtendersVector;
-    Infos:TConnectExtendersVector;
-    Pins:TConnectExtendersVector;
-    constructor Create;
-    destructor Destroy;override;
-    procedure AddConnection(Extdr:TBaseSCHConnectExtender);
-    procedure RemoveConnection(Extdr:TBaseSCHConnectExtender);
-    procedure AddSetter(Extdr:TBaseSCHConnectExtender);
+  private
+    FConnections:TConnectExtendersVector;
+    FInfos:TConnectExtendersVector;
+    FSetters:TConnectExtendersVector;
+    FPins:TConnectExtendersVector;
     procedure RemoveSetter(Extdr:TBaseSCHConnectExtender);
-    procedure AddPin(Extdr:TBaseSCHConnectExtender);
     procedure RemovePin(Extdr:TBaseSCHConnectExtender);
-    procedure AddInfo(Extdr:TBaseSCHConnectExtender);
     procedure RemoveInfo(Extdr:TBaseSCHConnectExtender);
-
-
-    function BiggerThat(Net:TNet):Boolean;
-    function IsEmpty:Boolean;
+    function BiggerThat(Net:TNet):boolean;
     procedure ConsumeNet(Net:TNet);
+
+  public
     class procedure ConcatNets(Extdr1,Extdr2:TBaseSCHConnectExtender);
 
+    constructor Create;
+    destructor Destroy;override;
+
+    function IsEmpty:boolean;
+    procedure AddSetter(Extdr:TBaseSCHConnectExtender);
+    procedure AddPin(Extdr:TBaseSCHConnectExtender);
+    procedure AddInfo(Extdr:TBaseSCHConnectExtender);
+    procedure AddConnection(Extdr:TBaseSCHConnectExtender);
+    procedure RemoveConnection(Extdr:TBaseSCHConnectExtender);
     procedure AddToDWGPostProcs(pEntity:Pointer;const drawing:TDrawingDef);
+
+    property Infos:TConnectExtendersVector read FInfos;
+    property Setters:TConnectExtendersVector read FSetters;
+    property Pins:TConnectExtendersVector read FPins;
   end;
+
   TConnectorType=(CTInfo,CTPin,CTSetter);
   TConnectorState=(CSNormal,CSSecondTry);//убрать
-                                         //делал из расчета чтобы только один раз
-                                         //передобавлять коннектор в список
-                                         //на соединение, но работает без этого
+  //делал из расчета чтобы только один раз
+  //передобавлять коннектор в список
+  //на соединение, но работает без этого
   TSCHConnectorExtender=class(TBaseSCHConnectExtender)
     const
       DefaultConnectorRadius=0;
       DefaultConnectorType=CTPin;
-    private
-      FState:TConnectorState;
-    public
-      FConnectorRadius:Double;
-      FConnectorType:TConnectorType;
+  private
+    FState:TConnectorState;
+  public
+    FNetType:TNetTypeHandle;
+    FConnectorRadius:double;
+    FConnectorType:TConnectorType;
     class function getExtenderName:string;override;
     constructor Create(pEntity:Pointer);override;
     destructor Destroy;override;
@@ -99,8 +143,9 @@ type
     procedure onEntitySupportOldVersions(pEntity:pointer;const drawing:TDrawingDef);override;
 
 
-    class function EntIOLoadNetConnectorRadius(_Name,_Value:String;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
-    class function EntIOLoadNetConnectorSetter(_Name,_Value:String;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+    class function EntIOLoadNetConnectorRadius(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+    class function EntIOLoadNetConnectorSetter(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+    class function EntIOLoadNetConnectorNETType(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
 
     procedure SaveToDxfObjXData(var outStream:TZctnrVectorBytes;PEnt:Pointer;var IODXFContext:TIODXFSaveContext);override;
 
@@ -110,6 +155,14 @@ type
 
 function AddConnectorExtenderToEntity(PEnt:PGDBObjEntity):TSCHConnectorExtender;
 
+function RegisrterNETType(const AName:TNetTypeName;const ANetTypeData:TNetTypeData):TNetTypeHandle;
+function GetNETNameByType(const AHandle:TNetTypeHandle):TNetTypeName;
+function GetTypeByNETName(const AName:TNetTypeName):TNetTypeHandle;
+function GetNETDataByType(const AHandle:TNetTypeHandle):TNetTypeHandles.PGLincedData;
+function GetMinNETTypeHandle:TNetTypeHandle;
+function GetMaxNETTypeHandle:TNetTypeHandle;
+
+
 implementation
 
 uses
@@ -118,6 +171,58 @@ uses
 const
   CT2String:array[TConnectorType] of string=('CTInfo','CTPin','CTSetter');
   CT2UCString:array[TConnectorType] of string=('CTINFO','CTPIN','CTSETTER');
+  cDefaultNetTypeHandle='Untyped';
+
+var
+  NetTypeHandles:TNetTypeHandles;
+
+constructor TNetTypeData.CreateRec(const AIntersectRadius,AConnectSize:Double;
+      const AIntersectType:TIntersectKnotType;const ATConnectType,ALConnectType:TJoinKnotType);
+begin
+  IntersectRadius:=AIntersectRadius;
+  ConnectRadius:=AConnectSize;
+  IntersectType:=AIntersectType;
+  TConnectType:=ATConnectType;
+  LConnectType:=ALConnectType;
+end;
+
+function RegisrterNETType(const AName:TNetTypeName;const ANetTypeData:TNetTypeData):TNetTypeHandle;
+begin
+  result:=NetTypeHandles.CreateOrGetHandleAndSetData(AName,ANetTypeData);
+end;
+function GetMinNETTypeHandle:TNetTypeHandle;
+begin
+  result:=0;
+end;
+function GetMaxNETTypeHandle:TNetTypeHandle;
+begin
+  result:=NetTypeHandles.HandleDataVector.Size;
+end;
+function GetNETNameByType(const AHandle:TNetTypeHandle):TNetTypeName;
+var
+  idx:TNetTypeHandle;
+begin
+  idx:=NetTypeHandles.GetDataIndex(AHandle);
+  if NetTypeHandles.isValidIndex(idx)then
+    result:=NetTypeHandles.GetHandleName(AHandle)
+  else
+    result:=cDefaultNetTypeHandle;
+end;
+function GetNETDataByType(const AHandle:TNetTypeHandle):TNetTypeHandles.PGLincedData;
+var
+  idx:TNetTypeHandle;
+begin
+  idx:=NetTypeHandles.GetDataIndex(AHandle);
+  if NetTypeHandles.isValidIndex(idx)then
+    result:=NetTypeHandles.GetPLincedData(AHandle)
+  else
+    result:=@NetDefaultData;
+end;
+
+function GetTypeByNETName(const AName:TNetTypeName):TNetTypeHandle;
+begin
+  result:=NetTypeHandles.GetHandleByName(AName);
+end;
 
 constructor TBaseSCHConnectExtender.Create(pEntity:Pointer);
 begin
@@ -125,6 +230,7 @@ begin
   Net:=nil;
   //pThisEntity:=pEntity;
 end;
+
 destructor TBaseSCHConnectExtender.Destroy;
 begin
 
@@ -132,75 +238,83 @@ end;
 
 constructor TNet.Create;
 begin
-  Connections.init(10);
-  Setters.init(2);
-  Infos.init(2);
-  Pins.init(10);
+  FConnections.init(10);
+  FSetters.init(2);
+  FInfos.init(2);
+  FPins.init(10);
 end;
 
 destructor TNet.Destroy;
 begin
-  Connections.Clear;
-  Connections.done;
+  FConnections.Clear;
+  FConnections.done;
 
-  Setters.Clear;
-  Setters.done;
+  FSetters.Clear;
+  FSetters.done;
 
-  Infos.Clear;
-  Infos.done;
+  FInfos.Clear;
+  FInfos.done;
 
-  Pins.Clear;
-  Pins.done;
+  FPins.Clear;
+  FPins.done;
 end;
 
 procedure TNet.AddConnection(Extdr:TBaseSCHConnectExtender);
 begin
-  Connections.PushBackIfNotPresent(Extdr);
+  FConnections.PushBackIfNotPresent(Extdr);
   Extdr.Net:=Self;
 end;
+
 procedure TNet.RemoveConnection(Extdr:TBaseSCHConnectExtender);
 begin
-  Connections.RemoveDataFromArray(Extdr);
+  FConnections.RemoveDataFromArray(Extdr);
   Extdr.Net:=nil;
 end;
+
 procedure TNet.AddSetter(Extdr:TBaseSCHConnectExtender);
 begin
-  Setters.PushBackIfNotPresent(Extdr);
+  FSetters.PushBackIfNotPresent(Extdr);
   Extdr.Net:=Self;
 end;
+
 procedure TNet.RemoveSetter(Extdr:TBaseSCHConnectExtender);
 begin
-  Setters.RemoveDataFromArray(Extdr);
+  FSetters.RemoveDataFromArray(Extdr);
   Extdr.Net:=nil;
 end;
+
 procedure TNet.AddPin(Extdr:TBaseSCHConnectExtender);
 begin
-  Pins.PushBackIfNotPresent(Extdr);
+  FPins.PushBackIfNotPresent(Extdr);
   Extdr.Net:=Self;
 end;
+
 procedure TNet.RemovePin(Extdr:TBaseSCHConnectExtender);
 begin
-  Pins.RemoveDataFromArray(Extdr);
+  FPins.RemoveDataFromArray(Extdr);
   Extdr.Net:=nil;
 end;
+
 procedure TNet.AddInfo(Extdr:TBaseSCHConnectExtender);
 begin
-  Infos.PushBackIfNotPresent(Extdr);
+  FInfos.PushBackIfNotPresent(Extdr);
   Extdr.Net:=Self;
 end;
+
 procedure TNet.RemoveInfo(Extdr:TBaseSCHConnectExtender);
- begin
-  Infos.RemoveDataFromArray(Extdr);
+begin
+  FInfos.RemoveDataFromArray(Extdr);
   Extdr.Net:=nil;
 end;
-function TNet.BiggerThat(Net:TNet):Boolean;
+
+function TNet.BiggerThat(Net:TNet):boolean;
 begin
-  result:=    Connections.GetCount+    Setters.GetCount+    Pins.GetCount
-         >Net.Connections.GetCount+Net.Setters.GetCount+Net.Pins.GetCount;
+  Result:=FConnections.GetCount+FSetters.GetCount+FPins.GetCount>Net.FConnections.GetCount+Net.FSetters.GetCount+Net.FPins.GetCount;
 end;
-function TNet.IsEmpty:Boolean;
+
+function TNet.IsEmpty:boolean;
 begin
-  result:=(Connections.GetCount=0)and(Setters.GetCount=0)and(Pins.GetCount=0);
+  Result:=(FConnections.GetCount=0)and(FSetters.GetCount=0)and(FPins.GetCount=0)and(FInfos.GetCount=0);
 end;
 
 procedure TNet.ConsumeNet(Net:TNet);
@@ -208,32 +322,32 @@ var
   Extdr:TBaseSCHConnectExtender;
   ir:itrec;
 begin
-  Extdr:=Net.Connections.beginiterate(ir);
+  Extdr:=Net.FConnections.beginiterate(ir);
   if Extdr<>nil then
-  repeat
-    //Net.RemoveConnection(Extdr);
-    AddConnection(Extdr);
-  Extdr:=Net.Connections.iterate(ir);
-  until Extdr=nil;
-  Net.Connections.Clear;
+    repeat
+      //Net.RemoveConnection(Extdr);
+      AddConnection(Extdr);
+      Extdr:=Net.FConnections.iterate(ir);
+    until Extdr=nil;
+  Net.FConnections.Clear;
 
-  Extdr:=Net.Setters.beginiterate(ir);
+  Extdr:=Net.FSetters.beginiterate(ir);
   if Extdr<>nil then
-  repeat
-    //Net.RemoveSetter(Extdr);
-    AddSetter(Extdr);
-  Extdr:=Net.Setters.iterate(ir);
-  until Extdr=nil;
-  Net.Setters.Clear;
+    repeat
+      //Net.RemoveSetter(Extdr);
+      AddSetter(Extdr);
+      Extdr:=Net.FSetters.iterate(ir);
+    until Extdr=nil;
+  Net.FSetters.Clear;
 
-  Extdr:=Net.Pins.beginiterate(ir);
+  Extdr:=Net.FPins.beginiterate(ir);
   if Extdr<>nil then
-  repeat
-    //Net.RemovePin(Extdr);
-    AddPin(Extdr);
-  Extdr:=Net.Pins.iterate(ir);
-  until Extdr=nil;
-  Net.Pins.Clear;
+    repeat
+      //Net.RemovePin(Extdr);
+      AddPin(Extdr);
+      Extdr:=Net.FPins.iterate(ir);
+    until Extdr=nil;
+  Net.FPins.Clear;
 end;
 
 procedure TNet.AddToDWGPostProcs(pEntity:Pointer;const drawing:TDrawingDef);
@@ -241,45 +355,54 @@ var
   p:TBaseSCHConnectExtender;
   ir:itrec;
 begin
-  p:=Connections.beginiterate(ir);
+  p:=FConnections.beginiterate(ir);
   if p<>nil then
-  repeat
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
+    repeat
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
 
-  p:=Connections.iterate(ir);
-  until p=nil;
+      p:=FConnections.iterate(ir);
+    until p=nil;
 
-  p:=Setters.beginiterate(ir);
+  p:=FSetters.beginiterate(ir);
   if p<>nil then
-  repeat
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
+    repeat
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
 
-  p:=Setters.iterate(ir);
-  until p=nil;
+      p:=FSetters.iterate(ir);
+    until p=nil;
 
-  p:=Pins.beginiterate(ir);
+  p:=FPins.beginiterate(ir);
   if p<>nil then
-  repeat
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
-    PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
+    repeat
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
 
-  p:=Pins.iterate(ir);
-  until p=nil;
+      p:=FPins.iterate(ir);
+    until p=nil;
+
+  p:=FInfos.beginiterate(ir);
+  if p<>nil then
+    repeat
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackIfNotPresent(p.pThisEntity);
+      PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray.PushBackIfNotPresent(p.pThisEntity);
+
+      p:=FInfos.iterate(ir);
+    until p=nil;
 end;
 
 class procedure TNet.ConcatNets(Extdr1,Extdr2:TBaseSCHConnectExtender);
 var
   NewNet:TNet;
 begin
-  if (Extdr1.Net=nil)and(Extdr2.Net=nil)then begin
+  if (Extdr1.Net=nil)and(Extdr2.Net=nil) then begin
     NewNet:=TNet.Create;
     NewNet.AddConnection(Extdr1);
     NewNet.AddConnection(Extdr2);
   end else if Extdr1.Net=Extdr2.Net then begin
     //уже склеены, ничего не делаем
-  end else if (Extdr1.Net<>nil)and(Extdr2.Net<>nil)then begin
+  end else if (Extdr1.Net<>nil)and(Extdr2.Net<>nil) then begin
     if Extdr1.Net.BiggerThat(Extdr2.Net) then begin
       NewNet:=Extdr2.Net;
       Extdr1.Net.ConsumeNet(Extdr2.Net);
@@ -289,34 +412,40 @@ begin
     end;
     NewNet.Destroy;
   end else if Extdr1.Net<>nil then begin
-    Extdr1.Net.AddConnection(Extdr2)
+    Extdr1.Net.AddConnection(Extdr2);
   end else begin
-    Extdr2.Net.AddConnection(Extdr1)
+    Extdr2.Net.AddConnection(Extdr1);
   end;
 end;
 
 function AddConnectorExtenderToEntity(PEnt:PGDBObjEntity):TSCHConnectorExtender;
 begin
-  result:=TSCHConnectorExtender.Create(PEnt);
-  PEnt^.AddExtension(result);
+  Result:=TSCHConnectorExtender.Create(PEnt);
+  PEnt^.AddExtension(Result);
 end;
+
 procedure TSCHConnectorExtender.onEntitySupportOldVersions(pEntity:pointer;const drawing:TDrawingDef);
 begin
 end;
+
 constructor TSCHConnectorExtender.Create;
 begin
   inherited Create(pEntity);
+  FNetType:=TNetTypeHandles.GetInitialHandleValue;
   FState:=CSNormal;
   FConnectorRadius:=DefaultConnectorRadius;
   FConnectorType:=DefaultConnectorType;
 end;
+
 destructor TSCHConnectorExtender.Destroy;
 begin
 end;
+
 procedure TSCHConnectorExtender.Assign(Source:TBaseExtender);
 begin
   FConnectorRadius:=TSCHConnectorExtender(Source).FConnectorRadius;
   FConnectorType:=TSCHConnectorExtender(Source).FConnectorType;
+  FNetType:=TSCHConnectorExtender(Source).FNetType;
 end;
 
 
@@ -334,6 +463,7 @@ begin
     NetConnectorExtender:=AddConnectorExtenderToEntity(pDestEntity);
   NetConnectorExtender.Assign(PGDBObjEntity(pSourceEntity)^.EntExtensions.GetExtensionOf<TSCHConnectorExtender>);
 end;
+
 procedure TSCHConnectorExtender.onEntityBuildVarGeometry(pEntity:pointer;const drawing:TDrawingDef);
 begin
 end;
@@ -383,19 +513,20 @@ begin
     if pThisEntity<>nil then begin
       if not PGDBObjEntity(pThisEntity)^.CheckState([ESConstructProxy,ESTemp]) then begin
         objects.init(10);
-        if PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.FindObjectsInVolume(PGDBObjEntity(pThisEntity)^.vp.BoundingBox,Objects)then begin
+        if PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.FindObjectsInVolume(PGDBObjEntity(pThisEntity)^.vp.BoundingBox,Objects) then begin
           p:=Objects.beginiterate(ir);
-          if p<>nil then repeat
-            if p<>pThisEntity then begin
-              ConnectionExtender:=p^.GetExtension<TSCHConnectionExtender>;
-              if ConnectionExtender<>nil then begin
-                FState:=CSSecondTry;
-                p^.addtoconnect2(p,PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray);
-                p^.addtoconnect2(p,PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray);
+          if p<>nil then
+            repeat
+              if p<>pThisEntity then begin
+                ConnectionExtender:=p^.GetExtension<TSCHConnectionExtender>;
+                if ConnectionExtender<>nil then begin
+                  FState:=CSSecondTry;
+                  p^.addtoconnect2(p,PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray);
+                  p^.addtoconnect2(p,PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjCasheArray);
+                end;
               end;
-            end;
-            p:=Objects.iterate(ir);
-          until p=nil;
+              p:=Objects.iterate(ir);
+            until p=nil;
         end;
         objects.Clear;
         objects.done;
@@ -404,10 +535,11 @@ begin
           //PGDBObjGenericSubEntry(drawing.GetCurrentRootSimple)^.ObjToConnectedArray.PushBackData(self.pThisEntity);
         end;
       end;
-    end
+    end;
   end else
     FState:=CSNormal;
 end;
+
 procedure TSCHConnectorExtender.onAfterEntityFormat(pEntity:Pointer;const drawing:TDrawingDef;var DC:TDrawContext);
 begin
 end;
@@ -416,6 +548,7 @@ procedure TSCHConnectorExtender.CopyExt2Ent(pSourceEntity,pDestEntity:pointer);
 begin
   onEntityClone(pSourceEntity,pDestEntity);
 end;
+
 procedure TSCHConnectorExtender.ReorganizeEnts(OldEnts2NewEntsMap:TMapPointerToPointer);
 begin
 end;
@@ -426,10 +559,10 @@ end;
 
 class function TSCHConnectorExtender.getExtenderName:string;
 begin
-  result:=ConnectionExtenderName;
+  Result:=ConnectionExtenderName;
 end;
 
-class function TSCHConnectorExtender.EntIOLoadNetConnectorRadius(_Name,_Value:String;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+class function TSCHConnectorExtender.EntIOLoadNetConnectorRadius(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
 var
   NetConnectorExtender:TSCHConnectorExtender;
 begin
@@ -438,26 +571,26 @@ begin
     NetConnectorExtender:=AddConnectorExtenderToEntity(PEnt);
   end;
   NetConnectorExtender.FConnectorRadius:=StrToFloat(_Value);
-  result:=true;
+  Result:=True;
 end;
 
 function ConnectorType2String(ConnectorType:TConnectorType):string;
 begin
-  result:=CT2String[ConnectorType];
+  Result:=CT2String[ConnectorType];
 end;
 
-function String2ConnectorType(ACTString:String):TConnectorType;
+function String2ConnectorType(ACTString:string):TConnectorType;
 var
   i:TConnectorType;
 begin
   for i in TConnectorType do
     if (ACTString=CT2String[i])or(ACTString=CT2UCString[i]) then
       exit(i);
-  raise Exception.CreateFmt('Wrong ConnectorType name : ''%s''', [ACTString]);
+  raise Exception.CreateFmt('Wrong ConnectorType name : ''%s''',[ACTString]);
 end;
 
 
-class function TSCHConnectorExtender.EntIOLoadNetConnectorSetter(_Name,_Value:String;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+class function TSCHConnectorExtender.EntIOLoadNetConnectorSetter(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
 var
   NetConnectorExtender:TSCHConnectorExtender;
 begin
@@ -466,9 +599,20 @@ begin
     NetConnectorExtender:=AddConnectorExtenderToEntity(PEnt);
   end;
   NetConnectorExtender.FConnectorType:=String2ConnectorType(_Value);
-  result:=true;
+  Result:=True;
 end;
 
+class function TSCHConnectorExtender.EntIOLoadNetConnectorNETType(_Name,_Value:string;ptu:PExtensionData;const drawing:TDrawingDef;PEnt:pointer):boolean;
+var
+  NetConnectorExtender:TSCHConnectorExtender;
+begin
+  NetConnectorExtender:=PGDBObjEntity(PEnt)^.GetExtension<TSCHConnectorExtender>;
+  if NetConnectorExtender=nil then begin
+    NetConnectorExtender:=AddConnectorExtenderToEntity(PEnt);
+  end;
+  NetConnectorExtender.FNetType:=GetTypeByNETName(_Value);
+  Result:=True;
+end;
 
 procedure TSCHConnectorExtender.SaveToDxfObjXData(var outStream:TZctnrVectorBytes;PEnt:Pointer;var IODXFContext:TIODXFSaveContext);
 begin
@@ -478,13 +622,18 @@ begin
       CTInfo:dxfStringWithoutEncodeOut(outStream,1000,'SCHConnectorType=CTInfo');
       CTPin:dxfStringWithoutEncodeOut(outStream,1000,'SCHConnectorType=CTPin');
       CTSetter:dxfStringWithoutEncodeOut(outStream,1000,'SCHConnectorType=CTSetter');
-  end;
+    end;
+  dxfStringout(outStream,1000,'SCHConnectorNetType=',GetNETNameByType(FNetType));
 end;
 
 initialization
   //extdrAdd(extdrSCHConnector)
+  NetTypeHandles.init;
   EntityExtenders.RegisterKey(uppercase(ConnectionExtenderName),TSCHConnectorExtender);
   GDBObjEntity.GetDXFIOFeatures.RegisterNamedLoadFeature('SCHConnectorRadius',TSCHConnectorExtender.EntIOLoadNetConnectorRadius);
   GDBObjEntity.GetDXFIOFeatures.RegisterNamedLoadFeature('SCHConnectorType',TSCHConnectorExtender.EntIOLoadNetConnectorSetter);
+  GDBObjEntity.GetDXFIOFeatures.RegisterNamedLoadFeature('SCHConnectorNetType',TSCHConnectorExtender.EntIOLoadNetConnectorNETType);
+
 finalization
+  NetTypeHandles.done;
 end.

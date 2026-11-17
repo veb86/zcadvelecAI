@@ -32,12 +32,11 @@ uses
   uzeentcircle,uzeentarc,uzeentline,uzeentblockinsert,uzeentpoint,uzeenttext,
   uzeentmtext,uzeentpolyline,uzeentlwpolyline,uzcentelleader,uzeentdimension,uzeentellipse,
   uzeEntSpline,
-  uzeenthatch,uzeenttable,
+  uzeenthatch,
   uzegeometry,uzcoimultiproperties,uzcLog,
-  uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,
+  uzcExtdrLayerControl,uzcExtdrSmartTextEnt,uzcExtdrSCHConnector,uzcExtdrSCHConnection,
   uzcdrawing,uzcdrawings,zUndoCmdChgTypes,zUndoCmdChgVariable,
-  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport,gzctnrVectorTypes,
-  uzeentpolyfacemesh;
+  uzctnrVectorStrings,uzeTypes,uzbUnits,uzcExtdrReport;
 implementation
 var
   ptdTHAlign:PUserTypeDescriptor;
@@ -540,108 +539,6 @@ begin
      Double2SumEntIterateProc(pdata,ChangedData,mp,fistrun,ecp,f);
 end;
 
-{Процедура получения ширины таблицы для инспектора}
-procedure TableWidthEntIterateProc(
-  pdata: Pointer;
-  ChangedData: TChangedData;
-  mp: TMultiProperty;
-  fistrun: boolean;
-  ecp: TEntChangeProc;
-  const f: TzeUnitsFormat);
-var
-  tableWidth: Double;
-begin
-  tableWidth := PGDBObjTable(ChangedData.PEntity)^.Width;
-  ChangedData.PGetDataInEtity := @tableWidth;
-  GeneralEntIterateProc(pdata, ChangedData, mp, fistrun, ecp, f);
-end;
-
-{Процедура получения высоты таблицы для инспектора}
-procedure TableHeightEntIterateProc(
-  pdata: Pointer;
-  ChangedData: TChangedData;
-  mp: TMultiProperty;
-  fistrun: boolean;
-  ecp: TEntChangeProc;
-  const f: TzeUnitsFormat);
-var
-  tableHeight: Double;
-begin
-  tableHeight := PGDBObjTable(ChangedData.PEntity)^.Height;
-  ChangedData.PGetDataInEtity := @tableHeight;
-  GeneralEntIterateProc(pdata, ChangedData, mp, fistrun, ecp, f);
-end;
-
-{Процедура получения количества строк таблицы для инспектора}
-procedure TableRowCountEntIterateProc(
-  pdata: Pointer;
-  ChangedData: TChangedData;
-  mp: TMultiProperty;
-  fistrun: boolean;
-  ecp: TEntChangeProc;
-  const f: TzeUnitsFormat);
-var
-  PVD: pvardesk;
-  rowCount: TArrayIndex;
-begin
-  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
-  if @ecp = nil then
-    PVD^.attrib+=[vda_RO];
-  rowCount := PGDBObjTable(ChangedData.PEntity)^.tbl.Count;
-  if fistrun then begin
-    PVD^.attrib-=[vda_different];
-    mp.MPType^.CopyValueToInstance(
-      @rowCount, PVD^.data.Addr.Instance);
-    PTOneVarData(pdata)^.StrValue :=
-      mp.MPType^.GetDecoratedValueAsString(@rowCount, f);
-  end else begin
-    if mp.MPType^.Compare(
-      @rowCount, PVD^.data.Addr.Instance) <> CREqual then
-      PVD^.attrib+=[vda_approximately];
-    if PTOneVarData(pdata)^.StrValue <>
-      mp.MPType^.GetDecoratedValueAsString(@rowCount, f) then
-      PVD^.attrib+=[vda_different];
-      PVD^.attrib-=[vda_approximately];
-  end;
-end;
-
-{Процедура получения количества столбцов таблицы для инспектора}
-procedure TableColCountEntIterateProc(
-  pdata: Pointer;
-  ChangedData: TChangedData;
-  mp: TMultiProperty;
-  fistrun: boolean;
-  ecp: TEntChangeProc;
-  const f: TzeUnitsFormat);
-var
-  PVD: pvardesk;
-  colCount: TArrayIndex;
-begin
-  PVD := PTOneVarData(pdata)^.VDAddr.Instance;
-  if @ecp = nil then
-    PVD^.attrib+=[vda_RO];
-  if PGDBObjTable(ChangedData.PEntity)^.PTableStyle <> nil then
-    colCount := PGDBObjTable(
-      ChangedData.PEntity)^.PTableStyle^.tblformat.Count
-  else
-    colCount := 0;
-  if fistrun then begin
-    PVD^.attrib-=[vda_different];
-    mp.MPType^.CopyValueToInstance(
-      @colCount, PVD^.data.Addr.Instance);
-    PTOneVarData(pdata)^.StrValue :=
-      mp.MPType^.GetDecoratedValueAsString(@colCount, f);
-  end else begin
-    if mp.MPType^.Compare(
-      @colCount, PVD^.data.Addr.Instance) <> CREqual then
-      PVD^.attrib+=[vda_approximately];
-    if PTOneVarData(pdata)^.StrValue <>
-      mp.MPType^.GetDecoratedValueAsString(@colCount, f) then
-      PVD^.attrib+=[vda_different];
-      PVD^.attrib-=[vda_approximately];
-  end;
-end;
-
 procedure finalize;
 begin
 end;
@@ -651,7 +548,6 @@ const
      pcircle:PGDBObjCircle=nil;
      parc:PGDBObjArc=nil;
      pline:PGDBObjLine=nil;
-	 pfacemesh:PGDBObjPolyFaceMesh=nil;
      pblockinsert:PGDBObjBlockInsert=nil;
      ppoint:PGDBObjPoint=nil;
      ptext:PGDBObjText=nil;
@@ -663,11 +559,11 @@ const
      pelleader:PGDBObjElLeader=nil;
      pdim:PGDBObjDimension=nil;
      pellipse:PGDBObjEllipse=nil;
-	 ptable:PGDBObjTable=nil;
      LayerControlExtender:TLayerControlExtender=nil;
      SmartTextEntExtender:TSmartTextEntExtender=nil;
      ReportExtender:TReportExtender=nil;
      NetConnectorExtender:TSCHConnectorExtender=nil;
+     NetConnectionExtender:TSCHConnectionExtender=nil;
 var
   ptype:PUserTypeDescriptor;
 begin
@@ -694,13 +590,11 @@ begin
     RegisterVarCategory('EXTDRREPORT','Report',@InterfaceTranslate);
     MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRREPORT_Scriptname','Script name',sysunit^.TypeName2PTD('AnsiString'),MPCExtenders,0,TReportExtender,PtrInt(@ReportExtender.fScriptName),PtrInt(@ReportExtender.fScriptName),OneVarDataMIPD,OneVarDataEIPD);
 
-    ptype:=sysunit^.TypeName2PTD('TConnectorType');
-    if ptype=nil then begin
-      ptype:=SysUnit^.RegisterType(TypeInfo(TConnectorType));
-    end;
-    RegisterVarCategory('EXTDRNETCONNECTOR','Connector control',@InterfaceTranslate);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECTOR_ConnectorRadius','Connector radius',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSCHConnectorExtender,PtrInt(@NetConnectorExtender.FConnectorRadius),PtrInt(@NetConnectorExtender.FConnectorRadius),OneVarDataMIPD,OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECTOR_ConnectorType','Connector type',ptype,MPCExtenders,0,TSCHConnectorExtender,PtrInt(@NetConnectorExtender.FConnectorType),PtrInt(@NetConnectorExtender.FConnectorType),OneVarDataMIPD,OneVarDataEIPD);
+    RegisterVarCategory('EXTDRNETCONNECT','Connect control',@InterfaceTranslate);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECT_NetType','Net type',sysunit^.TypeName2PTD('TNetTypeHandle'),MPCExtenders,0,TSCHConnectionExtender,PtrInt(@NetConnectionExtender.FNetType),PtrInt(@NetConnectionExtender.FNetType),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECT_NetType','Net type',sysunit^.TypeName2PTD('TNetTypeHandle'),MPCExtenders,0,TSCHConnectorExtender,PtrInt(@NetConnectorExtender.FNetType),PtrInt(@NetConnectorExtender.FNetType),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECT_ConnectorRadius','Connector radius',sysunit^.TypeName2PTD('Double'),MPCExtenders,0,TSCHConnectorExtender,PtrInt(@NetConnectorExtender.FConnectorRadius),PtrInt(@NetConnectorExtender.FConnectorRadius),OneVarDataMIPD,OneVarDataEIPD);
+    MultiPropertiesManager.RegisterPhysMultiproperty('EXTDRNETCONNECT_ConnectorType','Connector type',sysunit^.TypeName2PTD('TConnectorType'),MPCExtenders,0,TSCHConnectorExtender,PtrInt(@NetConnectorExtender.FConnectorType),PtrInt(@NetConnectorExtender.FConnectorType),OneVarDataMIPD,OneVarDataEIPD);
 
 
     {General section}
@@ -908,21 +802,6 @@ begin
     {--Summary}
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyLineID,nil,PtrInt(@p3dpoly^.VertexArrayInOCS.Count),PtrInt(@p3dpoly^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
     MultiPropertiesManager.RegisterPhysMultiproperty('TotalLength','Total length',sysunit^.TypeName2PTD('Double'),MPCSummary,GDBPolyLineID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@GDBPolyLineSumLengthEntIterateProc,nil));
-    
-	{PolyFaceMesh uzegeometry}
-    MultiPropertiesManager.RestartMultipropertySortID;
-    MultiPropertiesManager.RegisterPhysMultiproperty('VertexCount','Vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,OneVarRODataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty('Vertex3DControl_','Vertex control',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInWCS),PtrInt(@pfacemesh^.VertexArrayInOCS),TMainIterateProcsData.Create(@GetVertex3DControlData,@FreeVertex3DControlData),TEntIterateProcsData.Create(@PolylineVertex3DControlBeforeEntIterateProc,@PolylineVertex3DControlEntIterateProc,@PolylineVertex3DControlFromVarEntChangeProc));
-    MultiPropertiesManager.RegisterPhysMultiproperty('FaceCount','Face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCGeometry,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));
-    {--Misc}
-    // Стандартный обработчик обеспечивает редактирование, undo/redo и обновление вида.
-    MultiPropertiesManager.RegisterPhysMultiproperty('ShowSolid','Solid faces',
-      sysunit^.TypeName2PTD('Boolean'),MPCMisc,GDBPolyFaceMeshID,nil,
-      PtrInt(@pfacemesh^.ShowSolid),PtrInt(@pfacemesh^.ShowSolid),
-      OneVarDataMIPD,OneVarDataEIPD);
-    {--Summary}
-    MultiPropertiesManager.RegisterPhysMultiproperty('TotalVertexCount','Total vertex count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,PtrInt(@pfacemesh^.VertexArrayInOCS.Count),PtrInt(@pfacemesh^.VertexArrayInOCS.Count),OneVarDataMIPD,TEntIterateProcsData.Create(nil,@TArrayIndex2SumEntIterateProc,nil));
-    MultiPropertiesManager.RegisterPhysMultiproperty('TotalFaceCount','Total face count',sysunit^.TypeName2PTD('TArrayIndex'),MPCSummary,GDBPolyFaceMeshID,nil,0,0,OneVarDataMIPD,TEntIterateProcsData.Create(nil,@PolyFaceMeshFaceCountEntIterateProc,nil));
 
     {Cable uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;
@@ -949,77 +828,6 @@ begin
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_X','Pattern origin X',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.x),PtrInt(@phatch^.Origin.x),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Y','Pattern origin Y',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.y),PtrInt(@phatch^.Origin.y),OneVarDataMIPD,OneVarDataEIPD);
     MultiPropertiesManager.RegisterPhysMultiproperty('PATTERNORIGIN_Z','Pattern origin Z',sysunit^.TypeName2PTD('TzeXUnits'),MPCMisc,GDBHatchID,nil,PtrInt(@phatch^.Origin.z),PtrInt(@phatch^.Origin.z),OneVarDataMIPD,OneVarDataEIPD);
-
-	{Table — геометрия}
-    MultiPropertiesManager.RestartMultipropertySortID;
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'INSERT_X', 'X',
-      sysunit^.TypeName2PTD('TzeXUnits'),
-      MPCGeometry, GDBTableID, nil,
-      PtrInt(@ptable^.P_insert_in_WCS.x),
-      PtrInt(@ptable^.Local.P_insert.x),
-      OneVarDataMIPD, OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'INSERT_Y', 'Y',
-      sysunit^.TypeName2PTD('TzeYUnits'),
-      MPCGeometry, GDBTableID, nil,
-      PtrInt(@ptable^.P_insert_in_WCS.y),
-      PtrInt(@ptable^.Local.P_insert.y),
-      OneVarDataMIPD, OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'INSERT_Z', 'Z',
-      sysunit^.TypeName2PTD('TzeZUnits'),
-      MPCGeometry, GDBTableID, nil,
-      PtrInt(@ptable^.P_insert_in_WCS.z),
-      PtrInt(@ptable^.Local.P_insert.z),
-      OneVarDataMIPD, OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableWidth', 'Width',
-      sysunit^.TypeName2PTD('Double'),
-      MPCGeometry, GDBTableID, nil,
-      0, 0,
-      OneVarDataMIPD,
-      TEntIterateProcsData.Create(
-        nil, @TableWidthEntIterateProc, nil));
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableHeight', 'Height',
-      sysunit^.TypeName2PTD('Double'),
-      MPCGeometry, GDBTableID, nil,
-      0, 0,
-      OneVarDataMIPD,
-      TEntIterateProcsData.Create(
-        nil, @TableHeightEntIterateProc, nil));
-    {Table — основные свойства}
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableStyle', 'Table style',
-      sysunit^.TypeName2PTD('PGDBTableStyleObjInsp'),
-      MPCMisc, GDBTableID, nil,
-      PtrInt(@ptable^.PTableStyle),
-      PtrInt(@ptable^.PTableStyle),
-      OneVarDataMIPD, OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableScale', 'Scale',
-      sysunit^.TypeName2PTD('Double'),
-      MPCMisc, GDBTableID, nil,
-      PtrInt(@ptable^.scale),
-      PtrInt(@ptable^.scale),
-      OneVarDataMIPD, OneVarDataEIPD);
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableRowCount', 'Rows',
-      sysunit^.TypeName2PTD('TArrayIndex'),
-      MPCMisc, GDBTableID, nil,
-      0, 0,
-      OneVarDataMIPD,
-      TEntIterateProcsData.Create(
-        nil, @TableRowCountEntIterateProc, nil));
-    MultiPropertiesManager.RegisterPhysMultiproperty(
-      'TableColCount', 'Columns',
-      sysunit^.TypeName2PTD('TArrayIndex'),
-      MPCMisc, GDBTableID, nil,
-      0, 0,
-      OneVarDataMIPD,
-      TEntIterateProcsData.Create(
-        nil, @TableColCountEntIterateProc, nil));
 
     {ElLeader uzegeometry}
     MultiPropertiesManager.RestartMultipropertySortID;

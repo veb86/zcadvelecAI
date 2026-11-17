@@ -24,8 +24,7 @@ unit uzeffdxfsupport;
 interface
 uses
   uzegeometrytypes,sysutils,uzctnrVectorBytesStream,usimplegenerics,
-  uzMVReader,UGDBPoint3DArray,uzeTypes,Classes,Generics.Collections,uzeffdxfnod,
-  uzeffdxfnodacadtable;
+  uzMVReader,UGDBPoint3DArray,uzeTypes;
 
 const
   cDXFError_WrogGroupCode='DXF group code "%d" expected but "%d" found';
@@ -106,34 +105,6 @@ type
     Header:TDXFHeaderInfo;
     LocalEntityFlags:TLocalEntityFlags;
 
-    { Карты ремаппинга хэндлов для сырых (raw) сущностей ACAD_TABLE
-      (issue #1339). При сохранении ACAD_TABLE пишется дословно, сохраняя
-      старые хэндлы исходного файла, тогда как весь остальной файл
-      перенумеровывается. Эти карты позволяют переписать ссылки сырой
-      сущности на актуальные новые хэндлы:
-        AcadTableOwnerHandle  — новый хэндл владельца (*Model_Space) для 330;
-        BlockNameHandleMap    — имя блока -> новый хэндл BLOCK_RECORD для 343;
-        TableStyleNameHandleMap — имя стиля таблицы -> новый хэндл для 342;
-        TextStyleNameHandleMap  — имя текстового стиля -> новый хэндл STYLE
-          для ссылок 340 внутри CELLSTYLEMAP (и 342 MLEADERSTYLE);
-        LineTypeNameHandleMap   — имя типа линии -> новый хэндл LTYPE для
-          ссылки 340 MLEADERSTYLE (этап 6 ТЗ NOD). }
-    AcadTableOwnerHandle:TDWGHandle;
-    BlockNameHandleMap:TString2StringDictionary;
-    TableStyleNameHandleMap:TString2StringDictionary;
-    TextStyleNameHandleMap:TString2StringDictionary;
-    LineTypeNameHandleMap:TString2StringDictionary;
-
-    { Новый хэндл стиля печати (ACDBPLACEHOLDER), на который ссылаются
-      записи слоёв (группа 390). Берётся из таблицы LAYER шаблона. }
-    LayerPlotStyleHandle:TDWGHandle;
-
-    { Имена классов (группа 1) секции CLASSES шаблона, без учёта регистра.
-      Заполняется при копировании CLASSES, до вызова ClassesProc
-      NOD-обработчиков: класс, который уже есть в шаблоне, повторно не
-      объявляется (этап 4 ТЗ NOD). }
-    TemplateClassNames:TStringList;
-
     procedure InitRec;
     procedure Done;
   end;
@@ -142,11 +113,6 @@ type
 
   TDXFHandle2ZCObject=GMapHandle2Pointer<TDWGHandle,Pointer,TObjectTypes>;
 
-  TDXFRawTextObject=class
-    Text:string;
-    constructor Create(const AText:string);
-  end;
-
   TIODXFLoadContext=record
     h2p:TDXFHandle2ZCObject;
     DWGVarsDict:TString2StringDictionary;
@@ -154,33 +120,6 @@ type
     Header:TDXFHeaderInfo;
 
     GDBVertexLoadCache:GDBPoint3dArray;
-
-    { Индекс разорванных ACAD_TABLE по модели NOD (issue #1465): для каждой
-      главной таблицы — параметры разрыва, высоты/положения частей,
-      диапазоны строк, продолжения и типы строк Title/Header/Data из
-      TABLECONTENT. Строится после NOD pre-pass; nil для R12. }
-    TableSplitIndex:TZAcadTableNODIndex;
-
-    { Загруженные главные ACAD_TABLE: хэндл DXF -> сущность. Продолжение
-      поглощается именно своей главной таблицей (по индексу NOD), а не
-      последней загруженной, поэтому в файле может быть несколько
-      разорванных таблиц (issue #1465). }
-    TableMainEntities:TDictionary<TDWGHandle,Pointer>;
-
-    { Сырые тексты ACAD_TABLE-сущностей из секции ENTITIES, индексированные
-      по нормализованному handle. Нужны для round-trip сохранения таблиц,
-      потому что современные ACAD_TABLE содержат бинарные chunks и точные
-      флаги ячеек, которые модель ZCAD пока не реконструирует полностью
-      (issue #1317). }
-    TableRawAcadTableEntities:TStringList;
-
-    { Модель секции OBJECTS и Named Object Dictionary (этап 2 ТЗ
-      cad_source/zengine/TZ_NOD_NamedObjectDictionary.md). Строится в
-      AddFromDXF до разбора TABLES/BLOCKS/ENTITIES и живёт до Done.
-      nil — контекст создан не AddFromDXF (например, в AddFromDXF12);
-      пустая модель (NOD=nil) — R12, нет секции OBJECTS или ошибка её
-      разбора. Владеет контекст: освобождается в Done. }
-    NODModel:TZNODModel;
 
     procedure InitRec;
     procedure Done;
@@ -241,12 +180,6 @@ function ZCDxfVer2ACVer(AZCVer:TZCDxfVersion):integer;
 function ZCDxfVer2DXF_ACVer(AZCVer:TZCDxfVersion):TACDWGVer;
 
 implementation
-
-constructor TDXFRawTextObject.Create(const AText:string);
-begin
-  inherited Create;
-  Text:=AText;
-end;
 
 function ZCDxfVer2ACVer(AZCVer:TZCDxfVersion):integer;
 begin
@@ -393,9 +326,6 @@ begin
   end;
 end;
 
-{ Преобразует системную кодовую страницу в кодовую страницу ZCAD.
-  Для страниц, которые не могут быть $DWGCODEPAGE (UTF-8, OEM и т.п.),
-  возвращает ZCCPINVALID (issue #1438). }
 function SysCP2ZCCodePage(SCP:TSystemCodePage):TZCCodePage;
 begin
   case SCP of
@@ -413,14 +343,11 @@ begin
     1256:result:=ZCCP1256;
     1257:result:=ZCCP1257;
     1258:result:=ZCCP1258;
-    else result:=ZCCPINVALID;
+    else
+     result:=ZCCPINVALID;
   end;
 end;
 
-{ Возвращает кодовую страницу чертежа, а если она не задана (ZCCPINVALID) -
-  кодовую страницу для новых чертежей (SysDWG_CodePage). Нужна, чтобы
-  $DWGCODEPAGE в заголовке DXF и фактическая перекодировка строк при
-  записи DXF2000 всегда совпадали (issue #1438). }
 function ZCCodePageOrDefault(ZCCP:TZCCodePage):TZCCodePage;
 begin
   if ZCCP<>ZCCPINVALID then
@@ -437,26 +364,12 @@ begin
   VarsDict:=TString2StringDictionary.create;
   handle := $2;
 
-  AcadTableOwnerHandle:=0;
-  LayerPlotStyleHandle:=0;
-  BlockNameHandleMap:=TString2StringDictionary.create;
-  TableStyleNameHandleMap:=TString2StringDictionary.create;
-  TextStyleNameHandleMap:=TString2StringDictionary.create;
-  LineTypeNameHandleMap:=TString2StringDictionary.create;
-  TemplateClassNames:=TStringList.Create;
-  TemplateClassNames.CaseSensitive:=False;
-
   Header.InitRec;
 end;
 procedure TIODXFSaveContext.Done;
 begin
-  TemplateClassNames.Free;
   p2h.Free;
   VarsDict.Free;
-  BlockNameHandleMap.Free;
-  TableStyleNameHandleMap.Free;
-  TextStyleNameHandleMap.Free;
-  LineTypeNameHandleMap.Free;
 end;
 
 procedure TIODXFLoadContext.InitRec;
@@ -467,16 +380,6 @@ begin
   Header.InitRec;
 
   GDBVertexLoadCache.init(1000);
-
-  TableRawAcadTableEntities:=TStringList.Create;
-  TableRawAcadTableEntities.CaseSensitive:=False;
-  TableRawAcadTableEntities.Sorted:=True;
-  TableRawAcadTableEntities.Duplicates:=dupIgnore;
-
-  TableSplitIndex:=nil;
-  TableMainEntities:=TDictionary<TDWGHandle,Pointer>.Create;
-
-  NODModel:=nil;
 end;
 
 procedure TDXFHeaderInfo.InitRec;
@@ -488,20 +391,10 @@ begin
 end;
 
 procedure TIODXFLoadContext.Done;
-var
-  I:Integer;
 begin
   h2p.Free;
   DWGVarsDict.Free;
   GDBVertexLoadCache.Done;
-  if TableRawAcadTableEntities<>nil then begin
-    for I:=0 to TableRawAcadTableEntities.Count-1 do
-      TableRawAcadTableEntities.Objects[I].Free;
-    FreeAndNil(TableRawAcadTableEntities);
-  end;
-  FreeAndNil(TableSplitIndex);
-  FreeAndNil(TableMainEntities);
-  FreeAndNil(NODModel);
 end;
 
 function DXFHandle(const sh:string):TDWGHandle;

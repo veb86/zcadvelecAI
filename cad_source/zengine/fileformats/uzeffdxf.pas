@@ -1078,7 +1078,10 @@ begin
              41:tstyle.prop.wfactor:=rdr.ParseDouble;
              50:tstyle.prop.oblique:=rdr.ParseDouble*pi/180;
              70:flags:=rdr.ParseInteger;
-              3:FontFile:=rdr.ParseString;
+              3:begin
+                dxfLoadString(rdr,FontFile,context.Header);//FontFile:=rdr.ParseString;
+                FontFile:=ExtractFileName(FontFile);
+              end;
            1000:FontFamily:=rdr.ParseString;
            else
              s := rdr.ParseString;
@@ -1093,7 +1096,8 @@ begin
         end else
           ti:=ZCDCtx.PDrawing^.TextStyleTable.addstyle(tstyle.Name,FontFile,FontFamily,tstyle.prop,false,LogProc);
       end else begin
-        if ZCDCtx.PDrawing^.TextStyleTable.FindStyle(FontFile,true)<>nil then begin
+          ti:=ZCDCtx.PDrawing^.TextStyleTable.FindStyle(FontFile,true);
+        if ti<>nil then begin
           if ZCDCtx.LoadMode=TLOLoad then
             ti:=ZCDCtx.PDrawing^.TextStyleTable.setstyle(FontFile,FontFile,FontFamily,tstyle.prop,true);
         end else
@@ -1111,6 +1115,7 @@ begin
             if psp^.param.PstyleIsHandle then
               if psp^.param.PStyle=pointer(DWGHandle) then begin
                 psp^.param.PStyle:=ptstyle;
+                psp^.param.PstyleIsHandle:=false;
                 psp^.FontName:=ptstyle^.FontFile;
                 if assigned(ptstyle^.pfont) then begin
                   psp^.Psymbol:=ptstyle^.pfont^.GetOrReplaceSymbolInfo(integer(psp^.ShapeNum){//-ttf-//,tdinfo});
@@ -1507,7 +1512,7 @@ begin
                   s := rdr.ParseString;
               end
               else if ZCDCtx.pdrawing^.BlockDefArray.getindex(s)>=0 then begin
-                zDebugLn('{I}'+rsDoubleBlockIgnored,[{Tria_AnsiToUtf8}(s)]);
+                zDebugLn('{I}'+rsDoubleBlockIgnored,[s]);
                 while (s <> 'ENDBLK') do
                 s := rdr.ParseString;
               end else begin

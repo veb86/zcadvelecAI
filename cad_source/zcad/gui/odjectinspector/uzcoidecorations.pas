@@ -33,7 +33,8 @@ uses
   uzcsysparams,gzctnrVectorTypes,uzcinterface,uzcoimultiobjects,
   uzcgui2color,uzcgui2linewidth,uzcgui2linetypes,uzcgui2arrows,
   uzccommand_layer,uzcuitypes,uzeNamedObject,uzccommandsimpl,
-  uzcOI,uzcdrawing,uzbUnits,uzeBaseUtils,uzcTypes,uzObjectInspectorManager;
+  uzcOI,uzcdrawing,uzbUnits,uzeBaseUtils,uzcTypes,uzObjectInspectorManager,
+  uzcExtdrSCHConnector;
 type
     AsyncCommHelper=class
                          //class procedure GetVertex(Pinstance:PtrInt);
@@ -56,7 +57,7 @@ function NamedObjectsDecorator(PInstance:Pointer):String;
 begin
      if PGDBLayerProp(PInstance^)<>nil then
                                            begin
-                                           result:={Tria_AnsiToUtf8}(PGDBNamedObject(ppointer(PInstance)^).Name)
+                                           result:=PGDBNamedObject(ppointer(PInstance)^).Name
                                            end
                                        else
                                            result:=rsUnassigned;
@@ -116,7 +117,7 @@ begin
                              p:=NO.beginiterate(ir);
                              if p<>nil then
                              repeat
-                                   number:=cbedit.Items.AddObject({Tria_AnsiToUtf8}(p^.Name),tobject(p));
+                                   number:=cbedit.Items.AddObject(p^.Name,tobject(p));
                                    if pcurrent=p then
                                                      cbedit.ItemIndex:=number;
                                    p:=NO.iterate(ir);
@@ -376,7 +377,7 @@ begin
      PLT:=ppointer(PInstance)^;
      if plt<>nil then
                         begin
-                             s:={Tria_AnsiToUtf8}(plt^.Name);
+                             s:=plt^.Name;
                         end
                     else
                         begin
@@ -730,6 +731,36 @@ begin
   end;
 end;
 
+function NetTypeHandleDecorator(PInstance:Pointer):String;
+begin
+  result:=GetNETNameByType(PNetTypeHandle(PInstance)^);
+end;
+
+function NetTypeHandleDecoratorCreateEditor(TheOwner:TPropEditorOwner;rect:trect;pinstance:pointer;psa:PTZctnrVectorStrings;FreeOnLostFocus:boolean;PTD:PUserTypeDescriptor;f:TzeUnitsFormat):TEditorDesc;
+var
+  cbedit:TComboBox;
+  netIdx,netIdxMin,netIdxMax:integer;
+begin
+  CreateComboPropEditor(TheOwner,pinstance,FreeOnLostFocus,PTD,result.editor,cbedit,f);
+  result.editor.byObjects:=true;
+  SetComboSize(cbedit,sysvar.INTF.INTF_DefaultControlHeight^-6,CBReadOnly);
+
+  netIdxMin:=GetMinNETTypeHandle;
+  netIdxMax:=GetMaxNETTypeHandle;
+
+  for netIdx:=netIdxMin to netIdxMax do
+    cbedit.Items.AddObject(GetNETNameByType(netIdx),tobject(netIdx));
+
+  netIdx:=PNetTypeHandle(PInstance)^;
+  if (netIdx<netIdxMin)or(netIdx>netIdxMax)then
+    netIdx:=netIdxMin;
+
+  cbedit.ItemIndex:=netIdx;
+
+  result.mode:=EM_Inplace;
+end;
+
+
 procedure DecorateSysTypes;
 begin
   if SysUnit<>nil then begin
@@ -773,6 +804,10 @@ begin
     DecorateType(SysUnit.TypeName2PTD('TColor'),TColorDecorator,TColorDecoratorCreateEditor,nil);
     DecorateType(SysUnit.TypeName2PTD('TFString'),TFStringDecorator,nil,nil);
 
+    DecorateType(SysUnit.TypeName2PTD('TArrowStyleData'),ArrowStyleDataDecorator,ArrowStyleDataDecoratorCreateEditor,drawArrowStyleDataProp);
+
+    DecorateType(SysUnit.TypeName2PTD('TNetTypeHandle'),NetTypeHandleDecorator,NetTypeHandleDecoratorCreateEditor,nil);
+
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonGreatThatDraw,@OIUI_FE_GetterSetterIntegerInc);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonLessThatDraw,@OIUI_FE_GetterSetterIntegerDec);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterBoolean'),@OIUI_FE_BooleanGetPrefferedSize,@OIUI_FE_GetterSetterBooleanDraw,@OIUI_FE_GetterSetterBooleanInverse);
@@ -780,7 +815,6 @@ begin
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonGreatThatDraw,@OIUI_FE_GetterSetterUsableIntegerInc);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_HalfButtonGetPrefferedSize,@OIUI_FE_ButtonLessThatDraw,@OIUI_FE_GetterSetterUsableIntegerDec);
     AddFastEditorToType(SysUnit.TypeName2PTD('TGetterSetterTUsableInteger'),@OIUI_FE_BooleanGetPrefferedSize,@OIUI_FE_GetterSetterUsableIntegerUsableDraw,@OIUI_FE_GetterSetterUsableIntegerUsableInverse);
-    DecorateType(SysUnit.TypeName2PTD('TGetterSetterTColor'),TGetterSetterTColorDecorator,TGetterSetterTColorDecoratorCreateEditor,nil);
 
 
 
