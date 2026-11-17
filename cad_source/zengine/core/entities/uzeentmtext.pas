@@ -30,8 +30,6 @@ uses
   uzMVReader,uzcTextPreprocessorDXFImpl,uzefontbase;
 
 type
-  TMTextWrapMode = (mwmByWord, mwmByWordThenChar);
-
   PGDBXYZWStringArray=^XYZWStringArray;
 
   XYZWStringArray=object(GZVector<GDBStrWithPoint>)
@@ -41,7 +39,6 @@ type
   GDBObjMText=object(GDBObjText)
     Width:double;
     linespacef:double;
-    WrapMode: TMTextWrapMode;
     Text:XYZWStringArray;
     constructor init(own:Pointer;ALayer:PGDBLayerProp;LW:smallint;
       c:TDXFEntsInternalStringType;p:TzePoint3d;s,o,w,a:double;j:TTextJustify;
@@ -70,8 +67,7 @@ type
   end;
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
-  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
-  WrapMode: TMTextWrapMode = mwmByWord);
+  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray);
 function GetLinesH(linespace,size:double;var Lines:XYZWStringArray):double;
 function GetLinesW(var Lines:XYZWStringArray):double;
 function GetLineSpaceFromLineSpaceF(linespacef,size:double):double;
@@ -84,7 +80,6 @@ begin
   inherited;
   PGDBObjMText(refp)^.Width:=Width;
   PGDBObjMText(refp)^.linespacef:=linespacef;
-  PGDBObjMText(refp)^.WrapMode:=WrapMode;
 end;
 
 
@@ -130,7 +125,6 @@ constructor GDBObjMText.initnul;
 begin
   inherited initnul(owner);
   Width:=0;
-  WrapMode:=mwmByWord;
   Text.init(10);
 end;
 
@@ -139,7 +133,6 @@ begin
   inherited init(own,ALayer,lw,c,p,s,o,w,a,j);
   Width:=wi;
   linespacef:=l;
-  WrapMode:=mwmByWord;
   {TODO: тут расчет AAA ненужен}
   Local.basis.ox:=GetXfFromZ(Local.basis.oz);
 
@@ -185,8 +178,7 @@ begin
 end;
 
 procedure FormatMtext(pfont:pgdbfont;Width,size,wfactor:double;
-  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray;
-  WrapMode: TMTextWrapMode = mwmByWord);
+  const content:TDXFEntsInternalStringType;var Text:XYZWStringArray);
 var
   canbreak:boolean;
   currsymbol,lastbreak,lastcanbreak:integer;
@@ -231,12 +223,18 @@ begin
         linewidth:=linewidth-psyminfo.SymMinX;
         newline:=False;
       end;
-      if (sym=32)and(maxlinewidth>0) then begin
+      if ((sym=8203)or(sym=32))and(maxlinewidth>0) then begin
         lastcanbreak:=currsymbol;
         canbreak:=True;
         lastlinewidth:=linewidth;
-        linewidth:=lastsymspace+linewidth+psyminfo.SymMaxX;
-        lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
+        linewidth:=lastsymspace+linewidth{+psyminfo.SymMaxX};
+        lastsymspace:={psyminfo.NextSymX-psyminfo.SymMaxX}0;
+
+        if sym<>8203 then begin
+          linewidth:=linewidth+psyminfo.SymMaxX;
+          lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
+        end;
+
       end else if sym=10 then begin
         currline:=copy(content,lastbreak,currsymbol-lastbreak);
         if sym<>10 then begin
@@ -259,12 +257,10 @@ begin
         lastsymspace:=0;
         lastlinewidth:=linewidth;
       end else begin
-        if not canbreak then
-          lastlinewidth:=linewidth+lastsymspace;
         linewidth:=lastsymspace+linewidth+psyminfo.SymMaxX;
         lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
       end;
-      if canbreak then begin
+      if canbreak then
         if maxlinewidth<=linewidth then begin
           currline:=copy(content,lastbreak,lastcanbreak-lastbreak);
           linewidth:=0;
@@ -282,21 +278,6 @@ begin
           end;
           Text.PushBackData(swp);
         end;
-      end else begin
-        // Для таблиц допускаем посимвольный перенос, обычный MTEXT переносим только по пробелам.
-        if (WrapMode=mwmByWordThenChar)
-          and (maxlinewidth>0)and(maxlinewidth<=linewidth)
-          and(currsymbol>lastbreak) then begin
-          currline:=copy(content,lastbreak,currsymbol-lastbreak);
-          swp.Str:=currline;
-          swp.w:=lastlinewidth;
-          Text.PushBackData(swp);
-          lastbreak:=currsymbol;
-          linewidth:=psyminfo.SymMaxX-psyminfo.SymMinX;
-          lastsymspace:=psyminfo.NextSymX-psyminfo.SymMaxX;
-          newline:=False;
-        end;
-      end;
       Inc(currsymbol,l);
     until currsymbol>length(content);
   end;
@@ -343,7 +324,7 @@ begin
     exit;
   if template='' then
     template:=content;
-  content:=textformat(template,SPFSources.GetFull,@self);
+  content:=textformat(drawing.GetUnitsFormat,template,SPFSources.GetFull,@self);
   LdivideS:=linespace/textprop.size;
   if (content='')and(template='') then
     content:=str_empty;
@@ -364,8 +345,7 @@ begin
   end else
     ActualContent:=Content;
 
-  FormatMtext(
-    pfont,Width,textprop.size,textprop.wfactor,ActualContent,Text,WrapMode);
+  FormatMtext(pfont,Width,textprop.size,textprop.wfactor,ActualContent,Text);
 
   h:=GetLinesH(linespace,textprop.size,Text);
 
@@ -537,15 +517,6 @@ begin
   end;
   CalcActualVisible(dc.DrawingContext.VActuality);
   if EFDraw in stage then begin
-    // Issue #1194: MTEXT entities loaded from DWG can reach FormatEntity with
-    // TXTStyle=nil if their style ref failed to resolve. Fall back to the
-    // drawing's Standard style — same pattern as the DXF loader uses.
-    if TXTStyle=nil then
-      TXTStyle:=drawing.GetTextStyleTable^.FindStyle('Standard',False);
-    if (TXTStyle<>nil) and (TXTStyle^.pfont=nil) then
-      TXTStyle^.pfont:=pbasefont;
-    if (TXTStyle=nil) or (TXTStyle^.pfont=nil) or (TXTStyle^.pfont^.font=nil) then
-      Exit;
 
     formatcontent(drawing);
     calcobjmatrix;
@@ -649,7 +620,7 @@ begin
             lp:=VectorTransform3d(lp,objmatrix);
             pl.PushBackData(lp);
           end;
-        end else begin
+        end else if sym<>8203 then begin
           pfont.CreateSymbol(DC.drawer,textprop.size,Representation.GetGraphix^,
             sym,objmatrix,matr,Bound,ln);
           matr:=CreateTranslationMatrix(pgdbfont(pfont)^.GetOrReplaceSymbolInfo(
@@ -720,7 +691,6 @@ begin
   tvo^.content:=content;
   tvo^.Width:=Width;
   tvo^.linespacef:=linespacef;
-  tvo^.WrapMode:=WrapMode;
   tvo^.bp.ListPos.Owner:=own;
   tvo^.TXTStyle:=TXTStyle;
   Result:=tvo;
@@ -798,7 +768,6 @@ var
   ul:boolean;
   quotedcontent:TDXFEntsInternalStringType;
   ASourcesCounter:TSPFSourceSet;
-  effectivetemplate:TDXFEntsInternalStringType;
 begin
   ul:=False;
   SaveToDXFObjPrefix(outStream,'MTEXT','AcDbMText',IODXFContext);
@@ -806,32 +775,20 @@ begin
   dxfDoubleout(outStream,40,textprop.size);
   dxfDoubleout(outStream,41,Width);
   dxfIntegerout(outStream,71,j2b[textprop.justify]);
-  //Если шаблон ещё не сформирован (template=''), но текст уже загружен в
-  //Content — берём Content. Так бывает у MTEXT внутри блоков, которые
-  //загрузились из DXF, но не проходили FormatContent: например анонимный
-  //блок *T таблицы ACAD_TABLE. Без этого группа 1 при пересохранении
-  //писалась пустой, и AutoCAD не показывал текст в ячейках таблицы до
-  //трансформации (перемещение/поворот/масштаб), т.к. кэш графики таблицы
-  //(этот блок) оставался без текста (issue #1344). Логика повторяет
-  //FormatContent: «if template='' then template:=content».
-  effectivetemplate:=template;
-  if effectivetemplate='' then
-    effectivetemplate:=Content;
   //проверяем есть ли в шаблоне управляющие последовательности
   //отсутствующие в dxf
-  s:=TxtFormatAndCountSrcs(effectivetemplate,SPFSources.GetFull,ASourcesCounter,@Self);
+  s:=TxtFormatAndCountSrcs(drawing.GetUnitsFormat,template,SPFSources.GetFull,ASourcesCounter,@Self);
   if (ASourcesCounter and (not SPFSdxf))<>0 then begin
     //шаблон dxf НЕсовместим, разворачиваем всё кроме dxf последовательностей
     //пишем dxf совместимое содержимое, шаблом сохраним отдельно
-    quotedcontent:=TxtFormatAndCountSrcs(effectivetemplate,SPFSources.GetFull and
-      (not SPFSdxf),ASourcesCounter,@Self);
+    quotedcontent:=TxtFormatAndCountSrcs(drawing.GetUnitsFormat,DecorateTxtForDXF(template,IODXFContext),
+      SPFSources.GetFull and (not SPFSdxf),ASourcesCounter,@Self);
     s:=UTF8Encode(quotedcontent);
   end else begin
     //шаблон dxf совместим, пишем сразу его,
     //отдельно его дописывать в расширенные данные ненадо
-    s:=UTF8Encode(effectivetemplate);
-    IODXFContext.LocalEntityFlags:=IODXFContext.LocalEntityFlags or
-      CLEFNotNeedSaveTemplate;
+    s:=UTF8Encode(DecorateTxtForDXF(template,IODXFContext));
+    IODXFContext.LocalEntityFlags:=IODXFContext.LocalEntityFlags or CLEFNotNeedSaveTemplate;
   end;
   //убираем переносы строки, они портят dxf
   s:=StringReplace(s,#10,'\P',[rfReplaceAll]);

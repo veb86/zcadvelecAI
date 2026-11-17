@@ -268,6 +268,7 @@ uses
   uzccommand_createblockinsert,   //Created using AI
   uzccommand_leader,   //Created using AI
 
+  uzcScrEntSetup,
   {$IFDEF ELECTROTECH}
   uzcExtdrReport,uzccommand_ReportsUpdate,uzcCommand_FlattenZEnts,
   {$ENDIF}
