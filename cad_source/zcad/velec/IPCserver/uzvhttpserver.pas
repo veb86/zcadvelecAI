@@ -321,19 +321,10 @@ procedure TZCADHTTPServerManager.SetCORSHeaders(
   var AResponse: TFPHTTPConnectionResponse
 );
 begin
-
-  AResponse.CustomHeaders.Add(
-    'Access-Control-Allow-Origin: *'
-  );
-
-  AResponse.CustomHeaders.Add(
-    'Access-Control-Allow-Methods: GET, POST, OPTIONS'
-  );
-
-  AResponse.CustomHeaders.Add(
-    'Access-Control-Allow-Headers: Content-Type'
-  );
-
+  { CustomHeaders хранит пары имя=значение; двоеточие добавляет HTTP-сериализатор. }
+  AResponse.CustomHeaders.Values['Access-Control-Allow-Origin'] := '*';
+  AResponse.CustomHeaders.Values['Access-Control-Allow-Methods'] := 'GET, POST, OPTIONS';
+  AResponse.CustomHeaders.Values['Access-Control-Allow-Headers'] := 'Content-Type';
 end;
 
 
