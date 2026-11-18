@@ -41,6 +41,11 @@ const
   HTTP_DEFAULT_PORT = 5000;
 
 type
+  // В FPC 3.2.2 свойство Address унаследовано с видимостью protected.
+  TZCADBoundHTTPServer = class(TFPHttpServer)
+  public
+    property Address;
+  end;
 
     {**
     Поток, в котором работает основной цикл TFPHttpServer.
@@ -65,7 +70,7 @@ type
   }
   TZCADHTTPServerManager = class
   private
-  FServer: TFPHttpServer;
+  FServer: TZCADBoundHTTPServer;
   FServerThread: TZCADHTTPServerThread;
 
   FRunning: Boolean;
@@ -646,7 +651,7 @@ begin
       Создаём сервер
     -----------------------------------------------------------------------}
 
-    FServer := TFPHttpServer.Create(nil);
+    FServer := TZCADBoundHTTPServer.Create(nil);
 
 
     {-----------------------------------------------------------------------
