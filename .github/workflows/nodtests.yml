@@ -42,11 +42,17 @@ jobs:
             cad_source/components/zmath cad_source/components/zreaders \
             cad_source/components/zunits cad_source/components/zmacros \
             cad_source/components/zundostack
-      - name: Install fpc and Lazarus sources
+      - name: Install test dependencies
+        env:
+          LEGACY_ENGINE_TESTS: ${{ hashFiles('cad_source/zengine/tests/nodtests.sh', 'cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fpc lazarus-src \
-            libegl1 libgl1 libgl1-mesa-dri
+          if [ "$LEGACY_ENGINE_TESTS" = true ]; then
+            sudo apt-get install -y --no-install-recommends fpc lazarus-src \
+              libegl1 libgl1 libgl1-mesa-dri
+          else
+            sudo apt-get install -y --no-install-recommends fp-compiler fp-units-fcl
+          fi
       - name: HTTP server CORS regression
         timeout-minutes: 1
         run: node experiments/issue1472/test_httpserver.mjs
