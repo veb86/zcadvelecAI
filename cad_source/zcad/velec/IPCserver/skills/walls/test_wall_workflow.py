@@ -16,11 +16,14 @@ LAYER = "ZCAD_AI_WALL_PREVIEW"
 PREFIX = "ZCAD_WALLS_"
 
 
-def fixture(path):
+def fixture(path, preview_layer=True):
+    layers = [("0", 1)]
+    if preview_layer:
+        layers.append((LAYER, 0))
     data = [(0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, "AC1015"),
             (0, "ENDSEC"), (0, "SECTION"), (2, "TABLES"),
-            (0, "TABLE"), (2, "LAYER"), (70, 2)]
-    for name, plot in (("0", 1), (LAYER, 0)):
+            (0, "TABLE"), (2, "LAYER"), (70, len(layers))]
+    for name, plot in layers:
         data.extend([(0, "LAYER"), (100, "AcDbSymbolTableRecord"),
                      (100, "AcDbLayerTableRecord"), (2, name), (70, 0),
                      (62, 7), (6, "CONTINUOUS"), (290, plot)])
@@ -35,7 +38,8 @@ def fixture(path):
     line("A3", (100, 1100, 0), (900, 1100, 0))
     line("A4", (1600, 0, 0), (2400, 0, 400))
     line("A5", (1600, 200, 0), (2400, 200, 400))
-    line("A6", (-150, 1200, 0), (-50, 1200, 0), LAYER)
+    if preview_layer:
+        line("A6", (-150, 1200, 0), (-50, 1200, 0), LAYER)
     data.extend([(0, "LWPOLYLINE"), (5, "A7"), (100, "AcDbEntity"),
                  (8, "0"), (100, "AcDbPolyline"), (90, 5), (70, 1)])
     for x, y, bulge in [(100, 900, .2), (0, 900, .2), (0, 750, .2),
@@ -110,7 +114,8 @@ def verify(args):
 
     def command(text):
         subprocess.run(["xdotool", "mousemove", "--window", args.window, *args.console,
-                        "click", "1", "type", "--clearmodifiers", text], check=True)
+                        "click", "1", "sleep", ".1", "type", "--clearmodifiers", "--", text],
+                       check=True)
         subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=True)
 
     def call(name, *arguments):
@@ -126,11 +131,15 @@ def verify(args):
     def capture(name):
         if args.screenshots:
             from PIL import ImageGrab
+            if args.history:
+                subprocess.run(["xdotool", "mousemove", "--window", args.window, *args.history,
+                                "click", "--repeat", "60", "--delay", "4", "5"], check=True)
+                time.sleep(.15)
             ImageGrab.grab().save(args.output / f"{name}.png")
 
     def phase(session, expected):
         for _ in range(20):
-            result = call("WALL_PREVIEW", session)
+            result = call("WALL_PREVIEW", *([session] if session else []))
             if result["phase"] == expected:
                 return result
             time.sleep(.15)
@@ -138,7 +147,19 @@ def verify(args):
 
     def exported(name):
         path = args.output / name
-        command(f"SaveAs({path.resolve()})")
+        command("SaveAs")
+        for _ in range(30):
+            dialog = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", "^Save file"],
+                                    capture_output=True, text=True)
+            if dialog.returncode == 0:
+                subprocess.run(["xdotool", "windowfocus", dialog.stdout.splitlines()[0],
+                                "key", "--clearmodifiers", "ctrl+a",
+                                "type", "--clearmodifiers", str(path.resolve())], check=True)
+                subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"], check=True)
+                break
+            time.sleep(.15)
+        else:
+            raise AssertionError("ZCAD did not open the Save As dialog")
         for _ in range(30):
             if path.exists() and path.read_bytes().rstrip().endswith(b"EOF"):
                 return read_dxf(path)
@@ -148,6 +169,7 @@ def verify(args):
     command(f"Load({dxfin.resolve()})")
     time.sleep(.8)
     command("Zoom(All)")
+    command("Zoom(Out)")
     time.sleep(.4)
     capture("drawing")
     options = {"window": [[-200, -100], [2500, 1300]],
@@ -172,7 +194,7 @@ def verify(args):
     for value in ("150", "250", "-200,-100,0", "2500,1300,0"):
         time.sleep(.25)
         command(value)
-    first = call("WALL_PREVIEW")
+    first = phase(None, "candidate_preview")
     assert first["candidate_count"] == 3, first
     session = first["session_id"]
     capture("candidate-preview")
@@ -224,7 +246,21 @@ def verify(args):
     command(f"Load({reopened.resolve()})")
     time.sleep(.8)
     assert error("WALL_ANALYZE", options)
-    print("Wall preview, approvals, XData round-trip, duplicate prevention and grouped Undo passed")
+
+    without_layer = args.output / "without-layer.dxf"
+    fixture(without_layer, preview_layer=False)
+    command(f"Load({without_layer.resolve()})")
+    time.sleep(.8)
+    session = call("WALL_ANALYZE", options)["session_id"]
+    command("WallSend")
+    phase(session, "approved_to_send")
+    command("SelectAll")
+    command("Erase")
+    assert error("WALL_SEND_AI", session)
+    phase(session, "invalidated")
+    assert exported("invalidated.dxf") == ([], [])
+    print("Wall previews, approvals, source invalidation, XData round-trip, "
+          "duplicate prevention and grouped Undo passed")
 
 
 def main():
@@ -232,6 +268,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--window")
     parser.add_argument("--console", nargs=2, default=["120", "713"])
+    parser.add_argument("--history", nargs=2, help="scroll command history before taking screenshots")
     parser.add_argument("--endpoint", default="http://127.0.0.1:5000/ipc")
     parser.add_argument("--screenshots", action="store_true")
     parser.add_argument("--classify", action="store_true")
