@@ -136,7 +136,7 @@ function ValidWallThickness(Minimum, Maximum: Double): Boolean;
 begin
   Result := not (IsNan(Minimum) or IsNan(Maximum) or
     IsInfinite(Minimum) or IsInfinite(Maximum)) and
-    (Minimum > 0) and (Maximum >= Minimum);
+    (Minimum > 0) and (Maximum > Minimum);
 end;
 
 function ValidWallAxis(const Vertices: TWallVertices;

@@ -31,13 +31,16 @@ begin
   SetLength(Segments, 2);
   Segments[0] := Segment(WallPoint(0, 0, 75), WallPoint(15, 0, 75), 'A');
   Segments[1] := Segment(WallPoint(20, 2, 75), WallPoint(5, 2, 75), 'B');
-  Candidates := FindWallCandidates(Segments, 2, 2, Stats);
-  Check(Length(Candidates) = 1, 'Reversed edges must match at either thickness bound');
+  Candidates := FindWallCandidates(Segments, 2, 3, Stats);
+  Check(Length(Candidates) = 1, 'Reversed edges must match at the lower thickness bound');
   Check(WallNear(Candidates[0].Center.First, WallPoint(5, 1, 75)), 'Clipped WCS start');
   Check(WallNear(Candidates[0].Center.Last, WallPoint(15, 1, 75)), 'Clipped WCS end');
   Check(Abs(Candidates[0].Overlap - 10) < WallEpsilon, 'Overlap length');
   Check(Abs(Candidates[0].Offset - 5) < WallEpsilon, 'Longitudinal offset');
   Check(Length(FindWallCandidates(Segments, 3, 4, Stats)) = 0, 'Minimum thickness filter');
+  Check(Length(FindWallCandidates(Segments, 1, 2, Stats)) = 1, 'Inclusive upper thickness bound');
+  Check(Length(FindWallCandidates(Segments, 2, 2, Stats)) = 0, 'Maximum must exceed minimum');
+  FindWallCandidates(Segments, 3, 4, Stats);
   Check(Stats.OutsideThickness = 1, 'Thickness rejection diagnostics');
   Check(Length(FindWallCandidates(Segments, 1, 1.9, Stats)) = 0, 'Maximum thickness filter');
   Check(not ValidWallThickness(0, 3) and not ValidWallThickness(4, 3), 'Invalid limits');
