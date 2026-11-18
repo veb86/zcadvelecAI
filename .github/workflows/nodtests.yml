@@ -42,24 +42,41 @@ jobs:
             cad_source/components/zmath cad_source/components/zreaders \
             cad_source/components/zunits cad_source/components/zmacros \
             cad_source/components/zundostack
-      - name: Install fpc and Lazarus sources
+      - name: Install test dependencies
+        env:
+          LEGACY_ENGINE_TESTS: ${{ hashFiles('cad_source/zengine/tests/nodtests.sh', 'cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fpc lazarus-src \
-            libegl1 libgl1 libgl1-mesa-dri
+          if [ "$LEGACY_ENGINE_TESTS" = true ]; then
+            sudo apt-get install -y --no-install-recommends fpc lazarus-src \
+              libegl1 libgl1 libgl1-mesa-dri
+          else
+            sudo apt-get install -y --no-install-recommends fp-compiler fp-units-fcl
+          fi
       - name: HTTP server CORS regression
         timeout-minutes: 1
         run: node experiments/issue1472/test_httpserver.mjs
+      - name: Wall analyzer regression
+        timeout-minutes: 1
+        run: |
+          mkdir -p /tmp/zcad-walls
+          cd cad_source/zcad/velec/IPCserver/skills/walls
+          fpc -Fu. -FU/tmp/zcad-walls -FE/tmp/zcad-walls test_walls.pas
+          /tmp/zcad-walls/test_walls
       - name: NOD tests
+        if: ${{ hashFiles('cad_source/zengine/tests/nodtests.sh') != '' }}
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
       - name: Polyface mesh display tests
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         timeout-minutes: 5
         run: make -C cad_source/zengine/tests meshdisplaytests
       - name: Polyface mesh OpenGL visual regression
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         timeout-minutes: 2
         run: bash experiments/issue1470/run_visual.sh
       - name: Upload mesh renders
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: polyfacemesh-renders

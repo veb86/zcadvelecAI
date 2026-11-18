@@ -100,6 +100,7 @@ function HTTPCommandInsertDev(
 implementation
 
 uses
+  {$ifndef windows}Forms,{$endif}
   uzcdrawings,
   uzeTypes,
   uzeentityfactory,
