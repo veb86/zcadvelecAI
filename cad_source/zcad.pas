@@ -32,6 +32,7 @@ program zcad;
 {$INCLUDE buildmode.inc}
 
 uses
+  {$IF DEFINED(UNIX) AND DEFINED(ELECTROTECH)}cthreads,{$ENDIF}
   {$IFDEF REPORTMMEMORYLEAKS}heaptrc,{$ENDIF}
   //first, setup crash report file path (uzcregexceptionsfile) and instll exceptions handler for console and gui
   uzcregexceptionsfile,uzbexceptionscl,uzbexceptionsgui,
