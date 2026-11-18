@@ -335,6 +335,7 @@ uses
   uzvhttpserver,
   uzvhttpipc,
   uzvhttpcmdgeometry,
+  uzvhttpwallcommands,
   uzvhttpcmdinsertdev,
     uzvtestgrist,
   //uzvipcserver,
