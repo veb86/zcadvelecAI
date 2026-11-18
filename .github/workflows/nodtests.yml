@@ -50,6 +50,13 @@ jobs:
       - name: HTTP server CORS regression
         timeout-minutes: 1
         run: node experiments/issue1472/test_httpserver.mjs
+      - name: Wall analyzer regression
+        timeout-minutes: 1
+        run: |
+          mkdir -p /tmp/zcad-walls
+          cd cad_source/zcad/velec/IPCserver/skills/walls
+          fpc -Fu. -FU/tmp/zcad-walls -FE/tmp/zcad-walls test_walls.pas
+          /tmp/zcad-walls/test_walls
       - name: NOD tests
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
