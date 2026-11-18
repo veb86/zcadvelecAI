@@ -58,15 +58,19 @@ jobs:
           fpc -Fu. -FU/tmp/zcad-walls -FE/tmp/zcad-walls test_walls.pas
           /tmp/zcad-walls/test_walls
       - name: NOD tests
+        if: ${{ hashFiles('cad_source/zengine/tests/nodtests.sh') != '' }}
         timeout-minutes: 20
         run: make -C cad_source/zengine/tests nodtests
       - name: Polyface mesh display tests
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         timeout-minutes: 5
         run: make -C cad_source/zengine/tests meshdisplaytests
       - name: Polyface mesh OpenGL visual regression
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         timeout-minutes: 2
         run: bash experiments/issue1470/run_visual.sh
       - name: Upload mesh renders
+        if: ${{ hashFiles('cad_source/zengine/tests/polyfacemeshdisplay.lpr') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: polyfacemesh-renders
