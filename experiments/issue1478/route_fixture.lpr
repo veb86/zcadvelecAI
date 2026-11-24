@@ -129,6 +129,7 @@ begin
   Result.Scope := ARequest.Scope;
   Result.Units := ExportUnitsName(4);
   Result.EntityCount := 1;
+  Result.DXFEntityCount := 1;
   Result.HasBBox := True;
   Result.BBox.MaxX := 10;
   Result.BBox.MaxY := 5;

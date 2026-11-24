@@ -94,6 +94,7 @@ function assertSuccess(result, expectedPath) {
   assert.equal(json.path, expectedPath);
   assert.equal(json.scope, 'selection');
   assert.equal(json.entity_count, 1);
+  assert.equal(json.dxf_entity_count, 1);
   assert.deepEqual(json.bbox, [0, 0, 10, 5]);
   assert.match(result.text, /"bbox" ?: ?\[0\.0, 0\.0, 10\.0, 5\.0\]/);
   assert.equal(json.units, 'mm');

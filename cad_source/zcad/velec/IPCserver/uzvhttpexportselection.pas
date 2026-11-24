@@ -75,6 +75,13 @@ const
   DXF_XDATA_FIRST_CODE = 1000;
   DXF_XDATA_LAST_CODE = 1071;
 
+  { Объекты DXF, которые принадлежат предыдущему объекту (POLYLINE, INSERT)
+    и не считаются отдельными объектами пространства модели }
+  DXF_SUBENTITY_NAMES: array[0..2] of string = ('VERTEX', 'SEQEND', 'ATTRIB');
+  DXF_ENTITIES_SECTION = 'ENTITIES';
+  DXF_BLOCKS_SECTION = 'BLOCKS';
+  DXF_ENDSEC = 'ENDSEC';
+
 type
   { Ошибка экспорта с машинно-читаемым кодом для JSON-ответа }
   EExportSelection = class(Exception)
@@ -111,6 +118,7 @@ type
     Scope: string;
     Units: string;
     EntityCount: Integer;
+    DXFEntityCount: Integer;
     BBox: TExportBBox;
     HasBBox: Boolean;
     IncludeXData: Boolean;
@@ -135,6 +143,7 @@ function ExportSuccessJSON(const AResult: TExportResult): string;
 function ExportErrorJSON(const ACode, AMessage: string): string;
 function ExportErrorCodeOf(const AJSON: string): string;
 function ExportStripXData(const ADXF: string): string;
+function ExportCountDXFEntities(const ADXF: string): Integer;
 
 implementation
 
@@ -144,8 +153,10 @@ const
     '', 'in', 'ft', 'mi', 'mm', 'cm', 'm', 'km', 'uin', 'mil', 'yd',
     'angstrom', 'nm', 'um', 'dm', 'dam', 'hm', 'Gm', 'au', 'ly', 'pc');
 
+  {$IFDEF WINDOWS}
   { Символы, запрещённые в путях Windows (кроме разделителя диска) }
   WINDOWS_BAD_PATH_CHARS = ['<', '>', '"', '|', '?', '*'];
+  {$ENDIF}
   FIRST_PRINTABLE_CHAR = #32;
   JSON_ROUND_DIGITS = 15;
   JSON_FLOAT_SUFFIX = '.0';
@@ -461,6 +472,7 @@ begin
     Response.Add('path', AResult.Path);
     Response.Add('scope', AResult.Scope);
     Response.Add('entity_count', AResult.EntityCount);
+    Response.Add('dxf_entity_count', AResult.DXFEntityCount);
     if AResult.HasBBox then
       Response.Add('bbox', BBoxJSON(AResult.BBox));
     if AResult.Units <> '' then
@@ -560,7 +572,8 @@ begin
     begin
       TrackSection(Lines[I], Lines[I + 1], PrevValue, Section);
       PrevValue := Lines[I + 1];
-      if not (((Section = 'ENTITIES') or (Section = 'BLOCKS')) and IsXDataCode(Lines[I])) then
+      if not (((Section = DXF_ENTITIES_SECTION) or (Section = DXF_BLOCKS_SECTION))
+        and IsXDataCode(Lines[I])) then
         Output.AddStrings([Lines[I], Lines[I + 1]]);
       Inc(I, 2);
     end;
@@ -569,6 +582,47 @@ begin
     Result := Output.Text;
   finally
     Output.Free;
+    Lines.Free;
+  end;
+end;
+
+{ Возвращает True для объектов, входящих в состав предыдущего объекта DXF }
+function IsDXFSubEntity(const AName: string): Boolean;
+var
+  Name: string;
+begin
+  Result := False;
+  for Name in DXF_SUBENTITY_NAMES do
+    if Name = AName then
+      Exit(True);
+end;
+
+{ Считает объекты секции ENTITIES так же, как их видит ezdxf в modelspace():
+  VERTEX/SEQEND/ATTRIB относятся к предыдущему объекту и не учитываются }
+function ExportCountDXFEntities(const ADXF: string): Integer;
+var
+  Lines: TStringList;
+  I: Integer;
+  Section, PrevValue, Name: string;
+begin
+  Result := 0;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := ADXF;
+    Section := '';
+    PrevValue := '';
+    I := 0;
+    while I + 1 < Lines.Count do
+    begin
+      TrackSection(Lines[I], Lines[I + 1], PrevValue, Section);
+      Name := Trim(Lines[I + 1]);
+      if (Section = DXF_ENTITIES_SECTION) and (Trim(Lines[I]) = '0')
+        and (Name <> DXF_ENDSEC) and not IsDXFSubEntity(Name) then
+        Inc(Result);
+      PrevValue := Lines[I + 1];
+      Inc(I, 2);
+    end;
+  finally
     Lines.Free;
   end;
 end;

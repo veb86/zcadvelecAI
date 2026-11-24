@@ -71,6 +71,7 @@ type
     Drawing: PTSimpleDrawing;
     Root: PGDBObjGenericSubEntry;
     Count: Integer;
+    DXFCount: Integer;
     BBox: TBoundingBox;
     FileSize: Int64;
   end;
@@ -265,6 +266,17 @@ begin
   end;
 end;
 
+{ Считает объекты пространства модели в записанном файле (как ezdxf) }
+procedure CountFileEntities(var AJob: TExportJob);
+begin
+  try
+    AJob.DXFCount := ExportCountDXFEntities(ReadFileBytes(AJob.TempPath));
+  except
+    on E: Exception do
+      raise Fail(ERR_EXPORT_FAILED, 'Cannot read exported DXF: ' + E.Message);
+  end;
+end;
+
 { Проверяет записанный файл и атомарно ставит его на место out_path }
 procedure CommitFile(var AJob: TExportJob);
 begin
@@ -289,6 +301,7 @@ begin
   try
     WriteDXF(AJob);
     ApplyXDataOption(AJob);
+    CountFileEntities(AJob);
     CommitFile(AJob);
   finally
     if FileExistsUTF8(AJob.TempPath) then
@@ -304,6 +317,7 @@ begin
   Result.Scope := AJob.Request.Scope;
   Result.Units := ExportUnitsName(Ord(AJob.Drawing^.InsUnits));
   Result.EntityCount := AJob.Count;
+  Result.DXFEntityCount := AJob.DXFCount;
   Result.HasBBox := True;
   Result.BBox.MinX := AJob.BBox.pMin.x;
   Result.BBox.MinY := AJob.BBox.pMin.y;
@@ -323,8 +337,9 @@ begin
   if Code = '' then
     Code := EXPORT_LOG_OK;
   ProgramLog.LogOutFormatStr(
-    EXPORT_LOG_PREFIX + 'path="%s" entity_count=%d duration_ms=%d code=%s',
-    [AJob.Path, AJob.Count, ADurationMs, Code], LM_Info, 0);
+    EXPORT_LOG_PREFIX + 'path="%s" entity_count=%d dxf_entity_count=%d ' +
+    'duration_ms=%d code=%s',
+    [AJob.Path, AJob.Count, AJob.DXFCount, ADurationMs, Code], LM_Info, 0);
 end;
 
 { Обработчик команды EXPORT_SELECTION (args пустой или из одного объекта параметров) }

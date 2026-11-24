@@ -182,6 +182,7 @@ begin
   Res.Scope := 'selection';
   Res.Units := ExportUnitsName(4);
   Res.EntityCount := 1523;
+  Res.DXFEntityCount := 4096;
   Res.HasBBox := True;
   Res.BBox.MaxX := 12000.000000000002;
   Res.BBox.MaxY := 8000;
@@ -194,6 +195,7 @@ begin
     Check(string(Obj.Strings['path']) = Res.Path, 'path roundtrip utf-8');
     Check((Obj.Strings['scope'] = 'selection') and (Obj.Integers['entity_count'] = 1523),
       'scope/entity_count');
+    Check(Obj.Integers['dxf_entity_count'] = 4096, 'dxf_entity_count');
     Box := Obj.Arrays['bbox'];
     Check((Box.Count = 4) and SameValue(Box.Floats[2], 12000), 'bbox values');
     Check(Pos('[-0.1, 0.0, 12000.0, 8000.0]', ExportSuccessJSON(Res)) > 0,
@@ -270,6 +272,21 @@ begin
   Check((Pos(#13, Output) = 0) and (Pos('1002', Output) = 0), 'LF input stays LF');
 end;
 
+{ Счёт объектов пространства модели как в ezdxf: без VERTEX/SEQEND/ATTRIB,
+  без объектов из BLOCKS }
+procedure TestCountDXFEntities;
+const
+  SRC: array[0..39] of string = (
+    '0', 'SECTION', '2', 'BLOCKS', '0', 'BLOCK', '0', 'LINE', '0', 'ENDBLK',
+    '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', '0', 'INSERT', '66', '1',
+    '0', 'ATTRIB', '0', 'SEQEND', '0', 'POLYLINE', '0', 'VERTEX', '0', 'VERTEX',
+    '0', 'SEQEND', '0', 'LINE', '1000', '0', '0', 'ENDSEC', '0', 'EOF');
+begin
+  Check(ExportCountDXFEntities(MakeDXF(SRC, #13#10)) = 3, 'INSERT+POLYLINE+LINE (CRLF)');
+  Check(ExportCountDXFEntities(MakeDXF(SRC, #10)) = 3, 'INSERT+POLYLINE+LINE (LF)');
+  Check(ExportCountDXFEntities('') = 0, 'empty file has no entities');
+end;
+
 begin
   { ZCAD работает с UTF-8 строками RTL (LazUTF8); повторяем это в тесте }
   SetMultiByteConversionCodePage(CP_UTF8);
@@ -282,6 +299,7 @@ begin
     TestSuccessJSON;
     TestErrorJSON;
     TestStripXData;
+    TestCountDXFEntities;
   finally
     EnvValues.Free;
   end;
