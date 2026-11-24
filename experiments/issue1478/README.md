@@ -13,7 +13,7 @@
    ```
 
 4. До изменения маршрута не было (404). Теперь ответ содержит `"ok":true`,
-   `path`, `entity_count`, `bbox` и `units`; файл по `path` уже закрыт и
+   `path`, `entity_count`, `dxf_entity_count`, `bbox` и `units`; файл по `path` уже закрыт и
    открывается `ezdxf.readfile(path)`.
 5. Снять выделение и повторить запрос: `EMPTY_SELECTION`.
 
@@ -68,3 +68,9 @@ node experiments/issue1478/test_export_route.mjs
 * обработчик выполняется в главном потоке.
 
 Маршрут также добавлен в регрессию CORS `experiments/issue1472/test_httpserver.mjs`.
+
+### 3. Сквозная проверка на собранном ZCAD — `e2e/`
+
+Настоящий ZCAD под Xvfb, сценарии без чертежа, без выделения и с выделением,
+проверка файлов через `ezdxf`. Не входит в CI (нужна полная сборка ZCAD и
+X-сервер); порядок запуска и результаты — `e2e/README.md`.

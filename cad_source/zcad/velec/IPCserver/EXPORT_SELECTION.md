@@ -50,6 +50,7 @@ Content-Type: application/json
   "path": "/home/user/zcad_export/selection.dxf",
   "scope": "selection",
   "entity_count": 12,
+  "dxf_entity_count": 57,
   "bbox": [0.0, 0.0, 12000.0, 8000.0],
   "units": "mm",
   "include_xdata": true,
@@ -60,6 +61,11 @@ Content-Type: application/json
 ```
 
 * `path` — нормализованный абсолютный путь (UTF-8, кириллица допустима);
+* `entity_count` — число выгруженных объектов ZCAD (устройство — один объект);
+* `dxf_entity_count` — число объектов пространства модели в записанном файле,
+  как их возвращает `ezdxf` `modelspace()`. Больше `entity_count`, если есть
+  устройства: ZCAD записывает устройство как `INSERT` и его примитивы
+  (с XDATA `_OWNERHANDLE`);
 * `bbox` — `[minx, miny, maxx, maxy]` в мировой системе координат чертежа;
 * `units` — значение `$INSUNITS` чертежа (`mm`, `cm`, `m`, `in`, …);
   поле отсутствует, если единицы не заданы.
@@ -124,7 +130,8 @@ Content-Type: application/json
   ZCAD доводит запись до конца (прервать писатель DXF безопасно нельзя);
   файл появится по `path` позже.
 * **Журнал.** Каждая выгрузка пишет строку уровня `LM_Info`:
-  `export_selection: path="…" entity_count=N duration_ms=M code=OK|<код ошибки>`.
+  `export_selection: path="…" entity_count=N dxf_entity_count=K duration_ms=M
+  code=OK|<код ошибки>`.
 * **Ошибки** не роняют ZCAD: любые исключения превращаются в JSON с кодом.
 
 ## Через /ipc
@@ -178,6 +185,7 @@ def zcad_export_selection(out_path=None, overwrite=True, include_xdata=True):
     return {
         "path": reply["path"],
         "entity_count": reply["entity_count"],
+        "dxf_entity_count": reply["dxf_entity_count"],
         "bbox": reply.get("bbox"),
         "units": reply.get("units"),
         "types": sorted({e.dxftype() for e in msp}),
@@ -194,8 +202,12 @@ def zcad_export_selection(out_path=None, overwrite=True, include_xdata=True):
 * Символические ссылки при проверке allowlist не раскрываются: проверяется
   нормализованный путь, а не его реальное расположение.
 * Через `/ipc` ответ команды — JSON в виде строки (особенность конверта IPC).
+* `HTTPStart` требует открытого чертежа (флаг `CADWG`); `NO_DOCUMENT`
+  возвращается, если все чертежи закрыты после запуска сервера.
 
 ## Тесты
 
 См. `experiments/issue1478/README.md`. В CI (`.github/workflows/nodtests.yml`)
-выполняются модульные проверки логики и HTTP-регрессия маршрута.
+выполняются модульные проверки логики и HTTP-регрессия маршрута. Сквозная
+проверка на собранном ZCAD под Xvfb с чтением файлов через `ezdxf` —
+`experiments/issue1478/e2e/README.md`.
