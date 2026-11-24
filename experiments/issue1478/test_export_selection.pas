@@ -233,6 +233,8 @@ begin
   Check(ExportErrorCodeOf(Text) = ERR_EMPTY_SELECTION, 'code extracted');
   Check(ExportErrorCodeOf('plain text') = '', 'non-JSON has no code');
   Check(ExportErrorCodeOf('{"error":"x"}') = '', 'string error has no code');
+  { Успешный ответ: AError = '', GetJSON('') возвращает nil (было AV в ZCAD) }
+  Check(ExportErrorCodeOf('') = '', 'empty error (success) has no code');
   Check(ExportUnitsName(99) = '', 'unknown units');
 end;
 

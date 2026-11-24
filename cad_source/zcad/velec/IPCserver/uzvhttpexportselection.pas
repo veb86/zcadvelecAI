@@ -505,6 +505,9 @@ begin
   except
     Exit;
   end;
+  { GetJSON('') в FPC 3.2.2 возвращает nil без исключения (успешный ответ) }
+  if Data = nil then
+    Exit;
   try
     Code := Data.FindPath('error.code');
     if (Code <> nil) and (Code.JSONType = jtString) then
