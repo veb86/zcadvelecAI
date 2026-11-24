@@ -69,6 +69,20 @@ begin
   AResponse.Content := '{"handler":"grist"}';
 end;
 
+{ Позволяет проверить CORS перед делегированием маршрута выгрузки #1478. }
+function HTTPExportSelectionIsRoute(const AURI: string): Boolean;
+begin
+  Result := AURI = '/api/export_selection';
+end;
+
+{ Возвращает метку обработчика; сам маршрут проверяется в issue1478. }
+procedure HTTPExportSelectionHandleREST(const AMethod, ABody: string;
+  out ACode: Integer; out AContent: string);
+begin
+  ACode := 200;
+  AContent := '{"handler":"export_selection"}';
+end;
+
 { Включаются текущие тела методов из исходного файла, без копии реализации. }
 {$I cors.inc}
 {$I request.inc}
