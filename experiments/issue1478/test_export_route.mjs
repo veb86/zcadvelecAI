@@ -161,6 +161,18 @@ async function runCases(port) {
   assertSuccess(await call(port, 'POST', ROUTE, '{}'), defaultPath);
   console.log('PASS server keeps working after TIMEOUT');
 
+  const ipcPath = path.join(exportDir, 'ipc.dxf');
+  const viaIpc = await call(port, 'POST', '/ipc', JSON.stringify(
+    { id: 'export-1', cmd: 'EXPORT_SELECTION', args: [{ out_path: ipcPath }] }));
+  assert.equal(viaIpc.json.status, 'ok', viaIpc.text);
+  assert.equal(JSON.parse(viaIpc.json.result).path, ipcPath);
+  assert.ok(existsSync(ipcPath));
+  const ipcError = await call(port, 'POST', '/ipc', JSON.stringify(
+    { id: 'export-2', cmd: 'EXPORT_SELECTION', args: [{ out_path: '/etc/x.dxf' }] }));
+  assert.equal(ipcError.json.status, 'error');
+  assert.equal(JSON.parse(ipcError.json.error).error.code, 'INVALID_PATH');
+  console.log('PASS POST /ipc cmd=EXPORT_SELECTION -> same JSON inside the IPC envelope');
+
   const get = await call(port, 'GET', ROUTE);
   assert.equal(get.status, 405);
   assert.equal(get.json.ok, false);

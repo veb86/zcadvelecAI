@@ -47,7 +47,7 @@ implementation
 
 uses
   Classes, LazUTF8, LazFileUtils,
-  uzclog, uzbLogTypes,
+  uzclog,
   uzcdrawings, uzedrawingsimple, uzeentity, uzeentgenericsubentry,
   gzctnrVectorTypes, uzgldrawcontext, uzegeometrytypes,
   uzeffDxfOut, uzeTypes, uzccommand_saveas,
@@ -227,6 +227,7 @@ function ReadFileBytes(const AFileName: string): string;
 var
   Stream: TFileStream;
 begin
+  Result := '';
   Stream := TFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
   try
     SetLength(Result, Stream.Size);
