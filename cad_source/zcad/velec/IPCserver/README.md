@@ -104,6 +104,16 @@ Python-клиент для тестирования и взаимодейств�
 {"id": "6", "cmd": "TEXT", "args": [x, y, "text", height]}
 ```
 
+### EXPORT_SELECTION
+Выгрузка выделенных объектов в отдельный DXF с JSON-ответом (путь, число
+объектов, габарит, единицы). Также доступна как REST-маршрут
+`POST /api/export_selection`. Подробности, коды ошибок и переменные
+окружения (`ZCAD_EXPORT_DIR`, `ZCAD_EXPORT_TIMEOUT`, `ZCAD_EXPORT_ROOT`, …) —
+в [EXPORT_SELECTION.md](EXPORT_SELECTION.md).
+```json
+{"id": "7", "cmd": "EXPORT_SELECTION", "args": [{"out_path": "/tmp/zcad_export/selection.dxf"}]}
+```
+
 ## Команды ZCAD
 
 После загрузки модуля доступны команды ZCAD:
