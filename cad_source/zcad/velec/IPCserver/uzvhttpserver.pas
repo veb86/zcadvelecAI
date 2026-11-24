@@ -31,6 +31,7 @@ uses
   uzvhttpipc,
   uzvhttpwidgets,
   uzvhttpgrist,
+  uzvhttpexportroute,
   uzcinterface;
 
 const
@@ -346,6 +347,7 @@ var
   JSONText: string;
   ResponseText: string;
   Method: string;
+  ExportCode: Integer;
 begin
 
   Method := UpperCase(ARequest.Method);
@@ -553,6 +555,36 @@ begin
 
     end;
 
+
+    Exit;
+
+  end;
+
+
+  {===========================================================================
+    EXPORT SELECTION (issue #1478)
+
+    POST /api/export_selection: выгрузка выделения в DXF.
+    Ответ всегда JSON с полем ok; ошибки выгрузки идут с кодом 200,
+    как и у /ipc, а метод, отличный от POST, получает 405.
+  ===========================================================================}
+
+  if HTTPExportSelectionIsRoute(ARequest.URI) then
+  begin
+
+    HTTPExportSelectionHandleREST(
+      Method,
+      ARequest.Content,
+      ExportCode,
+      ResponseText
+    );
+
+    AResponse.Code := ExportCode;
+
+    AResponse.ContentType :=
+      'application/json; charset=utf-8';
+
+    AResponse.Content := ResponseText;
 
     Exit;
 

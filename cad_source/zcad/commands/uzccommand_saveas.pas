@@ -43,6 +43,7 @@ function SaveAs_com(const Context:TZCADCommandContext;
   operands:TCommandOperands):TCommandResult;
 function SaveDXFDPAS(AFileName:string;AProcessFileHistory:boolean=True;ADxfVersion:TZCDxfVersion=cDefaultSaveDxfVefsion):integer;
 function dwgQSave_com(dwg:PTSimpleDrawing):integer;
+function getDxfTemplateFile(AVer:TZCDxfVersion):string;
 
 implementation
 
