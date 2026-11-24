@@ -1,0 +1,22 @@
+diff --git a/cad_source/zcad/velec/connectmanager/gui/velectrnav.pas b/cad_source/zcad/velec/connectmanager/gui/velectrnav.pas
+index bca1a67d2..abd75ecc7 100644
+--- a/cad_source/zcad/velec/connectmanager/gui/velectrnav.pas
++++ b/cad_source/zcad/velec/connectmanager/gui/velectrnav.pas
+@@ -6,7 +6,7 @@ interface
+ 
+ uses
+   Classes, SysUtils, Forms, Controls, Graphics, Types, laz.VirtualTrees, uzcdrawing, uzcdrawings, uzcinterface,
+-  Dialogs, ExtCtrls, ActnList, ComCtrls, Windows, fgl, Menus,
++  Dialogs, ExtCtrls, ActnList, ComCtrls, fgl, Menus,
+   uzvelaccessdbcontrol, uzvmcmanager, uzvmcstruct, uzvmcdrawing, gvector, uzccablemanager, uzcentcable, uzeentdevice, gzctnrVectorTypes, uzcvariablesutils, uzccommandsabstract, uzeentity, uzeentblockinsert, uzeconsts, uzvvstdevpopulator, uzvmcdevtoexcel, uzvmcphaseoptimizer;
+ 
+ type
+@@ -747,7 +747,7 @@ begin
+       // Сохраняем ссылку на ноду, на которой был вызван контекстное меню
+       FRightClickedNode := Node;
+ 
+-      P := vstDev.ClientToScreen(Point.Create(X, Y));
++      P := vstDev.ClientToScreen(Classes.Point(X, Y));
+       FContainerPopupMenu.Popup(P.X, P.Y);
+     end;
+   end;
