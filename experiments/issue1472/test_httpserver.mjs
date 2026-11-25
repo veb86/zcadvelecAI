@@ -110,6 +110,7 @@ try {
       '{"status":"error","error":"Internal server error"}'],
     ['GET', '/widgets/example', '', 200, '{"handler":"widgets"}'],
     ['GET', '/grist/poll', '', 200, '{"handler":"grist"}'],
+    ['POST', '/api/export_selection', '{}', 200, '{"handler":"export_selection"}'],
   ];
   for (const [method, route, body, status, expected] of cases) {
     const raw = await rawResponse(port, method, route, body);

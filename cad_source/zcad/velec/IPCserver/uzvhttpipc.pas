@@ -96,6 +96,20 @@ type
   ): Boolean;
 
 
+  {** Поставщик таймаута команды в миллисекундах (читается при каждом вызове) }
+  THTTPIPCTimeoutProvider = function: Cardinal;
+
+
+  {** Итог синхронного выполнения команды через очередь }
+  THTTPIPCExecStatus = (
+    hesOK,             { обработчик вернул True }
+    hesFailed,         { обработчик вернул False или бросил исключение }
+    hesUnknownCommand, { команда не зарегистрирована }
+    hesTimeout,        { главный поток не завершил команду вовремя }
+    hesError           { ошибка очереди или ожидания }
+  );
+
+
   {=========================================================================}
   {                                                                         }
   {  Команда HTTP IPC                                                      }
@@ -121,6 +135,9 @@ type
     ErrorText: string;
 
     Success: Boolean;
+
+    { Состояние: ожидает / выполняется / отменена по таймауту }
+    State: LongInt;
 
     Completed: TEvent;
 
@@ -203,6 +220,26 @@ function HTTPIPCGetCommandHandler(
 ): Boolean;
 
 
+{**
+  Назначить команде собственный таймаут ожидания HTTP-ответа.
+
+  Команда должна быть уже зарегистрирована. Без назначения
+  используется HTTP_IPC_COMMAND_TIMEOUT.
+}
+procedure RegisterHTTPIPCCommandTimeout(
+  const AName: string;
+  AProvider: THTTPIPCTimeoutProvider
+);
+
+
+{**
+  Таймаут ожидания команды в миллисекундах.
+}
+function HTTPIPCCommandTimeout(
+  const AName: string
+): Cardinal;
+
+
 {=============================================================================
   ОЧЕРЕДЬ
 =============================================================================}
@@ -252,6 +289,21 @@ function HTTPIPCExecuteJSON(
 ): Boolean;
 
 
+{**
+  Выполнить зарегистрированную команду в главном потоке и дождаться
+  результата. Используется REST-маршрутами (например,
+  /api/export_selection), которым не нужен конверт с полями id, cmd, args.
+
+  AArgs копируется, владение остаётся у вызывающего.
+}
+function HTTPIPCExecuteCommand(
+  const AName: string;
+  AArgs: TJSONArray;
+  out AResult: string;
+  out AError: string
+): THTTPIPCExecStatus;
+
+
 {=============================================================================
   ГЛАВНЫЙ ПОТОК
 =============================================================================}
@@ -288,6 +340,11 @@ procedure HTTPIPCProcessPendingCommands;
 const
   HTTP_IPC_COMMAND_TIMEOUT = 30000;
 
+  {** Состояния THTTPIPCCommand.State }
+  HTTP_IPC_STATE_PENDING = 0;
+  HTTP_IPC_STATE_RUNNING = 1;
+  HTTP_IPC_STATE_CANCELLED = 2;
+
 
 implementation
 
@@ -302,6 +359,7 @@ type
   THTTPIPCCommandRegistration = record
     Name: string;
     Handler: THTTPIPCCommandHandler;
+    TimeoutProvider: THTTPIPCTimeoutProvider;
   end;
 
 
@@ -376,6 +434,8 @@ begin
   ErrorText := '';
 
   Success := False;
+
+  State := HTTP_IPC_STATE_PENDING;
 
   Completed :=
     TEvent.Create(
@@ -771,6 +831,9 @@ begin
     HTTPIPCCommandRegistry[Count].Handler :=
       AHandler;
 
+    HTTPIPCCommandRegistry[Count].TimeoutProvider :=
+      nil;
+
 
     HTTPIPCLog(
       Format(
@@ -857,6 +920,79 @@ begin
 
   end;
 
+end;
+
+
+{=============================================================================
+  TIMEOUT
+=============================================================================}
+
+{ Назначает команде поставщик таймаута; команда должна быть зарегистрирована }
+procedure RegisterHTTPIPCCommandTimeout(
+  const AName: string;
+  AProvider: THTTPIPCTimeoutProvider
+);
+var
+  Index: Integer;
+begin
+  HTTPIPCRegistryLock.Acquire;
+  try
+    Index := FindHTTPIPCCommandIndex(AName);
+    if Index < 0 then
+    begin
+      HTTPIPCLog(Format('Cannot set timeout: command "%s" is not registered', [AName]),
+        LM_Error);
+      Exit;
+    end;
+    HTTPIPCCommandRegistry[Index].TimeoutProvider := AProvider;
+  finally
+    HTTPIPCRegistryLock.Release;
+  end;
+end;
+
+
+{ Возвращает таймаут команды: собственный или общий по умолчанию }
+function HTTPIPCCommandTimeout(
+  const AName: string
+): Cardinal;
+var
+  Index: Integer;
+  Provider: THTTPIPCTimeoutProvider;
+begin
+  Provider := nil;
+  HTTPIPCRegistryLock.Acquire;
+  try
+    Index := FindHTTPIPCCommandIndex(AName);
+    if Index >= 0 then
+      Provider := HTTPIPCCommandRegistry[Index].TimeoutProvider;
+  finally
+    HTTPIPCRegistryLock.Release;
+  end;
+  Result := HTTP_IPC_COMMAND_TIMEOUT;
+  if Assigned(Provider) then
+    Result := Provider();
+end;
+
+
+{ Ставит команду в очередь и ждёт; по таймауту отменяет ещё не начатую команду }
+function HTTPIPCEnqueueAndWait(
+  ACommand: THTTPIPCCommand
+): TWaitResult;
+var
+  PrevState: LongInt;
+begin
+  HTTPIPCCommandQueue.Enqueue(ACommand);
+  Result := ACommand.WaitFor(HTTPIPCCommandTimeout(ACommand.CmdName));
+  if Result <> wrTimeout then
+    Exit;
+  PrevState := InterlockedCompareExchange(ACommand.State,
+    HTTP_IPC_STATE_CANCELLED, HTTP_IPC_STATE_PENDING);
+  if PrevState = HTTP_IPC_STATE_PENDING then
+    HTTPIPCLog(Format('Command cancelled before start: %s (%s)',
+      [ACommand.ID, ACommand.CmdName]), LM_Info)
+  else
+    HTTPIPCLog(Format('Command still running after timeout: %s (%s)',
+      [ACommand.ID, ACommand.CmdName]), LM_Info);
 end;
 
 
@@ -1002,8 +1138,6 @@ var
 
   WaitResult: TWaitResult;
 
-  Enqueued: Boolean;
-
 begin
 
   Result := False;
@@ -1013,8 +1147,6 @@ begin
   Root := nil;
 
   Cmd := nil;
-
-  Enqueued := False;
 
 
   {=========================================================================}
@@ -1320,17 +1452,9 @@ begin
 
   try
 
-    HTTPIPCCommandQueue.Enqueue(
-      Cmd
-    );
-
-
-    Enqueued := True;
-
-
     HTTPIPCLog(
       Format(
-        'Command enqueued: %s (%s)',
+        'Command enqueue: %s (%s)',
         [
           Cmd.ID,
           Cmd.CmdName
@@ -1345,8 +1469,8 @@ begin
     {=======================================================================}
 
     WaitResult :=
-      Cmd.WaitFor(
-        HTTP_IPC_COMMAND_TIMEOUT
+      HTTPIPCEnqueueAndWait(
+        Cmd
       );
 
 
@@ -1509,6 +1633,79 @@ end;
 
 
 {=============================================================================
+  DIRECT EXECUTION
+=============================================================================}
+
+{ Создаёт команду с копией аргументов и уникальным служебным ID }
+function HTTPIPCCreateDirectCommand(
+  const AName: string;
+  AArgs: TJSONArray;
+  AHandler: THTTPIPCCommandHandler
+): THTTPIPCCommand;
+begin
+  Result := THTTPIPCCommand.Create;
+  Result.ID := Format('direct-%d', [GetTickCount64]);
+  Result.CmdName := NormalizeCommandName(AName);
+  Result.Handler := AHandler;
+  if AArgs <> nil then
+    Result.Args := AArgs.Clone as TJSONArray
+  else
+    Result.Args := TJSONArray.Create;
+end;
+
+
+{ Переводит результат ожидания и обработчика в статус выполнения }
+function HTTPIPCDirectStatus(
+  ACommand: THTTPIPCCommand;
+  AWaitResult: TWaitResult
+): THTTPIPCExecStatus;
+begin
+  if AWaitResult = wrTimeout then
+    Exit(hesTimeout);
+  if AWaitResult <> wrSignaled then
+    Exit(hesError);
+  if ACommand.Success then
+    Result := hesOK
+  else
+    Result := hesFailed;
+end;
+
+
+{ Синхронно выполняет зарегистрированную команду через очередь главного потока }
+function HTTPIPCExecuteCommand(
+  const AName: string;
+  AArgs: TJSONArray;
+  out AResult: string;
+  out AError: string
+): THTTPIPCExecStatus;
+var
+  Handler: THTTPIPCCommandHandler;
+  Cmd: THTTPIPCCommand;
+begin
+  AResult := '';
+  AError := '';
+  if not HTTPIPCGetCommandHandler(AName, Handler) then
+    Exit(hesUnknownCommand);
+  if HTTPIPCCommandQueue = nil then
+  begin
+    AError := 'HTTP IPC command queue is not initialized';
+    Exit(hesError);
+  end;
+  Cmd := HTTPIPCCreateDirectCommand(AName, AArgs, Handler);
+  try
+    Result := HTTPIPCDirectStatus(Cmd, HTTPIPCEnqueueAndWait(Cmd));
+    if Result in [hesOK, hesFailed] then
+    begin
+      AResult := Cmd.ResultText;
+      AError := Cmd.ErrorText;
+    end;
+  finally
+    Cmd.Release;
+  end;
+end;
+
+
+{=============================================================================
   PROCESS ONE COMMAND
 =============================================================================}
 
@@ -1534,6 +1731,19 @@ begin
 
 
   try
+
+    {=======================================================================}
+    { SKIP CANCELLED }
+    {=======================================================================}
+
+    { HTTP-поток уже ответил TIMEOUT: запоздалое выполнение запрещено }
+    if InterlockedCompareExchange(Cmd.State, HTTP_IPC_STATE_RUNNING,
+      HTTP_IPC_STATE_PENDING) <> HTTP_IPC_STATE_PENDING then
+    begin
+      HTTPIPCLog(Format('Skipping cancelled command: %s (%s)',
+        [Cmd.ID, Cmd.CmdName]), LM_Info);
+      Exit(True);
+    end;
 
     HTTPIPCLog(
       Format(

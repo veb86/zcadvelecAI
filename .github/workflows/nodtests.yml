@@ -13,6 +13,7 @@ on:
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
       - 'experiments/issue1470/**'
       - 'experiments/issue1472/**'
+      - 'experiments/issue1478/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   pull_request:
@@ -25,6 +26,7 @@ on:
       - 'environment/runtimefiles/AllCPU-AllOS/common/cfg/components/**'
       - 'experiments/issue1470/**'
       - 'experiments/issue1472/**'
+      - 'experiments/issue1478/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   workflow_dispatch:
@@ -56,6 +58,14 @@ jobs:
       - name: HTTP server CORS regression
         timeout-minutes: 1
         run: node experiments/issue1472/test_httpserver.mjs
+      - name: Export selection regression
+        timeout-minutes: 2
+        run: |
+          mkdir -p /tmp/zcad-export1478
+          fpc -Fucad_source/zcad/velec/IPCserver -FU/tmp/zcad-export1478 \
+            -FE/tmp/zcad-export1478 experiments/issue1478/test_export_selection.pas
+          /tmp/zcad-export1478/test_export_selection
+          node experiments/issue1478/test_export_route.mjs
       - name: Wall analyzer regression
         timeout-minutes: 1
         run: |

@@ -338,6 +338,7 @@ uses
   uzvhttpcmdgeometry,
   uzvhttpwallcommands,
   uzvhttpcmdinsertdev,
+  uzvhttpcmdexportselection,
     uzvtestgrist,
   //uzvipcserver,
   //uzvipcintegration,
