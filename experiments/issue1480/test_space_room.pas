@@ -149,6 +149,57 @@ begin
     'build/parse round trip');
 end;
 
+const
+  { Кнопки панели «Пространства»: источник операндов SpaceAddPoly }
+  TOOLBAR_XML = 'environment/runtimefiles/AllCPU-AllOS/zcadelectrotech/' +
+    'data/preload/vspace/vspaceactionscontent.xml';
+  TOOLBAR_PREFIX = 'Command="spaceaddpoly(';
+  TOOLBAR_SUFFIX = ')"';
+
+{ Операнды кнопки spaceaddpoly(...) с заданным слоем из XML панели }
+function ToolbarOperands(AXml: TStrings; const ALayer: string): string;
+var
+  Line: string;
+  Start, Stop: Integer;
+begin
+  Result := '';
+  for Line in AXml do begin
+    Start := Pos(TOOLBAR_PREFIX, Line);
+    if (Start = 0) or (Pos(QuotedStr(ALayer), Line) = 0) then
+      Continue;
+    Start := Start + Length(TOOLBAR_PREFIX);
+    Stop := Pos(TOOLBAR_SUFFIX, Copy(Line, Start, MaxInt));
+    if Stop > 0 then
+      Exit(Copy(Line, Start, Stop - 1));
+  end;
+end;
+
+{ Пресеты видов зон совпадают с кнопками панели (файл читается из репозитория) }
+procedure TestPresetsMatchToolbar;
+var
+  Xml: TStringList;
+  FileName: string;
+begin
+  FileName := TOOLBAR_XML;
+  if not FileExists(FileName) then
+    FileName := '../../' + TOOLBAR_XML;
+  Check(FileExists(FileName), 'toolbar xml found: ' + TOOLBAR_XML);
+  if not FileExists(FileName) then
+    Exit;
+  Xml := TStringList.Create;
+  try
+    Xml.LoadFromFile(FileName);
+    CheckEq(ToolbarOperands(Xml, 'spaceRoom'), SPACE_OPERANDS_ROOM, 'toolbar room');
+    CheckEq(ToolbarOperands(Xml, 'spaceFloor'), SPACE_OPERANDS_FLOOR, 'toolbar floor');
+    CheckEq(ToolbarOperands(Xml, 'spaceSection'), SPACE_OPERANDS_SECTION,
+      'toolbar section');
+    CheckEq(ToolbarOperands(Xml, 'spaceBuild'), SPACE_OPERANDS_BUILDING,
+      'toolbar building');
+  finally
+    Xml.Free;
+  end;
+end;
+
 procedure TestGeometry;
 var
   P: TSpacePoints;
@@ -415,6 +466,7 @@ begin
   SetMultiByteConversionCodePage(CP_UTF8);
   DefaultSystemCodePage := CP_UTF8;
   TestPresets;
+  TestPresetsMatchToolbar;
   TestGeometry;
   TestRoomRequest;
   TestPolyRequest;
