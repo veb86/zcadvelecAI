@@ -240,4 +240,16 @@ print(room["area"], room["variables"]["Space_RoomPos"])
 
 См. `experiments/issue1480/README.md`. В CI (`.github/workflows/nodtests.yml`,
 шаг «Space room regression») выполняются модульные проверки
-`uzvhttpspaceroom`.
+`uzvhttpspaceroom`. Сквозная проверка на собранном ZCAD (черчение, пакет,
+выгрузка, Undo) — `experiments/issue1480/e2e/README.md`.
+
+Сквозная проверка выявила и исправила две ошибки HTTP-сервера, не связанные
+с зонами напрямую:
+
+* запись запроса в историю командной строки из рабочего потока HTTP-сервера
+  роняла GTK2 при параллельных запросах — теперь она передаётся в главный
+  поток (`TThread.Queue`, `uzvhttpserver.pas`);
+* Undo после `EXPORT_SELECTION` при наличии зон давал access violation:
+  копии для выгрузки форматировались относительно текущего чертежа и
+  оставляли в нём указатель на уничтожаемую копию — теперь они форматируются
+  относительно временного чертежа (`uzvhttpcmdexportselection.pas`).
