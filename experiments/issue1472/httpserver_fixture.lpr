@@ -42,6 +42,12 @@ procedure TTestUI.TextMessage(const AMessage: string; AMode: Integer);
 begin
 end;
 
+{ Вывод в историю из потока запроса: в ZCAD - через TThread.Queue (#1480). }
+procedure QueueHistoryMessage(const AText: string);
+begin
+  zcUI.TextMessage(AText, TMWOHistoryOut);
+end;
+
 { Не требует настройки лога ZCAD для проверки HTTP-транспорта. }
 procedure TZCADHTTPServerManager.Log(const AMessage: string; ALevel: Integer);
 begin
