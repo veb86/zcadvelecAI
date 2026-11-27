@@ -114,6 +114,17 @@ Python-клиент для тестирования и взаимодейств�
 {"id": "7", "cmd": "EXPORT_SELECTION", "args": [{"out_path": "/tmp/zcad_export/selection.dxf"}]}
 ```
 
+### SPACE_ADD_ROOM / SPACE_ADD_POLY
+Черчение зоны помещения с номером (и других зон панели «Пространства»:
+этаж, секция, здание) так же, как интерактивная команда `SpaceAddPoly`:
+замкнутая полилиния на слое зоны с расширениями `extdrVariables`,
+`extdrIncludingVolume` и заполненными переменными (`Space_RoomPos` и т.д.).
+Поля запроса, коды ошибок и Python-клиент — в
+[SPACE_ADD_ROOM.md](SPACE_ADD_ROOM.md).
+```json
+{"id": "8", "cmd": "SPACE_ADD_ROOM", "args": [{"points": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "number": "101", "name": "Кабинет"}]}
+```
+
 ## Команды ZCAD
 
 После загрузки модуля доступны команды ZCAD:
