@@ -166,7 +166,12 @@ begin
     EXPORT_TEMP_SUFFIX]);
 end;
 
-{ Копирует сущности области выгрузки в служебный чертёж (как CopyClip) }
+{ Копирует сущности области выгрузки в служебный чертёж (как CopyClip).
+  Копии форматируются относительно служебного чертежа: расширения (например,
+  extdrIncludingVolume у зон) при форматировании регистрируют примитив
+  в ObjToConnectedArray чертежа, и для активного чертежа там остался бы
+  указатель на копию, освобождённую вместе со служебным чертежом (Access
+  violation в следующем FormatAfterEdit, например при Undo) }
 function CopyEntities(const AJob: TExportJob; AScratch: PTSimpleDrawing): Integer;
 var
   Entity, EntCopy: PGDBObjEntity;
@@ -174,7 +179,7 @@ var
   DC: TDrawContext;
 begin
   Result := 0;
-  DC := AJob.Drawing^.CreateDrawingRC(False, [DCODrawable]);
+  DC := AScratch^.CreateDrawingRC(False, [DCODrawable]);
   Entity := AJob.Root^.ObjArray.beginiterate(Iter);
   while Entity <> nil do
   begin
@@ -182,7 +187,7 @@ begin
     begin
       EntCopy := drawings.CopyEnt(AJob.Drawing, AScratch, Entity);
       if EntCopy <> nil then
-        EntCopy^.FormatEntity(AJob.Drawing^, DC);
+        EntCopy^.FormatEntity(AScratch^, DC);
       if EntCopy <> nil then
         Inc(Result);
     end;

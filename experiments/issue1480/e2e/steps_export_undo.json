@@ -1,0 +1,11 @@
+[
+ ["SPACE_ADD_ROOM", [{"points": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "number": "101", "name": "Кабинет", "category": "Д"}]],
+ ["SPACE_ADD_POLY", [{"kind": "floor", "points": [[-100, -100], [20100, -100], [20100, 10100], [-100, 10100]], "values": {"space_Floor": "1"}}]],
+ ["BEGIN_BATCH", []],
+ ["SPACE_ADD_ROOM", [{"points": [[6000, 0], [12000, 0], [12000, 4000], [6000, 4000]], "number": "102"}]],
+ ["SPACE_ADD_ROOM", ["{\"points\":[[12000,0],[18000,0],[18000,4000],[12000,4000]],\"number\":\"103\"}"]],
+ ["END_BATCH", []],
+ ["EXPORT_SELECTION", [{"scope": "all", "out_path": "/tmp/probe/exports/a.dxf", "overwrite": true}]],
+ ["@UNDO"],
+ ["LINE", [0, 0, 10, 10]]
+]

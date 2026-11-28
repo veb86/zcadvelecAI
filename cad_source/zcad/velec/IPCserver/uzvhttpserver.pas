@@ -163,6 +163,52 @@ implementation
 
 
 {=============================================================================
+  ВЫВОД В ИСТОРИЮ ИЗ РАБОЧИХ ПОТОКОВ
+=============================================================================}
+
+type
+  {** Текст для истории командной строки, переданный из рабочего потока HTTP.
+      LCL/GTK2 не потокобезопасны: запись в историю из потока запроса
+      (FServer.Threaded = True) портит GtkTextBuffer, и ZCAD падает
+      («split_segment reached end of line!»). Поэтому текст выводится
+      методом Show в главном потоке, после чего объект освобождает себя}
+  TZCADHTTPHistoryEcho = class
+  private
+    FText: string;
+  public
+    constructor Create(const AText: string);
+    procedure Show;
+  end;
+
+{** Запоминание текста для вывода в главном потоке}
+constructor TZCADHTTPHistoryEcho.Create(const AText: string);
+begin
+  inherited Create;
+  FText := AText;
+end;
+
+{** Вывод текста в историю (главный поток) и освобождение объекта}
+procedure TZCADHTTPHistoryEcho.Show;
+begin
+  try
+    zcUI.TextMessage(FText, TMWOHistoryOut);
+  finally
+    Free;
+  end;
+end;
+
+{** Вывод текста в историю командной строки из любого потока:
+    вызов ставится в очередь главного потока и не ждёт его выполнения}
+procedure QueueHistoryMessage(const AText: string);
+var
+  LEcho: TZCADHTTPHistoryEcho;
+begin
+  LEcho := TZCADHTTPHistoryEcho.Create(AText);
+  TThread.Queue(nil, @LEcho.Show);
+end;
+
+
+{=============================================================================
   TZCADHTTPServerThread
 =============================================================================}
 
@@ -473,7 +519,8 @@ begin
 
 
     JSONText := ARequest.Content;
-    zcUI.TextMessage(' JSONText = ' + JSONText,TMWOHistoryOut);
+    // HandleRequest выполняется в рабочем потоке: в историю - через очередь
+    QueueHistoryMessage(' JSONText = ' + JSONText);
 
     if Trim(JSONText) = '' then
     begin

@@ -14,6 +14,7 @@ on:
       - 'experiments/issue1470/**'
       - 'experiments/issue1472/**'
       - 'experiments/issue1478/**'
+      - 'experiments/issue1480/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   pull_request:
@@ -27,6 +28,7 @@ on:
       - 'experiments/issue1470/**'
       - 'experiments/issue1472/**'
       - 'experiments/issue1478/**'
+      - 'experiments/issue1480/**'
       - '.gitmodules'
       - '.github/workflows/nodtests.yml'
   workflow_dispatch:
@@ -66,6 +68,13 @@ jobs:
             -FE/tmp/zcad-export1478 experiments/issue1478/test_export_selection.pas
           /tmp/zcad-export1478/test_export_selection
           node experiments/issue1478/test_export_route.mjs
+      - name: Space room regression
+        timeout-minutes: 2
+        run: |
+          mkdir -p /tmp/zcad-space1480
+          fpc -Fucad_source/zcad/velec/IPCserver -FU/tmp/zcad-space1480 \
+            -FE/tmp/zcad-space1480 experiments/issue1480/test_space_room.pas
+          /tmp/zcad-space1480/test_space_room
       - name: Wall analyzer regression
         timeout-minutes: 1
         run: |

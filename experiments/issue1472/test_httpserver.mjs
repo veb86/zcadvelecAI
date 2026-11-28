@@ -86,7 +86,11 @@ let server;
 let serverLog = '';
 try {
   writeFileSync(path.join(output, 'cors.inc'), extractMethod('SetCORSHeaders'));
-  writeFileSync(path.join(output, 'request.inc'), extractMethod('HandleRequest'));
+  const handleRequest = extractMethod('HandleRequest');
+  // HandleRequest выполняется в рабочем потоке TFPHttpServer: прямой вызов
+  // zcUI (LCL/GTK2) из него ронял ZCAD при параллельных запросах (#1480)
+  assert.doesNotMatch(handleRequest, /\bzcUI\./, 'HandleRequest must not call zcUI directly');
+  writeFileSync(path.join(output, 'request.inc'), handleRequest);
   const compile = spawnSync('fpc', [`-Fi${output}`, `-FU${output}`, `-FE${output}`,
     path.join(directory, 'httpserver_fixture.lpr')], { encoding: 'utf8' });
   assert.equal(compile.status, 0, compile.error?.message ?? compile.stdout + compile.stderr);

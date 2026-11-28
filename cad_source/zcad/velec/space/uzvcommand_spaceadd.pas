@@ -48,7 +48,61 @@ uses
 function AddExtdrToRectangle(const AStage:TEntitySetupStage;const APEnt:PGDBObjEntity;
   const AESD:TEntitySetupData):boolean;
 
+{**Процедура применения к примитиву расширений пространства
+   (extdrVariables, extdrIncludingVolume), переменных из структуры операндов,
+   слоя, цвета, толщины линии «поСлою» и замыкания полилинии.
+   Используется интерактивными командами spaceadd/SpaceAddPoly (стадия
+   ESSSetEntity) и HTTP-командами SPACE_ADD_ROOM/SPACE_ADD_POLY, поэтому
+   зона, начерченная вручную и через HTTP, получается одинаковой.
+   @param(APEnt - указатель на примитив, nil игнорируется)
+   @param(AStruct - разобранные операнды команды)}
+procedure ApplySpaceExtensions(const APEnt:PGDBObjEntity;
+  const AStruct:TOperandsStruct);
+
 implementation
+
+{**Процедура применения к примитиву расширений пространства}
+procedure ApplySpaceExtensions(const APEnt:PGDBObjEntity;
+  const AStruct:TOperandsStruct);
+var
+  pLayer: PGDBLayerProp;
+begin
+  if APEnt = nil then
+    exit;
+
+  // Добавляем расширение extdrVariables для хранения переменных
+  // Add extdrVariables extension for storing variables
+  AddVariablesToEntity(APEnt);
+
+  // Добавляем расширение extdrIncludingVolume для работы с объемом
+  // Add extdrIncludingVolume extension for volume operations
+  AddVolumeExtenderToEntity(APEnt);
+
+  // Добавляем переменные из структуры операндов
+  // Add variables from operands structure
+  AddVariablesFromStruct(APEnt, AStruct);
+
+  // Устанавливаем слой если указан в структуре
+  // Set layer if specified in structure
+  if AStruct.namelayer <> '' then begin
+    pLayer := GetOrCreateLayer(
+      AStruct.namelayer,
+      AStruct.indexColor
+    );
+
+    if pLayer <> nil then
+      APEnt^.vp.Layer := pLayer;
+  end;
+
+  // Устанавливаем цвет примитива из структуры
+  // Set entity color from structure
+  APEnt^.vp.Color := AStruct.indexColor;
+  APEnt^.vp.LineWeight := LnWtByLayer;
+  if  APEnt^.GetObjType = GDBPolyLineID then
+  PGDBObjPolyline(APEnt).Closed:=True;
+  //if  APEnt^.GetObjType = GDBLWPolyLineID then
+  //PGDBObjLWPolyline(APEnt).Closed:=True;
+end;
 
 {**Функция добавления расширений к прямоугольнику на разных стадиях настройки
    Использует глобальную структуру gOperandsStruct для получения параметров.
@@ -57,8 +111,6 @@ implementation
    @return(true если обработка успешна)}
 function AddExtdrToRectangle(const AStage:TEntitySetupStage;const APEnt:PGDBObjEntity;
   const AESD:TEntitySetupData):boolean;
-var
-  pLayer: PGDBLayerProp;
 begin
   case AStage of
     ESSSuppressCommandParams:
@@ -66,38 +118,9 @@ begin
 
     ESSSetEntity: begin
       if APEnt <> nil then begin
-        // Добавляем расширение extdrVariables для хранения переменных
-        // Add extdrVariables extension for storing variables
-        AddVariablesToEntity(APEnt);
-
-        // Добавляем расширение extdrIncludingVolume для работы с объемом
-        // Add extdrIncludingVolume extension for volume operations
-        AddVolumeExtenderToEntity(APEnt);
-
-        // Добавляем переменные из структуры операндов
-        // Add variables from operands structure
-        AddVariablesFromStruct(APEnt, gOperandsStruct);
-
-        // Устанавливаем слой если указан в структуре
-        // Set layer if specified in structure
-        if gOperandsStruct.namelayer <> '' then begin
-          pLayer := GetOrCreateLayer(
-            gOperandsStruct.namelayer,
-            gOperandsStruct.indexColor
-          );
-
-          if pLayer <> nil then
-            APEnt^.vp.Layer := pLayer;
-        end;
-
-        // Устанавливаем цвет примитива из структуры
-        // Set entity color from structure
-        APEnt^.vp.Color := gOperandsStruct.indexColor;
-        APEnt^.vp.LineWeight := LnWtByLayer;
-        if  APEnt^.GetObjType = GDBPolyLineID then
-        PGDBObjPolyline(APEnt).Closed:=True;
-        //if  APEnt^.GetObjType = GDBLWPolyLineID then
-        //PGDBObjLWPolyline(APEnt).Closed:=True;
+        // Расширения, переменные, слой, цвет и замыкание из gOperandsStruct
+        // Extensions, variables, layer, color and closing from gOperandsStruct
+        ApplySpaceExtensions(APEnt, gOperandsStruct);
 
         result := true;
       end else

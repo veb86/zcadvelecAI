@@ -339,6 +339,7 @@ uses
   uzvhttpwallcommands,
   uzvhttpcmdinsertdev,
   uzvhttpcmdexportselection,
+  uzvhttpcmdspace,
     uzvtestgrist,
   //uzvipcserver,
   //uzvipcintegration,
